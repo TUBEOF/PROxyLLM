@@ -1,0 +1,9 @@
+[
+  { "type": "start", "model": "gpt-6-astra", "id": "resp_67c9fdcecf488190bdd9a0409de3a1ec07b8b0ad4e5eb654" },
+  { "type": "block_start", "index": 0, "part": { "kind": "text" } },
+  { "type": "delta", "index": 0, "delta": { "kind": "text", "text": "Hi" } },
+  { "type": "delta", "index": 0, "delta": { "kind": "text", "text": " there! How can I assist you today?" } },
+  { "type": "block_stop", "index": 0 },
+  { "type": "message_delta", "message_delta": { "stop_reason": "end_turn", "usage": { "input_tokens": 37, "output_tokens": 11, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0 } } },
+  { "type": "done" }
+]

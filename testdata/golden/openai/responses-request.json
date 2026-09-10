@@ -1,0 +1,41 @@
+{
+  "model": "gpt-5",
+  "instructions": "You are a helpful assistant.",
+  "input": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": "What's the weather in San Francisco?"
+    },
+    {
+      "type": "function_call",
+      "call_id": "call_abc123",
+      "name": "get_weather",
+      "arguments": "{\"location\":\"San Francisco\"}"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "call_abc123",
+      "output": "{\"temp_c\":15,\"wind\":\"NW at 12 km/h\"}"
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "name": "get_weather",
+      "description": "Get the current weather for a location",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location": { "type": "string" }
+        },
+        "required": ["location"]
+      },
+      "strict": false
+    }
+  ],
+  "tool_choice": "auto",
+  "reasoning": { "effort": "medium" },
+  "max_output_tokens": 1024,
+  "stream": false
+}

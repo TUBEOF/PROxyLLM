@@ -1,0 +1,13 @@
+{
+  "fixture": "responses-response.json",
+  "source": "https://developers.openai.com/api/reference/resources/responses/methods/create",
+  "accessed": "2026-09-10",
+  "facts": [
+    "O5: the response object carries id ('resp_...'), object:'response', created_at, status, output (typed item array), usage",
+    "ResponseOutputMessage item: {id:'msg_...', type:'message', status, role:'assistant', content:[parts]}",
+    "ResponseOutputText part: {type:'output_text', annotations, logprobs, text}",
+    "Usage shape: {input_tokens, output_tokens, output_tokens_details:{reasoning_tokens}, total_tokens}",
+    "status values include in_progress, completed, incomplete (and failed for background mode)"
+  ],
+  "notes": "IDs, created_at, and the message text are taken verbatim from the streaming example on the cited page (the completed response snapshot in response.completed) so the body fixture and the stream fixture tell one consistent story; model renamed gpt-5 for the body fixture to match the request fixture (the stream fixture keeps the example's gpt-6-astra). usage.input_tokens 37 / output_tokens 11 / total 48 are the example's values."
+}

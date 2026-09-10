@@ -1,0 +1,14 @@
+{
+  "fixture": "responses-stream.sse / responses-stream.expected.json",
+  "source": "https://developers.openai.com/api/reference/resources/responses/methods/create",
+  "accessed": "2026-09-10",
+  "facts": [
+    "O7: Responses streaming uses named SSE events (event: lines), unlike chat-completions' data-only SSE",
+    "Verbatim example sequence on the cited page: response.created → response.in_progress → response.output_item.added → response.content_part.added → response.output_text.delta → … → response.output_text.done → response.content_part.done → response.output_item.done → response.completed",
+    "response.created/response.in_progress/response.completed carry the FULL response object snapshot in .response; response.completed includes usage {input_tokens:37, output_tokens:11, output_tokens_details:{reasoning_tokens:0}, total_tokens:48}",
+    "response.output_text.delta carries {item_id, output_index, content_index, delta}",
+    "response.output_item.added carries {output_index, item:{id:'msg_...', type:'message', status:'in_progress', role:'assistant', content:[]}}; response.output_item.done carries the completed item",
+    "IDs are verbatim from the example: resp_67c9fdcecf488190bdd9a0409de3a1ec07b8b0ad4e5eb654, msg_67c9fdcf37fc8190ba82116e33fb28c507b8b0ad4e5eb654, model gpt-6-astra, created_at 1741290958"
+  ],
+  "notes": "The docs example elides the middle of the delta sequence with '…' after the single delta \"Hi\". The second delta (\" there! How can I assist you today?\") is the documented completion of that elision — the text matches the response.output_text.done / content_part.done / output_item.done payloads verbatim, so no content is invented. Canonical mapping: response.created → start; response.in_progress → skip (redundant snapshot); output_item.added → block_start(text); content_part.added → skip (redundant); output_text.delta → delta(text); output_text.done/content_part.done → skip (already delivered via deltas); output_item.done → block_stop; response.completed → message_delta(end_turn, usage) + done. response.function_call_arguments.delta and response.reasoning_summary.* are NOT in this scrape — they rest on O7 (https://developers.openai.com/api/docs/guides/streaming-responses, accessed 2026-09-10) and are covered by inline unit tests, not this fixture. Amendment 2026-09-10 (fixture hygiene, not content): a trailing blank line was appended after the final response.completed data line — a real SSE stream terminates every event with a dispatching blank line, and without it the last event is never dispatched (WHATWG SSE-5/SSE-6); the fixture previously ended mid-event."
+}
