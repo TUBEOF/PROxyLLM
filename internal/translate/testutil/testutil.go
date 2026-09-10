@@ -15,14 +15,42 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/proxyllm/proxyllm/internal/translate/ir"
 )
 
-// goldenRoot is the path from an internal/translate/<proto> package
-// directory up to the repository's golden fixture directory.
-var goldenRoot = filepath.Join("..", "..", "..", "testdata", "golden")
+// goldenRoot resolves the repository's golden fixture directory by walking
+// up from the test's working directory until testdata/golden is found. Codec
+// and provider suites sit at different nesting depths, so a fixed relative
+// hop would break one or the other; discovery keeps a single loader for all
+// suites. Falls back to the codec-relative path when discovery fails.
+var (
+	goldenRootOnce sync.Once
+	goldenRootPath string
+)
+
+func goldenRoot() string {
+	goldenRootOnce.Do(func() {
+		goldenRootPath = filepath.Join("..", "..", "..", "testdata", "golden")
+		dir, err := os.Getwd()
+		if err != nil {
+			return
+		}
+		for d := dir; ; d = filepath.Dir(d) {
+			cand := filepath.Join(d, "testdata", "golden")
+			if st, err := os.Stat(cand); err == nil && st.IsDir() {
+				goldenRootPath = cand
+				return
+			}
+			if parent := filepath.Dir(d); parent == d {
+				return
+			}
+		}
+	})
+	return goldenRootPath
+}
 
 // wirePart mirrors the "part" object of .expected.json fixtures: a kind
 // discriminator plus the fields the fixtures carry.
@@ -58,7 +86,7 @@ func LoadGolden(t *testing.T, rel string) []byte {
 	t.Helper()
 	// #nosec G304 -- rel is a test-supplied fixture path (constant names in
 	// contract tests), never operator or request input.
-	raw, err := os.ReadFile(filepath.Join(goldenRoot, filepath.FromSlash(rel)))
+	raw, err := os.ReadFile(filepath.Join(goldenRoot(), filepath.FromSlash(rel)))
 	if err != nil {
 		t.Fatalf("load golden fixture %s: %v", rel, err)
 	}
