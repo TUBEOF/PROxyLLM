@@ -100,7 +100,7 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 		case req.Thinking.Adaptive:
 			w.Think = &wireThink{Bool: boolPtr(true)}
 		default:
-			w.Think = &wireThink{Str: strPtr(effortFromBudget(req.Thinking.BudgetTokens))}
+			w.Think = &wireThink{Str: strPtr(effortFor(req))}
 		}
 	}
 	if len(req.System) > 0 {
@@ -346,6 +346,17 @@ func effortFromBudget(budget int) string {
 	default:
 		return "max"
 	}
+}
+
+// effortFor picks the think effort for a request: the §6.4 compat-policy
+// mapping (ir.ReasoningEffort, set by routing) wins over the codec's own
+// budget heuristic — the policy layer owns the decision so it is
+// observable in route_trace, never silent.
+func effortFor(req ir.Request) string {
+	if req.ReasoningEffort != "" {
+		return req.ReasoningEffort
+	}
+	return effortFromBudget(req.Thinking.BudgetTokens)
 }
 
 func stopReasonFromWire(s string) ir.StopReason {

@@ -148,6 +148,23 @@ type ThinkingConfig struct {
 	Adaptive     bool
 }
 
+// EffortFromBudget maps a thinking budget_tokens to a reasoning-effort level
+// (§6.4 map-to-reasoning-effort). Tiers follow the shared codec heuristic
+// (high >= 8192, medium >= 4096, low > 0); a zero budget has no effort
+// mapping ("" — callers keep their protocol default).
+func EffortFromBudget(budget int) string {
+	switch {
+	case budget >= 8192:
+		return "high"
+	case budget >= 4096:
+		return "medium"
+	case budget > 0:
+		return "low"
+	default:
+		return ""
+	}
+}
+
 // Request is the canonical request IR.
 type Request struct {
 	Model         string
@@ -166,6 +183,13 @@ type Request struct {
 	ToolChoice *ToolChoice
 	Thinking   *ThinkingConfig
 	Stream     bool
+
+	// ReasoningEffort is the explicit reasoning-effort hint (§6.4
+	// map-to-reasoning-effort: the compat policy maps a thinking budget
+	// here; "" = unset). Provider codecs prefer it over deriving effort
+	// from Thinking.BudgetTokens themselves — the policy layer owns the
+	// decision so it is observable in route_trace, never silent.
+	ReasoningEffort string
 
 	// Passthrough carries wire fields with no IR equivalent, keyed by
 	// top-level field name (nested unknowns live in the codec wire

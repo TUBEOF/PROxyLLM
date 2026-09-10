@@ -107,7 +107,7 @@ func (ResponsesCodec) EncodeRequest(req ir.Request) ([]byte, error) {
 		})
 	}
 	if req.Thinking != nil && req.Thinking.Enabled {
-		w.Reasoning = &responsesWireReasoning{Effort: effortFromBudget(req.Thinking.BudgetTokens)}
+		w.Reasoning = &responsesWireReasoning{Effort: effortFor(req)}
 	}
 	raw, err := json.Marshal(w)
 	if err != nil {
@@ -687,4 +687,15 @@ func effortFromBudget(budget int) string {
 	default:
 		return "medium"
 	}
+}
+
+// effortFor picks the reasoning effort for a request: the §6.4
+// compat-policy mapping (ir.ReasoningEffort, set by routing) wins over the
+// codec's own budget heuristic — the policy layer owns the decision so it
+// is observable in route_trace, never silent.
+func effortFor(req ir.Request) string {
+	if req.ReasoningEffort != "" {
+		return req.ReasoningEffort
+	}
+	return effortFromBudget(req.Thinking.BudgetTokens)
 }
