@@ -35,7 +35,9 @@ func LoadMasterKey(envValue string, envSet bool, path string) ([]byte, error) {
 		if info.IsDir() {
 			return nil, fmt.Errorf("storage: master key path %s is a directory", path)
 		}
-		raw, err := os.ReadFile(path)
+		// path is operator configuration (ENV or defaults), never
+		// request-derived — no inclusion taint in practice.
+		raw, err := os.ReadFile(path) //nolint:gosec // operator-configured path
 		if err != nil {
 			return nil, fmt.Errorf("storage: read master key: %w", err)
 		}

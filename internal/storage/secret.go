@@ -58,7 +58,9 @@ func (e *Envelope) Seal(plaintext []byte) ([]byte, error) {
 		return nil, errors.New("storage: key_id too long")
 	}
 	out := make([]byte, 0, 2+len(e.keyID)+e.aead.NonceSize()+len(plaintext)+e.aead.Overhead())
-	out = append(out, 0x01, byte(len(e.keyID)))
+	// keyID length is guarded above (<= 255), so the conversion cannot
+	// overflow.
+	out = append(out, 0x01, byte(len(e.keyID))) //nolint:gosec // guarded by len check above
 	out = append(out, e.keyID...)
 
 	nonce := make([]byte, e.aead.NonceSize())
@@ -139,7 +141,8 @@ func (h *Argon2Hasher) Verify(phc, secret string) bool {
 	if err != nil {
 		return false
 	}
-	dk := argon2.IDKey([]byte(secret), salt, params.time, params.memory, params.threads, uint32(len(want)))
+	// len(want) is bounded by the decoded PHC hash (well under 2^31).
+	dk := argon2.IDKey([]byte(secret), salt, params.time, params.memory, params.threads, uint32(len(want))) //nolint:gosec // bounded input
 	return len(dk) == len(want) &&
 		subtle.ConstantTimeCompare(dk, want) == 1
 }

@@ -57,12 +57,14 @@ func healthcheck(addr string) int {
 		addr = "localhost" + addr
 	}
 	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get("http://" + addr + "/healthz")
+	// addr is operator-controlled (ENV or localhost default), never
+	// request-derived input — no SSRF taint in practice.
+	resp, err := client.Get("http://" + addr + "/healthz") //nolint:gosec // operator-controlled address
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "healthcheck failed: "+err.Error())
 		return 1
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		fmt.Fprintf(os.Stderr, "healthcheck failed: status %d\n", resp.StatusCode)
 		return 1
@@ -87,7 +89,11 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer store.Close()
+	defer func() {
+		if err := store.Close(); err != nil {
+			logger.Warn("store close", "error", err)
+		}
+	}()
 
 	// Resolve the envelope master key (ENV PROXYLLM_MASTER_KEY over
 	// keyfile; generated 0600 on first start) and attach the envelope to

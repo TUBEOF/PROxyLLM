@@ -17,7 +17,7 @@ func TestOpen_MigrationsApplied(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	var count int
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
@@ -32,7 +32,8 @@ func TestOpen_MigrationsApplied(t *testing.T) {
 		"config", "providers", "provider_tokens", "models", "routing_rules",
 		"client_keys", "webui_admins", "request_logs", "usage_daily",
 	} {
-		if _, err := s.db.Exec("SELECT 1 FROM " + table + " WHERE 1=0"); err != nil {
+		// table comes from the fixed list above, not user input.
+		if _, err := s.db.Exec("SELECT 1 FROM " + table + " WHERE 1=0"); err != nil { //nolint:gosec // fixed test list
 			t.Errorf("table %s not queryable: %v", table, err)
 		}
 	}
@@ -45,14 +46,16 @@ func TestOpen_MigrationsRunExactlyOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Open: %v", err)
 	}
-	s.Close()
+	if err := s.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
 
 	// Reopen: migrations must not re-run or duplicate.
 	s2, err := Open(cfg)
 	if err != nil {
 		t.Fatalf("second Open: %v", err)
 	}
-	defer s2.Close()
+	defer func() { _ = s2.Close() }()
 
 	var count int
 	if err := s2.db.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&count); err != nil {
@@ -69,7 +72,7 @@ func TestOpen_WALAndForeignKeys(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	var journalMode string
 	if err := s.db.QueryRow(`PRAGMA journal_mode`).Scan(&journalMode); err != nil {
@@ -94,7 +97,7 @@ func TestOpen_SingleConnection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	// Enforced via SetMaxOpenConns(1) against SQLITE_BUSY per ADR-003.
 	if s.db.Stats().MaxOpenConnections != 1 {
 		t.Errorf("MaxOpenConnections: got %d want 1", s.db.Stats().MaxOpenConnections)
@@ -107,7 +110,7 @@ func TestCRUD_ProviderAndModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	if _, err := s.db.Exec(`INSERT INTO providers (id, type, name) VALUES ('p1', 'ollama', 'Ollama Cloud')`); err != nil {
 		t.Fatalf("insert provider: %v", err)
