@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 
 	"github.com/proxyllm/proxyllm/internal/config"
 	_ "modernc.org/sqlite" // registers the "sqlite" driver (CGO-free)
@@ -18,7 +19,7 @@ import (
 // Store wraps the SQLite database handle and provides typed accessors.
 type Store struct {
 	db       *sql.DB
-	envelope *Envelope
+	envelope atomic.Pointer[Envelope]
 }
 
 // Open creates the SQLite store: pragmas applied per connection via DSN
@@ -59,24 +60,19 @@ func Open(cfg config.StorageConfig) (*Store, error) {
 	return s, nil
 }
 
-// Envelope returns the secret envelope, or nil if none was set.
+// Envelope returns the secret envelope, or nil if none was set. Safe for
+// concurrent use with SetEnvelope (e.g. future hot key rotation).
 func (s *Store) Envelope() *Envelope {
-	return s.envelope
+	return s.envelope.Load()
 }
 
 // SetEnvelope attaches the secret envelope. Called by main after master
 // key resolution; secret-column accessors require it.
 func (s *Store) SetEnvelope(e *Envelope) {
-	s.envelope = e
+	s.envelope.Store(e)
 }
 
 // Close releases the database handle.
 func (s *Store) Close() error {
 	return s.db.Close()
-}
-
-// DB exposes the underlying handle for typed accessors (use sparingly; add
-// methods instead).
-func (s *Store) DB() *sql.DB {
-	return s.db
 }

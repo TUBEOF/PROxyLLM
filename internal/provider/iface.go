@@ -51,13 +51,20 @@ type Capabilities struct {
 	Thinking bool
 }
 
-// Registry resolves provider IDs to implementations.
+// Registry resolves provider IDs to implementations. Register is part of
+// the interface so provider implementations can self-register from any
+// package — adding a provider type must never require changes to routing
+// or the API surfaces.
 type Registry interface {
 	// Get returns the provider registered under id.
 	Get(id string) (Provider, bool)
 
 	// List returns all registered providers.
 	List() []Provider
+
+	// Register adds a provider to the registry. Registering a duplicate
+	// ID is a programming error and panics.
+	Register(p Provider)
 }
 
 // NewRegistry returns the default registry with no providers registered.

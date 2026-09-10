@@ -11,9 +11,12 @@ services:
       - ./data:/data
     environment:
       PROXYLLM_SERVER_ADDR: ":8080"
-    # Phase 0: read-only rootfs can be enabled once all runtime writes
-    # target /data. Uncomment after verification.
-    # read_only: true
+    # ADR-007 control 6: read-only rootfs — /data (bind mount) is the only
+    # writable path; /tmp is a size-capped tmpfs for runtime scratch.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid
+    pids_limit: 100
     security_opt:
       - no-new-privileges:true
     cap_drop:

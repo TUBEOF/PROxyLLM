@@ -37,6 +37,13 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
 		os.Exit(healthcheck(os.Getenv("PROXYLLM_HEALTHCHECK_ADDR")))
 	}
+	// Install the redacting handler on the DEFAULT logger before run() so
+	// fatal errors from early startup (config load, logger init, storage
+	// open, master key resolution) cannot bypass redaction — ADR-007
+	// control 3: no log call site reaches stderr unredacted. Level/format
+	// configuration is re-applied inside run().
+	slog.SetDefault(slog.New(observability.NewRedactingHandler(
+		slog.NewJSONHandler(os.Stdout, nil), observability.NewRedactor())))
 	if err := run(); err != nil {
 		slog.Default().Error("fatal", "error", err)
 		os.Exit(1)
@@ -45,8 +52,10 @@ func main() {
 
 // healthcheck performs an HTTP GET against /healthz. The target address
 // is PROXYLLM_HEALTHCHECK_ADDR if set, else the server bind
-// PROXYLLM_SERVER_ADDR, else the default :8080.
+// PROXYLLM_SERVER_ADDR, else the default :8080. All output is redacted
+// like every other log call site (ADR-007 control 3).
 func healthcheck(addr string) int {
+	red := observability.NewRedactor()
 	if addr == "" {
 		addr = os.Getenv("PROXYLLM_SERVER_ADDR")
 	}
@@ -61,7 +70,7 @@ func healthcheck(addr string) int {
 	// request-derived input — no SSRF taint in practice.
 	resp, err := client.Get("http://" + addr + "/healthz") //nolint:gosec // operator-controlled address
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "healthcheck failed: "+err.Error())
+		fmt.Fprintln(os.Stderr, red.Redact("healthcheck failed: "+err.Error()))
 		return 1
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -84,6 +93,12 @@ func run() error {
 		return err
 	}
 	slog.SetDefault(logger)
+
+	// ADR-007 control 1: auth opt-out must never be silent.
+	if cfg.Auth.Disabled {
+		logger.Warn("AUTH DISABLED — API surfaces accept unauthenticated requests; " +
+			"set PROXYLLM_AUTH_DISABLED=0 (or unset) to re-enable")
+	}
 
 	store, err := storage.Open(cfg.Storage)
 	if err != nil {

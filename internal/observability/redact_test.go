@@ -130,3 +130,101 @@ func TestRedact_MultipleSecretsOneLine(t *testing.T) {
 		}
 	}
 }
+
+// TestRedact_UnprefixedCredentialHeaders pins coverage for raw API keys in
+// credential-header positions that carry no recognized sk-/fc-/pk_ prefix
+// (Phase 0 review finding: these previously survived redaction).
+func TestRedact_UnprefixedCredentialHeaders(t *testing.T) {
+	r := NewRedactor()
+	cases := []string{
+		"x-api-key: 9f8e7d6c5b4a3210abcdef1234567890",
+		"x-api-key: 0123456789abcdef0123456789abcdef",
+		"x-auth-token: 0123456789abcdef0123456789abcdef",
+		"api-key: 0123456789abcdef0123456789abcdef",
+		"authorization: Token 0123456789abcdef0123456789abcdef",
+		"authorization: Basic dXNlcjpwYXNzd29yZAo=",
+	}
+	for _, in := range cases {
+		got := r.Redact(in)
+		for _, secret := range []string{"9f8e7d6c5b4a3210abcdef1234567890", "0123456789abcdef0123456789abcdef", "dXNlcjpwYXNzd29yZAo="} {
+			if strings.Contains(got, secret) {
+				t.Errorf("unprefixed header secret survived: in=%q got=%q", in, got)
+			}
+		}
+	}
+}
+
+// TestRedact_AWSKeys pins masking of AWS-style access key IDs.
+func TestRedact_AWSKeys(t *testing.T) {
+	r := NewRedactor()
+	// AKIAIOSFODNN7EXAMPLE is AWS's public documentation example key, not
+	// a real credential — the canonical adversarial redaction input.
+	in := "upstream config uses AKIAIOSFODNN7EXAMPLE and secret key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" //nolint:gosec // documentation example key
+	got := r.Redact(in)
+	if strings.Contains(got, "AKIAIOSFODNN7EXAMPLE") {
+		t.Errorf("AWS access key survived: %q", got)
+	}
+	// The paired secret access key must be masked too — a test asserting
+	// only the key ID would mask this gap (re-review finding, 2026-09-10).
+	if strings.Contains(got, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY") {
+		t.Errorf("AWS secret access key survived: %q", got)
+	}
+}
+
+// TestRedact_SecretKeyContext pins free-text "secret key <value>" masking
+// while prose about secret keys survives untouched.
+func TestRedact_SecretKeyContext(t *testing.T) {
+	r := NewRedactor()
+	// wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY is AWS's public
+	// documentation example secret — not a real credential.
+	in := "secret key wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY rejected"
+	got := r.Redact(in)
+	if strings.Contains(got, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY") {
+		t.Errorf("secret key value survived: %q", got)
+	}
+	// Prose must not be mangled — no long credential-shaped value here.
+	for _, benign := range []string{
+		"secret key rotation scheduled for tonight",
+		"the secret key is missing in the provider config",
+	} {
+		if got := r.Redact(benign); got != benign {
+			t.Errorf("benign prose mangled: in=%q got=%q", benign, got)
+		}
+	}
+}
+
+// TestRedact_JSONKeyValueSecret pins masking of secrets inside JSON string
+// values (error bodies, config dumps) — not just URL query form.
+func TestRedact_JSONKeyValueSecret(t *testing.T) {
+	r := NewRedactor()
+	cases := []string{
+		`{"api_key": "raw_9f8e7d6c5b4a3210"}`,
+		`{"api_key":"raw_9f8e7d6c5b4a3210"}`,
+		`{"error":{"message":"invalid secret wJalrXUtnFEMI/K7MDENG/bPx","token":"0123456789abcdef0123456789abcdef"}}`,
+		`{"password": "hunter2hunter2hunter2"}`,
+		`{"credential": "0123456789abcdef0123456789abcdef"}`,
+	}
+	for _, in := range cases {
+		got := r.Redact(in)
+		for _, secret := range []string{"raw_9f8e7d6c5b4a3210", "0123456789abcdef0123456789abcdef", "hunter2hunter2hunter2"} {
+			if strings.Contains(got, secret) {
+				t.Errorf("JSON secret survived: in=%q got=%q", in, got)
+			}
+		}
+	}
+}
+
+// TestRedact_Base64Boundary pins the bigBlob threshold: content below 256
+// chars survives, oversized blobs are masked.
+func TestRedact_Base64Boundary(t *testing.T) {
+	r := NewRedactor()
+	short := strings.Repeat("QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVox", 2) // 68 chars
+	if got := r.Redact("payload: " + short); got != "payload: "+short {
+		t.Errorf("benign 68-char base64 mangled: %q", got)
+	}
+	long := strings.Repeat("QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVox", 10) // 340 chars
+	got := r.Redact("payload: " + long)
+	if strings.Contains(got, long) {
+		t.Errorf("340-char base64 blob survived: %q", got)
+	}
+}

@@ -23,6 +23,18 @@ type redactor struct{}
 var (
 	// Bearer tokens: "Bearer <token>" — mask the token, keep "Bearer".
 	bearerRe = regexp.MustCompile(`(?i)\b(bearer)\s+[A-Za-z0-9\-._~+/]{8,}`)
+	// Credential-header values: x-api-key, x-auth-token, api-key,
+	// authorization — including an optional scheme word (Token, Basic,
+	// Digest, …; Bearer is handled by bearerRe). Anchored to the header
+	// name so unprefixed prose survives.
+	credHeaderRe = regexp.MustCompile(`(?i)\b(x-api-key|x-auth-token|api-key|authorization)\s*[:=]\s*['"]?(?:(?:token|basic|digest|apikey)\s+)?([A-Za-z0-9\-._~+/=]{16,})`)
+	// AWS-style access key IDs (AKIA/ASIA + 16 uppercase alphanumerics).
+	awsKeyRe = regexp.MustCompile(`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`)
+	// Credential values in explicit "secret (key)" context — e.g. AWS
+	// secret access keys (40-char base64 with /+) reported by upstream
+	// SDKs or config dumps. Anchored to the context word; the 16-char
+	// floor keeps prose like "secret key rotation" untouched.
+	secretKeyRe = regexp.MustCompile(`(?i)\bsecret(?:[_ ]?key)?\s*[:=]?\s*["']?([A-Za-z0-9/+._~=-]{16,})`)
 	// sk- keys (OpenAI-style): length floor avoids prose false positives.
 	skRe = regexp.MustCompile(`\bsk-[A-Za-z0-9\-_]{12,}\b`)
 	// fc- keys (Firecrawl-style).
@@ -33,6 +45,8 @@ var (
 	jwtRe = regexp.MustCompile(`\beyJ[A-Za-z0-9\-_]{18,}\.[A-Za-z0-9\-_]{18,}\.[A-Za-z0-9\-_]{18,}\b`)
 	// Generic key/token query params in URLs.
 	urlTokenRe = regexp.MustCompile(`(?i)(api_key|token|key|secret)=([A-Za-z0-9\-._~+/]{8,})`)
+	// JSON-form key/value pairs: "api_key": "value", "secret": "value", …
+	jsonSecretRe = regexp.MustCompile(`(?i)["'](api_?key|access_?key|secret|token|password|credential)["']\s*:\s*["']([^"']{16,})["']`)
 	// Oversized base64-ish blobs (>= 256 chars) — likely key/cert/image
 	// material that should not appear in logs verbatim.
 	bigBlobRe = regexp.MustCompile(`[A-Za-z0-9+/]{256,}={0,2}`)
@@ -60,11 +74,27 @@ func (*redactor) Redact(value string) string {
 		return scheme + " " + maskFor("bearer")
 	})
 
+	// Credential headers: keep the header name, mask the value.
+	value = credHeaderRe.ReplaceAllStringFunc(value, func(m string) string {
+		idx := strings.IndexAny(m, ":=")
+		if idx < 0 {
+			return maskFor("header")
+		}
+		name := strings.TrimRight(m[:idx], " \t\"'")
+		return name + "=" + maskFor("header")
+	})
+
+	value = awsKeyRe.ReplaceAllString(value, maskFor("aws"))
+	// "secret key <value>" context: keep the context words, mask the value.
+	value = secretKeyRe.ReplaceAllString(value, "secret key "+maskFor("secret"))
 	value = skRe.ReplaceAllString(value, maskFor("sk"))
 	value = fcRe.ReplaceAllString(value, maskFor("fc"))
 	value = pkRe.ReplaceAllString(value, maskFor("pk"))
 	value = jwtRe.ReplaceAllString(value, maskFor("jwt"))
 	value = bigBlobRe.ReplaceAllString(value, maskFor("blob"))
+
+	// JSON key/value secrets: keep the key name, mask the value.
+	value = jsonSecretRe.ReplaceAllString(value, `$1`+": "+maskFor("secret"))
 
 	// URL query secrets last so Bearer/key masking does not race with
 	// query-param capture.

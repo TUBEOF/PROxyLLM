@@ -79,10 +79,31 @@ func TestEnvelope_InvalidKeySize(t *testing.T) {
 func TestEnvelope_TruncatedInput(t *testing.T) {
 	key := bytes.Repeat([]byte{0x42}, 32)
 	e, _ := NewEnvelope(key)
+	// Header-prefixed garbage: a valid version byte (0x01) followed by
+	// truncated/random bytes must fail — never silently "decrypt".
+	header := []byte{0x01, 0x00} // version 1, key_id length 0
 	for _, n := range []int{0, 1, 5, 12, 16, 28} {
-		if _, err := e.Open(bytes.Repeat([]byte{0}, n)); err == nil {
-			t.Errorf("truncated envelope (%d bytes) must fail", n)
+		if _, err := e.Open(append(header, bytes.Repeat([]byte{0xA5}, n)...)); err == nil {
+			t.Errorf("truncated envelope (%d body bytes) must fail", n)
 		}
+	}
+	// All-zero envelopes (version 0x00) must fail the version check.
+	for _, n := range []int{2, 5, 30, 64} {
+		if _, err := e.Open(bytes.Repeat([]byte{0}, n)); err == nil {
+			t.Errorf("zero envelope (%d bytes) must fail", n)
+		}
+	}
+}
+
+func TestEnvelope_UnknownVersionRejected(t *testing.T) {
+	key := bytes.Repeat([]byte{0x42}, 32)
+	e, _ := NewEnvelope(key)
+	sealed, _ := e.Seal([]byte("secret"))
+	// Flip version byte on a well-formed envelope: 0x02 must be rejected
+	// without touching the body.
+	sealed[0] = 0x02
+	if _, err := e.Open(sealed); err == nil {
+		t.Error("envelope with version 0x02 must be rejected")
 	}
 }
 
@@ -128,6 +149,50 @@ func TestArgon2_VerifyMalformed(t *testing.T) {
 	for _, bad := range []string{"", "not-a-phc-string", "$argon2id$v=19$m=65536,t=3,p=4$", "$argon2i$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA"} {
 		if h.Verify(bad, "pw") {
 			t.Errorf("malformed PHC string %q must not verify", bad)
+		}
+	}
+}
+
+// TestArgon2_BelowOWASPRejected pins the security gate: a well-formed PHC
+// string whose parameters fall below the OWASP minimum (m=19 MiB, t=2,
+// p=1) must never verify — otherwise a swapped DB row could silently
+// downgrade credential checking to cheap-to-attack parameters.
+func TestArgon2_BelowOWASPRejected(t *testing.T) {
+	h := NewArgon2Hasher()
+	// Correct algorithm, 6 parts, valid version — only the parameters are
+	// below minimum. Each variant degrades exactly one knob.
+	cases := []string{
+		"$argon2id$v=19$m=19455,t=2,p=1$c2FsdA$aGFzaA", // m below 19 MiB
+		"$argon2id$v=19$m=1024,t=2,p=1$c2FsdA$aGFzaA",  // far below
+		"$argon2id$v=19$m=19456,t=1,p=1$c2FsdA$aGFzaA", // t below 2
+		"$argon2id$v=19$m=19456,t=2,p=0$c2FsdA$aGFzaA", // p below 1
+		"$argon2id$v=19$m=1024,t=1,p=1$c2FsdA$aGFzaA",  // all below
+		"$argon2d$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA",  // weaker variant
+	}
+	for _, phc := range cases {
+		if h.Verify(phc, "pw") {
+			t.Errorf("below-OWASP PHC %q must not verify", phc)
+		}
+	}
+}
+
+// TestArgon2_ParameterOverflowRejected pins the parse robustness: negative
+// or overflowing parameter tokens must be rejected by the parser itself
+// (fmt.Sscanf rejects them — "expected integer" / "unsigned integer
+// overflow") — never interpreted as huge values that could OOM Verify.
+func TestArgon2_ParameterOverflowRejected(t *testing.T) {
+	h := NewArgon2Hasher()
+	cases := []string{
+		"$argon2id$v=19$m=-1,t=2,p=1$c2FsdA$aGFzaA",
+		"$argon2id$v=19$m=99999999999,t=2,p=1$c2FsdA$aGFzaA",
+		"$argon2id$v=19$m=19456,t=-5,p=1$c2FsdA$aGFzaA",
+		"$argon2id$v=19$m=19456,t=2,p=-1$c2FsdA$aGFzaA",
+		// Parseable but absurd (m=2 GiB) — rejected by the sanity ceiling.
+		"$argon2id$v=19$m=2097152,t=2,p=1$c2FsdA$aGFzaA",
+	}
+	for _, phc := range cases {
+		if h.Verify(phc, "pw") {
+			t.Errorf("overflow/absurd parameter PHC %q must not verify", phc)
 		}
 	}
 }

@@ -17,11 +17,12 @@ import (
 
 // Envelope provides AES-256-GCM sealing/opening for secrets at rest.
 //
-// Wire format (versioned, supports key rotation via key_id):
+// Wire format (versioned; key_id field reserved for rotation):
 //
 //	[0]      envelope version (1 byte, currently 0x01)
-//	[1]      key_id length (1 byte; 0 = default key)
-//	[2:2+k]  key_id (rotation marker)
+//	[1]      key_id length (1 byte; always 0 in v1 — reserved so rotation
+//	         can be added without a format change)
+//	[2:2+k]  key_id (skipped on open; empty in v1)
 //	[..12]   fresh random 96-bit nonce — generated per encryption; nonce
 //	         reuse breaks GCM (verified best practice, accessed 2026-09-10)
 //	[..+16]  GCM authentication tag
@@ -30,13 +31,10 @@ import (
 // The stored value is a self-describing envelope: same plaintext encrypts
 // to different ciphertext every time; the key never lives beside the data.
 type Envelope struct {
-	aead  cipher.AEAD
-	keyID []byte
+	aead cipher.AEAD
 }
 
 // NewEnvelope constructs the AES-256-GCM envelope from a 32-byte key.
-// The wire format reserves a key_id field (written as length 0 for the
-// default key) so rotation can be added without a format change.
 func NewEnvelope(key []byte) (*Envelope, error) {
 	if len(key) != 32 {
 		return nil, errors.New("storage: envelope key must be 32 bytes (AES-256)")
@@ -54,14 +52,9 @@ func NewEnvelope(key []byte) (*Envelope, error) {
 
 // Seal encrypts plaintext with a fresh random nonce.
 func (e *Envelope) Seal(plaintext []byte) ([]byte, error) {
-	if len(e.keyID) > 255 {
-		return nil, errors.New("storage: key_id too long")
-	}
-	out := make([]byte, 0, 2+len(e.keyID)+e.aead.NonceSize()+len(plaintext)+e.aead.Overhead())
-	// keyID length is guarded above (<= 255), so the conversion cannot
-	// overflow.
-	out = append(out, 0x01, byte(len(e.keyID))) //nolint:gosec // guarded by len check above
-	out = append(out, e.keyID...)
+	out := make([]byte, 0, 2+e.aead.NonceSize()+len(plaintext)+e.aead.Overhead())
+	// Version 0x01, key_id length 0 (reserved for rotation; see type doc).
+	out = append(out, 0x01, 0x00)
 
 	nonce := make([]byte, e.aead.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
@@ -83,6 +76,9 @@ func (e *Envelope) Open(envelope []byte) ([]byte, error) {
 	if len(envelope) < 2+k {
 		return nil, errors.New("storage: envelope key_id truncated")
 	}
+	// key_id is reserved for rotation (always 0 in v1); skipped without
+	// interpretation. When rotation lands, the resolver maps key_id to the
+	// correct key before decryption.
 	body := envelope[2+k:]
 	if len(body) < e.aead.NonceSize()+e.aead.Overhead() {
 		return nil, errors.New("storage: envelope body truncated")
@@ -172,6 +168,12 @@ func parsePHC(phc string) (phcParams, []byte, []byte, error) {
 	if p.memory < 19*1024 || p.time < 2 || p.threads < 1 {
 		// Reject below-OWASP parameter sets rather than silently verify.
 		return phcParams{}, nil, nil, errors.New("storage: parameters below OWASP minimum")
+	}
+	// Reject absurd values (e.g. m=4 GiB) that parse fine but would OOM
+	// the process during verification; 1 GiB is far above any legitimate
+	// configured cost and still allows future parameter increases.
+	if p.memory > 1024*1024 {
+		return phcParams{}, nil, nil, errors.New("storage: parameters exceed sanity ceiling")
 	}
 	salt, err := phcB64.DecodeString(parts[4])
 	if err != nil || len(salt) == 0 {

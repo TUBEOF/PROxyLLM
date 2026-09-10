@@ -66,23 +66,34 @@ func LoadMasterKey(envValue string, envSet bool, path string) ([]byte, error) {
 	}
 }
 
-// decodeMasterKey accepts hex or base64 (standard or URL), 32 bytes after
-// decoding. A trailing newline is tolerated.
+// decodeMasterKey accepts a 32-byte master key encoded as hex (exactly
+// 64 characters) or base64/base64url (exactly 44 characters, padded).
+// The length dispatch removes the hex/base64 ambiguity: a 64-character
+// string is unambiguously hex, a 44-character one unambiguously base64,
+// so an operator's intended encoding can never be silently mis-decoded
+// into a different key. A trailing newline is tolerated.
 func decodeMasterKey(raw string) ([]byte, error) {
 	s := strings.TrimSpace(raw)
-	key, hexErr := hex.DecodeString(s)
-	if hexErr == nil {
+	switch len(s) {
+	case 64: // 32 bytes as hex
+		key, err := hex.DecodeString(s)
+		if err != nil {
+			return nil, fmt.Errorf("storage: master key: 64-char value is not valid hex: %w", err)
+		}
 		return checkKeyLen(key, "hex")
+	case 44: // 32 bytes as padded base64 or base64url
+		key, err := base64.StdEncoding.DecodeString(s)
+		if err == nil {
+			return checkKeyLen(key, "base64")
+		}
+		key, err = base64.URLEncoding.DecodeString(s)
+		if err == nil {
+			return checkKeyLen(key, "base64url")
+		}
+		return nil, fmt.Errorf("storage: master key: 44-char value is not valid base64")
+	default:
+		return nil, fmt.Errorf("storage: master key must be 64 hex chars or 44 base64 chars (got %d)", len(s))
 	}
-	key, b64Err := base64.StdEncoding.DecodeString(s)
-	if b64Err == nil {
-		return checkKeyLen(key, "base64")
-	}
-	key, urlErr := base64.URLEncoding.DecodeString(s)
-	if urlErr == nil {
-		return checkKeyLen(key, "base64url")
-	}
-	return nil, fmt.Errorf("storage: master key is neither valid hex nor base64")
 }
 
 func checkKeyLen(key []byte, via string) ([]byte, error) {
