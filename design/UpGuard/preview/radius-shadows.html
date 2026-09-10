@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Radius & shadows — UpGuard Clone DS</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  @font-face{font-family:Inter;font-display:swap;font-weight:1 1000;src:url(../fonts/inter-latin-wght-normal.woff2) format("woff2")}
+  @font-face{font-family:"Plus Jakarta Sans";font-display:swap;font-weight:200 800;src:url(../fonts/plus-jakarta-sans-latin-wght-normal.woff2) format("woff2")}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);padding:48px 24px}
+  .wrap{max-width:920px;margin:0 auto}
+  h1{font-family:var(--font-display);font-size:28px;font-weight:600;margin:0 0 8px}
+  p.sub{color:var(--muted);margin:0 0 32px;max-width:60ch}
+  .sect{font-family:var(--font-display);font-size:18px;font-weight:600;margin:40px 0 14px;color:var(--neutral-200)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:18px}
+  .demo{background:var(--surface);border:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:10px;padding:24px 16px}
+  .r{background:var(--primary-500);width:72px;height:72px}
+  .r-sm{border-radius:var(--radius-sm)}.r-md{border-radius:var(--radius-md)}
+  .r-lg{border-radius:var(--radius-lg)}.r-full{border-radius:var(--radius-full);width:56px;height:56px}
+  .demo .name{font-family:var(--font-mono);font-size:12px;color:var(--accent)}
+  .demo small{font-family:var(--font-mono);font-size:10px;color:var(--muted)}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;backdrop-filter:blur(10px);transition:border-color var(--transition-card),box-shadow var(--transition-card),transform var(--transition-card)}
+  .card:hover{border-color:var(--primary-500);transform:translateY(-2px);box-shadow:var(--shadow-card-hover)}
+  .btn{height:36px;padding:0 24px;border-radius:2rem;border:1px solid var(--neutral-600);background:var(--gradient-primary);color:var(--neutral-900);font-family:var(--font-body);font-size:14px;font-weight:600;box-shadow:var(--shadow-btn-primary);transition:all .3s ease-out;cursor:pointer}
+  .btn:hover{background:var(--gradient-primary-hover);box-shadow:var(--shadow-btn-hover)}
+  .icon-circle{width:56px;height:56px;border-radius:var(--radius-full);background:var(--accent-dim);display:flex;align-items:center;justify-content:center;color:var(--primary-500);filter:var(--shadow-icon-glow)}
+  .card:hover .icon-circle{filter:var(--shadow-icon-glow-hover)}
+  .glass{background:var(--gradient-nav-glass);backdrop-filter:blur(2.5px);box-shadow:var(--shadow-glass);border:1px solid var(--border);border-radius:var(--radius-md);padding:20px;color:var(--fg)}
+</style>
+</head>
+<body>
+<div class="wrap" data-od-id="preview-radius-shadows">
+  <h1>Radius & shadows</h1>
+  <p class="sub">Radius and elevation are bound to the tokens in <code>colors_and_type.css</code>. The green-glow card hover is the signature depth cue.</p>
+
+  <div class="sect">Radius</div>
+  <div class="grid">
+    <div class="demo"><div class="r r-sm"></div><span class="name">radius-sm</span><small>0.375rem · 6px</small></div>
+    <div class="demo"><div class="r r-md"></div><span class="name">radius-md</span><small>0.5rem · 8px</small></div>
+    <div class="demo"><div class="r r-lg"></div><span class="name">radius-lg</span><small>0.75rem · 12px</small></div>
+    <div class="demo"><div class="r r-full"></div><span class="name">radius-full</span><small>9999px · pill</small></div>
+  </div>
+
+  <div class="sect">Glass card + green-glow hover</div>
+  <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(240px,1fr))">
+    <div class="card" data-od-id="radius-shadows-monitoring-card">
+      <div class="icon-circle"><svg width="28" height="24" viewBox="0 0 40 33"><use href="#"/></svg>
+        <svg width="28" height="24" viewBox="0 0 40 33" fill="none"><path d="M36.8 30.9H3.2C1.4 30.9 0 29.5 0 27.7V3.2C0 1.4 1.4 0 3.2 0h33.6C38.6 0 40 1.4 40 3.2v24.5c0 1.8-1.4 3.2-3.2 3.2z" fill="currentColor"/></svg>
+      </div>
+      <h3 style="font-family:var(--font-display);font-size:18px;font-weight:600;margin:16px 0 6px">Website monitoring</h3>
+      <p style="color:var(--muted);font-size:14px;margin:0">Hover me — border turns green, card lifts, icon glows.</p>
+    </div>
+  </div>
+
+  <div class="sect">Primary button (gradient + glow)</div>
+  <button class="btn" data-od-id="radius-shadows-primary-btn">Start monitoring for free</button>
+
+  <div class="sect">Nav glass surface</div>
+  <div class="glass">Sticky nav: <code>backdrop-filter: blur(2.5px)</code> over the charcoal gradient, with an inset white highlight.</div>
+</div>
+</body>
+</html>

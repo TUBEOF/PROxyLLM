@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard Kit — Auswahl-Controls</title>
+<link rel="stylesheet" href="../../../colors_and_type.css">
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .pad{padding:40px 24px;max-width:760px;margin:0 auto}
+  .pad h1{font-family:var(--font-display);font-size:24px;font-weight:600;margin:0 0 6px}
+  .pad .lead{color:var(--muted);font-size:14px;margin:0 0 28px}
+  .blk{margin-bottom:30px}
+  .blk h2{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--widget-head);margin:0 0 12px}
+  .row{display:flex;flex-direction:column;gap:12px}
+  .inline{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+  .card-surface{border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);backdrop-filter:blur(var(--blur-card));padding:24px}
+</style>
+</head>
+<body data-od-id="comp-controls">
+
+<svg class="dash-icons" aria-hidden="true">
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<div class="pad">
+  <h1>Auswahl-Controls</h1>
+  <p class="lead">Eckige Checkboxen mit SVG-Checkmark, Indeterminate-Zustand, Toggle-Switches, Radio und Radio-Pills. Keine Emoji, kein zweiter Akzent.</p>
+
+  <div class="blk card-surface" data-od-id="controls-checkbox">
+    <h2>Checkboxen</h2>
+    <div class="row">
+      <label class="check"><input type="checkbox" checked><span class="cbox"><svg width="12" height="12"><use href="#i-check"/></svg></span> E-Mail-Alarme aktivieren</label>
+      <label class="check"><input type="checkbox"><span class="cbox"><svg width="12" height="12"><use href="#i-check"/></svg></span> SLA-Bericht wöchentlich senden</label>
+      <label class="check"><input type="checkbox" id="ind-cb"><span class="cbox"><svg width="12" height="12"><use href="#i-check"/></svg></span> AlleNotifications (Indeterminate)</label>
+      <label class="check disabled"><input type="checkbox" disabled><span class="cbox"><svg width="12" height="12"><use href="#i-check"/></svg></span> Gesperrte Option</label>
+    </div>
+  </div>
+
+  <div class="blk card-surface" data-od-id="controls-toggle">
+    <h2>Toggle-Switches</h2>
+    <div class="row">
+      <label class="toggle"><input type="checkbox" checked><span class="tswitch"></span> Wartungsmodus</label>
+      <label class="toggle"><input type="checkbox"><span class="tswitch"></span> Öffentliche Statusseite</label>
+      <label class="toggle"><input type="checkbox" checked><span class="tswitch"></span> 2FA erzwingen</label>
+    </div>
+  </div>
+
+  <div class="blk card-surface" data-od-id="controls-radio">
+    <h2>Radio-Gruppe</h2>
+    <div class="row">
+      <label class="radio"><input type="radio" name="sev" checked><span class="rdot"></span> Niedrige Priorität</label>
+      <label class="radio"><input type="radio" name="sev"><span class="rdot"></span> Mittlere Priorität</label>
+      <label class="radio"><input type="radio" name="sev"><span class="rdot"></span> Hohe Priorität</label>
+    </div>
+  </div>
+
+  <div class="blk card-surface" data-od-id="controls-pills">
+    <h2>Radio-Pills (Segmented)</h2>
+    <div class="rpills" role="radiogroup" aria-label="Zeitraum">
+      <label class="rpill"><input type="radio" name="rp"><span>24 Std.</span></label>
+      <label class="rpill"><input type="radio" name="rp" checked><span>7 Tage</span></label>
+      <label class="rpill"><input type="radio" name="rp"><span>30 Tage</span></label>
+      <label class="rpill"><input type="radio" name="rp"><span>90 Tage</span></label>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Indeterminate state — demonstrates the CSS ::after bar without JS-only reliance.
+  document.getElementById('ind-cb').indeterminate = true;
+</script>
+
+</body>
+</html>

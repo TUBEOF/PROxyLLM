@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400" role="img" aria-label="Abstract mobile monitoring illustration">
+  <rect width="640" height="400" rx="16" fill="#111821"/>
+  <rect x="260" y="60" width="120" height="280" rx="20" fill="#131b25" stroke="#ffffff1a"/>
+  <rect x="290" y="80" width="60" height="10" rx="5" fill="#3bd671"/>
+  <g fill="#ffffff26">
+    <rect x="282" y="110" width="76" height="8" rx="4"/>
+    <rect x="282" y="130" width="56" height="8" rx="4"/>
+  </g>
+  <g fill="#3bd671">
+    <circle cx="292" cy="170" r="6"/><circle cx="292" cy="200" r="6"/><circle cx="292" cy="230" r="6"/>
+  </g>
+  <circle cx="292" cy="260" r="6" fill="#f59e0b"/>
+  <g fill="#ffffff26">
+    <rect x="308" y="164" width="56" height="8" rx="4"/>
+    <rect x="308" y="194" width="44" height="8" rx="4"/>
+    <rect x="308" y="224" width="60" height="8" rx="4"/>
+    <rect x="308" y="254" width="40" height="8" rx="4"/>
+  </g>
+</svg>

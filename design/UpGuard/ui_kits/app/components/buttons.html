@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Buttons · UpGuard UI Kit</title>
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .pad{padding:48px 24px;max-width:760px;margin:0 auto}
+  h1{font-family:var(--font-display);font-size:26px;font-weight:600;margin:0 0 6px}
+  p.sub{color:var(--muted);margin:0 0 36px}
+  .group{border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);padding:32px;margin-bottom:22px}
+  .group .label{font-family:var(--font-mono);font-size:11px;color:var(--accent);text-transform:uppercase;letter-spacing:.08em;margin-bottom:18px}
+  .row{display:flex;flex-wrap:wrap;align-items:center;gap:18px}
+  .note{color:var(--muted);font-size:13px;margin-top:14px;font-family:var(--font-mono)}
+</style>
+</head>
+<body>
+<div class="pad" data-od-id="kit-buttons">
+  <h1>Buttons</h1>
+  <p class="sub">Primary pill, ghost, round CTA, and dropdown trigger — all bound to kit.css.</p>
+
+  <div class="group">
+    <div class="label">Primary · ghost · link</div>
+    <div class="row">
+      <button class="btn btn-primary" data-od-id="kit-btn-primary">Get started free</button>
+      <button class="btn btn-ghost" data-od-id="kit-btn-ghost">Log in</button>
+      <a class="nav-link" href="#">Pricing</a>
+    </div>
+    <p class="note">primary: gradient(135deg, #3bd671 → #3fe077), dark text, green-glow hover</p>
+  </div>
+
+  <div class="group">
+    <div class="label">Round CTA · mobile menu</div>
+    <div class="row">
+      <button class="btn-round" data-od-id="kit-btn-round" aria-label="Go"><svg width="14" height="14" viewBox="0 0 17 17"><path d="M9.28 8L5.98 4.7l.94-.94L11.17 8l-4.25 4.24-.94-.94L9.28 8z" fill="currentColor"/></svg></button>
+      <button class="burger" data-od-id="kit-btn-burger" aria-label="Menu"><svg width="18" height="14" viewBox="0 0 18 14"><path d="M0 1h18M0 7h18M0 13h18" stroke="currentColor" stroke-width="2"/></svg></button>
+    </div>
+    <p class="note">round: border → green + tint on hover. burger: only on &lt;900px.</p>
+  </div>
+</div>
+</body>
+</html>

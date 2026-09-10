@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard Kit — Status-Boards</title>
+<link rel="stylesheet" href="../../../colors_and_type.css">
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .pad{padding:40px 24px;max-width:880px;margin:0 auto}
+  .pad h1{font-family:var(--font-display);font-size:24px;font-weight:600;margin:0 0 6px}
+  .pad .lead{color:var(--muted);font-size:14px;margin:0 0 28px}
+  .blk{margin-bottom:30px}
+  .blk h2{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--widget-head);margin:0 0 12px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .card-surface{border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);backdrop-filter:blur(var(--blur-card));padding:20px}
+  @media(max-width:640px){.grid2{grid-template-columns:1fr}}
+</style>
+</head>
+<body data-od-id="comp-status">
+
+<div class="pad">
+  <h1>Status-Boards</h1>
+  <p class="lead">Badges mit farbigem Punkt, pulsierender Status-Dot, Health-Score mit Ring und Status-Grid. Grün = Operational; Warn/Down sind abgeleitete Statusfarben.</p>
+
+  <div class="blk" data-od-id="status-badges">
+    <h2>Status-Badges</h2>
+    <div class="card-surface" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+      <span class="badge up"><span class="b-dot"></span>Operational</span>
+      <span class="badge warn"><span class="b-dot"></span>Degraded</span>
+      <span class="badge down"><span class="b-dot"></span>Down</span>
+      <span class="badge paused"><span class="b-dot"></span>Paused</span>
+      <span class="badge info"><span class="b-dot"></span>Info</span>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="blk" data-od-id="status-health">
+      <h2>Health-Score</h2>
+      <div class="card-surface">
+        <div class="health">
+          <svg class="health-ring" viewBox="0 0 84 84">
+            <circle cx="42" cy="42" r="36" fill="none" stroke="var(--neutral-800)" stroke-width="6"/>
+            <circle cx="42" cy="42" r="36" fill="none" stroke="var(--status-up)" stroke-width="6" stroke-linecap="round"
+              stroke-dasharray="226" stroke-dashoffset="9" transform="rotate(-90 42 42)"/>
+          </svg>
+          <div>
+            <div class="health-num" style="color:var(--status-up)">96</div>
+            <div class="health-lab">System-Health / 100</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="blk" data-od-id="status-dots">
+      <h2>Status-Dots (inline)</h2>
+      <div class="card-surface" style="display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;align-items:center;gap:10px;font-size:14px"><span class="status-dot up"></span> api.production.app — operational</div>
+        <div style="display:flex;align-items:center;gap:10px;font-size:14px"><span class="status-dot warn"></span> checkout-gateway — degraded</div>
+        <div style="display:flex;align-items:center;gap:10px;font-size:14px"><span class="status-dot down"></span> db-replica-eu — down</div>
+        <div style="display:flex;align-items:center;gap:10px;font-size:14px"><span class="status-dot paused"></span> cron-nightly-backup — paused</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="blk" data-od-id="status-grid">
+    <h2>Status-Grid — 24 Monitore</h2>
+    <div class="card-surface">
+      <div class="status-grid">
+        <div class="mini up" title="api.production.app"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+        <div class="mini warn"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+        <div class="mini down"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+        <div class="mini paused"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+        <div class="mini warn"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+        <div class="mini down"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+        <div class="mini paused"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+        <div class="mini warn"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+        <div class="mini up"><span class="mini-dot"></span></div>
+      </div>
+      <div style="display:flex;gap:16px;margin-top:16px;font-size:12px;color:var(--neutral-500);flex-wrap:wrap">
+        <span style="display:flex;align-items:center;gap:6px"><span class="status-dot up"></span> 19 Operational</span>
+        <span style="display:flex;align-items:center;gap:6px"><span class="status-dot warn"></span> 3 Degraded</span>
+        <span style="display:flex;align-items:center;gap:6px"><span class="status-dot down"></span> 2 Down</span>
+        <span style="display:flex;align-items:center;gap:6px"><span class="status-dot paused"></span> 2 Paused</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

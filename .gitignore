@@ -1,0 +1,35 @@
+# Build artifacts
+/proxyllm
+/proxyllm.exe
+/bin/
+/dist/
+
+# Test artifacts
+*.test
+*.out
+coverage.txt
+
+# Data & secrets — never commit
+/data/
+*.db
+*.db-shm
+*.db-wal
+*.key
+.env
+.env.*
+
+# Node / WebUI
+node_modules/
+webui/dist/
+webui/node_modules/
+
+# Go workspace
+go.work
+go.work.sum
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

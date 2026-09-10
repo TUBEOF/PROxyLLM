@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Preview — Tabellen & Controls</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="../ui_kits/dashboard/kit.css">
+<style>
+  .pad{padding:40px 24px;max-width:1080px;margin:0 auto}
+  .pad>h1{font-family:var(--font-display);font-size:22px;font-weight:600;margin:0 0 4px}
+  .pad>.lead{color:var(--muted);font-size:14px;margin:0 0 24px}
+  .blk{margin-bottom:24px}
+  .blk h2{font-family:var(--font-display);font-size:14px;font-weight:600;color:var(--widget-head);margin:0 0 10px}
+  .controls-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.controls-row{grid-template-columns:1fr}}
+  .panel{border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);backdrop-filter:blur(var(--blur-card));padding:18px}
+</style>
+</head>
+<body data-od-id="preview-dashboard-tables">
+
+<svg class="dash-icons" aria-hidden="true">
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="M8 9l4-4 4 4M8 15l4 4 4-4" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="19" cy="12" r="1.7" fill="currentColor"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4l11-11-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+</svg>
+
+<div class="pad">
+  <h1>Tabellen & Auswahl-Controls</h1>
+  <p class="lead">Vorschau-Karte — Data-Grid, Bulk-Auswahl, Pagination plus Checkboxen, Toggle, Radio und Pills. Alle auf Dashboard-Tokens gebaut.</p>
+
+  <div class="blk">
+    <h2>Monitore-Tabelle</h2>
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table class="table">
+          <thead><tr>
+            <th style="width:38px"><label class="check"><input type="checkbox"><span class="cbox"><svg width="12" height="12"><use href="#i-check"/></svg></span></label></th>
+            <th class="sort active">Name <svg class="sort-ic" width="12" height="12"><use href="#i-sort"/></svg></th>
+            <th>Typ</th><th>Status</th>
+            <th class="num">Uptime</th><th class="num">Antwortzeit</th><th class="num" style="width:96px">Aktion</th>
+          </tr></thead>
+          <tbody>
+            <tr><td><label class="check"><input type="checkbox" checked><span class="cbox"><svg width="12" height="12"><use href="#i-check"/></svg></span></label></td><td><span class="primary">api.production.app</span><div class="mono">HTTPS · 30s</div></td><td class="muted">Website</td><td><span class="badge up"><span class="b-dot"></span>Operational</span></td><td class="num">99.98%</td><td class="num">142 ms</td><td><div class="row-actions"><button class="btn-round" style="width:28px;height:28px"><svg width="14" height="14"><use href="#i-edit"/></svg></button></div></td></tr>
+            <tr><td><label class="check"><input type="checkbox"><span class="cbox"><svg width="12" height="12"><use href="#i-check"/></svg></span></label></td><td><span class="primary">checkout-gateway</span><div class="mono">Ping · 60s</div></td><td class="muted">Ping</td><td><span class="badge warn"><span class="b-dot"></span>Degraded</span></td><td class="num">99.42%</td><td class="num">511 ms</td><td><div class="row-actions"><button class="btn-round" style="width:28px;height:28px"><svg width="14" height="14"><use href="#i-edit"/></svg></button></div></td></tr>
+            <tr><td><label class="check"><input type="checkbox"><span class="cbox"><svg width="12" height="12"><use href="#i-check"/></svg></span></label></td><td><span class="primary">db-replica-eu</span><div class="mono">Port 5432 · 30s</div></td><td class="muted">Port</td><td><span class="badge down"><span class="b-dot"></span>Down</span></td><td class="num">98.10%</td><td class="num">—</td><td><div class="row-actions"><button class="btn-round" style="width:28px;height:28px"><svg width="14" height="14"><use href="#i-edit"/></svg></button></div></td></tr>
+            <tr><td><label class="check"><input type="checkbox"><span class="cbox"><svg width="12" height="12"><use href="#i-check"/></svg></span></label></td><td><span class="primary">cron-nightly-backup</span><div class="mono">Cron · 02:00</div></td><td class="muted">Cron</td><td><span class="badge paused"><span class="b-dot"></span>Paused</span></td><td class="num">99.97%</td><td class="num">—</td><td><div class="row-actions"><button class="btn-round" style="width:28px;height:28px"><svg width="14" height="14"><use href="#i-edit"/></svg></button></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination"><span class="pg-info">1–4 von 12</span><div class="pg-nav"><button class="btn-icon" style="width:32px;height:32px">‹</button><button class="btn-icon" style="width:32px;height:32px;color:var(--accent);border-color:var(--accent)">1</button><button class="btn-icon" style="width:32px;height:32px">2</button><button class="btn-icon" style="width:32px;height:32px">3</button><button class="btn-icon" style="width:32px;height:32px">›</button></div></div>
+    </div>
+  </div>
+
+  <div class="controls-row">
+    <div class="blk">
+      <h2>Checkboxen & Toggle</h2>
+      <div class="panel" style="display:flex;flex-direction:column;gap:14px">
+        <label class="check"><input type="checkbox" checked><span class="cbox"><svg width="12" height="12"><use href="#i-check"/></svg></span> E-Mail-Alarme</label>
+        <label class="check"><input type="checkbox" id="ind"><span class="cbox"><svg width="12" height="12"><use href="#i-check"/></svg></span> Alle (Indeterminate)</label>
+        <label class="toggle"><input type="checkbox" checked><span class="tswitch"></span> Wartungsmodus</label>
+        <label class="toggle"><input type="checkbox"><span class="tswitch"></span> Öffentliche Statusseite</label>
+      </div>
+    </div>
+    <div class="blk">
+      <h2>Radio & Pills</h2>
+      <div class="panel" style="display:flex;flex-direction:column;gap:14px">
+        <label class="radio"><input type="radio" name="p" checked><span class="rdot"></span> Niedrige Priorität</label>
+        <label class="radio"><input type="radio" name="p"><span class="rdot"></span> Hohe Priorität</label>
+        <div class="rpills" style="margin-top:6px">
+          <label class="rpill"><input type="radio" name="rp" checked><span>7 Tage</span></label>
+          <label class="rpill"><input type="radio" name="rp"><span>30 Tage</span></label>
+          <label class="rpill"><input type="radio" name="rp"><span>90 Tage</span></label>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>document.getElementById('ind').indeterminate=true;</script>
+</body>
+</html>

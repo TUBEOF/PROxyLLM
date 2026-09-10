@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Components — cards — UpGuard Clone DS</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  @font-face{font-family:Inter;font-display:swap;font-weight:1 1000;src:url(../fonts/inter-latin-wght-normal.woff2) format("woff2")}
+  @font-face{font-family:"Plus Jakarta Sans";font-display:swap;font-weight:200 800;src:url(../fonts/plus-jakarta-sans-latin-wght-normal.woff2) format("woff2")}
+  body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);padding:48px 24px}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-family:var(--font-display);font-size:28px;font-weight:600;margin:0 0 8px}
+  p.sub{color:var(--muted);margin:0 0 40px;max-width:62ch}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:20px}
+  .card{display:block;text-decoration:none;color:inherit;border-radius:var(--radius-lg);border:1px solid var(--border);background:var(--surface);backdrop-filter:blur(10px);padding:28px;will-change:transform;transition:border-color var(--transition-card),box-shadow var(--transition-card),transform var(--transition-card)}
+  .card:hover{border-color:var(--primary-500);transform:translateY(-2px);box-shadow:var(--shadow-card-hover)}
+  .card:hover .btn-round{border-color:var(--primary-500);background:var(--accent-dim);transform:translateY(-1px)}
+  .icon-circle{width:56px;height:56px;border-radius:var(--radius-full);background:var(--accent-dim);display:flex;align-items:center;justify-content:center;color:var(--primary-500);filter:var(--shadow-icon-glow);transition:filter var(--transition-card)}
+  .card:hover .icon-circle{filter:var(--shadow-icon-glow-hover)}
+  .card h3{font-family:var(--font-display);font-size:18px;font-weight:600;margin:20px 0 8px}
+  .card p{color:var(--muted);font-size:14px;line-height:1.5;margin:0 0 20px}
+  .btn-round{width:38px;height:38px;border-radius:var(--radius-full);border:1px solid var(--border);background:transparent;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;transition:border-color var(--transition-card),background var(--transition-card),color var(--transition-card),transform var(--transition-card)}
+  .sec{font-family:var(--font-display);font-size:18px;font-weight:600;margin:48px 0 16px;color:var(--neutral-200)}
+  .testimonial{border-radius:var(--radius-lg);border:1px solid var(--border);background:var(--surface);backdrop-filter:blur(2.5px);box-shadow:inset 0 1px 1px 1px oklch(100% 0 0 / 15%);padding:32px;font-size:16px;color:var(--fg)}
+  .testimonial .who{margin-top:16px;color:var(--muted);font-size:13px;font-family:var(--font-mono)}
+  .divider{height:1px;background:var(--gradient-divider-h);margin:16px 0}
+</style>
+</head>
+<body>
+<div class="wrap" data-od-id="preview-components-cards">
+  <h1>Components — cards</h1>
+  <p class="sub">The <code>.monitoring-card</code> from <code>index.html</code>: glass surface, green-glow icon, green border + lift on hover. Hover each card.</p>
+
+  <div class="grid">
+    <a class="card" href="#" data-od-id="card-website-monitoring">
+      <div class="icon-circle"><svg width="28" height="24" viewBox="0 0 40 33" fill="none"><path d="M36.8 30.9H3.2C1.4 30.9 0 29.5 0 27.7V3.2C0 1.4 1.4 0 3.2 0h33.6C38.6 0 40 1.4 40 3.2v24.5c0 1.8-1.4 3.2-3.2 3.2z" fill="currentColor"/></svg></div>
+      <h3>Website monitoring</h3>
+      <p>Monitor any HTTP(s) endpoint or page.</p>
+      <span class="btn-round"><svg width="14" height="14" viewBox="0 0 17 17"><path d="M9.28 8L5.98 4.7l.94-.94L11.17 8l-4.25 4.24-.94-.94L9.28 8z" fill="currentColor"/></svg></span>
+    </a>
+    <a class="card" href="#" data-od-id="card-keyword-monitoring">
+      <div class="icon-circle"><svg width="26" height="26" viewBox="0 0 40 40" fill="none"><path d="M23.1 2.8c-1.6 1.6-2.6 3.6-2.9 5.9-.3 2.2.2 4.5 1.5 6.4L.5 35.4c-.3.4-.5.9-.5 1.4 0 1 1 2 2 2 .5 0 1-.2 1.4-.6l2.4-2.3 4 4 2.8-2.7-.7-.7c-.5-.5-.7-1.2-.7-1.9 0-1.4 1.1-2.6 2.6-2.7.7 0 1.4.3 1.9.8l.7.7 2.8-2.7-4-4 9.2-8.9c1.9 1.2 4.2 1.8 6.4 1.6 2.3-.2 4.3-1.2 5.9-2.8 3.4-3.3 4-8.5 1.5-12.5C35.7 1.4 32.5 0 29.5 0 27 .1 24.7 1 23.1 2.8z" fill="currentColor"/></svg></div>
+      <h3>Keyword monitoring</h3>
+      <p>Get alerted if a keyword appears or disappears.</p>
+      <span class="btn-round"><svg width="14" height="14" viewBox="0 0 17 17"><path d="M9.28 8L5.98 4.7l.94-.94L11.17 8l-4.25 4.24-.94-.94L9.28 8z" fill="currentColor"/></svg></span>
+    </a>
+    <a class="card" href="#" data-od-id="card-ping-monitoring">
+      <div class="icon-circle"><svg width="28" height="28" viewBox="0 0 40 40" fill="none"><path d="M20 0c-1 0-2 .08-3 .22 8 1.4 14 8.4 14 16.8 0 9.4-7.6 17-17 17-1.4 0-2.8-.2-4-.5C12 37 16 40 20 40c11 0 20-9 20-20S31 0 20 0z" fill="currentColor"/><circle cx="10" cy="10" r="3" fill="currentColor"/></svg></div>
+      <h3>Ping monitoring</h3>
+      <p>Make sure your server or any device is always available.</p>
+      <span class="btn-round"><svg width="14" height="14" viewBox="0 0 17 17"><path d="M9.28 8L5.98 4.7l.94-.94L11.17 8l-4.25 4.24-.94-.94L9.28 8z" fill="currentColor"/></svg></span>
+    </a>
+  </div>
+
+  <div class="sec">Testimonial panel + divider</div>
+  <div class="testimonial" data-od-id="card-testimonial">
+    “UpGuard caught a regional outage 9 minutes before our on-call pager fired. The keyword check paid for itself in one night.”
+    <div class="who">— Doyle Irvin · Reliability lead</div>
+  </div>
+  <div class="divider" data-od-id="card-divider"></div>
+</div>
+</body>
+</html>

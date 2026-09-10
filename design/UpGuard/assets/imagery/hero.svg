@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-label="Abstract monitoring dashboard illustration">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111821"/>
+      <stop offset="1" stop-color="#0c1118"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#3bd671" stop-opacity="0"/>
+      <stop offset="1" stop-color="#3bd671" stop-opacity=".9"/>
+    </linearGradient>
+    <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3bd671" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#3bd671" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <circle cx="1080" cy="120" r="260" fill="#3bd671" opacity=".05"/>
+  <!-- window card -->
+  <rect x="140" y="110" width="1000" height="560" rx="18" fill="#131b25" stroke="#ffffff14"/>
+  <!-- title bar -->
+  <circle cx="176" cy="142" r="6" fill="#ef4444" opacity=".7"/>
+  <circle cx="198" cy="142" r="6" fill="#f59e0b" opacity=".7"/>
+  <circle cx="220" cy="142" r="6" fill="#3bd671" opacity=".7"/>
+  <!-- sidebar -->
+  <rect x="170" y="180" width="120" height="460" rx="10" fill="#ffffff08"/>
+  <rect x="186" y="204" width="88" height="12" rx="6" fill="#3bd671" opacity=".9"/>
+  <rect x="186" y="236" width="72" height="10" rx="5" fill="#ffffff22"/>
+  <rect x="186" y="262" width="80" height="10" rx="5" fill="#ffffff22"/>
+  <rect x="186" y="288" width="60" height="10" rx="5" fill="#ffffff22"/>
+  <!-- stat cards -->
+  <g>
+    <rect x="318" y="180" width="240" height="110" rx="12" fill="#ffffff0d" stroke="#ffffff10"/>
+    <rect x="338" y="204" width="80" height="10" rx="5" fill="#ffffff33"/>
+    <rect x="338" y="230" width="120" height="26" rx="8" fill="#3bd671" opacity=".85"/>
+  </g>
+  <g>
+    <rect x="578" y="180" width="240" height="110" rx="12" fill="#ffffff0d" stroke="#ffffff10"/>
+    <rect x="598" y="204" width="80" height="10" rx="5" fill="#ffffff33"/>
+    <rect x="598" y="230" width="96" height="26" rx="8" fill="#ffffff2b"/>
+  </g>
+  <g>
+    <rect x="838" y="180" width="274" height="110" rx="12" fill="#ffffff0d" stroke="#ffffff10"/>
+    <rect x="858" y="204" width="80" height="10" rx="5" fill="#ffffff33"/>
+    <rect x="858" y="230" width="108" height="26" rx="8" fill="#f59e0b" opacity=".8"/>
+  </g>
+  <!-- chart -->
+  <rect x="318" y="314" width="520" height="330" rx="12" fill="#ffffff0d" stroke="#ffffff10"/>
+  <path d="M338 590 L400 540 L460 560 L520 480 L580 505 L640 430 L700 460 L760 380 L818 410" fill="none" stroke="#3bd671" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M338 590 L400 540 L460 560 L520 480 L580 505 L640 430 L700 460 L760 380 L818 410 L818 624 L338 624 Z" fill="url(#fill)" stroke="none"/>
+  <!-- status list -->
+  <rect x="858" y="314" width="254" height="330" rx="12" fill="#ffffff0d" stroke="#ffffff10"/>
+  <g fill="#3bd671">
+    <circle cx="884" cy="352" r="6"/><circle cx="884" cy="412" r="6"/><circle cx="884" cy="472" r="6"/><circle cx="884" cy="532" r="6"/><circle cx="884" cy="592" r="6"/>
+  </g>
+  <g fill="#ffffff26">
+    <rect x="906" y="346" width="180" height="12" rx="6"/>
+    <rect x="906" y="406" width="150" height="12" rx="6"/>
+    <rect x="906" y="466" width="196" height="12" rx="6"/>
+    <rect x="906" y="526" width="130" height="12" rx="6"/>
+    <rect x="906" y="586" width="170" height="12" rx="6"/>
+  </g>
+</svg>

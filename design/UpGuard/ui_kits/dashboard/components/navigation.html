@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dashboard Kit — Navigation</title>
+<link rel="stylesheet" href="../../../colors_and_type.css">
+<link rel="stylesheet" href="../kit.css">
+<style>
+  .pad{padding:40px 24px;max-width:1100px;margin:0 auto}
+  .pad h1{font-family:var(--font-display);font-size:24px;font-weight:600;margin:0 0 6px}
+  .pad .lead{color:var(--muted);font-size:14px;margin:0 0 28px}
+  .blk{margin-bottom:30px}
+  .blk h2{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--widget-head);margin:0 0 12px}
+  .card-surface{border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface);backdrop-filter:blur(var(--blur-card));padding:20px}
+</style>
+</head>
+<body data-od-id="comp-navigation">
+
+<svg class="dash-icons" aria-hidden="true">
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="14" y="3" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="3" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="14" y="14" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+  <symbol id="i-mon" viewBox="0 0 24 24"><path d="M3 12h4l2-6 4 12 2-6h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 21h20L12 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v5M12 18v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></symbol>
+  <symbol id="i-cog" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16.5 16.5L21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M10 20a2 2 0 0 0 4 0" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+</svg>
+
+<div class="pad">
+  <h1>Navigation</h1>
+  <p class="lead">App-Shell mit Sidebar (240px, collapsible), Topbar mit Suche und Tabs + Breadcrumb. Aktiv-Indikator als grüner Balken — bewusste Ausnahme vom „kein linker Akzent"-Regel, da es Navigation ist.</p>
+
+  <div class="blk" data-od-id="nav-appshell">
+    <h2>App-Shell (Ausschnitt)</h2>
+    <div style="border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden">
+      <div class="appshell" style="min-height:auto;grid-template-columns:240px 1fr">
+        <aside class="sidebar" style="position:relative;height:auto">
+          <a class="sidebar-brand" href="#"><span class="dot"></span><span class="name">UpGuard</span></a>
+          <ul class="sidebar-nav">
+            <li class="sidebar-section"><span>Übersicht</span></li>
+            <li><a class="sidebar-link active" href="#"><span class="ic"><svg width="20" height="20"><use href="#i-grid"/></svg></span><span>Dashboard</span></a></li>
+            <li><a class="sidebar-link" href="#"><span class="ic"><svg width="20" height="20"><use href="#i-mon"/></svg></span><span>Monitore</span></a></li>
+            <li><a class="sidebar-link" href="#"><span class="ic"><svg width="20" height="20"><use href="#i-alert"/></svg></span><span>Incidents</span></a></li>
+            <li class="sidebar-section"><span>Auswertung</span></li>
+            <li><a class="sidebar-link" href="#"><span class="ic"><svg width="20" height="20"><use href="#i-chart"/></svg></span><span>Berichte</span></a></li>
+            <li><a class="sidebar-link" href="#"><span class="ic"><svg width="20" height="20"><use href="#i-cog"/></svg></span><span>Einstellungen</span></a></li>
+          </ul>
+        </aside>
+        <div class="content">
+          <div class="topbar">
+            <button class="collapse-toggle"><svg width="20" height="20"><use href="#i-menu"/></svg></button>
+            <div class="search">
+              <svg class="search-ic" width="16" height="16"><use href="#i-search"/></svg>
+              <input type="search" placeholder="Suchen… (Monitore, Hosts, Incidents)">
+              <span class="kbd">⌘K</span>
+            </div>
+            <div class="topbar-actions">
+              <button class="iconbtn"><svg width="20" height="20"><use href="#i-bell"/></svg><span class="badge-dot"></span></button>
+              <div class="avatar">MA</div>
+            </div>
+          </div>
+          <nav class="breadcrumb" style="padding:16px 24px 0">
+            <a href="#">Übersicht</a><span class="sep">/</span><a href="#">Dashboard</a><span class="sep">/</span><span>Operations Overview</span>
+          </nav>
+          <div class="tabs" style="margin-top:16px">
+            <a class="tab active">Übersicht</a><a class="tab">Uptime</a><a class="tab">Antwortzeiten</a><a class="tab">SLA</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="blk" data-od-id="nav-collapsed">
+    <h2>Collapsible Sidebar (Icon-only)</h2>
+    <div style="border:1px solid var(--border);border-radius:var(--radius-lg);overflow:hidden;width:fit-content">
+      <aside class="sidebar collapsed" style="position:relative;height:auto">
+        <a class="sidebar-brand" href="#"><span class="dot"></span><span class="name">UpGuard</span></a>
+        <ul class="sidebar-nav">
+          <li><a class="sidebar-link active" href="#"><span class="ic"><svg width="20" height="20"><use href="#i-grid"/></svg></span><span>Dashboard</span></a></li>
+          <li><a class="sidebar-link" href="#"><span class="ic"><svg width="20" height="20"><use href="#i-mon"/></svg></span><span>Monitore</span></a></li>
+          <li><a class="sidebar-link" href="#"><span class="ic"><svg width="20" height="20"><use href="#i-alert"/></svg></span><span>Incidents</span></a></li>
+          <li><a class="sidebar-link" href="#"><span class="ic"><svg width="20" height="20"><use href="#i-chart"/></svg></span><span>Berichte</span></a></li>
+        </ul>
+      </aside>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

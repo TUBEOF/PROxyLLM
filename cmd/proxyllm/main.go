@@ -1,0 +1,134 @@
+// Command proxyllm runs the PROxyLLM LLM proxy server.
+//
+// Phase 0 scope: parse layered configuration, initialize storage, wire the
+// HTTP mux, and serve a health endpoint. Providers, translation, and the
+// admin WebUI land in later phases.
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/proxyllm/proxyllm/internal/config"
+	"github.com/proxyllm/proxyllm/internal/observability"
+	"github.com/proxyllm/proxyllm/internal/server"
+	"github.com/proxyllm/proxyllm/internal/storage"
+)
+
+// loadMasterKey resolves the envelope master key per the documented order:
+// PROXYLLM_MASTER_KEY ENV, then keyfile.
+func loadMasterKey(cfg *config.Config) ([]byte, error) {
+	envVal, envSet := config.MasterKeyFromEnv()
+	return storage.LoadMasterKey(envVal, envSet, cfg.Storage.MasterKeyPath)
+}
+
+func main() {
+	// `-healthcheck` is the container healthcheck entry: probe the
+	// server's /healthz and exit 0/1. Kept in-binary so the distroless
+	// image (no curl/wget) can healthcheck without extra tooling.
+	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
+		os.Exit(healthcheck(os.Getenv("PROXYLLM_HEALTHCHECK_ADDR")))
+	}
+	if err := run(); err != nil {
+		slog.Default().Error("fatal", "error", err)
+		os.Exit(1)
+	}
+}
+
+// healthcheck performs an HTTP GET against /healthz. The target address
+// is PROXYLLM_HEALTHCHECK_ADDR if set, else the server bind
+// PROXYLLM_SERVER_ADDR, else the default :8080.
+func healthcheck(addr string) int {
+	if addr == "" {
+		addr = os.Getenv("PROXYLLM_SERVER_ADDR")
+	}
+	if addr == "" {
+		addr = "localhost:8080"
+	}
+	if strings.HasPrefix(addr, ":") {
+		addr = "localhost" + addr
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://" + addr + "/healthz")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "healthcheck failed: "+err.Error())
+		return 1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "healthcheck failed: status %d\n", resp.StatusCode)
+		return 1
+	}
+	return 0
+}
+
+func run() error {
+	// Config: defaults -> file -> ENV -> DB (highest).
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+
+	logger, err := observability.NewLogger(cfg.Log)
+	if err != nil {
+		return err
+	}
+	slog.SetDefault(logger)
+
+	store, err := storage.Open(cfg.Storage)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
+	// Resolve the envelope master key (ENV PROXYLLM_MASTER_KEY over
+	// keyfile; generated 0600 on first start) and attach the envelope to
+	// the store so secret columns are encrypted at rest.
+	masterKey, err := loadMasterKey(cfg)
+	if err != nil {
+		return err
+	}
+	envelope, err := storage.NewEnvelope(masterKey)
+	if err != nil {
+		return err
+	}
+	store.SetEnvelope(envelope)
+
+	srv := server.New(cfg, store, logger)
+
+	httpSrv := &http.Server{
+		Addr:              cfg.Server.Addr,
+		Handler:           srv,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	// Serve until interrupted, then shut down gracefully.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() {
+		logger.Info("listening", "addr", httpSrv.Addr)
+		errCh <- httpSrv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+	case <-ctx.Done():
+	}
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	return httpSrv.Shutdown(shutdownCtx)
+}

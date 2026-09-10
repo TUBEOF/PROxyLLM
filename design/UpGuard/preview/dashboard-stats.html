@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Preview — Stats-Boards & Charts</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="../ui_kits/dashboard/kit.css">
+<style>
+  .pad{padding:40px 24px;max-width:1080px;margin:0 auto}
+  .pad>h1{font-family:var(--font-display);font-size:22px;font-weight:600;margin:0 0 4px}
+  .pad>.lead{color:var(--muted);font-size:14px;margin:0 0 24px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:16px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+  .badges{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  @media(max-width:820px){.grid2,.grid3{grid-template-columns:1fr}}
+</style>
+</head>
+<body data-od-id="preview-dashboard-stats">
+
+<svg class="dash-icons" aria-hidden="true">
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="19" cy="12" r="1.7" fill="currentColor"/></symbol>
+</svg>
+
+<div class="pad">
+  <h1>Stats-Boards & Charts</h1>
+  <p class="lead">Vorschau-Karte — KPI-Kacheln, Status-Badges, Ring, Bar-Chart und Heatmap. Grüne Hauptserie, Füllungen statt Outline, ehrliche Demo-Werte.</p>
+
+  <div class="badges">
+    <span class="badge up"><span class="b-dot"></span>Operational</span>
+    <span class="badge warn"><span class="b-dot"></span>Degraded</span>
+    <span class="badge down"><span class="b-dot"></span>Down</span>
+    <span class="badge paused"><span class="b-dot"></span>Paused</span>
+    <span class="badge info"><span class="b-dot"></span>Info</span>
+  </div>
+
+  <div class="grid3">
+    <div class="widget"><div class="widget-head"><h3 class="title">Uptime</h3></div><div class="widget-body"><div class="kpi"><div class="kpi-value">99.98%</div><div class="kpi-foot"><span class="delta pos">↑ 0.04%</span><svg class="spark" viewBox="0 0 200 54" preserveAspectRatio="none"><path class="spark-area" d="M0,40 L40,34 L80,30 L120,26 L160,22 L200,20 L200,54 L0,54 Z"/><path class="spark-line" d="M0,40 L40,34 L80,30 L120,26 L160,22 L200,20"/></svg></div><div class="kpi-sub">7 Tage</div></div></div></div>
+    <div class="widget"><div class="widget-head"><h3 class="title">Antwortzeit</h3></div><div class="widget-body"><div class="kpi"><div class="kpi-value">142<span style="font-size:16px;color:var(--muted);margin-left:4px">ms</span></div><div class="kpi-foot"><span class="delta pos">↓ 18 ms</span><svg class="spark" viewBox="0 0 200 54" preserveAspectRatio="none"><path class="spark-area" d="M0,18 L40,16 L80,24 L120,30 L160,32 L200,36 L200,54 L0,54 Z"/><path class="spark-line" d="M0,18 L40,16 L80,24 L120,30 L160,32 L200,36"/></svg></div><div class="kpi-sub">vs. Vortag</div></div></div></div>
+    <div class="widget"><div class="widget-head"><h3 class="title">Incidents</h3></div><div class="widget-body"><div class="kpi"><div class="kpi-value" style="color:var(--status-down)">3</div><div class="kpi-foot"><span class="delta neg">↑ 2</span><svg class="spark" viewBox="0 0 200 54" preserveAspectRatio="none"><path class="spark-area" d="M0,44 L40,42 L80,38 L120,30 L160,22 L200,14 L200,54 L0,54 Z" style="fill:oklch(60% 0.20 25 / 16%)"/><path class="spark-line" d="M0,44 L40,42 L80,38 L120,30 L160,22 L200,14" style="stroke:var(--status-down)"/></svg></div><div class="kpi-sub">24 Std.</div></div></div></div>
+  </div>
+
+  <div class="grid2">
+    <div class="widget"><div class="widget-head"><h3 class="title">Status-Verteilung</h3><button class="menu"><svg width="16" height="16"><use href="#i-more"/></svg></button></div><div class="widget-body" style="align-items:center">
+      <svg class="ring" viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="48" class="ring-track"/>
+        <circle cx="60" cy="60" r="48" class="ring-seg" stroke="var(--status-up)" stroke-dasharray="239 301.6" transform="rotate(-90 60 60)"/>
+        <circle cx="60" cy="60" r="48" class="ring-seg" stroke="var(--status-warn)" stroke-dasharray="37.7 301.6" stroke-dashoffset="-239" transform="rotate(-90 60 60)"/>
+        <circle cx="60" cy="60" r="48" class="ring-seg" stroke="var(--status-down)" stroke-dasharray="25.1 301.6" stroke-dashoffset="-276.7" transform="rotate(-90 60 60)"/>
+        <circle cx="60" cy="60" r="48" class="ring-seg" stroke="var(--status-paused)" stroke-dasharray="25.1 301.6" stroke-dashoffset="-301.8" transform="rotate(-90 60 60)"/>
+      </svg>
+      <div style="display:flex;gap:14px;margin-top:14px;flex-wrap:wrap;justify-content:center;font-size:12px;color:var(--muted)">
+        <span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;background:var(--status-up)"></span> 19</span>
+        <span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;background:var(--status-warn)"></span> 3</span>
+        <span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;background:var(--status-down)"></span> 2</span>
+        <span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:50%;background:var(--status-paused)"></span> 2</span>
+      </div>
+    </div></div>
+    <div class="widget"><div class="widget-head"><h3 class="title">Häufigste Fehler</h3><button class="menu"><svg width="16" height="16"><use href="#i-more"/></svg></button></div><div class="widget-body">
+      <div class="bars">
+        <div class="bar-row"><span class="bar-lab">Timeout</span><span class="bar-val">128</span><div class="bar-track"><div class="bar-fill" style="width:82%"></div></div></div>
+        <div class="bar-row"><span class="bar-lab">DNS-Auflösung</span><span class="bar-val">64</span><div class="bar-track"><div class="bar-fill" style="width:41%"></div></div></div>
+        <div class="bar-row"><span class="bar-lab">502 Bad Gateway</span><span class="bar-val">39</span><div class="bar-track"><div class="bar-fill alt" style="width:25%"></div></div></div>
+        <div class="bar-row"><span class="bar-lab">SSL abgelaufen</span><span class="bar-val">21</span><div class="bar-track"><div class="bar-fill alt" style="width:13%"></div></div></div>
+      </div>
+    </div></div>
+  </div>
+
+  <div class="widget"><div class="widget-head"><h3 class="title">Checks pro Stunde · 7 Tage</h3><button class="menu"><svg width="16" height="16"><use href="#i-more"/></svg></button></div><div class="widget-body">
+    <div class="heat" id="heat"></div>
+    <div class="heat-legend"><span>weniger</span><span class="swatch"><span class="heat-cell"></span><span class="heat-cell l1"></span><span class="heat-cell l2"></span><span class="heat-cell l3"></span><span class="heat-cell l4"></span></span><span>mehr</span></div>
+  </div></div>
+</div>
+<script>(function(){var h='';for(var r=0;r<7;r++){h+='<div class="heat-row">';for(var c=0;c<24;c++){var b=c>=8&&c<=20?0.55:0.12;var v=b+(Math.sin(r*1.3+c*0.6)+1)/2*0.4;var l=v<0.25?'':v<0.45?'l1':v<0.65?'l2':v<0.85?'l3':'l4';h+='<div class="heat-cell '+l+'"></div>'}h+='</div>'}document.getElementById('heat').innerHTML=h})();</script>
+</body>
+</html>

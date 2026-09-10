@@ -1,0 +1,111 @@
+package storage
+
+import "fmt"
+
+// migrations is the ordered, append-only list of schema migrations. Each
+// entry runs exactly once; the applied version is tracked in
+// schema_migrations. Never edit a shipped migration — append a new one.
+var migrations = []string{
+	// v1: core configuration and provider registry.
+	`CREATE TABLE IF NOT EXISTS config (
+		key   TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS providers (
+		id   TEXT PRIMARY KEY,
+		type TEXT NOT NULL,
+		name TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS provider_tokens (
+		provider_id     TEXT NOT NULL REFERENCES providers(id),
+		kind            TEXT NOT NULL,
+		token_encrypted BLOB NOT NULL,
+		expires_at      INTEGER,
+		last_refresh    INTEGER,
+		PRIMARY KEY (provider_id, kind)
+	);`,
+	`CREATE TABLE IF NOT EXISTS models (
+		id           TEXT PRIMARY KEY,
+		provider_id  TEXT NOT NULL REFERENCES providers(id),
+		name         TEXT NOT NULL,
+		capabilities TEXT NOT NULL DEFAULT '{}',
+		compat       TEXT NOT NULL DEFAULT '{}',
+		priority     INTEGER NOT NULL DEFAULT 0
+	);`,
+	`CREATE TABLE IF NOT EXISTS routing_rules (
+		id                TEXT PRIMARY KEY,
+		match_model       TEXT,
+		match_capabilities TEXT NOT NULL DEFAULT '{}',
+		chain             TEXT NOT NULL,
+		priority          INTEGER NOT NULL DEFAULT 0,
+		enabled           INTEGER NOT NULL DEFAULT 1
+	);`,
+	`CREATE TABLE IF NOT EXISTS client_keys (
+		id           TEXT PRIMARY KEY,
+		name         TEXT NOT NULL,
+		key_hash     TEXT NOT NULL,
+		key_prefix   TEXT NOT NULL,
+		scopes       TEXT NOT NULL DEFAULT '[]',
+		created_at   INTEGER NOT NULL,
+		last_used_at INTEGER,
+		revoked      INTEGER NOT NULL DEFAULT 0
+	);`,
+	`CREATE TABLE IF NOT EXISTS webui_admins (
+		id            TEXT PRIMARY KEY,
+		username      TEXT NOT NULL UNIQUE,
+		password_hash TEXT NOT NULL
+	);`,
+	`CREATE TABLE IF NOT EXISTS request_logs (
+		id            INTEGER PRIMARY KEY AUTOINCREMENT,
+		ts            INTEGER NOT NULL,
+		client_key_id TEXT,
+		provider_id   TEXT,
+		model         TEXT,
+		status        INTEGER NOT NULL,
+		latency_ms    INTEGER NOT NULL,
+		usage         TEXT NOT NULL DEFAULT '{}',
+		route_trace   TEXT NOT NULL DEFAULT '{}',
+		error_redacted TEXT
+	);`,
+	`CREATE INDEX IF NOT EXISTS idx_request_logs_ts ON request_logs(ts);`,
+	`CREATE TABLE IF NOT EXISTS usage_daily (
+		day               TEXT NOT NULL,
+		client_key_id     TEXT,
+		provider_id       TEXT,
+		model             TEXT,
+		input_tokens      INTEGER NOT NULL DEFAULT 0,
+		output_tokens     INTEGER NOT NULL DEFAULT 0,
+		cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+		requests          INTEGER NOT NULL DEFAULT 0,
+		failures          INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (day, client_key_id, provider_id, model)
+	);`,
+}
+
+func (s *Store) migrate() error {
+	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+		version    INTEGER PRIMARY KEY,
+		applied_at INTEGER NOT NULL
+	);`); err != nil {
+		return fmt.Errorf("storage: create schema_migrations: %w", err)
+	}
+
+	var current int
+	if err := s.db.QueryRow(`SELECT COALESCE(MAX(version), 0) FROM schema_migrations`).Scan(&current); err != nil {
+		return fmt.Errorf("storage: read schema version: %w", err)
+	}
+
+	for i, m := range migrations {
+		v := i + 1
+		if v <= current {
+			continue
+		}
+		if _, err := s.db.Exec(m); err != nil {
+			return fmt.Errorf("storage: apply migration %d: %w", v, err)
+		}
+		if _, err := s.db.Exec(`INSERT INTO schema_migrations (version, applied_at) VALUES (?, strftime('%s','now'))`, v); err != nil {
+			return fmt.Errorf("storage: record migration %d: %w", v, err)
+		}
+	}
+	return nil
+}
