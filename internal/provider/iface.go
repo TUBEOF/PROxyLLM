@@ -6,6 +6,7 @@ package provider
 
 import (
 	"context"
+	"time"
 
 	"github.com/proxyllm/proxyllm/internal/translate/ir"
 )
@@ -64,6 +65,12 @@ type UpstreamError struct {
 	// the body carries no error object or failed to decode).
 	Type string
 	Code string
+
+	// RetryAfter is the server-advertised retry delay (seconds) from a
+	// Retry-After response header or body field, 0 when absent. Routing
+	// honors it for same-provider retries, capped by the FO-3 backoff
+	// ceiling (O10).
+	RetryAfter time.Duration
 
 	// Message is the human-readable error message (redacted upstream —
 	// credentials never ride errors).
