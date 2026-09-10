@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "data": {
+    "markdown": "# Downloads\n\nFeatured downloads of the current Go release.",
+    "metadata": {
+      "title": "Downloads - The Go Programming Language",
+      "url": "https://go.dev/dl/",
+      "statusCode": 200
+    }
+  },
+  "warning": []
+}

@@ -1,0 +1,7 @@
+{
+  "fixture": "message-request.json",
+  "source": "https://docs.anthropic.com/en/api/messages",
+  "accessed": "2026-09-10",
+  "facts": ["A1", "A3", "A11"],
+  "notes": "Field shapes per the documented Messages create schema: top-level model/max_tokens/messages/system/tools, content blocks text and image with base64/url source, cache_control ephemeral marker."
+}

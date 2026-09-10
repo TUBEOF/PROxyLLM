@@ -1,0 +1,7 @@
+{
+  "fixture": "chat-request.json",
+  "source": "https://developers.openai.com/api/docs/guides/function-calling",
+  "accessed": "2026-09-10",
+  "facts": ["O2", "O3", "O11"],
+  "notes": "Chat completions request per documented schema: roles user/system/developer, content parts text and image_url (URL or data: base64), tools with function definitions, assistant message with tool_calls, role:tool result messages."
+}

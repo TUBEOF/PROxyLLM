@@ -1,0 +1,20 @@
+{
+  "model": "claude-sonnet-5",
+  "system": "You are a helpful assistant.",
+  "messages": [
+    { "role": "user", "content": "Hello, world" }
+  ],
+  "tools": [
+    {
+      "name": "get_weather",
+      "description": "Get the current weather in a given location",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "location": { "type": "string" }
+        },
+        "required": ["location"]
+      }
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+[
+  { "type": "start", "model": "claude-sonnet-5", "id": "msg_01XFDUDYJgAACzvnptvVoYEL", "usage": { "input_tokens": 25, "output_tokens": 1, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0 } },
+  { "type": "block_start", "index": 0, "part": { "kind": "text" } },
+  { "type": "delta", "index": 0, "delta": { "kind": "text", "text": "Partial an" } },
+  { "type": "error", "error": { "type": "overloaded_error", "message": "Overloaded" } }
+]

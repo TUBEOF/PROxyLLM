@@ -1,0 +1,8 @@
+{
+  "query": "what is the current version of Go",
+  "limit": 5,
+  "sources": ["web"],
+  "scrapeOptions": {
+    "formats": ["markdown"]
+  }
+}

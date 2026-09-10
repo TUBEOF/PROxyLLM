@@ -1,0 +1,10 @@
+{
+  "model": "claude-opus-5",
+  "max_tokens": 16384,
+  "thinking": {
+    "type": "adaptive"
+  },
+  "messages": [
+    { "role": "user", "content": "Solve this integral step by step: ∫ x·e^x dx" }
+  ]
+}

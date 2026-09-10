@@ -1,0 +1,19 @@
+{
+  "success": true,
+  "data": {
+    "web": [
+      {
+        "title": "Downloads - The Go Programming Language",
+        "url": "https://go.dev/dl/",
+        "description": "Download the latest Go release binaries.",
+        "markdown": "# Downloads\n\nFeatured downloads of the current Go release."
+      },
+      {
+        "title": "Go Release History",
+        "url": "https://go.dev/doc/devel/release",
+        "description": "Release history and maintenance policy."
+      }
+    ]
+  },
+  "warning": []
+}

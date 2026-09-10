@@ -1,0 +1,7 @@
+{
+  "fixture": "stream-error.sse",
+  "source": "https://docs.anthropic.com/en/api/messages-streaming",
+  "accessed": "2026-09-10",
+  "facts": ["A13"],
+  "notes": "Mid-stream error event: error.type/error.message payload; overloaded_error correlates with HTTP 529. A terminal error event must become an ir.Error StreamEvent."
+}

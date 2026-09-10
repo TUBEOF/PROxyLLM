@@ -1,0 +1,7 @@
+{
+  "fixture": "chat-stream.sse",
+  "source": "https://developers.openai.com/api/docs/guides/streaming-responses",
+  "accessed": "2026-09-10",
+  "facts": ["O4"],
+  "notes": "Chat streaming wire: data-only SSE (no event: lines), choices[0].delta with role on first chunk, content fragments, tool_calls deltas assembled by index (id/name on first delta, argument fragments appended), terminating chunk with finish_reason, usage-only final chunk when stream_options.include_usage is set, data: [DONE] sentinel. The paired .expected.json holds the canonical ir.StreamEvent sequence."
+}

@@ -1,0 +1,18 @@
+[
+  { "type": "start", "model": "claude-sonnet-5", "id": "msg_01XFDUDYJgAACzvnptvVoYEL", "usage": { "input_tokens": 25, "output_tokens": 1, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0 } },
+  { "type": "ping" },
+  { "type": "block_start", "index": 0, "part": { "kind": "text" } },
+  { "type": "delta", "index": 0, "delta": { "kind": "text", "text": "Hello" } },
+  { "type": "delta", "index": 0, "delta": { "kind": "text", "text": " world" } },
+  { "type": "block_stop", "index": 0 },
+  { "type": "block_start", "index": 1, "part": { "kind": "thinking" } },
+  { "type": "delta", "index": 1, "delta": { "kind": "thinking", "text": "Let me think about this." } },
+  { "type": "delta", "index": 1, "delta": { "kind": "signature", "text": "EqoBCkgIAxgCIkA3MDUxYTYwNTYxYWNiMjQ0YzEyNDkxN2IxMjM0NTY3ODkwYWJjZGVmZ2hpams=" } },
+  { "type": "block_stop", "index": 1 },
+  { "type": "block_start", "index": 2, "part": { "kind": "tool_use", "id": "toolu_01A09q90qw90lq917wa35011", "name": "get_weather" } },
+  { "type": "delta", "index": 2, "delta": { "kind": "tool_input", "partial_json": "{\"location\":" } },
+  { "type": "delta", "index": 2, "delta": { "kind": "tool_input", "partial_json": "\"San Francisco\"}" } },
+  { "type": "block_stop", "index": 2 },
+  { "type": "message_delta", "message_delta": { "stop_reason": "tool_use", "usage": { "output_tokens": 128, "input_tokens": 25, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0 } } },
+  { "type": "done" }
+]

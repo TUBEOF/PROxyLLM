@@ -1,0 +1,13 @@
+[
+  { "type": "start", "model": "gpt-5", "id": "chatcmpl-abc123", "usage": { "input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0 } },
+  { "type": "block_start", "index": 0, "part": { "kind": "text" } },
+  { "type": "delta", "index": 0, "delta": { "kind": "text", "text": "Hello" } },
+  { "type": "delta", "index": 0, "delta": { "kind": "text", "text": " world" } },
+  { "type": "block_stop", "index": 0 },
+  { "type": "block_start", "index": 1, "part": { "kind": "tool_use", "id": "call_abc123", "name": "get_weather" } },
+  { "type": "delta", "index": 1, "delta": { "kind": "tool_input", "partial_json": "{\"loc" } },
+  { "type": "delta", "index": 1, "delta": { "kind": "tool_input", "partial_json": "ation\": \"SF\"}" } },
+  { "type": "block_stop", "index": 1 },
+  { "type": "message_delta", "message_delta": { "stop_reason": "tool_use", "usage": { "input_tokens": 1250, "output_tokens": 128, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0 } } },
+  { "type": "done" }
+]

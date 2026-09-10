@@ -1,0 +1,69 @@
+{
+  "model": "claude-sonnet-5",
+  "max_tokens": 1024,
+  "temperature": 0.7,
+  "system": [
+    {
+      "type": "text",
+      "text": "You are a helpful assistant.",
+      "cache_control": { "type": "ephemeral", "ttl": "5m" }
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "image",
+          "source": {
+            "type": "base64",
+            "media_type": "image/png",
+            "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+          },
+          "cache_control": null
+        },
+        { "type": "text", "text": "Describe this image in one sentence." }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "toolu_01A09q90qw90lq917wa35011",
+          "name": "get_weather",
+          "input": { "location": "San Francisco, CA", "unit": "celsius" }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_01A09q90qw90lq917wa35011",
+          "content": [
+            { "type": "text", "text": "15°C, wind NW at 12 km/h" }
+          ],
+          "is_error": false
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "name": "get_weather",
+      "description": "Get the current weather in a given location",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "location": { "type": "string", "description": "The city and state, e.g. San Francisco, CA" },
+          "unit": { "type": "string", "enum": ["celsius", "fahrenheit"] }
+        },
+        "required": ["location"]
+      }
+    }
+  ],
+  "tool_choice": { "type": "auto" },
+  "stop_sequences": ["END"]
+}

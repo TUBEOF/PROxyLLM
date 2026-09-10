@@ -1,0 +1,7 @@
+{
+  "fixture": "message-request-adaptive-thinking.json",
+  "source": "https://docs.anthropic.com/en/api/messages",
+  "accessed": "2026-09-10",
+  "facts": ["A12"],
+  "notes": "Adaptive thinking variant: type adaptive, no budget_tokens."
+}

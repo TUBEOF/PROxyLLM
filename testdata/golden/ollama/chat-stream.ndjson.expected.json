@@ -1,0 +1,12 @@
+[
+  { "type": "start", "model": "llama3.3", "usage": { "input_tokens": 0, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0 } },
+  { "type": "block_start", "index": 0, "part": { "kind": "text" } },
+  { "type": "delta", "index": 0, "delta": { "kind": "text", "text": "Hello" } },
+  { "type": "delta", "index": 0, "delta": { "kind": "text", "text": " world" } },
+  { "type": "block_stop", "index": 0 },
+  { "type": "block_start", "index": 1, "part": { "kind": "thinking" } },
+  { "type": "delta", "index": 1, "delta": { "kind": "thinking", "text": "Let me think." } },
+  { "type": "block_stop", "index": 1 },
+  { "type": "message_delta", "message_delta": { "stop_reason": "end_turn", "usage": { "input_tokens": 26, "output_tokens": 283, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 8 } } },
+  { "type": "done" }
+]

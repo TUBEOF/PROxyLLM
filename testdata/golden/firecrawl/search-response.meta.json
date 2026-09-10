@@ -1,0 +1,7 @@
+{
+  "fixture": "search-response.json",
+  "source": "https://docs.firecrawl.dev/api-reference/endpoint/search",
+  "accessed": "2026-09-10",
+  "facts": ["F2"],
+  "notes": "Response: web[] array with title, url, description, optional markdown. 429 on plan limits (F5)."
+}

@@ -1,0 +1,7 @@
+{
+  "fixture": "chat-response.json",
+  "source": "https://developers.openai.com/api/docs/guides/migrate-to-responses",
+  "accessed": "2026-09-10",
+  "facts": ["O3", "O12"],
+  "notes": "Chat completions response: choices[0].message with tool_calls (function.arguments as JSON string), finish_reason stop/tool_calls, usage with prompt/completion/total."
+}

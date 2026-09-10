@@ -1,0 +1,27 @@
+{
+  "model": "llama3.3",
+  "created_at": "2026-09-10T12:00:00.000000Z",
+  "message": {
+    "role": "assistant",
+    "thinking": "The user wants weather info. I should call get_weather.",
+    "content": "I'll check the weather for you.",
+    "tool_calls": [
+      {
+        "function": {
+          "name": "get_weather",
+          "description": "Get the current weather in a given location",
+          "arguments": { "location": "San Francisco, CA" }
+        }
+      }
+    ]
+  },
+  "done": true,
+  "done_reason": "stop",
+  "total_duration": 1075176100,
+  "load_duration": 1273400,
+  "prompt_eval_count": 26,
+  "prompt_eval_cached_count": 0,
+  "prompt_eval_duration": 20442100,
+  "eval_count": 283,
+  "eval_duration": 1051946000
+}

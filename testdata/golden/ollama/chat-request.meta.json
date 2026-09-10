@@ -1,0 +1,7 @@
+{
+  "fixture": "chat-request.json",
+  "source": "https://docs.ollama.com/api/chat",
+  "accessed": "2026-09-10",
+  "facts": ["L1", "L8", "L9"],
+  "notes": "Native /api/chat request. stream defaults to true — non-streaming requests MUST send stream:false explicitly (L8). think accepts boolean or high/medium/low/max (L9). tool_calls arguments are JSON objects, not strings."
+}
