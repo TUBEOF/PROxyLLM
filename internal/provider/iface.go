@@ -1,11 +1,13 @@
 // Package provider defines the Provider interface and the registry through
-// which routing resolves provider implementations. Phase 0 ships the
-// contracts + stubs; concrete providers (Codex OAuth, Ollama Cloud,
-// custom OpenAI-compatible) land in Phase 1.
+// which routing resolves provider implementations. Phase 0 shipped the
+// contracts + stubs; Phase 1 adds Complete/Stream (plan §4.2) and the
+// concrete providers (Codex OAuth, Ollama Cloud, custom OpenAI-compatible).
 package provider
 
 import (
 	"context"
+
+	"github.com/proxyllm/proxyllm/internal/translate/ir"
 )
 
 // Provider is the contract every upstream integration implements. The
@@ -19,9 +21,63 @@ type Provider interface {
 	// and failsover on this set.
 	Capabilities() Capabilities
 
+	// Complete performs one non-streaming request round trip against the
+	// upstream (plan §4.2). Callers own the retry/failover decision —
+	// Complete reports the attempt's terminal outcome only (FO-5).
+	//
+	// Errors of type *UpstreamError carry the two-tier classification
+	// inputs (HTTP status + body error code, FO-2); other error types are
+	// transport failures (connection refused, TLS reset, timeout), which
+	// routing classifies as early-stream retryable when nothing has been
+	// streamed yet (FO-1).
+	Complete(ctx context.Context, req ir.Request) (ir.Response, error)
+
+	// Stream starts one streaming request against the upstream and
+	// returns the canonical event channel (plan §4.2). Events must be
+	// drained until closed or cancel must be called — cancel aborts the
+	// upstream request and releases its resources (client disconnect →
+	// upstream cancellation, C2).
+	//
+	// The returned error covers dispatch failures only (connection setup,
+	// pre-stream HTTP errors). Failures after the first streamed event are
+	// terminal: the channel delivers an ir.Error event and closes —
+	// routing never retries or swaps mid-stream (FO-1).
+	Stream(ctx context.Context, req ir.Request) (<-chan ir.StreamEvent, func(), error)
+
 	// RefreshCredentials refreshes OAuth tokens / API credentials when
 	// applicable. No-op for static-key providers.
 	RefreshCredentials(ctx context.Context) error
+}
+
+// UpstreamError is the typed upstream/API error every provider returns from
+// Complete (and embeds in Stream dispatch failures): the two classification
+// tiers FO-2 needs — the HTTP status of the response and the error object
+// from the decoded body. Code/Type are the wire error.code/error.type; an
+// empty HTTPStatus marks a failure that never produced a response
+// (transport error).
+type UpstreamError struct {
+	// HTTPStatus is the HTTP status of the upstream response; 0 when the
+	// request failed before a response arrived (transport error).
+	HTTPStatus int
+
+	// Type and Code are the decoded body error.type / error.code ("" when
+	// the body carries no error object or failed to decode).
+	Type string
+	Code string
+
+	// Message is the human-readable error message (redacted upstream —
+	// credentials never ride errors).
+	Message string
+}
+
+// Error implements error. The wire fields ride the message so logs and
+// route_trace can record error_code + failure classification (FO-4) from
+// the typed fields, not by parsing strings.
+func (e *UpstreamError) Error() string {
+	if e.Message == "" {
+		return "upstream error"
+	}
+	return e.Message
 }
 
 // Capabilities is the capability set a provider reports to routing.
