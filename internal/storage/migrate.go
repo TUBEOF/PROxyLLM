@@ -80,6 +80,20 @@ var migrations = []string{
 		failures          INTEGER NOT NULL DEFAULT 0,
 		PRIMARY KEY (day, client_key_id, provider_id, model)
 	);`,
+	// v2: Phase 2 WebUI support — per-type non-secret provider config,
+	// hashed-at-rest WebUI sessions, and an index backing the log-viewer
+	// filter queries. Append-only: v1 statements are never edited.
+	`ALTER TABLE providers ADD COLUMN config TEXT NOT NULL DEFAULT '{}';`,
+	`CREATE TABLE IF NOT EXISTS webui_sessions (
+		id_hash            TEXT PRIMARY KEY,
+		admin_id           TEXT NOT NULL REFERENCES webui_admins(id) ON DELETE CASCADE,
+		created_at         INTEGER NOT NULL,
+		last_seen_at       INTEGER NOT NULL,
+		absolute_expires_at INTEGER NOT NULL
+	);`,
+	`CREATE INDEX IF NOT EXISTS idx_request_logs_model ON request_logs(model);`,
+	`CREATE INDEX IF NOT EXISTS idx_request_logs_provider ON request_logs(provider_id);`,
+	`CREATE INDEX IF NOT EXISTS idx_request_logs_status ON request_logs(status);`,
 }
 
 func (s *Store) migrate() error {
