@@ -11,6 +11,7 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -19,11 +20,12 @@ import (
 
 // 1. Claude Code message round trip (C1): Messages.New through the proxy
 // against the chat-wire mock returns a protocol-conform Anthropic message
-// with the upstream text translated into a text block.
+// with the golden answer translated — text block, tool_use block, stop_reason
+// tool_use, usage — proving the full cross-surface OP-2 translation.
 func TestAnthropicSDK_MessagesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
-	e.mock.Enqueue(mockJSON(t, 200, chatResponseBody()))
+	e.mock.Enqueue(mockJSON(t, 200, chatResponseBody(t)))
 
 	msg, err := e.anthrop.Messages.New(ctx, anthropic.MessageNewParams{
 		MaxTokens: 256,
@@ -34,25 +36,42 @@ func TestAnthropicSDK_MessagesRoundTrip(t *testing.T) {
 		t.Fatalf("messages create: %v", err)
 	}
 	var text strings.Builder
+	var tool *anthropic.ToolUseBlock
 	for _, blk := range msg.Content {
 		if v, ok := blk.AsAny().(anthropic.TextBlock); ok {
 			text.WriteString(v.Text)
 		}
+		if v, ok := blk.AsAny().(anthropic.ToolUseBlock); ok {
+			tool = &v
+		}
 	}
-	if !strings.Contains(text.String(), "The weather in Paris is sunny.") {
-		t.Errorf("text blocks = %q, want the upstream answer translated", text.String())
+	if !strings.Contains(text.String(), "I'll check the weather for you.") {
+		t.Errorf("text blocks = %q, want the golden answer translated", text.String())
 	}
-	if msg.StopReason != "end_turn" {
-		t.Errorf("stop_reason = %q, want end_turn (chat finish_reason stop mapped)", msg.StopReason)
+	// Golden tool call translated into a tool_use block (A3): id, name,
+	// input JSON — chat tool_calls (O3) map bidirectionally.
+	if tool == nil {
+		t.Fatalf("no tool_use block, want the golden tool call translated")
 	}
-	if msg.Usage.InputTokens != 12 || msg.Usage.OutputTokens != 7 {
-		t.Errorf("usage = %d/%d, want upstream usage translated into Anthropic usage", msg.Usage.InputTokens, msg.Usage.OutputTokens)
+	if tool.ID != "call_abc123" || tool.Name != "get_weather" {
+		t.Errorf("tool_use = %s/%s, want call_abc123/get_weather", tool.ID, tool.Name)
+	}
+	if !strings.Contains(string(tool.Input), "San Francisco, CA") {
+		t.Errorf("tool_use input = %s, want the golden location translated", tool.Input)
+	}
+	if msg.StopReason != "tool_use" {
+		t.Errorf("stop_reason = %q, want tool_use (chat finish_reason tool_calls mapped)", msg.StopReason)
+	}
+	if msg.Usage.InputTokens != 1250 || msg.Usage.OutputTokens != 77 {
+		t.Errorf("usage = %d/%d, want the golden usage translated into Anthropic usage", msg.Usage.InputTokens, msg.Usage.OutputTokens)
 	}
 }
 
 // 2. Claude Code streaming (A5–A7, C2): Messages.NewStreaming yields the
 // ordered event sequence message_start → content_block_delta(text) →
-// message_delta → message_stop with the upstream deltas relayed.
+// message_delta → message_stop with the upstream deltas relayed. Ordering is
+// asserted with a phase counter so the sequence cannot pass as an unordered
+// set.
 func TestAnthropicSDK_MessagesStreaming(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
@@ -65,30 +84,43 @@ func TestAnthropicSDK_MessagesStreaming(t *testing.T) {
 	})
 	defer func() { _ = stream.Close() }()
 
-	var sawStart, sawTextDelta, sawDelta, sawStop bool
+	const (
+		phaseWantStart = 1
+		phaseWantText  = 2
+		phaseWantDelta = 3
+		phaseWantStop  = 4
+	)
+	var phase int
 	var text strings.Builder
 	for stream.Next() {
 		ev := stream.Current()
 		switch ev.Type {
 		case "message_start":
-			sawStart = true
+			if phase < phaseWantStart {
+				phase = phaseWantStart
+			}
 		case "content_block_delta":
-			sawTextDelta = true
+			if phase >= phaseWantStart && phase < phaseWantText {
+				phase = phaseWantText
+			}
 			if ev.Delta.Type == "text_delta" {
 				text.WriteString(ev.Delta.Text)
 			}
 		case "message_delta":
-			sawDelta = true
+			if phase >= phaseWantText && phase < phaseWantDelta {
+				phase = phaseWantDelta
+			}
 		case "message_stop":
-			sawStop = true
+			if phase >= phaseWantDelta {
+				phase = phaseWantStop
+			}
 		}
 	}
 	if err := stream.Err(); err != nil {
 		t.Fatalf("stream error: %v", err)
 	}
-	if !sawStart || !sawTextDelta || !sawDelta || !sawStop {
-		t.Errorf("events: start=%v text=%v delta=%v stop=%v, want the ordered A5–A7 sequence",
-			sawStart, sawTextDelta, sawDelta, sawStop)
+	if phase != phaseWantStop {
+		t.Errorf("event ordering phase = %d, want %d (message_start → content_block_delta → message_delta → message_stop)", phase, phaseWantStop)
 	}
 	if !strings.Contains(text.String(), "Hello") {
 		t.Errorf("relayed deltas = %q, want Hello relayed", text.String())
@@ -113,6 +145,12 @@ func TestAnthropicSDK_CountTokens(t *testing.T) {
 	if count.InputTokens <= 0 {
 		t.Errorf("input_tokens = %d, want a positive heuristic estimate", count.InputTokens)
 	}
+	// The heuristic answer must be marked as an estimation (§5.1: never
+	// silently native-looking on a non-Anthropic upstream). MessageTokensCount
+	// carries the raw response, so the marker is pinned on the wire itself.
+	if !strings.Contains(count.RawJSON(), `"estimation":"heuristic"`) {
+		t.Errorf("count response = %s, want the estimation:heuristic marker", count.RawJSON())
+	}
 }
 
 // 4. THE Phase 1 DoD acceptance (§6.4, OP-2): a Claude Code client
@@ -125,7 +163,7 @@ func TestAnthropicSDK_ThinkingStripOnNonClaude(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
 	e.seedModel(t, "claude-sonnet-5", json.RawMessage(`{"thinking_handling":"strip"}`))
-	e.mock.Enqueue(mockJSON(t, 200, chatResponseBody()))
+	e.mock.Enqueue(mockJSON(t, 200, chatResponseBody(t)))
 
 	msg, err := e.anthrop.Messages.New(ctx, anthropic.MessageNewParams{
 		MaxTokens: 512,
@@ -179,8 +217,18 @@ func TestAnthropicSDK_ThinkingBlockOnNonClaude(t *testing.T) {
 	if err == nil {
 		t.Fatal("thinking request on a block-policy model unexpectedly succeeded")
 	}
-	if status := httpStatusOfAnthropic(t, err); status < 400 || status >= 500 {
-		t.Errorf("block status = %d, want 4xx (§5.3)", status)
+	var apiErr *anthropic.Error
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("SDK returned %v, want an API error", err)
+	}
+	if apiErr.StatusCode < 400 || apiErr.StatusCode >= 500 {
+		t.Errorf("block status = %d, want 4xx (§5.3)", apiErr.StatusCode)
+	}
+	// A13 shape: the error envelope must carry the Anthropic error type the
+	// proxy maps ErrThinkingBlocked to (400 invalid_request_error), so
+	// Claude Code surfaces a protocol-conform refusal, not a generic 4xx.
+	if got := string(apiErr.Type()); got != "invalid_request_error" {
+		t.Errorf("block error type = %q, want invalid_request_error (A13)", got)
 	}
 	if reqs := e.mock.Requests(); len(reqs) != 0 {
 		t.Errorf("upstream saw %d requests, want 0 (block refuses before dispatch)", len(reqs))

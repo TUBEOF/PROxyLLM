@@ -46,11 +46,9 @@ import (
 // aimed at it. mock-main (OpenAI chat wire, all capabilities) is the sole
 // upstream.
 type env struct {
-	t       *testing.T
 	store   *storage.Store
 	mock    *mockprovider.Server
 	srv     *httptest.Server
-	key     string
 	openai  openaiclient.Client
 	anthrop anthropic.Client
 }
@@ -115,11 +113,18 @@ func newEnv(t *testing.T, rules ...routing.Rule) *env {
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
 	t.Setenv("ANTHROPIC_BASE_URL", "")
 
+	// OpenAI SDK env note: OPENAI_API_KEY/OPENAI_BASE_URL are deliberately NOT
+	// neutralized. Unlike the anthropic SDK (see above), openai-go's
+	// option.WithAPIKey/WithBaseURL use last-wins FIELD semantics — they
+	// overwrite the APIKey/BaseURL fields themselves, so caller options always
+	// supersede any ambient env default. Verified against the pinned module
+	// source (client.go applyOptions / DefaultClientOptions).
+
 	srv := httptest.NewServer(auth.NewMiddleware(st).Wrap(h))
 	t.Cleanup(srv.Close)
 
 	e := &env{
-		t: t, store: st, mock: mock, srv: srv, key: key,
+		store: st, mock: mock, srv: srv,
 		// OpenAI SDK: base URL carries /v1; retries pinned 0 (default 2
 		// would re-drive mock scripts and break deterministic error tests).
 		openai: openaiclient.NewClient(
@@ -167,9 +172,14 @@ func golden(t *testing.T, rel string) []byte {
 	return ttestutil.LoadGolden(t, rel)
 }
 
-// chatResponseBody is one scripted non-streaming upstream chat answer.
-func chatResponseBody() string {
-	return `{"id":"chatcmpl-e2e","object":"chat.completion","created":1757500000,"model":"gpt-5","choices":[{"index":0,"message":{"role":"assistant","content":"The weather in Paris is sunny."},"finish_reason":"stop"}],"usage":{"prompt_tokens":12,"completion_tokens":7,"total_tokens":19}}`
+// chatResponseBody is the golden non-streaming upstream chat answer
+// (testdata/golden/openai/chat-response.json verbatim): chatcmpl-abc123,
+// assistant text + one tool_call (get_weather), finish_reason tool_calls,
+// usage 1250/77. Every round-trip test asserts against these canonical
+// values — the harness never invents its own wire shapes.
+func chatResponseBody(t *testing.T) string {
+	t.Helper()
+	return string(golden(t, "openai/chat-response.json"))
 }
 
 // chatStreamScript is the golden chat stream (relayed deltas + terminal

@@ -31,6 +31,7 @@ package smoke
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -204,9 +205,18 @@ func TestSmoke_CodexBackendShape(t *testing.T) {
 
 	resp, err := p.Complete(ctx, smokeChatRequest())
 	if err != nil {
-		t.Fatalf("OP-3 backend request failed: %v\n"+
-			"the mirrored backend shape does not match the live backend — escalate per plan §2.9",
-			err)
+		// Distinguish the two failure families (OP-3 escalation needs the
+		// right hypothesis to falsify): a live backend ANSWERING with an
+		// unexpected shape (UpstreamError with an HTTP status) falsifies the
+		// mirrored request shape (X7/X14/X15/X24); an error WITHOUT one is a
+		// transport/network failure (offline, DNS, TLS) and says nothing
+		// about the shape hypothesis.
+		var upErr *provider.UpstreamError
+		if errors.As(err, &upErr) && upErr.HTTPStatus > 0 {
+			t.Fatalf("OP-3 backend answered HTTP %d — the mirrored backend shape does not match the live backend; escalate per plan §2.9", upErr.HTTPStatus)
+		}
+		t.Fatalf("OP-3 backend request failed before any HTTP answer (transport failure or credential rotation failure): %v\n"+
+			"this is not a shape mismatch — check reachability and the refresh token before escalating the shape hypothesis", err)
 	}
 	if len(resp.Content) == 0 {
 		t.Error("backend answer carries no content parts")
