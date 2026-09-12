@@ -445,3 +445,60 @@ func TestMessages_BetaTruePathMatch(t *testing.T) {
 		t.Errorf("type = %q, want message", resp.Type)
 	}
 }
+
+// 9. Auth-disabled path through httpapi (Analysis G control 1, deferred
+// review finding n5): with the middleware's ENV opt-out applied, requests
+// with NO key at all pass on both surfaces — Bearer/x-api-key absent —
+// while the same requests against the default (auth-on) env are rejected.
+func TestMessages_AuthDisabledNoKeyPath(t *testing.T) {
+	e := newEnvAuthDisabled(t)
+	e.mock.Enqueue(mockJSON(t, http.StatusOK, string(golden(t, "openai/chat-response.json"))))
+
+	// Keyless Anthropic-surface POST must pass.
+	req, err := http.NewRequest(http.MethodPost, e.srv.URL+"/v1/messages",
+		strings.NewReader(string(golden(t, "anthropic/message-request.json"))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	status, body := e.do(t, req)
+	if status != http.StatusOK {
+		t.Fatalf("keyless status = %d, want 200 with auth disabled (body %s)", status, body)
+	}
+	var resp struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		t.Fatalf("response not JSON: %v (%s)", err, body)
+	}
+	if resp.Type != "message" {
+		t.Errorf("type = %q, want message", resp.Type)
+	}
+
+	// Keyless OpenAI-surface POST must pass too.
+	e.mock.Enqueue(mockJSON(t, http.StatusOK, string(golden(t, "openai/chat-response.json"))))
+	req2, err := http.NewRequest(http.MethodPost, e.srv.URL+"/v1/chat/completions",
+		strings.NewReader(`{"model":"claude-sonnet-5","messages":[{"role":"user","content":"hi"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req2.Header.Set("Content-Type", "application/json")
+	status2, body2 := e.do(t, req2)
+	if status2 != http.StatusOK {
+		t.Fatalf("keyless OpenAI-surface status = %d, want 200 (body %s)", status2, body2)
+	}
+
+	// Control: the auth-on default still rejects keyless requests.
+	eOn := newClaudeEnv(t)
+	eOn.mock.Enqueue(mockJSON(t, http.StatusOK, string(golden(t, "openai/chat-response.json"))))
+	req3, err := http.NewRequest(http.MethodPost, eOn.srv.URL+"/v1/messages",
+		strings.NewReader(string(golden(t, "anthropic/message-request.json"))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req3.Header.Set("Content-Type", "application/json")
+	status3, _ := eOn.do(t, req3)
+	if status3 != http.StatusUnauthorized {
+		t.Errorf("auth-on keyless status = %d, want 401 (control)", status3)
+	}
+}

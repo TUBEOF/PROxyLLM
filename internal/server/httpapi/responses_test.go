@@ -21,6 +21,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"github.com/proxyllm/proxyllm/internal/testutil/mockprovider"
 )
 
 // sseEvent is one named SSE frame parsed off a Responses stream body.
@@ -258,7 +260,55 @@ func TestResponses_ToolCallStream(t *testing.T) {
 	}
 }
 
-// 5. No-route (§5.3): a request for a model with no rule → 4xx with the
+// 5. Mid-stream upstream failure (Analysis E failover discipline): once
+// streaming has begun, an upstream connection drop terminates with the
+// protocol-conform Responses error event (O7: FLAT {type,code,message}
+// shape) — never a mid-stream provider swap, never a bare Go error string.
+func TestResponses_StreamMidStreamError(t *testing.T) {
+	e := newEnv(t)
+	firstDelta := `data: {"id":"x","object":"chat.completion.chunk","model":"gpt-5","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}` + "\n\n"
+	e.mock.Enqueue(mockprovider.NewScript().SSEFrames(firstDelta).Abort())
+
+	req := strings.Replace(string(golden(t, "openai/responses-request.json")), `"stream": false`, `"stream": true`, 1)
+	status, body := e.postStream(t, "/v1/responses", req)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (SSE already started, body %s)", status, body)
+	}
+	var errEvent *sseEvent
+	for i, ev := range parseSSEEvents(body) {
+		if ev.name != "error" {
+			continue
+		}
+		if errEvent != nil {
+			t.Errorf("multiple error events in %s — error must be terminal (O7)", body)
+		}
+		errEvent = &parseSSEEvents(body)[i]
+	}
+	if errEvent == nil {
+		t.Fatalf("mid-stream failure produced no error event (O7): %s", body)
+	}
+	var wireErr struct {
+		Type    string `json:"type"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal([]byte(errEvent.data), &wireErr); err != nil {
+		t.Fatalf("error event data not JSON: %v (%s)", err, errEvent.data)
+	}
+	if wireErr.Type != "error" {
+		t.Errorf("error event type = %q, want \"error\" (O7 flat shape)", wireErr.Type)
+	}
+	if wireErr.Message == "" {
+		t.Errorf("error event missing message: %s", errEvent.data)
+	}
+	// Terminal discipline: nothing after the error event.
+	events := parseSSEEvents(body)
+	if len(events) > 0 && events[len(events)-1].name != "error" {
+		t.Errorf("events continue after the terminal error event (B2 discipline): %s", body)
+	}
+}
+
+// 6. No-route (§5.3): a request for a model with no rule → 4xx with the
 // OpenAI error shape (O10).
 func TestResponses_NoRoute(t *testing.T) {
 	e := newEnv(t)

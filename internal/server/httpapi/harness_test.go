@@ -61,6 +61,28 @@ func newEnv(t *testing.T) *env {
 // (mock-main registered as the sole provider).
 func newEnvWithRules(t *testing.T, rules ...routing.Rule) *env {
 	t.Helper()
+	return newEnvWithAuthOpts(t, nil, rules...)
+}
+
+// newEnvAuthDisabled assembles the environment with client-key auth
+// disabled (Analysis G control 1, PROXYLLM_AUTH_DISABLED opt-out): requests
+// must pass with NO key at all. Routes claude-sonnet-5 like newClaudeEnv so
+// the golden Anthropic fixture requests resolve.
+func newEnvAuthDisabled(t *testing.T) *env {
+	t.Helper()
+	return newEnvWithAuthOpts(t, []auth.Option{auth.WithAuthDisabled()},
+		routing.Rule{
+			MatchModel: "claude-sonnet-5",
+			Chain:      []string{"mock-main"},
+			Priority:   100,
+			Enabled:    true,
+		})
+}
+
+// newEnvWithAuthOpts assembles the environment with explicit routing rules
+// (mock-main registered as the sole provider) and auth-middleware options.
+func newEnvWithAuthOpts(t *testing.T, authOpts []auth.Option, rules ...routing.Rule) *env {
+	t.Helper()
 	st, err := storage.Open(config.StorageConfig{Path: t.TempDir() + "/test.db"})
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -101,7 +123,7 @@ func newEnvWithRules(t *testing.T, rules ...routing.Rule) *env {
 		t.Fatalf("create client key: %v", err)
 	}
 
-	srv := httptest.NewServer(auth.NewMiddleware(st).Wrap(h))
+	srv := httptest.NewServer(auth.NewMiddleware(st, authOpts...).Wrap(h))
 	t.Cleanup(srv.Close)
 
 	return &env{
