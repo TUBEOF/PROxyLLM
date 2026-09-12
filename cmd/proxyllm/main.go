@@ -36,8 +36,14 @@ func loadMasterKey(cfg *config.Config) ([]byte, error) {
 // configured: without one there is nothing to emulate with, and the
 // emulation loop then degrades to the documented "unavailable" error
 // results. Never silently off — the caller logs the state.
-func serverOptions(cfg *config.Config) []server.Option {
-	opts := []server.Option{}
+func serverOptions(cfg *config.Config, masterKey []byte) []server.Option {
+	opts := []server.Option{
+		// Mount the admin API (plan §5.2): the master key doubles as the
+		// session/CSRF HMAC secret — the same bytes that sealed the
+		// storage envelope, so WebUI sessions and at-rest secrets break
+		// and rotate together.
+		server.WithMasterKey(masterKey),
+	}
 	if apiKey, ok := config.FirecrawlAPIKeyFromEnv(); ok && apiKey != "" {
 		opts = append(opts, server.WithEmulator(
 			firecrawl.NewEmulator(cfg.Firecrawl.BaseURL, apiKey, nil)))
@@ -143,7 +149,7 @@ func run() error {
 		logger.Warn("PROxyLLM: web-tool emulation is inactive (PROXYLLM_FIRECRAWL_API_KEY not set); emulated web_search/web_fetch requests will receive the documented \"unavailable\" error results")
 	}
 
-	srv, err := server.New(cfg, store, logger, serverOptions(cfg)...)
+	srv, err := server.New(cfg, store, logger, serverOptions(cfg, masterKey)...)
 	if err != nil {
 		return err
 	}

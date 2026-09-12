@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 )
 
@@ -25,10 +24,10 @@ type RoutingRule struct {
 // before the router ever sees it.
 func (s *Store) PutRoutingRule(ctx context.Context, r RoutingRule) error {
 	if r.ID == "" {
-		return errors.New("storage: routing rule without id")
+		return fmt.Errorf("routing rule without id: %w", ErrInvalid)
 	}
 	if len(r.Chain) == 0 {
-		return fmt.Errorf("storage: routing rule %s: empty chain", r.ID)
+		return fmt.Errorf("routing rule %s: empty chain: %w", r.ID, ErrInvalid)
 	}
 	if len(r.MatchCapabilities) == 0 {
 		r.MatchCapabilities = json.RawMessage("{}")

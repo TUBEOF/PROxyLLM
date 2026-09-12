@@ -13,6 +13,7 @@ import (
 	"github.com/proxyllm/proxyllm/internal/provider"
 	"github.com/proxyllm/proxyllm/internal/routing"
 	"github.com/proxyllm/proxyllm/internal/server/httpapi"
+	"github.com/proxyllm/proxyllm/internal/server/webui"
 	"github.com/proxyllm/proxyllm/internal/storage"
 )
 
@@ -28,6 +29,7 @@ type Server struct {
 type serverOptions struct {
 	providers []provider.Provider
 	emulator  routing.Emulator
+	masterKey []byte
 }
 
 // Option configures New.
@@ -38,6 +40,15 @@ type Option func(*serverOptions)
 // register mocks).
 func WithProvider(p provider.Provider) Option {
 	return func(o *serverOptions) { o.providers = append(o.providers, p) }
+}
+
+// WithMasterKey mounts the admin API (plan §5.2): the master key is the
+// session/CSRF HMAC secret — the same bytes that sealed the storage
+// envelope — so the WebUI backend only exists when the operator's key
+// material is wired in. Without it there is no /api/admin/ surface at all
+// (404), never a weakened fallback.
+func WithMasterKey(key []byte) Option {
+	return func(o *serverOptions) { o.masterKey = key }
 }
 
 // WithEmulator wires the web-tool emulator (plan §6.2 Firecrawl fallback)
@@ -103,6 +114,30 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		Executor: exec,
 	})
 	s.mux.Handle("/", auth.NewMiddleware(store, authOpts...).Wrap(handler))
+
+	// Admin API (plan §5.2): mounted only when the master key is wired —
+	// the reload hook pushes freshly stored routing rules into the LIVE
+	// router (Analysis E: WebUI rule writes take effect without restart;
+	// a failed store write never reloads, so the router never sees a
+	// rule set that is not the persisted one).
+	if o.masterKey != nil {
+		admin := webui.NewAdminAPI(webui.AdminParams{
+			Store: store,
+			ReloadRouting: func() {
+				fresh, err := loadRoutingRules(context.Background(), store)
+				if err != nil {
+					// The persisted rule set is the truth; a failed reload
+					// keeps the last known-good live rules rather than
+					// de-routing everything on a transient store error.
+					logger.Error("routing reload failed; keeping last known-good rules", "error", err)
+					return
+				}
+				router.SetRules(fresh)
+			},
+			MasterKey: o.masterKey,
+		})
+		s.mux.Handle("/api/admin/", admin.Handler())
+	}
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 

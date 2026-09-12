@@ -34,7 +34,7 @@ func rejectSecretConfig(cfg json.RawMessage) error {
 	}
 	var obj any
 	if err := json.Unmarshal(cfg, &obj); err != nil {
-		return fmt.Errorf("storage: provider config is not valid JSON: %w", err)
+		return fmt.Errorf("provider config is not valid JSON: %w: %w", ErrInvalid, err)
 	}
 	var walk func(v any) error
 	walk = func(v any) error {
@@ -43,7 +43,7 @@ func rejectSecretConfig(cfg json.RawMessage) error {
 			for k, child := range t {
 				for _, bad := range secretShapedConfigKeys {
 					if k == bad {
-						return fmt.Errorf("storage: provider config must not contain key %q — secrets belong in the encrypted token store", k)
+						return fmt.Errorf("provider config must not contain key %q — secrets belong in the encrypted token store: %w", k, ErrInvalid)
 					}
 				}
 				if err := walk(child); err != nil {
@@ -67,10 +67,10 @@ func rejectSecretConfig(cfg json.RawMessage) error {
 // change type or name: last write wins.
 func (s *Store) PutProvider(ctx context.Context, p Provider) error {
 	if p.ID == "" {
-		return errors.New("storage: provider without id")
+		return fmt.Errorf("provider without id: %w", ErrInvalid)
 	}
 	if p.Type == "" {
-		return fmt.Errorf("storage: provider %s: missing type", p.ID)
+		return fmt.Errorf("provider %s: missing type: %w", p.ID, ErrInvalid)
 	}
 	if err := rejectSecretConfig(p.Config); err != nil {
 		return err

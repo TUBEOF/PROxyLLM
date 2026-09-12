@@ -10,6 +10,12 @@ import (
 // rule). Callers match with errors.Is.
 var ErrNotFound = errors.New("storage: not found")
 
+// ErrInvalid is returned when a write is rejected by validation (missing
+// id/type, empty chain, secret-shaped config key …) — as opposed to a missing
+// row (ErrNotFound) or an internal failure. The admin API maps it to 400
+// without matching on message strings.
+var ErrInvalid = errors.New("storage: invalid")
+
 // ProviderToken is one decrypted provider credential row. Secrets exist in
 // plaintext ONLY inside this struct — at rest they are AES-256-GCM
 // envelopes (ADR-sec-storage; research digest X12).

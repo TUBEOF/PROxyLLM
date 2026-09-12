@@ -25,10 +25,10 @@ type Model struct {
 // provider.
 func (s *Store) PutModel(ctx context.Context, m Model) error {
 	if m.ID == "" {
-		return errors.New("storage: model without id")
+		return fmt.Errorf("model without id: %w", ErrInvalid)
 	}
 	if m.ProviderID == "" {
-		return fmt.Errorf("storage: model %s: missing provider_id", m.ID)
+		return fmt.Errorf("model %s: missing provider_id: %w", m.ID, ErrInvalid)
 	}
 	if len(m.Capabilities) == 0 {
 		m.Capabilities = json.RawMessage("{}")

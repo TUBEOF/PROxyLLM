@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/proxyllm/proxyllm/internal/provider"
 )
@@ -41,6 +42,13 @@ type Router struct {
 	cfg    Config
 	reg    provider.Registry
 	health *HealthTracker
+
+	// mu guards rules — the live rule set is replaceable at runtime
+	// (WebUI routing writes reload it). Readers take RLock; the reload
+	// path takes Lock for one whole-set swap. Aliases and KeyScopes stay
+	// startup-fixed: only rules are DB-editable today.
+	mu    sync.RWMutex
+	rules []Rule
 }
 
 // Config carries the routing inputs.
@@ -73,11 +81,21 @@ func WithHealth(h *HealthTracker) Option {
 
 // NewRouter returns a Router for cfg.
 func NewRouter(cfg Config, opts ...Option) *Router {
-	r := &Router{cfg: cfg}
+	r := &Router{cfg: cfg, rules: cfg.Rules}
 	for _, opt := range opts {
 		opt(r)
 	}
 	return r
+}
+
+// SetRules atomically replaces the live rule set (the admin API's reload
+// hook: WebUI routing writes push the freshly stored rules into the router
+// without restart). The caller keeps ownership of its input slice; the
+// swap stores it as one whole set.
+func (r *Router) SetRules(rules []Rule) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.rules = rules
 }
 
 // ResolveChain resolves model to its fallback chain — alias resolution and
@@ -191,8 +209,14 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 // exact matches before wildcards, then priority descending, then
 // registration order.
 func (r *Router) matchingRules(model string) ([]Rule, error) {
+	// Snapshot the live rule set under RLock, then match outside the lock
+	// — the slice swap is atomic, so this snapshot is one coherent set.
+	r.mu.RLock()
+	all := r.rules
+	r.mu.RUnlock()
+
 	var exact, wildcard []Rule
-	for _, rule := range r.cfg.Rules {
+	for _, rule := range all {
 		if !rule.Enabled {
 			continue
 		}
