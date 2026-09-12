@@ -1,0 +1,7 @@
+{
+  "fixture": "models.json",
+  "source": "https://docs.anthropic.com/en/api/models-list",
+  "accessed": "2026-09-12",
+  "facts": ["C1"],
+  "notes": "GET /v1/models list response on the Anthropic surface (gateway model discovery): data array with id/type:'model'/display_name/created_at RFC3339/max_tokens/max_input_tokens/capabilities, plus first_id/has_more/last_id. Distinct from the OpenAI models.json shape (O9)."
+}

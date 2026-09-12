@@ -94,11 +94,9 @@ func run() error {
 	}
 	slog.SetDefault(logger)
 
-	// ADR-007 control 1: auth opt-out must never be silent.
-	if cfg.Auth.Disabled {
-		logger.Warn("AUTH DISABLED — API surfaces accept unauthenticated requests; " +
-			"set PROXYLLM_AUTH_DISABLED=0 (or unset) to re-enable")
-	}
+	// No auth-disabled warning here: server.New emits the canonical loud
+	// one-time startup warning when cfg.Auth.Disabled is set (ADR-007
+	// control 1 — the wiring layer owns it, so there is exactly one).
 
 	store, err := storage.Open(cfg.Storage)
 	if err != nil {
@@ -123,7 +121,10 @@ func run() error {
 	}
 	store.SetEnvelope(envelope)
 
-	srv := server.New(cfg, store, logger)
+	srv, err := server.New(cfg, store, logger)
+	if err != nil {
+		return err
+	}
 
 	httpSrv := &http.Server{
 		Addr:              cfg.Server.Addr,

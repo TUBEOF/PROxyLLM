@@ -1,0 +1,227 @@
+package httpapi
+
+// Test harness for the client-facing API surfaces (plan §5.1): a full
+// client → auth → httpapi → Router → Executor → mock-upstream round trip
+// over real HTTP (Analysis F streaming-harness doctrine). RED tests derive
+// exclusively from plan §5.1/§5.3, the §2 wire facts (O10/A13/C1/C2/A2),
+// golden fixtures under testdata/golden/, and the routing/compat specs
+// (§6.4) — never from implementation behavior.
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/proxyllm/proxyllm/internal/auth"
+	"github.com/proxyllm/proxyllm/internal/config"
+	"github.com/proxyllm/proxyllm/internal/provider"
+	"github.com/proxyllm/proxyllm/internal/routing"
+	"github.com/proxyllm/proxyllm/internal/storage"
+	"github.com/proxyllm/proxyllm/internal/testutil/mockprovider"
+	ttestutil "github.com/proxyllm/proxyllm/internal/translate/testutil"
+)
+
+// env is one assembled proxy-under-test: store, mock upstreams, router,
+// executor, and an httptest server serving the httpapi handler behind the
+// auth middleware. Tests shape behavior through the routing rules and the
+// mock scripts they enqueue.
+type env struct {
+	t      *testing.T
+	store  *storage.Store
+	mock   *mockprovider.Server
+	reg    provider.Registry
+	router *routing.Router
+	exec   *routing.Executor
+	health *routing.HealthTracker
+	srv    *httptest.Server
+	keyID  string
+	key    string // display-once client key (Bearer / x-api-key)
+}
+
+// newEnv assembles the default environment: one mock upstream provider
+// ("mock-main", all capabilities, streaming) wired via one routing rule
+// "gpt-5" → ["mock-main"]. Tests mutate via the returned env and the
+// mockprovider scripts.
+func newEnv(t *testing.T) *env {
+	t.Helper()
+	return newEnvWithRules(t, routing.Rule{
+		MatchModel: "gpt-5",
+		Chain:      []string{"mock-main"},
+		Priority:   100,
+		Enabled:    true,
+	})
+}
+
+// newEnvWithRules assembles the environment with explicit routing rules
+// (mock-main registered as the sole provider).
+func newEnvWithRules(t *testing.T, rules ...routing.Rule) *env {
+	t.Helper()
+	st, err := storage.Open(config.StorageConfig{Path: t.TempDir() + "/test.db"})
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	// Provider row (FK target for models) via the exported seeding path.
+	ctx := context.Background()
+	if err := st.EnsureProvider(ctx, "mock-main", "custom", "Mock Main"); err != nil {
+		t.Fatalf("seed provider row: %v", err)
+	}
+
+	mock := mockprovider.New(t)
+
+	reg := provider.NewRegistry()
+	reg.Register(mock.Provider("mock-main", provider.Capabilities{
+		Streaming: true, Tools: true, Vision: true,
+		WebSearch: true, WebFetch: true, CodeExecution: true, Thinking: true,
+	}))
+
+	router := routing.NewRouter(routing.Config{Rules: rules},
+		routing.WithRegistry(reg), routing.WithHealth(routing.NewHealthTracker()))
+	health := routing.NewHealthTracker()
+	exec := routing.NewExecutor(routing.ExecutorConfig{
+		Registry: reg,
+		Health:   health,
+		// Deterministic: no real sleeping in tests.
+		RetrySleeper: func(time.Duration) {},
+	})
+
+	h := New(Params{Store: st, Router: router, Executor: exec})
+
+	keyID, key, err := auth.CreateClientKey(ctx, st, "httpapi-test")
+	if err != nil {
+		t.Fatalf("create client key: %v", err)
+	}
+
+	srv := httptest.NewServer(auth.NewMiddleware(st).Wrap(h))
+	t.Cleanup(srv.Close)
+
+	return &env{
+		t: t, store: st, mock: mock, reg: reg,
+		router: router, exec: exec, health: health,
+		srv: srv, keyID: keyID, key: key,
+	}
+}
+
+// seedModel stores one model row (compat config) for the FK provider.
+func (e *env) seedModel(t *testing.T, id string, compat json.RawMessage) {
+	t.Helper()
+	if err := e.store.PutModel(context.Background(), storage.Model{
+		ID:         id,
+		ProviderID: "mock-main",
+		Name:       id,
+		Compat:     compat,
+	}); err != nil {
+		t.Fatalf("seed model %s: %v", id, err)
+	}
+}
+
+// post sends one authenticated JSON POST and returns status + body.
+func (e *env) post(t *testing.T, path, body string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, e.srv.URL+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+e.key)
+	return e.do(t, req)
+}
+
+// get sends one authenticated GET.
+func (e *env) get(t *testing.T, path string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, e.srv.URL+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+e.key)
+	return e.do(t, req)
+}
+
+// do executes req and returns status + body.
+func (e *env) do(t *testing.T, req *http.Request) (int, string) {
+	t.Helper()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resp.StatusCode, string(b)
+}
+
+// postStream sends one authenticated streaming POST and returns status +
+// the raw SSE body (all frames, read to completion or ctx cancel).
+func (e *env) postStream(t *testing.T, path, body string) (int, string) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, e.srv.URL+path, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+e.key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	status := resp.StatusCode
+	b, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return status, string(b)
+}
+
+// golden loads one golden fixture (relative to testdata/golden/).
+func golden(t *testing.T, rel string) []byte {
+	t.Helper()
+	return ttestutil.LoadGolden(t, rel)
+}
+
+// jsonField extracts one top-level field as raw JSON; fails the test when
+// absent.
+func jsonField(t *testing.T, body, field string) json.RawMessage {
+	t.Helper()
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(body), &m); err != nil {
+		t.Fatalf("body not a JSON object: %v (%s)", err, body)
+	}
+	v, ok := m[field]
+	if !ok {
+		t.Fatalf("field %q missing in %s", field, body)
+	}
+	return v
+}
+
+// requestLogs reads every stored request_logs row (newest first).
+func (e *env) requestLogs(t *testing.T) []storage.RequestLog {
+	t.Helper()
+	logs, err := e.store.ListRequestLogs(context.Background(), 50)
+	if err != nil {
+		t.Fatalf("ListRequestLogs: %v", err)
+	}
+	return logs
+}
+
+// sseDataFrames extracts the data payloads of an SSE body (one per frame).
+func sseDataFrames(body string) []string {
+	var out []string
+	for _, frame := range strings.Split(body, "\n\n") {
+		for _, line := range strings.Split(frame, "\n") {
+			if after, ok := strings.CutPrefix(line, "data: "); ok {
+				out = append(out, after)
+			}
+		}
+	}
+	return out
+}

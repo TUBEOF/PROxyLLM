@@ -40,12 +40,18 @@ func GenerateClientKey() (string, error) {
 	if _, err := rand.Read(secret); err != nil {
 		return "", err
 	}
-	prefix := make([]byte, prefixLen/2) // 4 bytes → 8 base64url chars
+	// prefixLen chars from keyAlphabet (no "_"): splitClientKey cuts at the
+	// first "_", so a "_" inside the prefix would corrupt key parsing —
+	// base64url cannot be used here.
+	prefix := make([]byte, prefixLen)
 	if _, err := rand.Read(prefix); err != nil {
 		return "", err
 	}
+	for i := range prefix {
+		prefix[i] = keyAlphabet[int(prefix[i])%len(keyAlphabet)]
+	}
 	b64 := base64.RawURLEncoding
-	return KeyPrefix + b64.EncodeToString(prefix) + "_" + b64.EncodeToString(secret), nil
+	return KeyPrefix + string(prefix) + "_" + b64.EncodeToString(secret), nil
 }
 
 // splitClientKey parses pk_<prefix>_<secret> into prefix and secret
@@ -63,7 +69,10 @@ func splitClientKey(key string) (prefix, secret string, ok bool) {
 	return prefix, secret, true
 }
 
-// hasher returns the Argon2id hasher backing key storage.
+// keyAlphabet is the display-prefix alphabet: URL-safe chars minus "_" so
+// the prefix can never collide with the key's "_" segment separator.
+const keyAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+
 func hasher() *storage.Argon2Hasher { return storage.NewArgon2Hasher() }
 
 // newKeyID mints a random row id (no secret material in it).

@@ -178,10 +178,15 @@ func (ResponsesCodec) EncodeResponse(resp ir.Response) ([]byte, error) {
 		switch pt := p.(type) {
 		case ir.TextPart:
 			w.Output = append(w.Output, responsesWireItem{
-				Type:    "message",
-				Status:  "completed",
-				Role:    "assistant",
-				Content: responsesContentFromParts([]ir.Part{pt}, "output_text"),
+				Type:   "message",
+				Status: "completed",
+				Role:   "assistant",
+				// O5: output message content is a typed part array
+				// ([{"type":"output_text","text":...}]), never a plain string
+				// (a plain string is an *input* shorthand).
+				Content: &responsesWireContent{Parts: []responsesWirePart{
+					{Type: "output_text", Text: pt.Text},
+				}},
 			})
 		case ir.ToolCallPart:
 			args := string(pt.Input)

@@ -1,0 +1,118 @@
+package httpapi
+
+// POST /v1/responses (plan §5.1, wire facts O5–O8): the OpenAI Responses
+// surface. The client body decodes through the Responses codec into IR,
+// routes through the chat-wire upstream (custom provider class), and
+// re-encodes into Responses wire — semantic streaming events per O7.
+
+import (
+	"net/http"
+	"time"
+
+	"github.com/proxyllm/proxyllm/internal/auth"
+	"github.com/proxyllm/proxyllm/internal/routing"
+	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/proxyllm/proxyllm/internal/translate/openai"
+)
+
+// handleResponses serves POST /v1/responses (streaming + non-streaming).
+func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
+	raw, ok := readBody(w, r)
+	if !ok {
+		return
+	}
+
+	req, err := openai.ResponsesCodec{}.DecodeRequest(raw)
+	if err != nil {
+		a.writeRouteError(w, openAIErrorWriter(), err)
+		return
+	}
+
+	ctx := r.Context()
+	keyID := auth.ClientKeyIDFromContext(ctx)
+
+	compat := a.compatFor(ctx, req.Model)
+	req, compatTrace, err := routing.ApplyCompat(compat, req)
+	if err != nil {
+		_, _ = a.writeRouteError(w, openAIErrorWriter(), err)
+		a.writeRequestLog(ctx, keyID, req.Model, "", http.StatusBadRequest, 0,
+			nil, routeTrace(compatTrace), redactedMessage(err))
+		return
+	}
+
+	chain, routerTrace, err := a.router.ResolveChainFor(req.Model,
+		requiredCapabilities(req), routing.WithKeyID(keyID))
+	if err != nil {
+		_, _ = a.writeRouteError(w, openAIErrorWriter(), err)
+		a.writeRequestLog(ctx, keyID, req.Model, "", mapRouteErrorStatus(err), 0,
+			nil, routeTrace(compatTrace, routerTrace), redactedMessage(err))
+		return
+	}
+
+	if req.Stream {
+		a.streamResponses(w, r, keyID, req, chain, compatTrace, routerTrace)
+		return
+	}
+
+	start := time.Now()
+	resp, execTrace, err := a.executor.Execute(ctx, chain, req)
+	latency := time.Since(start).Milliseconds()
+	if err != nil {
+		_, msg := a.writeRouteError(w, openAIErrorWriter(), err)
+		a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
+			mapRouteErrorStatus(err), latency, nil,
+			routeTrace(compatTrace, routerTrace, execTrace), msg)
+		return
+	}
+
+	// OP-2: echo the requested model name (see messages.go).
+	resp.Model = req.Model
+	out, err := openai.ResponsesCodec{}.EncodeResponse(resp)
+	if err != nil {
+		_, msg := a.writeRouteError(w, openAIErrorWriter(), err)
+		a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
+			http.StatusInternalServerError, latency, nil,
+			routeTrace(compatTrace, routerTrace, execTrace), msg)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(out)
+
+	usage := resp.Usage
+	a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
+		http.StatusOK, latency, &usage,
+		routeTrace(compatTrace, routerTrace, execTrace), "")
+}
+
+// streamResponses relays an upstream stream as Responses semantic events
+// (O7: response.created → output_text.delta / function_call_arguments
+// deltas → response.completed carrying the terminal usage).
+func (a *api) streamResponses(w http.ResponseWriter, r *http.Request, keyID string, req ir.Request, chain []routing.ChainEntry, traces ...*routing.Trace) {
+	ctx := r.Context()
+
+	start := time.Now()
+	ch, cancel, execTrace, err := a.executor.ExecuteStream(ctx, chain, req)
+	if err != nil {
+		_, msg := a.writeRouteError(w, openAIErrorWriter(), err)
+		a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
+			mapRouteErrorStatus(err), time.Since(start).Milliseconds(), nil,
+			routeTrace(append(traces, execTrace)...), msg)
+		return
+	}
+	defer cancel()
+
+	enc := openai.NewResponsesStreamEncoder(w)
+	var terminalUsage *ir.Usage
+	var streamErr *ir.UpstreamError
+	relayStream(ctx, ch, enc, &terminalUsage, &streamErr, req.Model)
+
+	var errMsg string
+	if streamErr != nil {
+		errMsg = streamErr.Message
+	}
+	a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
+		http.StatusOK, time.Since(start).Milliseconds(), terminalUsage,
+		routeTrace(append(traces, execTrace)...), errMsg)
+}
