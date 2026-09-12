@@ -60,6 +60,12 @@ type ExecutorConfig struct {
 	// waiting (Analysis F determinism).
 	RetrySleeper func(time.Duration)
 
+	// Emulator executes emulated web tools (§6.2 Firecrawl fallback) for
+	// the tool-call round-trip loop in Execute. Nil disables the loop —
+	// model tool calls against emulated tools then surface to the client
+	// unchanged.
+	Emulator Emulator
+
 	// now stamps attempt latencies; injectable for tests.
 	now func() time.Time
 }
@@ -112,10 +118,23 @@ func NewExecutor(cfg ExecutorConfig) *Executor {
 }
 
 // Execute performs a non-streaming request against the chain with the
-// full retry/failover discipline. The returned Trace records every
+// full retry/failover discipline (FO-2/FO-3), plus the §6.2 emulated-tool
+// round-trip loop: when the request carries emulated web tools (the
+// applyEmulation emulate-firecrawl policy) and the model answers with
+// tool calls against them, the executor answers the calls via the
+// configured Emulator and re-dispatches until the model answers without
+// them, budgets refuse with protocol-conform error results, or the round
+// cap surfaces the last response. The returned Trace records every
 // transition (FO-4).
 func (e *Executor) Execute(ctx context.Context, chain []ChainEntry, req ir.Request) (ir.Response, *Trace, error) {
 	trace := &Trace{}
+	resp, err := e.executeWithEmulation(ctx, chain, req, trace)
+	return resp, trace, err
+}
+
+// executeOnce walks the chain once with the full retry/failover
+// discipline — one upstream answer (or the terminal error).
+func (e *Executor) executeOnce(ctx context.Context, chain []ChainEntry, req ir.Request, trace *Trace) (ir.Response, error) {
 	var lastErr error
 
 	// pendingBackoff is the delay before the next same-provider retry,
@@ -144,7 +163,7 @@ func (e *Executor) Execute(ctx context.Context, chain []ChainEntry, req ir.Reque
 			latency := e.cfg.now().Sub(started).Milliseconds()
 			if err == nil {
 				e.reportSuccess(entry.ProviderID)
-				return resp, trace, nil
+				return resp, nil
 			}
 			lastErr = err
 			c := ClassifyError(err, PreStream)
@@ -154,7 +173,7 @@ func (e *Executor) Execute(ctx context.Context, chain []ChainEntry, req ir.Reque
 
 			switch c.Action {
 			case ActionTerminal:
-				return ir.Response{}, trace, err
+				return ir.Response{}, err
 			case ActionRetrySame:
 				if attempt+1 < attempts {
 					pendingBackoff = e.retryDelay(err, attempt+1)
@@ -171,7 +190,7 @@ func (e *Executor) Execute(ctx context.Context, chain []ChainEntry, req ir.Reque
 			break
 		}
 	}
-	return ir.Response{}, trace, &exhaustedError{last: lastErr}
+	return ir.Response{}, &exhaustedError{last: lastErr}
 }
 
 // ExecuteStream performs a streaming request against the chain. FO-5:

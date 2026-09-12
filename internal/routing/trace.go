@@ -47,6 +47,11 @@ const (
 	// thinking strip/map/block, clamps, emulation) — never silent.
 	EventCompatPolicy EventType = "compat_policy"
 
+	// EventEmulatedTool: a server tool was served by the §6.2 emulation
+	// layer (model tool call answered via the Firecrawl fallback) —
+	// substitutions are never silent.
+	EventEmulatedTool EventType = "emulated_tool"
+
 	// EventRejected: the request ended without an upstream attempt (no
 	// route, key scope, or empty chain after filtering).
 	EventRejected EventType = "rejected"
@@ -129,6 +134,13 @@ func (t *Trace) Retry(providerID string, reason string) {
 func (t *Trace) CompatPolicy(setting, value, reason string) {
 	t.add(Event{Type: EventCompatPolicy, Reason: reason,
 		From: setting, To: value})
+}
+
+// EmulatedTool records a server-tool substitution by the §6.2 emulation
+// layer (never silent). detail carries the invocation summary (tool,
+// query/url, outcome).
+func (t *Trace) EmulatedTool(toolName, detail string) {
+	t.add(Event{Type: EventEmulatedTool, Reason: detail, To: toolName})
 }
 
 // Reject records a terminal no-upstream outcome.

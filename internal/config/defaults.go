@@ -2,10 +2,11 @@ package config
 
 // Config is the effective, assembled configuration.
 type Config struct {
-	Server  ServerConfig
-	Storage StorageConfig
-	Log     LogConfig
-	Auth    AuthConfig
+	Server    ServerConfig
+	Storage   StorageConfig
+	Log       LogConfig
+	Auth      AuthConfig
+	Firecrawl FirecrawlConfig
 }
 
 // ServerConfig holds HTTP listener settings.
@@ -39,6 +40,17 @@ type LogConfig struct {
 type AuthConfig struct {
 	// Disabled reflects PROXYLLM_AUTH_DISABLED=1. Never default true.
 	Disabled bool
+}
+
+// FirecrawlConfig holds the web-tool fallback settings (plan §6.2). Only
+// non-secret surface lives here; the API key is read straight from ENV
+// (FirecrawlAPIKeyFromEnv) so config dumps can never leak it — the same
+// discipline as the storage master key.
+type FirecrawlConfig struct {
+	// BaseURL overrides the Firecrawl API host (F1); empty selects the
+	// client's documented default. Intended for self-hosted instances and
+	// tests.
+	BaseURL string
 }
 
 // Default returns the built-in defaults. Every layer above overrides these.

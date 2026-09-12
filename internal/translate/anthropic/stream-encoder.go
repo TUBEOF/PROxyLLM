@@ -85,7 +85,7 @@ func (e *streamEncoder) encode(ev ir.StreamEvent) (string, json.RawMessage, erro
 			Role:    "assistant",
 			Model:   resp.Model,
 			Content: []wireBlock{},
-			Usage:   resp.Usage,
+			Usage:   usageToWire(resp.Usage),
 		}})
 	case ir.Ping:
 		return marshal(wirePingEvent{Type: "ping"})
@@ -120,7 +120,7 @@ func (e *streamEncoder) encode(ev ir.StreamEvent) (string, json.RawMessage, erro
 				StopReason:   md.StopReason,
 				StopSequence: seq,
 			},
-			Usage: md.Usage,
+			Usage: usageToWire(md.Usage),
 		})
 	case ir.Done:
 		return marshal(wireMessageStopEvent{Type: "message_stop"})
@@ -171,6 +171,22 @@ func encodeContentBlock(p ir.Part) (json.RawMessage, error) {
 			Name  string          `json:"name"`
 			Input json.RawMessage `json:"input"`
 		}{Type: "tool_use", ID: pt.ID, Name: pt.Name, Input: input})
+	case ir.ServerToolUsePart:
+		// Same empty-init discipline as tool_use: the wire
+		// content_block_start carries "input":{} and the input arrives
+		// via input_json_delta (verified live 2026-09-12,
+		// platform.claude.com/docs/en/build-with-claude/streaming) —
+		// never omitted, despite the omitempty on the shared wireBlock.
+		input := pt.Input
+		if len(input) == 0 || string(input) == "null" {
+			input = json.RawMessage("{}")
+		}
+		return json.Marshal(struct {
+			Type  string          `json:"type"`
+			ID    string          `json:"id"`
+			Name  string          `json:"name"`
+			Input json.RawMessage `json:"input"`
+		}{Type: "server_tool_use", ID: pt.ID, Name: pt.Name, Input: input})
 	default:
 		raw, err := json.Marshal(blockFromPart(p))
 		if err != nil {
@@ -238,7 +254,7 @@ type wireStartMessage struct {
 	Content      []wireBlock    `json:"content"`
 	StopReason   *ir.StopReason `json:"stop_reason"`
 	StopSequence *string        `json:"stop_sequence"`
-	Usage        ir.Usage       `json:"usage"`
+	Usage        wireUsage      `json:"usage"`
 }
 
 type wireStartEvent struct {
@@ -277,7 +293,7 @@ type wireMessageDeltaDelta struct {
 type wireMessageDeltaEvent struct {
 	Type  string                `json:"type"`
 	Delta wireMessageDeltaDelta `json:"delta"`
-	Usage ir.Usage              `json:"usage"`
+	Usage wireUsage             `json:"usage"`
 }
 
 type wireMessageStopEvent struct {

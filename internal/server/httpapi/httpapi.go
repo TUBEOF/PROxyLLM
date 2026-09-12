@@ -88,7 +88,8 @@ func (a *api) compatFor(ctx context.Context, model string) routing.Compat {
 
 // requiredCapabilities derives the capability set the request needs from
 // its content: vision from image parts, tools from tool definitions,
-// streaming, thinking (plan §6.4 / Analysis E capability filter).
+// streaming, thinking, and web_search/web_fetch from server-tool defs
+// (plan §6.4 / Analysis E capability filter; A8 family identity).
 func requiredCapabilities(req ir.Request) provider.Capabilities {
 	var caps provider.Capabilities
 	if req.Stream {
@@ -99,6 +100,14 @@ func requiredCapabilities(req ir.Request) provider.Capabilities {
 	}
 	if req.Thinking != nil && (req.Thinking.Enabled || req.Thinking.Adaptive) {
 		caps.Thinking = true
+	}
+	for _, tool := range req.Tools {
+		switch tool.ServerToolName() {
+		case "web_search":
+			caps.WebSearch = true
+		case "web_fetch":
+			caps.WebFetch = true
+		}
 	}
 	for _, msg := range req.Messages {
 		for _, part := range msg.Parts {

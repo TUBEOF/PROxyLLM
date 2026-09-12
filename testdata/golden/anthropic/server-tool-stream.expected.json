@@ -1,0 +1,16 @@
+[
+  {"type":"start","model":"claude-sonnet-5","id":"msg_01StreamServerTool","usage":{"input_tokens":25,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}},
+  {"type":"block_start","index":0,"part":{"kind":"text"}},
+  {"type":"delta","index":0,"delta":{"kind":"text","text":"Searching for current weather."}},
+  {"type":"block_stop","index":0},
+  {"type":"block_start","index":1,"part":{"kind":"server_tool_use","id":"srvtoolu_014hJH82Qum7Td6UV8gDXThB","name":"web_search"}},
+  {"type":"delta","index":1,"delta":{"kind":"tool_input","partial_json":"{\"query\":\"latest quantum computing breakthroughs 2025\"}"}},
+  {"type":"block_stop","index":1},
+  {"type":"block_start","index":2,"part":{"kind":"server_tool_result","tool_use_id":"srvtoolu_014hJH82Qum7Td6UV8gDXThB","tool_name":"web_search","search":[{"url":"https://example.com","title":"Quantum Computing Breakthroughs in 2025","encrypted_content":"Ev0DCioIAxgCIiQ3NmU4ZmI4OC1k..."}]}},
+  {"type":"block_stop","index":2},
+  {"type":"block_start","index":3,"part":{"kind":"text"}},
+  {"type":"delta","index":3,"delta":{"kind":"text","text":"Based on the search, recent breakthroughs include..."}},
+  {"type":"block_stop","index":3},
+  {"type":"message_delta","message_delta":{"stop_reason":"end_turn","usage":{"input_tokens":10682,"output_tokens":510,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"web_search_requests":1}}},
+  {"type":"done"}
+]

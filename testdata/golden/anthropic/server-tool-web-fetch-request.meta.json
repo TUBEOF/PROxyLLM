@@ -1,0 +1,7 @@
+{
+  "fixture": "server-tool-web-fetch-request.json",
+  "source": "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/web-fetch-tool",
+  "accessed": "2026-09-12",
+  "facts": ["A8", "A9", "A10"],
+  "notes": "web_fetch tool definition (web_fetch_20250910 family): max_uses, allowed_domains, blocked_domains, citations, max_content_tokens. Type strings rotate (web_fetch_20250910 / _20260209 / _20260309 / _20260318). Security rule: web_fetch only fetches URLs previously appearing in conversation context (user messages, client tool results, prior search/fetch results) — never model output or the system prompt."
+}

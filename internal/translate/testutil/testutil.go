@@ -52,12 +52,29 @@ func goldenRoot() string {
 	return goldenRootPath
 }
 
+// wireSearchItem mirrors one web_search_result entry of a "search" array in
+// .expected.json fixtures (the result block arrives COMPLETE in
+// content_block_start — stream fixtures carry the items up front).
+type wireSearchItem struct {
+	URL              string `json:"url"`
+	Title            string `json:"title"`
+	EncryptedContent string `json:"encrypted_content,omitempty"`
+	PageAge          string `json:"page_age,omitempty"`
+}
+
 // wirePart mirrors the "part" object of .expected.json fixtures: a kind
 // discriminator plus the fields the fixtures carry.
 type wirePart struct {
 	Kind string `json:"kind"`
 	ID   string `json:"id,omitempty"`
 	Name string `json:"name,omitempty"`
+
+	// Server-tool result fields (kind "server_tool_result").
+	ToolUseID string           `json:"tool_use_id,omitempty"`
+	ToolName  string           `json:"tool_name,omitempty"`
+	IsError   bool             `json:"is_error,omitempty"`
+	ErrorCode string           `json:"error_code,omitempty"`
+	Search    []wireSearchItem `json:"search,omitempty"`
 }
 
 // wireError mirrors the "error" object of .expected.json fixtures.
@@ -148,6 +165,26 @@ func partFromWire(p *wirePart) ir.Part {
 		return ir.ThinkingPart{}
 	case "tool_use":
 		return ir.ToolCallPart{ID: p.ID, Name: p.Name}
+	case "server_tool_use":
+		// Stream fixtures never carry input at block_start — the input
+		// arrives via input_json_delta (verified live 2026-09-12).
+		return ir.ServerToolUsePart{ID: p.ID, Name: p.Name}
+	case "server_tool_result":
+		res := ir.ServerToolResultPart{
+			ToolUseID: p.ToolUseID,
+			ToolName:  p.ToolName,
+			IsError:   p.IsError,
+			ErrorCode: p.ErrorCode,
+		}
+		for _, it := range p.Search {
+			res.Search = append(res.Search, ir.WebSearchResultItem{
+				URL:              it.URL,
+				Title:            it.Title,
+				EncryptedContent: it.EncryptedContent,
+				PageAge:          it.PageAge,
+			})
+		}
+		return res
 	default:
 		return nil
 	}
@@ -165,6 +202,10 @@ func partKind(p ir.Part) string {
 		return "image"
 	case ir.ToolResultPart:
 		return "tool_result"
+	case ir.ServerToolUsePart:
+		return "server_tool_use"
+	case ir.ServerToolResultPart:
+		return "server_tool_result"
 	default:
 		return fmt.Sprintf("%T", p)
 	}
@@ -300,6 +341,30 @@ func assertPartEqual(t *testing.T, rel string, i int, want, got ir.Part) {
 		}
 		if wtc.ID != gtc.ID || wtc.Name != gtc.Name {
 			t.Errorf("%s: event %d (block_start): tool_use id/name = %q/%q, want %q/%q", rel, i, gtc.ID, gtc.Name, wtc.ID, wtc.Name)
+		}
+	}
+	if wst, ok := want.(ir.ServerToolUsePart); ok {
+		gst, ok := got.(ir.ServerToolUsePart)
+		if !ok {
+			t.Errorf("%s: event %d (block_start): part = %T, want ir.ServerToolUsePart", rel, i, got)
+			return
+		}
+		if wst.ID != gst.ID || wst.Name != gst.Name {
+			t.Errorf("%s: event %d (block_start): server_tool_use id/name = %q/%q, want %q/%q", rel, i, gst.ID, gst.Name, wst.ID, wst.Name)
+		}
+	}
+	if wsr, ok := want.(ir.ServerToolResultPart); ok {
+		gsr, ok := got.(ir.ServerToolResultPart)
+		if !ok {
+			t.Errorf("%s: event %d (block_start): part = %T, want ir.ServerToolResultPart", rel, i, got)
+			return
+		}
+		if wsr.ToolUseID != gsr.ToolUseID || wsr.ToolName != gsr.ToolName ||
+			wsr.IsError != gsr.IsError || wsr.ErrorCode != gsr.ErrorCode {
+			t.Errorf("%s: event %d (block_start): server_tool_result = %+v, want %+v", rel, i, gsr, wsr)
+		}
+		if !reflect.DeepEqual(wsr.Search, gsr.Search) {
+			t.Errorf("%s: event %d (block_start): search items = %+v, want %+v", rel, i, gsr.Search, wsr.Search)
 		}
 	}
 }

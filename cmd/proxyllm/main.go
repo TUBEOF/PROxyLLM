@@ -21,6 +21,7 @@ import (
 	"github.com/proxyllm/proxyllm/internal/observability"
 	"github.com/proxyllm/proxyllm/internal/server"
 	"github.com/proxyllm/proxyllm/internal/storage"
+	"github.com/proxyllm/proxyllm/internal/tools/firecrawl"
 )
 
 // loadMasterKey resolves the envelope master key per the documented order:
@@ -28,6 +29,20 @@ import (
 func loadMasterKey(cfg *config.Config) ([]byte, error) {
 	envVal, envSet := config.MasterKeyFromEnv()
 	return storage.LoadMasterKey(envVal, envSet, cfg.Storage.MasterKeyPath)
+}
+
+// serverOptions assembles the server wiring options from config. The
+// web-tool emulator (plan §6.2) activates only when a Firecrawl API key is
+// configured: without one there is nothing to emulate with, and the
+// emulation loop then degrades to the documented "unavailable" error
+// results. Never silently off — the caller logs the state.
+func serverOptions(cfg *config.Config) []server.Option {
+	opts := []server.Option{}
+	if apiKey, ok := config.FirecrawlAPIKeyFromEnv(); ok && apiKey != "" {
+		opts = append(opts, server.WithEmulator(
+			firecrawl.NewEmulator(cfg.Firecrawl.BaseURL, apiKey, nil)))
+	}
+	return opts
 }
 
 func main() {
@@ -121,7 +136,14 @@ func run() error {
 	}
 	store.SetEnvelope(envelope)
 
-	srv, err := server.New(cfg, store, logger)
+	// Web-tool emulation state (plan §6.2) is loud in both directions:
+	// active when a Firecrawl key is configured, degraded (documented
+	// "unavailable" error results) without one.
+	if _, ok := config.FirecrawlAPIKeyFromEnv(); !ok {
+		logger.Warn("PROxyLLM: web-tool emulation is inactive (PROXYLLM_FIRECRAWL_API_KEY not set); emulated web_search/web_fetch requests will receive the documented \"unavailable\" error results")
+	}
+
+	srv, err := server.New(cfg, store, logger, serverOptions(cfg)...)
 	if err != nil {
 		return err
 	}

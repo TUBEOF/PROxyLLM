@@ -1,0 +1,21 @@
+{
+  "model": "claude-sonnet-5",
+  "max_tokens": 1024,
+  "tools": [
+    {
+      "type": "web_fetch_20250910",
+      "name": "web_fetch",
+      "max_uses": 10,
+      "allowed_domains": ["example.com"],
+      "blocked_domains": ["private.example.com"],
+      "citations": { "enabled": true },
+      "max_content_tokens": 100000
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Summarize this article: https://example.com/article"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"encoding/json"
 	"errors"
 	"strconv"
 
@@ -80,6 +81,7 @@ func ApplyCompat(c Compat, req ir.Request) (ir.Request, *Trace, error) {
 	}
 	req = applyClamp(c, req, trace)
 	req = applyCacheControl(c, req, trace)
+	req = applyEmulation(c, req, trace)
 	return req, trace, nil
 }
 
@@ -205,6 +207,108 @@ func applyCacheControl(c Compat, req ir.Request, trace *Trace) ir.Request {
 		trace.CompatPolicy("cache_control", CacheControlDrop, "cache_control markers dropped for non-Anthropic target")
 	}
 	return req
+}
+
+// emulatedToolSchema returns the client-tool input schema an emulated
+// server tool presents to the model: the documented input object of the
+// tool family (A8/A9 — query for web_search, url for web_fetch), derived
+// from the spec, never from a live capture of provider behavior.
+var emulatedToolSchema = map[string]string{
+	"web_search": `{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}`,
+	"web_fetch":  `{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch (must appear in prior conversation context)"}},"required":["url"]}`,
+}
+
+// applyEmulation enforces the server_tool_emulation policy (§6.2/§6.4).
+//
+//   - native (default): server-tool defs ride untouched — the routed
+//     provider has native support.
+//   - emulate-firecrawl: each server-tool def becomes an emulated CLIENT
+//     tool (Emulated marker, family name, family input schema, knobs
+//     preserved for executor enforcement); the dated type string and any
+//     missing ServerTool config are filled so the executor can enforce
+//     max_uses / domain filters / citations / max_content_tokens.
+//   - off: server-tool defs are removed — a provider that cannot serve
+//     them must not receive them.
+//
+// History server-tool result blocks are never touched: they are past
+// output being replayed, not requests for new capability.
+func applyEmulation(c Compat, req ir.Request, trace *Trace) ir.Request {
+	if c.ServerToolEmulation == "" || c.ServerToolEmulation == EmulationNative {
+		return req
+	}
+
+	if !hasServerToolDef(req.Tools) {
+		return req
+	}
+
+	kept := make([]ir.Tool, 0, len(req.Tools))
+	removed, converted := 0, 0
+	for _, tool := range req.Tools {
+		family := tool.ServerToolName()
+		if family == "" {
+			kept = append(kept, tool)
+			continue
+		}
+		if c.ServerToolEmulation == EmulationOff {
+			removed++
+			continue
+		}
+		// emulate-firecrawl: convert in place.
+		st := tool.ServerTool
+		if st == nil {
+			st = &ir.ServerToolConfig{}
+		}
+		convertedTool := ir.Tool{
+			Name:        family,
+			Description: emulatedToolDescription(family, tool.Description),
+			InputSchema: json.RawMessage(emulatedToolSchema[family]),
+			ServerTool:  st, // knobs preserved for executor enforcement
+			Emulated:    true,
+		}
+		kept = append(kept, convertedTool)
+		converted++
+	}
+
+	if removed == 0 && converted == 0 {
+		return req // hasServerToolDef guarded, but be explicit anyway
+	}
+
+	req.Tools = kept
+	if c.ServerToolEmulation == EmulationOff {
+		trace.CompatPolicy("server_tool_emulation", EmulationOff,
+			strconv.Itoa(removed)+" server-tool def(s) removed (emulation off)")
+	} else {
+		trace.CompatPolicy("server_tool_emulation", EmulationEmulateFirecrawl,
+			"server-tool def(s) converted to emulated client tool(s) (Firecrawl fallback)")
+	}
+	return req
+}
+
+// hasServerToolDef reports whether tools contain any server-tool family.
+func hasServerToolDef(tools []ir.Tool) bool {
+	for _, tool := range tools {
+		if tool.ServerToolName() != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// emulatedToolDescription builds the tool description the model sees: the
+// family's documented purpose, preferring an explicit description the
+// client supplied.
+func emulatedToolDescription(family, clientDesc string) string {
+	if clientDesc != "" {
+		return clientDesc
+	}
+	switch family {
+	case "web_search":
+		return "Search the web with a search engine and return results."
+	case "web_fetch":
+		return "Fetch the content of a web page that appeared in the conversation."
+	default:
+		return "Server tool emulated by the proxy (" + family + ")."
+	}
 }
 
 // ThinkingBudget returns the request's thinking budget (0 when unset).

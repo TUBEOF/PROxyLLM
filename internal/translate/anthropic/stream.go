@@ -61,7 +61,7 @@ type wireStreamEvent struct {
 	Index        int              `json:"index"`
 	ContentBlock *wireBlock       `json:"content_block,omitempty"`
 	Delta        *wireStreamDelta `json:"delta,omitempty"`
-	Usage        *ir.Usage        `json:"usage,omitempty"`
+	Usage        *wireUsage       `json:"usage,omitempty"`
 	Error        *wireStreamError `json:"error,omitempty"`
 }
 
@@ -93,7 +93,7 @@ func (d *streamDecoder) mapEvent(data string) (ir.StreamEvent, error) {
 		if w.Message != nil {
 			resp.ID = w.Message.ID
 			resp.Model = w.Message.Model
-			resp.Usage = w.Message.Usage
+			resp.Usage = w.Message.Usage.toIR()
 		}
 		return ir.StreamEvent{Type: ir.Start, Response: &resp}, nil
 	case "ping":
@@ -133,7 +133,7 @@ func (d *streamDecoder) mapEvent(data string) (ir.StreamEvent, error) {
 			md.StopReason = w.Delta.StopReason
 		}
 		if w.Usage != nil {
-			md.Usage = *w.Usage
+			md.Usage = w.Usage.toIR()
 		}
 		return ir.StreamEvent{Type: ir.MessageDelta, MessageDelta: md}, nil
 	case "message_stop":

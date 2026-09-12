@@ -1,0 +1,7 @@
+{
+  "fixture": "server-tool-web-fetch-response.json",
+  "source": "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/web-fetch-tool",
+  "accessed": "2026-09-12",
+  "facts": ["A3", "A8", "A9", "A10"],
+  "notes": "web_fetch_tool_result: content is a SINGLE web_fetch_result object (asymmetry vs web_search's array), holding url, a nested document content block (source.type text|base64, media_type, data), title, citations, retrieved_at (RFC 3339). PDFs arrive as source.type base64 with media_type application/pdf."
+}

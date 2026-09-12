@@ -85,3 +85,37 @@ func TestMasterKeyFromEnv(t *testing.T) {
 		t.Errorf("master key from env: got %q ok=%v", raw, ok)
 	}
 }
+
+// Spec: docs/configuration.md — Firecrawl layer (plan §6.2). The API key is
+// a secret: like the master key it must never live in the exported Config
+// struct (config dumps would leak it); only the non-secret base URL does.
+func TestLoad_FirecrawlBaseURL(t *testing.T) {
+	withEnv(t, map[string]string{
+		"PROXYLLM_FIRECRAWL_BASE_URL": "http://localhost:9797",
+	})
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Firecrawl.BaseURL != "http://localhost:9797" {
+		t.Errorf("firecrawl base url: got %q want http://localhost:9797", cfg.Firecrawl.BaseURL)
+	}
+}
+
+func TestLoad_FirecrawlDefaults(t *testing.T) {
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Firecrawl.BaseURL != "" {
+		t.Errorf("default firecrawl base url must be empty (client selects its documented default), got %q", cfg.Firecrawl.BaseURL)
+	}
+}
+
+func TestFirecrawlAPIKeyFromEnv(t *testing.T) {
+	t.Setenv("PROXYLLM_FIRECRAWL_API_KEY", "fc-test-key")
+	raw, ok := FirecrawlAPIKeyFromEnv()
+	if !ok || raw != "fc-test-key" {
+		t.Errorf("firecrawl api key from env: got %q ok=%v", raw, ok)
+	}
+}

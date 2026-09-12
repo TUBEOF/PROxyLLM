@@ -27,6 +27,7 @@ type Server struct {
 // serverOptions collects the New options.
 type serverOptions struct {
 	providers []provider.Provider
+	emulator  routing.Emulator
 }
 
 // Option configures New.
@@ -37,6 +38,13 @@ type Option func(*serverOptions)
 // register mocks).
 func WithProvider(p provider.Provider) Option {
 	return func(o *serverOptions) { o.providers = append(o.providers, p) }
+}
+
+// WithEmulator wires the web-tool emulator (plan §6.2 Firecrawl fallback)
+// into the routing executor. Without it, emulated web tools degrade to the
+// documented "unavailable" error results — never silently absent.
+func WithEmulator(emu routing.Emulator) Option {
+	return func(o *serverOptions) { o.emulator = emu }
 }
 
 // New assembles the live server: registry, router (rules from the store),
@@ -79,6 +87,7 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 	exec := routing.NewExecutor(routing.ExecutorConfig{
 		Registry: reg,
 		Health:   health,
+		Emulator: o.emulator,
 	})
 
 	// Client-facing surfaces behind client-key auth (Analysis G control 1).

@@ -31,6 +31,9 @@ func applyEnv(cfg *Config) (*Config, error) {
 		}
 		cfg.Auth.Disabled = b
 	}
+	if v, ok := os.LookupEnv("PROXYLLM_FIRECRAWL_BASE_URL"); ok {
+		cfg.Firecrawl.BaseURL = v
+	}
 
 	// Master key is held separately from the file path: the raw key never
 	// lives in the exported Config struct; storage reads it directly from
@@ -53,5 +56,14 @@ func parseBool(key, raw string) (bool, error) {
 // the ENV surface is documented in one place.
 func MasterKeyFromEnv() (string, bool) {
 	v, ok := os.LookupEnv("PROXYLLM_MASTER_KEY")
+	return v, ok
+}
+
+// FirecrawlAPIKeyFromEnv returns the Firecrawl API key if set via ENV
+// (PROXYLLM_FIRECRAWL_API_KEY). The key is a secret: it never enters the
+// exported Config struct — assembly reads it here and hands it straight to
+// the Firecrawl client.
+func FirecrawlAPIKeyFromEnv() (string, bool) {
+	v, ok := os.LookupEnv("PROXYLLM_FIRECRAWL_API_KEY")
 	return v, ok
 }

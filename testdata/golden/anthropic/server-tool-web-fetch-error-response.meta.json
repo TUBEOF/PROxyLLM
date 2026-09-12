@@ -1,0 +1,7 @@
+{
+  "fixture": "server-tool-web-fetch-error-response.json",
+  "source": "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/web-fetch-tool",
+  "accessed": "2026-09-12",
+  "facts": ["A3", "A10"],
+  "notes": "web_fetch error shape: content is a single {\"type\":\"web_fetch_tool_result_error\",\"error_code\":...} object. Documented error_code values: invalid_tool_input, url_too_long (250 chars), url_not_allowed, url_not_in_prior_context, url_not_accessible, too_many_requests, unsupported_content_type (text/HTML/PDF only), max_uses_exceeded, unavailable."
+}

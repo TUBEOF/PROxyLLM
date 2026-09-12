@@ -1,0 +1,7 @@
+{
+  "fixture": "server-tool-stream.sse",
+  "source": "https://platform.claude.com/docs/en/build-with-claude/streaming",
+  "accessed": "2026-09-12",
+  "facts": ["A5", "A7", "A10"],
+  "notes": "Streaming shapes for server-tool blocks (live-verified 2026-09-12): (1) content_block_start for server_tool_use carries the id and name with an EMPTY input object — the tool input arrives via input_json_delta, same as client tool_use; (2) the web_search_tool_result block arrives COMPLETE in content_block_start (no result deltas), content is an array of web_search_result blocks; (3) message_delta usage nests server_tool_use.web_search_requests. Example values adapted from the documented 'Streaming request with web search tool use' walkthrough. The paired .expected.json holds the canonical ir.StreamEvent sequence this stream must decode to."
+}

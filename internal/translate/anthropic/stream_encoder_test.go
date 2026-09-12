@@ -141,3 +141,67 @@ func TestStreamEncode_CommentRelay(t *testing.T) {
 		t.Errorf("comment must relay as a wire comment line, got %q", wire)
 	}
 }
+
+// serverToolStreamEvents is the canonical sequence matching the golden
+// anthropic/server-tool-stream.sse fixture (server_tool_use with empty
+// input + input_json_delta; web_search_tool_result COMPLETE in
+// content_block_start; nested server_tool_use usage counters — verified
+// live 2026-09-12).
+func serverToolStreamEvents() []ir.StreamEvent {
+	return []ir.StreamEvent{
+		{Type: ir.Start, Response: &ir.Response{
+			ID:    "msg_01StreamServerTool",
+			Model: "claude-sonnet-5",
+			Usage: ir.Usage{InputTokens: 25, OutputTokens: 1},
+		}},
+		{Type: ir.BlockStart, Index: 0, Part: ir.TextPart{}},
+		{Type: ir.Delta, Index: 0, Delta: ir.DeltaPayload{Kind: ir.DeltaText, Text: "Searching for current weather."}},
+		{Type: ir.BlockStop, Index: 0},
+		{Type: ir.BlockStart, Index: 1, Part: ir.ServerToolUsePart{ID: "srvtoolu_014hJH82Qum7Td6UV8gDXThB", Name: "web_search"}},
+		{Type: ir.Delta, Index: 1, Delta: ir.DeltaPayload{Kind: ir.DeltaToolInput, PartialJSON: `{"query":"latest quantum computing breakthroughs 2025"}`}},
+		{Type: ir.BlockStop, Index: 1},
+		{Type: ir.BlockStart, Index: 2, Part: ir.ServerToolResultPart{
+			ToolUseID: "srvtoolu_014hJH82Qum7Td6UV8gDXThB",
+			ToolName:  "web_search",
+			Search: []ir.WebSearchResultItem{{
+				URL:              "https://example.com",
+				Title:            "Quantum Computing Breakthroughs in 2025",
+				EncryptedContent: "Ev0DCioIAxgCIiQ3NmU4ZmI4OC1k...",
+			}},
+		}},
+		{Type: ir.BlockStop, Index: 2},
+		{Type: ir.BlockStart, Index: 3, Part: ir.TextPart{}},
+		{Type: ir.Delta, Index: 3, Delta: ir.DeltaPayload{Kind: ir.DeltaText, Text: "Based on the search, recent breakthroughs include..."}},
+		{Type: ir.BlockStop, Index: 3},
+		{Type: ir.MessageDelta, MessageDelta: &ir.MessageDeltaPayload{
+			StopReason: ir.StopEndTurn,
+			Usage:      ir.Usage{InputTokens: 10682, OutputTokens: 510, WebSearchRequests: 1},
+		}},
+		{Type: ir.Done},
+	}
+}
+
+func TestStreamEncode_ServerToolBlocksRoundTrip(t *testing.T) {
+	wire := encodeAll(t, serverToolStreamEvents())
+	got := testutil.DrainStreamDecoder(t, anth.NewStreamDecoder(bytes.NewReader(wire)))
+	testutil.AssertEventsEqual(t, "anthropic/server-tool-stream.sse", serverToolStreamEvents(), got)
+}
+
+// The server_tool_use content_block_start must carry "input":{} explicitly
+// (streaming wire shape, verified live 2026-09-12) — never omitted — and
+// the web_search_tool_result must encode COMPLETE in content_block_start
+// with the array content asymmetry, plus nested usage counters.
+func TestStreamEncode_ServerToolWireShape(t *testing.T) {
+	wire := string(encodeAll(t, serverToolStreamEvents()))
+
+	for _, want := range []string{
+		`data: {"type":"content_block_start","index":1,"content_block":{"type":"server_tool_use","id":"srvtoolu_014hJH82Qum7Td6UV8gDXThB","name":"web_search","input":{}}}` + "\n\n",
+		`data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"latest quantum computing breakthroughs 2025\"}"}}` + "\n\n",
+		`data: {"type":"content_block_start","index":2,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_014hJH82Qum7Td6UV8gDXThB","content":[{"type":"web_search_result","url":"https://example.com","title":"Quantum Computing Breakthroughs in 2025","encrypted_content":"Ev0DCioIAxgCIiQ3NmU4ZmI4OC1k..."}]}}` + "\n\n",
+		`"usage":{"input_tokens":10682,"output_tokens":510,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"server_tool_use":{"web_search_requests":1}}}` + "\n\n",
+	} {
+		if !strings.Contains(wire, want) {
+			t.Errorf("wire missing %q\ngot:\n%s", want, wire)
+		}
+	}
+}

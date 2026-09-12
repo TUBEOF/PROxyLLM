@@ -15,7 +15,10 @@
 //   - Cache markers are structural IR state, not passthrough (C4).
 package ir
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
 
 // Role is a message role, normalized across protocols.
 type Role string
@@ -103,11 +106,67 @@ type ThinkingPart struct {
 	Signature string
 }
 
-func (TextPart) part()       {}
-func (ImagePart) part()      {}
-func (ToolCallPart) part()   {}
-func (ToolResultPart) part() {}
-func (ThinkingPart) part()   {}
+func (TextPart) part()             {}
+func (ImagePart) part()            {}
+func (ToolCallPart) part()         {}
+func (ToolResultPart) part()       {}
+func (ThinkingPart) part()         {}
+func (ServerToolUsePart) part()    {}
+func (ServerToolResultPart) part() {}
+
+// ServerToolUsePart is an Anthropic server-tool invocation (A8/A9): unlike
+// ToolCallPart it executes on provider infrastructure (or, when emulated
+// via §6.2, on the proxy's Firecrawl layer) and needs no client tool_result.
+// Input is the raw tool input object; Name is the stable family name
+// ("web_search" / "web_fetch").
+type ServerToolUsePart struct {
+	ID    string
+	Name  string
+	Input json.RawMessage
+}
+
+// WebSearchResultItem is one entry of a web_search_tool_result content
+// array (verified live 2026-09-12: content is an ARRAY of these blocks,
+// unlike web_fetch's single object).
+type WebSearchResultItem struct {
+	URL              string
+	Title            string
+	EncryptedContent string // provider-encrypted page content, opaque to the proxy
+	PageAge          string // "" when unknown
+}
+
+// WebFetchContent is the normalized page payload of a web_fetch_tool_result
+// (single web_fetch_result object). Source mirrors the Anthropic document
+// block: text sources carry MediaType "text/plain" with the text in Data;
+// PDF sources arrive as base64 Data with MediaType "application/pdf".
+type WebFetchContent struct {
+	URL              string
+	Title            string
+	Source           string // "text" | "base64"
+	MediaType        string // "text/plain" | "application/pdf"
+	Data             string // text payload (Source "text") or base64 payload ("base64")
+	CitationsEnabled bool
+	RetrievedAt      string // RFC 3339; "" when unknown
+}
+
+// ServerToolResultPart is the result of a server-tool invocation, paired
+// with a ServerToolUsePart by ToolUseID. IsError distinguishes the wire's
+// web_search_tool_result_error / web_fetch_tool_result_error shapes;
+// ErrorCode carries the provider error code (invalid_tool_input,
+// unavailable, max_uses_exceeded, too_many_requests, query_too_long,
+// url_too_long, url_not_allowed, url_not_in_prior_context,
+// url_not_accessible, unsupported_content_type).
+type ServerToolResultPart struct {
+	ToolUseID string
+	ToolName  string // "web_search" | "web_fetch"
+	IsError   bool
+	ErrorCode string // set when IsError
+
+	// Web_search carries an array of results; web_fetch a single page
+	// object — the wire asymmetry is normalized here (§6.2 fixtures).
+	Search []WebSearchResultItem
+	Fetch  *WebFetchContent
+}
 
 // Message is one conversation turn. Tool results from Anthropic user
 // messages decode into ToolResultPart parts; OpenAI role:"tool" messages
@@ -117,11 +176,73 @@ type Message struct {
 	Parts []Part
 }
 
-// Tool is a client tool definition. InputSchema is a JSON Schema object.
+// UserLocation is the web_search approximate-geolocation hint (A8,
+// verified live 2026-09-12: type "approximate" + city/region/country/
+// timezone).
+type UserLocation struct {
+	Type     string // "approximate"
+	City     string
+	Region   string
+	Country  string
+	Timezone string
+}
+
+// ServerToolConfig carries the server-tool definition knobs the §6.2
+// emulation layer enforces (max_uses, domain filters, user_location,
+// citations, max_content_tokens). All optional; zero values = provider
+// defaults.
+type ServerToolConfig struct {
+	MaxUses          int
+	AllowedDomains   []string
+	BlockedDomains   []string
+	UserLocation     *UserLocation
+	CitationsEnabled bool
+	MaxContentTokens int
+}
+
+// Tool is a tool definition. Client tools are function-shaped; server
+// tools (Anthropic A8/A9) carry a dated type string in the family
+// web_search_20250305 / web_fetch_20250910 — the family name, not the
+// date suffix, is the stable identity.
 type Tool struct {
 	Name        string
 	Description string
 	InputSchema json.RawMessage
+
+	// Type is the server-tool type string ("" for regular client tools).
+	// It rides verbatim for Anthropic→Anthropic round trips (C3 open-list
+	// rule); the compat policy maps it to a capability or an emulated
+	// client tool (§6.2).
+	Type string
+
+	// ServerTool carries the server-tool definition knobs when Type is a
+	// server-tool family; nil for client tools.
+	ServerTool *ServerToolConfig
+
+	// Emulated marks a tool definition the §6.2 emulation layer injected
+	// (or converted from a native server-tool def under the
+	// emulate-firecrawl compat policy). The executor's tool-call
+	// round-trip loop recognizes model tool calls against it and answers
+	// them via the Firecrawl fallback instead of surfacing them to the
+	// client. False on everything decoded from a wire request — an
+	// emulator-injected tool never rides back out to a client.
+	Emulated bool
+}
+
+// serverToolFamilyPrefixes maps wire type-string prefixes to the stable
+// server-tool family name (A8: dated suffixes rotate, families don't).
+var serverToolFamilyPrefixes = []string{"web_search_", "web_fetch_"}
+
+// ServerToolName returns the stable server-tool family name for a
+// server-tool type string ("web_search" / "web_fetch"), or "" when the
+// tool is a regular client tool or an unrecognized server tool.
+func (t Tool) ServerToolName() string {
+	for _, prefix := range serverToolFamilyPrefixes {
+		if strings.HasPrefix(t.Type, prefix) {
+			return strings.TrimSuffix(prefix, "_")
+		}
+	}
+	return ""
 }
 
 // ToolChoiceType enumerates tool-selection policies.
@@ -219,6 +340,13 @@ type Usage struct {
 	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 	ReasoningTokens          int `json:"reasoning_tokens,omitempty"`
+
+	// Server-tool request counters (A8 usage: server_tool_use.web_search_requests
+	// / web_fetch_requests). Explicit zeros like the cache fields; emulated
+	// invocations count against these too so clients see honest accounting.
+	WebSearchRequests int `json:"web_search_requests,omitempty"`
+	WebFetchRequests  int `json:"web_fetch_requests,omitempty"`
+
 	// Estimated marks heuristic counts (count_tokens fallback, C1).
 	Estimated bool `json:"-"`
 }
