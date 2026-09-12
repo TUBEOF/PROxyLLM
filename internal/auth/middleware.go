@@ -230,7 +230,9 @@ func WriteUnauthorized(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"error":{"message":"Incorrect API key provided","type":"invalid_request_error","code":"invalid_api_key"}}`))
 }
 
-// isAnthropicSurface routes the 401 body shape by path (§5.1 surface split).
+// isAnthropicSurface routes the 401 body shape by path (§5.1 surface
+// split). Exact paths only — a broad prefix would shape hypothetical
+// future endpoints like /v1/messages-batch into the Anthropic body.
 func isAnthropicSurface(path string) bool {
-	return strings.HasPrefix(path, "/v1/messages")
+	return path == "/v1/messages" || strings.HasPrefix(path, "/v1/messages/")
 }

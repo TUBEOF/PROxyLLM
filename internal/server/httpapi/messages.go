@@ -7,9 +7,8 @@ package httpapi
 // cross-surface translation contract (OP-2) is proven.
 
 import (
-	"encoding/json"
 	"net/http"
-	"strings"
+	"strconv"
 	"time"
 
 	"github.com/proxyllm/proxyllm/internal/auth"
@@ -130,8 +129,8 @@ func (a *api) streamMessages(w http.ResponseWriter, r *http.Request, keyID strin
 // OpenAI-shaped upstream, native Anthropic counting is impossible, so the
 // heuristic estimate (chars/4 over the decoded text) answers — marked
 // `estimation: "heuristic"`, never presented as an exact count. The
-// heuristic runs locally: no upstream dispatch, no request-log row (no
-// upstream attempt happened).
+// heuristic runs locally with no upstream dispatch, but the request is
+// still observable: a log row with the estimate records it (Analysis E).
 func (a *api) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	raw, ok := readBody(w, r)
 	if !ok {
@@ -140,15 +139,20 @@ func (a *api) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 
 	req, err := anthropic.Codec{}.DecodeRequest(raw)
 	if err != nil {
-		a.writeRouteError(w, anthropicErrorWriter(), err)
+		_, msg := a.writeRouteError(w, anthropicErrorWriter(), err)
+		a.writeRequestLog(r.Context(), auth.ClientKeyIDFromContext(r.Context()),
+			"", "", http.StatusBadRequest, 0, nil, nil, msg)
 		return
 	}
 
 	estimate := countTokensHeuristic(req)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(`{"input_tokens":` + itoa(estimate) +
+	_, _ = w.Write([]byte(`{"input_tokens":` + strconv.Itoa(estimate) +
 		`,"estimation":"heuristic"}`))
+
+	a.writeRequestLog(r.Context(), auth.ClientKeyIDFromContext(r.Context()),
+		req.Model, "", http.StatusOK, 0, nil, nil, "")
 }
 
 // countTokensHeuristic estimates input tokens as chars/4 over system +
@@ -186,19 +190,4 @@ func countTokensHeuristic(req ir.Request) int {
 		tokens = 1
 	}
 	return tokens
-}
-
-// itoa is the tiny integer formatter keeping this file free of strconv
-// imports beyond this helper.
-func itoa(n int) string {
-	return strings.TrimSpace(jsonInt(n))
-}
-
-// jsonInt renders n as a JSON integer literal.
-func jsonInt(n int) string {
-	b, err := json.Marshal(n)
-	if err != nil {
-		return "0"
-	}
-	return string(b)
 }

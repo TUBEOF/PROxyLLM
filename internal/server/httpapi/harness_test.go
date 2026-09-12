@@ -81,9 +81,12 @@ func newEnvWithRules(t *testing.T, rules ...routing.Rule) *env {
 		WebSearch: true, WebFetch: true, CodeExecution: true, Thinking: true,
 	}))
 
-	router := routing.NewRouter(routing.Config{Rules: rules},
-		routing.WithRegistry(reg), routing.WithHealth(routing.NewHealthTracker()))
+	// One shared HealthTracker: the router gates on it and the executor
+	// reports into it — decoupled instances would mask health-gated
+	// failover bugs (review M1).
 	health := routing.NewHealthTracker()
+	router := routing.NewRouter(routing.Config{Rules: rules},
+		routing.WithRegistry(reg), routing.WithHealth(health))
 	exec := routing.NewExecutor(routing.ExecutorConfig{
 		Registry: reg,
 		Health:   health,

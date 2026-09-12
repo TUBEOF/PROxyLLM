@@ -66,7 +66,7 @@ func (a *api) runChat(w http.ResponseWriter, r *http.Request, raw []byte, req ir
 		// ErrThinkingBlocked → 400 O10 body + log row (never silent).
 		_, _ = a.writeRouteError(w, openAIErrorWriter(), err)
 		a.writeRequestLog(ctx, keyID, req.Model, "", http.StatusBadRequest, 0,
-			nil, routeTrace(compatTrace), redactedMessageCompat(err))
+			nil, routeTrace(compatTrace), redactedMessage(err))
 		return
 	}
 
@@ -75,7 +75,7 @@ func (a *api) runChat(w http.ResponseWriter, r *http.Request, raw []byte, req ir
 	if err != nil {
 		_, _ = a.writeRouteError(w, openAIErrorWriter(), err)
 		a.writeRequestLog(ctx, keyID, req.Model, "", mapRouteErrorStatus(err), 0,
-			nil, routeTrace(compatTrace, routerTrace), redactedMessageCompat(err))
+			nil, routeTrace(compatTrace, routerTrace), redactedMessage(err))
 		return
 	}
 
@@ -154,11 +154,19 @@ func (a *api) streamChat(w http.ResponseWriter, r *http.Request, keyID string, r
 		routeTrace(append(traces, execTrace)...), errMsg)
 }
 
-// readBody reads the request body with the shared limits.
+// readBody reads the request body with the shared limits. One extra byte
+// is read past the cap so truncation is detected and reported as 413 —
+// a silently truncated body would otherwise surface as a confusing JSON
+// decode error (Analysis G input validation).
 func readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
-	raw, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes))
+	raw, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes+1))
 	if err != nil {
 		writeOpenAIError(w, http.StatusBadRequest, errTypeInvalidRequest, "unable to read request body")
+		return nil, false
+	}
+	if len(raw) > maxBodyBytes {
+		writeOpenAIError(w, http.StatusRequestEntityTooLarge, errTypeInvalidRequest,
+			"request body exceeds the 32MB limit")
 		return nil, false
 	}
 	return raw, true
@@ -166,12 +174,6 @@ func readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 
 // maxBodyBytes caps request bodies (Analysis G input validation).
 const maxBodyBytes = 32 << 20
-
-// redactedMessageCompat renders pipeline errors for log rows (compat
-// errors are static strings; upstream errors flow through redactedMessage).
-func redactedMessageCompat(err error) string {
-	return redactedMessage(err)
-}
 
 // relayStream forwards canonical events to the client encoder until the
 // upstream channel closes, capturing the terminal usage and any terminal
@@ -203,14 +205,21 @@ func relayStream(ctx context.Context, ch <-chan ir.StreamEvent, enc translate.St
 					}
 					*streamErr = ev.Error
 				}
+				// B2: the error event is terminal (A13/O7) — nothing may
+				// follow it on the wire, so stop relaying even if a
+				// misbehaving provider kept the channel open.
 				_ = enc.Write(ctx, ev)
-				continue
+				return
 			}
 			if ev.Type == ir.MessageDelta && ev.MessageDelta != nil {
 				u := ev.MessageDelta.Usage
 				*terminalUsage = &u
 			}
-			_ = enc.Write(ctx, ev)
+			// B1: a failed client write (disconnect) must stop the pump —
+			// keep relaying only while the client is actually receiving.
+			if enc.Write(ctx, ev) != nil {
+				return
+			}
 		}
 	}
 }

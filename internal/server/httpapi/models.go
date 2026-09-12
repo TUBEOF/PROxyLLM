@@ -44,7 +44,7 @@ func (a *api) writeOpenAIModels(w http.ResponseWriter, models []storage.Model) {
 	for _, m := range models {
 		entries = append(entries, modelEntry{ID: m.ID, Object: "model", Owned: m.ProviderID})
 	}
-	writeJSON(w, http.StatusOK, struct {
+	writeJSON(w, openAIErrorWriter(), http.StatusOK, struct {
 		Object string       `json:"object"`
 		Data   []modelEntry `json:"data"`
 	}{Object: "list", Data: entries})
@@ -71,7 +71,7 @@ func (a *api) writeAnthropicModels(w http.ResponseWriter, models []storage.Model
 		}
 		lastID = m.ID
 	}
-	writeJSON(w, http.StatusOK, struct {
+	writeJSON(w, anthropicErrorWriter(), http.StatusOK, struct {
 		Data    []modelEntry `json:"data"`
 		FirstID string       `json:"first_id"`
 		HasMore bool         `json:"has_more"`
@@ -79,13 +79,13 @@ func (a *api) writeAnthropicModels(w http.ResponseWriter, models []storage.Model
 	}{Data: entries, FirstID: firstID, HasMore: false, LastID: lastID})
 }
 
-// writeJSON renders one JSON response body.
-func writeJSON(w http.ResponseWriter, status int, v any) {
+// writeJSON renders one JSON response body. ew is the surface-appropriate
+// error emitter: a marshal failure must answer in the shape the requested
+// surface speaks, not a hardcoded OpenAI body (review m4).
+func writeJSON(w http.ResponseWriter, ew errorWriter, status int, v any) {
 	body, err := json.Marshal(v)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		_, _ = w.Write([]byte(`{"error":{"message":"encoding failed","type":"server_error","code":"server_error","param":null}}`))
+		ew.write(w, http.StatusInternalServerError, errTypeUpstream, "encoding failed")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

@@ -222,7 +222,10 @@ func decodeAPIError(status int, body []byte) *APIError {
 	if err := json.Unmarshal(body, &wire); err == nil && wire.Error != "" {
 		apiErr.ErrorMsg = wire.Error
 	} else {
-		apiErr.ErrorMsg = string(body) // bounded by LimitReader upstream
+		// Never echo a raw upstream body: it is untrusted content that
+		// could flow into log rows or client-visible error messages.
+		// Size + status only — safe, and enough to debug from.
+		apiErr.ErrorMsg = fmt.Sprintf("non-JSON error body (HTTP %d, %d bytes)", status, len(body))
 	}
 	return apiErr
 }
