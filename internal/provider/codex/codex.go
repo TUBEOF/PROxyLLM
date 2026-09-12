@@ -1,0 +1,132 @@
+// Package codex implements the ChatGPT/Codex OAuth provider (plan §6.3):
+// browser PKCE login, device-code login, lazily refreshed OAuth tokens,
+// and the ChatGPT-backend Responses transport (X13–X24).
+package codex
+
+import (
+	"context"
+	"io"
+	"net/http"
+
+	"github.com/proxyllm/proxyllm/internal/provider"
+	"github.com/proxyllm/proxyllm/internal/provider/internal/httpx"
+	"github.com/proxyllm/proxyllm/internal/translate"
+	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/proxyllm/proxyllm/internal/translate/openai"
+)
+
+// Version rides the User-Agent (X14/X22): PROxyLLM pins its OWN version —
+// the codex CLI itself pins a 0.0.0 build placeholder, so there is no
+// stable CLI version string to mirror.
+const Version = "0.1.0"
+
+// Provider serves one Codex backend account over the Responses wire shape
+// (X19/X23).
+type Provider struct {
+	id        string
+	caps      provider.Capabilities
+	auth      Auth
+	client    *httpx.Client
+	responses openai.ResponsesCodec
+}
+
+// ProviderConfig wires the provider at construction time.
+type ProviderConfig struct {
+	ID           string
+	BaseURL      string
+	Capabilities provider.Capabilities
+	Auth         Auth
+	HTTP         *http.Client
+}
+
+// New builds the provider. The transport talks {BaseURL}/codex/responses
+// (X19/X23) with the codex-rs header set (X14/X15/X24) and the Bearer
+// sourced from the token store, lazily refreshed on expiry (X18).
+func New(cfg ProviderConfig) *Provider {
+	httpc := cfg.HTTP
+	if httpc == nil {
+		httpc = http.DefaultClient
+	}
+	client := &httpx.Client{
+		BaseURL:    cfg.BaseURL,
+		ChatPath:   "/codex/responses",
+		ErrorShape: httpx.ErrorOpenAI,
+		HTTP:       httpc,
+	}
+	p := &Provider{
+		id:        cfg.ID,
+		caps:      cfg.Capabilities,
+		auth:      cfg.Auth,
+		client:    client,
+		responses: openai.ResponsesCodec{},
+	}
+	client.HeaderHook = p.headers
+	return p
+}
+
+// ID identifies the provider instance (registry key).
+func (p *Provider) ID() string { return p.id }
+
+// Capabilities reports what the provider supports (routing filter input).
+func (p *Provider) Capabilities() provider.Capabilities { return p.caps }
+
+// headers supplies the per-request codex header set (X14/X15/X24, X23
+// Accept switch). The Bearer token comes from the auth store with lazy
+// refresh BEFORE dispatch (X18; X12 single-flight applies inside auth).
+func (p *Provider) headers(ctx context.Context, stream bool) (http.Header, error) {
+	tok, err := p.auth.AccessToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	h := http.Header{}
+	h.Set("Authorization", "Bearer "+tok.Access)
+	h.Set("Originator", "codex_cli_rs")                   // X14
+	h.Set("User-Agent", "codex_cli_rs/proxyllm/"+Version) // X14/X22
+	if tok.AccountID != "" {
+		h.Set("Chatgpt-Account-Id", tok.AccountID) // X15
+	}
+	// X24: OAI-Product-Sku is deliberately NOT sent (digest correction).
+	if stream {
+		h.Set("Accept", "text/event-stream") // X23
+	}
+	// The X14 platform tail "(os_type os_version; arch) terminal" is
+	// deliberately omitted: it is telemetry, not auth material, and the
+	// backend is not known to gate on it. If the live smoke run
+	// (PROXYLLM_SMOKE=1, Phase 1 DoD) shows otherwise, the tail becomes a
+	// build/runtime stamp — tracked in the smoke checklist.
+	return h, nil
+}
+
+// Complete performs one non-streaming round trip.
+func (p *Provider) Complete(ctx context.Context, req ir.Request) (ir.Response, error) {
+	return p.client.Complete(ctx, req, p.encode, decodeResponse)
+}
+
+// Stream performs one streaming round trip (FO-5 dispatch semantics apply
+// at the routing layer; the transport itself never retries).
+func (p *Provider) Stream(ctx context.Context, req ir.Request) (<-chan ir.StreamEvent, func(), error) {
+	return p.client.Stream(ctx, req, p.encode, func(r io.Reader) translate.StreamDecoder {
+		return openai.NewResponsesStreamDecoder(r)
+	})
+}
+
+// encode translates IR into the Responses wire request (X19).
+func (p *Provider) encode(req ir.Request) ([]byte, error) {
+	return p.responses.EncodeRequest(req)
+}
+
+// decodeResponse translates a Responses wire body back into IR.
+func decodeResponse(raw []byte) (ir.Response, error) {
+	var codec openai.ResponsesCodec
+	return codec.DecodeResponse(raw)
+}
+
+// RefreshCredentials rotates the OAuth pair on demand (routing health hook
+// / operator action; single-flight + atomic persistence per X12). Note: a
+// rotation within the X18 cadence window (8 min) satisfies this as a no-op —
+// a forced rotation (e.g. after a 401) must wait out that window; the lazy
+// pre-expiry path in AccessToken bypasses it only after the interval, so a
+// consumed-token scenario can never hide behind the no-op.
+func (p *Provider) RefreshCredentials(ctx context.Context) error {
+	return p.auth.Refresh(ctx)
+}

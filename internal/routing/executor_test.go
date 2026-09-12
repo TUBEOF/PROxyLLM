@@ -33,6 +33,9 @@ import (
 // derived from the code under test).
 type scriptedProvider struct {
 	id string
+	// caps: reported Capabilities (zero value = none; needed by rows that
+	// combine scripted success behavior with a capability profile).
+	caps provider.Capabilities
 	// completeErrs: per-attempt Complete results (nil = success; entries
 	// exhausted → success).
 	completeErrs []error
@@ -44,8 +47,12 @@ type scriptedProvider struct {
 	calls int
 }
 
+// Calls exposes the attempt counter to the pipeline determinism suite
+// (which asserts attempted providers via the interface, not the type).
+func (p *scriptedProvider) Calls() int { return p.calls }
+
 func (p *scriptedProvider) ID() string                                 { return p.id }
-func (p *scriptedProvider) Capabilities() provider.Capabilities        { return provider.Capabilities{} }
+func (p *scriptedProvider) Capabilities() provider.Capabilities        { return p.caps }
 func (p *scriptedProvider) RefreshCredentials(_ context.Context) error { return nil }
 
 func (p *scriptedProvider) Complete(_ context.Context, _ ir.Request) (ir.Response, error) {

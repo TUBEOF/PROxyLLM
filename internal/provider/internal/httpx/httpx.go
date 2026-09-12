@@ -47,6 +47,12 @@ type Client struct {
 	ErrorShape ErrorShape
 
 	HTTP *http.Client
+
+	// HeaderHook optionally supplies per-request headers applied over the
+	// defaults — for providers whose credentials rotate between dispatches
+	// (e.g. OAuth access tokens refreshed lazily on demand). stream reports
+	// whether the request is a streaming request (Accept negotiation).
+	HeaderHook func(ctx context.Context, stream bool) (http.Header, error)
 }
 
 // ErrorShape names the upstream's non-2xx body layout.
@@ -106,7 +112,7 @@ func (c *Client) Stream(
 		return nil, nil, fmt.Errorf("httpx: encode request: %w", err)
 	}
 
-	httpReq, err := c.newRequest(ctx, raw)
+	httpReq, err := c.newRequest(ctx, true, raw)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -171,8 +177,8 @@ func (c *Client) pump(
 
 // post sends one request and returns the 2xx body. Non-2xx responses map
 // to *provider.UpstreamError; transport failures return unwrapped.
-func (c *Client) post(ctx context.Context, _ bool, raw []byte) ([]byte, error) {
-	httpReq, err := c.newRequest(ctx, raw)
+func (c *Client) post(ctx context.Context, stream bool, raw []byte) ([]byte, error) {
+	httpReq, err := c.newRequest(ctx, stream, raw)
 	if err != nil {
 		return nil, err
 	}
@@ -191,8 +197,11 @@ func (c *Client) post(ctx context.Context, _ bool, raw []byte) ([]byte, error) {
 	return body, nil
 }
 
-// newRequest builds the POST request with Bearer auth (O1/L2).
-func (c *Client) newRequest(ctx context.Context, raw []byte) (*http.Request, error) {
+// newRequest builds the POST request with Bearer auth (O1/L2). The
+// HeaderHook, when present, overlays per-request headers — used by
+// providers whose credentials rotate between dispatches (codex OAuth) and
+// for Accept negotiation on streaming requests (X23).
+func (c *Client) newRequest(ctx context.Context, stream bool, raw []byte) (*http.Request, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+c.ChatPath, bytes.NewReader(raw))
 	if err != nil {
 		return nil, fmt.Errorf("httpx: build request: %w", err)
@@ -200,6 +209,15 @@ func (c *Client) newRequest(ctx context.Context, raw []byte) (*http.Request, err
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
 	httpReq.Header.Set("Accept", "application/json")
+	if c.HeaderHook != nil {
+		extra, err := c.HeaderHook(ctx, stream)
+		if err != nil {
+			return nil, fmt.Errorf("httpx: build provider headers: %w", err)
+		}
+		for name, vals := range extra {
+			httpReq.Header[name] = vals
+		}
+	}
 	return httpReq, nil
 }
 
