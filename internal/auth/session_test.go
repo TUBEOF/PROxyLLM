@@ -1,0 +1,403 @@
+package auth
+
+// WebUI session auth + CSRF: RED tests derived from the committed Phase 2
+// research facts (docs/research/phase-2-best-practices.md, §10 binding):
+// S-1..S-11 (session design) and C-1..C-6 (CSRF). Never from implementation
+// behavior.
+
+import (
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/proxyllm/proxyllm/internal/storage"
+)
+
+// sessionTestEnv is a SessionManager over a fresh store with a pinned clock
+// and a fixed 32-byte master key (the HMAC secret, C-1/C-2).
+type sessionTestEnv struct {
+	sm    *SessionManager
+	st    *storage.Store
+	now   int64
+	admin func()
+}
+
+func newSessionEnv(t *testing.T) *sessionTestEnv {
+	t.Helper()
+	env := &sessionTestEnv{now: 1_000_000, st: newTestStore(t)}
+	env.sm = NewSessionManager(env.st, testMasterKey(), func() int64 { return env.now })
+	env.admin = func() { env.createTestAdmin(t, "operator") }
+	return env
+}
+
+// testMasterKey returns a fixed 32-byte key — a test vector, not a secret.
+func testMasterKey() []byte {
+	return []byte("0123456789abcdef0123456789abcdef")
+}
+
+const testPassword = "correct horse battery staple"
+
+// createTestAdmin seeds one admin row with a known Argon2id hash.
+func (e *sessionTestEnv) createTestAdmin(t *testing.T, username string) {
+	t.Helper()
+	phc, err := storage.NewArgon2Hasher().Hash(testPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.CreateAdmin(context.Background(), "adm-"+username, username, phc); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// loginResult captures what one login response established.
+type loginResult struct {
+	status        int
+	setCookies    []string // all Set-Cookie header values
+	sessionCookie string   // full "name=value" pair of the session cookie
+	csrfCookie    string   // full "name=value" pair of the csrf cookie
+	csrfToken     string   // token from the JSON body (random.mac)
+}
+
+func (e *sessionTestEnv) login(t *testing.T, user, pass string, tlsArrival bool) loginResult {
+	t.Helper()
+	body := `{"username":"` + user + `","password":"` + pass + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/login", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if tlsArrival {
+		req.TLS = &tls.ConnectionState{}
+	}
+	w := httptest.NewRecorder()
+	e.sm.HandleLogin(w, req)
+
+	var res loginResult
+	res.status = w.Code
+	res.setCookies = w.Header().Values("Set-Cookie")
+	for _, c := range res.setCookies {
+		name, _, _ := strings.Cut(c, "=")
+		switch strings.TrimPrefix(name, "__Host-") {
+		case sessionCookieName:
+			res.sessionCookie, _, _ = strings.Cut(c, ";")
+		case csrfCookieName:
+			res.csrfCookie, _, _ = strings.Cut(c, ";")
+		}
+	}
+	if w.Code == http.StatusOK {
+		var payload struct {
+			CSRFToken string `json:"csrf_token"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("login body not JSON: %v (%s)", err, w.Body.String())
+		}
+		res.csrfToken = payload.CSRFToken
+	}
+	return res
+}
+
+// authed sends one request through the admin middleware (session + CSRF +
+// Origin layers) and returns the recorder.
+func (e *sessionTestEnv) authed(t *testing.T, method, path, body, cookieHeader, csrfToken, origin string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	if cookieHeader != "" {
+		req.Header.Set("Cookie", cookieHeader)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if csrfToken != "" {
+		req.Header.Set("X-CSRF-Token", csrfToken)
+	}
+	if origin != "" {
+		req.Header.Set("Origin", origin)
+	}
+	w := httptest.NewRecorder()
+	e.sm.RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// The OK handler must observe the admin id from the request context —
+		// asserted so the middleware cannot pass requests without actually
+		// authenticating them.
+		if AdminIDFromContext(r.Context()) == "" {
+			t.Errorf("no admin id in context for an accepted request (%s %s)", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(w, req)
+	return w
+}
+
+// cookieHeaderFor rebuilds the Cookie header the SPA would send: session
+// cookie + csrf cookie.
+func (res loginResult) cookieHeader() string {
+	return res.sessionCookie + "; " + res.csrfCookie
+}
+
+// S-8: every successful login issues a NEW session id; two logins never
+// share a cookie value.
+func TestLogin_IssuesNewSessionPerLogin(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+
+	l1 := env.login(t, "operator", testPassword, false)
+	l2 := env.login(t, "operator", testPassword, false)
+	if l1.status != http.StatusOK || l2.status != http.StatusOK {
+		t.Fatalf("login statuses: %d / %d", l1.status, l2.status)
+	}
+	if l1.sessionCookie == "" || l2.sessionCookie == "" {
+		t.Fatalf("no session cookie issued: %q / %q", l1.sessionCookie, l2.sessionCookie)
+	}
+	if l1.sessionCookie == l2.sessionCookie {
+		t.Error("two logins issued the same session id (S-8 violation)")
+	}
+}
+
+// S-9: idle timeout enforced server-side — a session idle past the window
+// fails auth even with a valid cookie.
+func TestSession_IdleTimeoutServerSide(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	l := env.login(t, "operator", testPassword, false)
+
+	env.now += 31 * 60 // past the 30 min idle window, inside 12 h absolute
+	w := env.authed(t, http.MethodGet, "/api/admin/providers", "", l.sessionCookie, "", "")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("idle-expired session accepted: status %d", w.Code)
+	}
+}
+
+// S-9: absolute timeout — activity never extends the 12 h cap. Requests
+// keep passing the idle window but the absolute expiry still lands.
+func TestSession_AbsoluteTimeoutServerSide(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	l := env.login(t, "operator", testPassword, false)
+
+	// 35 hops of 20 min = 700 min < 720 min (12 h): every hop is inside the
+	// idle window, so all must pass.
+	for i := 0; i < 35; i++ {
+		env.now += 20 * 60
+		w := env.authed(t, http.MethodGet, "/api/admin/providers", "", l.sessionCookie, "", "")
+		if w.Code != http.StatusOK {
+			t.Fatalf("request %d rejected inside the absolute window: %d", i, w.Code)
+		}
+	}
+	// +25 min: still inside the idle window (last request 20 min ago → gap
+	// 25 min < 30), but total elapsed 725 min > 720 → absolute expiry.
+	env.now += 25 * 60
+	w := env.authed(t, http.MethodGet, "/api/admin/providers", "", l.sessionCookie, "", "")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("session still valid past 12 h absolute expiry: %d", w.Code)
+	}
+}
+
+// S-10: logout deletes the server-side row AND clears the cookie; the old
+// session id is dead afterwards.
+func TestLogout_DeletesRowAndClearsCookie(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	l := env.login(t, "operator", testPassword, false)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/logout", strings.NewReader(`{}`))
+	req.Header.Set("Cookie", l.cookieHeader())
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-CSRF-Token", l.csrfToken)
+	logoutW := httptest.NewRecorder()
+	env.sm.HandleLogout(logoutW, req)
+	if logoutW.Code != http.StatusOK {
+		t.Fatalf("logout: status %d (body %s)", logoutW.Code, logoutW.Body.String())
+	}
+	// The logout response clears the session cookie (Max-Age=0, past-dated).
+	cleared := false
+	for _, c := range logoutW.Header().Values("Set-Cookie") {
+		if strings.Contains(c, "Max-Age=0") {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Errorf("logout does not clear the cookie: %q", logoutW.Header().Values("Set-Cookie"))
+	}
+
+	// The row is gone: reuse of the old cookie fails.
+	w := env.authed(t, http.MethodGet, "/api/admin/providers", "", l.sessionCookie, "", "")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("session survived logout: %d", w.Code)
+	}
+}
+
+// S-3: __Host- prefix on TLS arrivals, plain id otherwise — per-request
+// split from the arrival scheme.
+func TestLogin_CookiePrefixPerTLS(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+
+	plain := env.login(t, "operator", testPassword, false)
+	if !strings.HasPrefix(plain.sessionCookie, "id=") {
+		t.Errorf("plain-HTTP cookie: %q", plain.sessionCookie)
+	}
+	tlsArrival := env.login(t, "operator", testPassword, true)
+	if !strings.HasPrefix(tlsArrival.sessionCookie, "__Host-id=") {
+		t.Errorf("TLS cookie: %q", tlsArrival.sessionCookie)
+	}
+}
+
+// S-4/S-5: session cookie HttpOnly, SameSite=Strict, non-persistent; CSRF
+// cookie JS-readable (C-1: the SPA must echo it).
+func TestLogin_CookieAttributes(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	l := env.login(t, "operator", testPassword, false)
+
+	var sessionAttrs, csrfAttrs string
+	for _, c := range l.setCookies {
+		// The session cookie is "id=…" or "__Host-id=…"; the csrf cookie
+		// is always plain "csrf=…" (no __Host- prefix needed: no Path
+		// restriction applies, C-1 only requires JS readability).
+		trimmed := strings.TrimPrefix(c, "__Host-")
+		if strings.HasPrefix(trimmed, sessionCookieName+"=") {
+			sessionAttrs = c
+		}
+		if strings.HasPrefix(c, csrfCookieName+"=") {
+			csrfAttrs = c
+		}
+	}
+	if sessionAttrs == "" || csrfAttrs == "" {
+		t.Fatalf("cookies missing: session=%q csrf=%q", sessionAttrs, csrfAttrs)
+	}
+	for _, want := range []string{"HttpOnly", "SameSite=Strict", "Path=/"} {
+		if !strings.Contains(sessionAttrs, want) {
+			t.Errorf("session cookie missing %s: %q", want, sessionAttrs)
+		}
+	}
+	if strings.Contains(sessionAttrs, "Expires=") || strings.Contains(sessionAttrs, "Max-Age=") {
+		t.Errorf("session cookie is persistent (S-4 violation): %q", sessionAttrs)
+	}
+	if strings.Contains(csrfAttrs, "HttpOnly") {
+		t.Errorf("csrf cookie must be JS-readable (C-1): %q", csrfAttrs)
+	}
+}
+
+// C-1/C-2: the CSRF token binds to the session — a token minted for one
+// session cannot authorize another.
+func TestCSRF_TokenIsSessionBound(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	l1 := env.login(t, "operator", testPassword, false)
+	l2 := env.login(t, "operator", testPassword, false)
+
+	// l2's CSRF material (cookie random + header token) on l1's session
+	// must fail: the HMAC covers sessionID ‖ random.
+	w := env.authed(t, http.MethodPost, "/api/admin/providers", `{}`,
+		l1.sessionCookie+"; "+l2.csrfCookie, l2.csrfToken, "")
+	if w.Code != http.StatusForbidden {
+		t.Errorf("cross-session CSRF token accepted: %d", w.Code)
+	}
+	// Same-session material passes.
+	w = env.authed(t, http.MethodPost, "/api/admin/providers", `{}`,
+		l1.cookieHeader(), l1.csrfToken, "")
+	if w.Code != http.StatusOK {
+		t.Errorf("own-session CSRF token rejected: %d", w.Code)
+	}
+}
+
+// C-3: X-CSRF-Token is required on state-changing requests; safe methods
+// pass without it.
+func TestCSRF_HeaderRequiredOnMutations(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	l := env.login(t, "operator", testPassword, false)
+
+	w := env.authed(t, http.MethodPost, "/api/admin/providers", `{}`, l.cookieHeader(), "", "")
+	if w.Code != http.StatusForbidden {
+		t.Errorf("POST without CSRF header accepted: %d", w.Code)
+	}
+	w = env.authed(t, http.MethodGet, "/api/admin/providers", "", l.sessionCookie, "", "")
+	if w.Code != http.StatusOK {
+		t.Errorf("GET rejected for missing CSRF: %d", w.Code)
+	}
+}
+
+// C-1: a forged token (valid random, wrong HMAC) fails even with the
+// matching csrf cookie — the MAC is unforgeable without the master key.
+func TestCSRF_ForgedMACRejected(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	l := env.login(t, "operator", testPassword, false)
+
+	random, _, _ := strings.Cut(l.csrfToken, ".")
+	forged := random + "." + strings.Repeat("A", len(l.csrfToken)-len(random)-1)
+	w := env.authed(t, http.MethodPost, "/api/admin/providers", `{}`,
+		l.cookieHeader(), forged, "")
+	if w.Code != http.StatusForbidden {
+		t.Errorf("forged MAC accepted: %d", w.Code)
+	}
+}
+
+// C-4: simple content types are rejected on mutations — text/plain must
+// not be processable cross-site without preflight.
+func TestCSRF_RejectsSimpleContentTypes(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	l := env.login(t, "operator", testPassword, false)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/providers", strings.NewReader(`x=1`))
+	req.Header.Set("Cookie", l.cookieHeader())
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("X-CSRF-Token", l.csrfToken)
+	w := httptest.NewRecorder()
+	env.sm.RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(w, req)
+	if w.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("text/plain mutation accepted: %d", w.Code)
+	}
+}
+
+// C-6: a mismatching Origin on state-changing requests → 403; an absent
+// Origin header passes (older clients).
+func TestCSRF_OriginMismatchRejected(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	l := env.login(t, "operator", testPassword, false)
+
+	w := env.authed(t, http.MethodPost, "/api/admin/providers", `{}`,
+		l.cookieHeader(), l.csrfToken, "https://evil.example")
+	if w.Code != http.StatusForbidden {
+		t.Errorf("cross-origin mutation accepted: %d", w.Code)
+	}
+	// Same-origin Origin passes (scheme + host match the request target).
+	w = env.authed(t, http.MethodPost, "/api/admin/providers", `{}`,
+		l.cookieHeader(), l.csrfToken, "http://example.com")
+	if w.Code != http.StatusOK {
+		t.Errorf("same-origin mutation rejected: %d", w.Code)
+	}
+}
+
+// S-6: unknown session ids fail auth (strict mode) — never auto-adopted.
+func TestSession_UnknownIdRejected(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+
+	w := env.authed(t, http.MethodGet, "/api/admin/providers", "", "id=deadbeef", "", "")
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("unknown session id accepted: %d", w.Code)
+	}
+}
+
+// Login failures never distinguish causes: wrong password and unknown user
+// produce identical status AND body, and no session cookie is set.
+func TestLogin_InvalidCredentials401Shape(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+
+	wrongPass := env.login(t, "operator", "wrong", false)
+	unknownUser := env.login(t, "ghost", "whatever", false)
+	if wrongPass.status != http.StatusUnauthorized || unknownUser.status != http.StatusUnauthorized {
+		t.Fatalf("login statuses: %d / %d", wrongPass.status, unknownUser.status)
+	}
+	for _, l := range []loginResult{wrongPass, unknownUser} {
+		if len(l.setCookies) != 0 {
+			t.Errorf("failed login issued cookies: %q", l.setCookies)
+		}
+	}
+}
