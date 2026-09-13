@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PROxyLLM WebUI — not built</title>
+  </head>
+  <body>
+    <h1>WebUI assets are missing</h1>
+    <p>
+      This placeholder is committed so the Go binary builds without a Node toolchain. The real single-page app is
+      produced by the CI pipeline (<code>npm ci &amp;&amp; npm run build</code> in <code>webui/</code>) before
+      <code>go build</code>, which replaces this file via the <code>//go:embed all:dist</code> directive in
+      <code>webui/embed.go</code>. To build the WebUI locally, run <code>npm run build</code> in <code>webui/</code>
+      and rebuild the server.
+    </p>
+  </body>
+</html>
