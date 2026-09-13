@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+env:
+  # Go packages scoped to the module's own code — `./...` would descend
+  # into webui/node_modules (some npm packages ship Go sources) and break
+  # vet/test/lint runs (Makefile GO_PKGS parity).
+  GO_PKGS: ./cmd/... ./internal/... ./webui
+
 jobs:
   # Gate 1: lint + format + static analysis — blocking
   lint:
@@ -19,9 +25,9 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
       - name: gofmt check
-        run: test -z "$(gofmt -l .)"
+        run: test -z "$(gofmt -l cmd internal webui/embed.go)"
       - name: go vet
-        run: go vet ./...
+        run: go vet $GO_PKGS
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
@@ -37,7 +43,7 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
       - name: go test -race
-        run: go test -race ./...
+        run: go test -race $GO_PKGS
       - name: govulncheck
         uses: golang/govulncheck-action@v1
         with:
@@ -54,6 +60,83 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Gate 4: WebUI build + bundle budget + visual regression — blocking
+  webui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+      - name: npm ci
+        working-directory: webui
+        run: npm ci
+      - name: lint
+        working-directory: webui
+        run: npm run lint
+      - name: typecheck (src)
+        working-directory: webui
+        run: npm run typecheck
+      - name: typecheck (e2e)
+        working-directory: webui
+        run: npx tsc --noEmit -p tsconfig.e2e.json
+      # npm run build overwrites the committed dist placeholder with the
+      # real bundle — required here so the Go embed picks up real assets.
+      - name: build SPA
+        working-directory: webui
+        run: npm run build
+      - name: bundle budget (≤ 200 KB gzip initial load)
+        working-directory: webui
+        run: |
+          total=$(node -e '
+            const fs = require("fs");
+            const zlib = require("zlib");
+            const html = fs.readFileSync("dist/index.html", "utf8");
+            const refs = [...html.matchAll(/(?:src|href)="(\/?assets\/[^"]+)"/g)].map((m) => m[1]);
+            let gz = 0;
+            for (const r of refs) {
+              const p = r.startsWith("/") ? r.slice(1) : r;
+              gz += zlib.gzipSync(fs.readFileSync("dist/" + p)).length;
+            }
+            gz += zlib.gzipSync(fs.readFileSync("dist/index.html")).length;
+            console.log(gz);
+          ')
+          echo "initial load: ${total} bytes gzip"
+          if [ "$total" -gt 204800 ]; then
+            echo "::error::bundle budget exceeded: ${total} > 204800 bytes gzip"
+            exit 1
+          fi
+      # V-4: chromium only (the two projects both run on chromium engines);
+      # baselines are captured in CI, never locally (V-3).
+      - name: install Playwright browsers
+        working-directory: webui
+        run: npx playwright install --with-deps chromium
+      - name: build fixture server
+        run: |
+          go build -o webui/e2e/fixturesrv-bin ./webui/e2e/fixturesrv
+      - name: visual regression (seeded)
+        working-directory: webui
+        run: npx playwright test -c playwright.config.ts
+      - name: visual regression (empty states)
+        working-directory: webui
+        run: npx playwright test -c playwright.empty.config.ts
+      - name: upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            webui/e2e/.artifacts
+            webui/e2e/.artifacts-empty
+          retention-days: 7
+        if-no-files-found: ignore
 
   # Gate 6: Docker image build — blocking
   docker:

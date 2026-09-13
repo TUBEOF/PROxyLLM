@@ -38,3 +38,9 @@ go.work.sum
 *.swp
 .DS_Store
 Thumbs.db
+# Playwright fixture-server binary + test artifacts (built in CI / locally)
+webui/e2e/fixturesrv-bin
+webui/e2e/fixturesrv-bin.exe
+webui/e2e/.artifacts/
+webui/e2e/.artifacts-empty/
+webui/playwright-report/

@@ -1,0 +1,64 @@
+# Baseline update for the visual regression suite (research §7 V-5).
+#
+# After a DELIBERATE design change, a maintainer dispatches this workflow
+# (workflow_dispatch, main branch only). It regenerates ALL baselines in CI
+# — never locally, OS rendering differs — and commits them to main so the
+# next CI run compares against the updated truth. The resulting commit is
+# reviewable in the history; blanket updates without a design change are
+# a review finding, not a workflow matter.
+
+name: update-visual-baselines
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+      - name: npm ci
+        working-directory: webui
+        run: npm ci
+      - name: build SPA
+        working-directory: webui
+        run: npm run build
+      - name: install Playwright browsers
+        working-directory: webui
+        run: npx playwright install --with-deps chromium
+      - name: build fixture server
+        run: go build -o webui/e2e/fixturesrv-bin ./webui/e2e/fixturesrv
+      - name: regenerate baselines (seeded)
+        working-directory: webui
+        run: npx playwright test -c playwright.config.ts --update-snapshots
+      - name: regenerate baselines (empty states)
+        working-directory: webui
+        run: npx playwright test -c playwright.empty.config.ts --update-snapshots
+      - name: commit baselines
+        run: |
+          git config user.name "PROxyLLM CI"
+          git config user.email "ci@proxyllm.local"
+          git add webui/e2e
+          if git diff --cached --quiet; then
+            echo "No baseline changes — snapshots already up to date."
+            exit 0
+          fi
+          git commit -m "webui: regenerate visual regression baselines (CI)
+
+Baseline refresh via update-visual-baselines workflow (research §7 V-5):
+captured in CI on ubuntu-latest against the fixture server, never locally.
+
+Co-Authored-By: Claude Code <noreply@anthropic.com>"
+          git push
