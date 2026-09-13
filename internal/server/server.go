@@ -5,6 +5,7 @@ package server
 
 import (
 	"context"
+	"io/fs"
 	"log/slog"
 	"net/http"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/proxyllm/proxyllm/internal/server/httpapi"
 	"github.com/proxyllm/proxyllm/internal/server/webui"
 	"github.com/proxyllm/proxyllm/internal/storage"
+	embedui "github.com/proxyllm/proxyllm/webui"
 )
 
 // Server is the root http.Handler for PROxyLLM.
@@ -45,8 +47,8 @@ func WithProvider(p provider.Provider) Option {
 // WithMasterKey mounts the admin API (plan §5.2): the master key is the
 // session/CSRF HMAC secret — the same bytes that sealed the storage
 // envelope — so the WebUI backend only exists when the operator's key
-// material is wired in. Without it there is no /api/admin/ surface at all
-// (404), never a weakened fallback.
+// material is wired in. Without it the admin logic is unreachable: /api/admin/*
+// answers with the client-key gate's uniform 401, never a weakened fallback.
 func WithMasterKey(key []byte) Option {
 	return func(o *serverOptions) { o.masterKey = key }
 }
@@ -106,20 +108,31 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 	if cfg.Auth.Disabled {
 		authOpts = append(authOpts, auth.WithAuthDisabled())
 		// Loud one-time startup warning — never silently off.
-		logger.Warn("PROxyLLM: client-key auth is DISABLED (PROXYLLM_AUTH_DISABLED); every client can use the proxy without a key")
+		logger.Warn("PROxyLLM: client-key auth is DISABLED (PROxyLLM_AUTH_DISABLED); every client can use the proxy without a key")
 	}
+	authMiddleware := auth.NewMiddleware(store, authOpts...)
 	handler := httpapi.New(httpapi.Params{
 		Store:    store,
 		Router:   router,
 		Executor: exec,
 	})
-	s.mux.Handle("/", auth.NewMiddleware(store, authOpts...).Wrap(handler))
+	// The proxy API mounts at /v1/ (every httpapi route lives there), so the
+	// SPA can own the root: a browser hitting / gets the WebUI without a
+	// client key — the WebUI session is the WebUI's auth, not the client
+	// key's (plan §9, §5.2).
+	s.mux.Handle("/v1/", authMiddleware.Wrap(handler))
 
 	// Admin API (plan §5.2): mounted only when the master key is wired —
 	// the reload hook pushes freshly stored routing rules into the LIVE
 	// router (Analysis E: WebUI rule writes take effect without restart;
 	// a failed store write never reloads, so the router never sees a
 	// rule set that is not the persisted one).
+	//
+	// Without the master key there is no admin surface to mount — but the
+	// path must still answer with the auth gate's uniform 401, never the
+	// SPA's 404: a 404/401 distinction would reveal whether the admin API
+	// is mounted at all (the no-degraded-fallback contract from
+	// TestServer_NoMasterKeyNoAdminAPI).
 	if o.masterKey != nil {
 		admin := webui.NewAdminAPI(webui.AdminParams{
 			Store: store,
@@ -137,7 +150,15 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 			MasterKey: o.masterKey,
 		})
 		s.mux.Handle("/api/admin/", admin.Handler())
+	} else {
+		s.mux.Handle("/api/admin/", authMiddleware.Wrap(http.NotFoundHandler()))
 	}
+
+	// The embedded SPA owns everything else (plan §9): assets serve
+	// directly, deep links fall back to index.html (Phase 2 research §5
+	// option 2), and /v1/ + /api/ never reach it — their mux patterns are
+	// more specific, and the handler excludes them defensively anyway.
+	s.mux.Handle("/", webui.NewSPAHandler(embeddedUI()))
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 
@@ -164,6 +185,19 @@ func loadRoutingRules(ctx context.Context, store *storage.Store) ([]routing.Rule
 		})
 	}
 	return rules, nil
+}
+
+// embeddedUI projects the embedded dist FS down to its root so the SPA
+// handler's fs.Stat("index.html") resolves (embed.FS roots everything under
+// the dist/ prefix; research E-2).
+func embeddedUI() fs.FS {
+	sub, err := fs.Sub(embedui.Dist, "dist")
+	if err != nil {
+		// Cannot happen: dist is a committed directory with a placeholder
+		// index.html — the embed directive fails the build without it.
+		panic("webui: embedded dist is missing: " + err.Error())
+	}
+	return sub
 }
 
 // ServeHTTP implements http.Handler.
