@@ -16,7 +16,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -114,6 +113,10 @@ type Auth interface {
 	LoginFromBrowser(ctx context.Context, cfg BrowserLogin) (LoginResult, error)
 	// LoginFromDevice runs the headless device-code flow (X20).
 	LoginFromDevice(ctx context.Context, cfg DeviceLogin) (LoginResult, error)
+	// StartDeviceLogin starts the stepwise device flow (X20) — the admin-API
+	// form: it surfaces the user_code and verification URL so a UI can show
+	// them, and the returned session is driven one poll at a time.
+	StartDeviceLogin(ctx context.Context, timeout time.Duration) (*DeviceSession, error)
 	// Refresh rotates the token pair server-side (X9/X11/X12): single-use
 	// rotation persisted atomically, single-flight.
 	Refresh(ctx context.Context) error
@@ -305,8 +308,9 @@ func (a *authClient) LoginFromBrowser(ctx context.Context, cfg BrowserLogin) (Lo
 	return res, nil
 }
 
-// LoginFromDevice runs the headless flow per X20: usercode request (404 =
-// disabled → operator error) → operator verification URL → poll with
+// LoginFromDevice runs the headless flow per X20 by delegating to the
+// stepwise primitives (StartDeviceLogin/Poll): usercode request (404 =
+// disabled → operator error) → operator verification URL → poll loop with
 // 403/404 tolerance under a hard deadline → exchange with the SERVER-provided
 // PKCE verifier and the issuer device callback redirect_uri.
 func (a *authClient) LoginFromDevice(ctx context.Context, cfg DeviceLogin) (LoginResult, error) {
@@ -314,81 +318,35 @@ func (a *authClient) LoginFromDevice(ctx context.Context, cfg DeviceLogin) (Logi
 	if timeout <= 0 {
 		timeout = 15 * time.Minute // X20 hard cap (CLI: 15 min)
 	}
+
+	sess, err := a.StartDeviceLogin(ctx, timeout)
+	if err != nil {
+		return LoginResult{}, err
+	}
+
+	if cfg.OpenURL != nil {
+		if err := cfg.OpenURL(sess.VerificationURL); err != nil {
+			return LoginResult{}, fmt.Errorf("codex: present verification URL: %w", err)
+		}
+	}
+
 	// The overall deadline rides the context too, so EVERY request of the
 	// flow — usercode, polls, exchange — is bounded even if a caller passes
 	// an unbounded ctx.
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	deadline := time.Now().Add(timeout)
 
-	// 1. Request the device code (X20 wire shape; interval is a STRING).
-	var uc struct {
-		DeviceAuthID string `json:"device_auth_id"`
-		UserCode     string `json:"user_code"`
-		Interval     string `json:"interval"`
-	}
-	err := a.postJSON(ctx, a.issuer+"/api/accounts/deviceauth/usercode",
-		struct {
-			ClientID string `json:"client_id"`
-		}{ClientID: a.clientID}, &uc)
-	if err != nil {
-		var ee *endpointError
-		if errors.As(err, &ee) && ee.status == http.StatusNotFound {
-			// X20: 404 on the usercode request = device login disabled.
-			return LoginResult{}, &DeviceLoginDisabledError{Detail: "issuer answered 404 on the device-code request"}
-		}
-		return LoginResult{}, err
-	}
-	if uc.DeviceAuthID == "" || uc.UserCode == "" {
-		return LoginResult{}, errors.New("codex: device-code response missing device_auth_id/user_code")
-	}
-	interval := 5 * time.Second
-	if v, perr := strconv.Atoi(strings.TrimSpace(uc.Interval)); perr == nil && v > 0 {
-		interval = time.Duration(v) * time.Second
-	}
-
-	if cfg.OpenURL != nil {
-		if err := cfg.OpenURL(a.issuer + "/codex/device"); err != nil {
-			return LoginResult{}, fmt.Errorf("codex: present verification URL: %w", err)
-		}
-	}
-
-	// 2. Poll until approved, deadline, or a fatal error (X20: 403/404 keep
-	// polling; any other non-2xx is fatal).
-	var approval struct {
-		AuthorizationCode string `json:"authorization_code"`
-		CodeVerifier      string `json:"code_verifier"`
-	}
-poll:
+	// Poll loop: the session throttles to the issuer interval (RFC 8628
+	// §3.5); the loop only adds deadline/cancellation waiting between polls.
 	for {
-		if time.Now().After(deadline) {
-			return LoginResult{}, fmt.Errorf("codex: device login timed out after %s (X20)", timeout)
-		}
-		var pollResp struct {
-			AuthorizationCode string `json:"authorization_code"`
-			CodeVerifier      string `json:"code_verifier"`
-		}
-		err := a.postJSON(ctx, a.issuer+"/api/accounts/deviceauth/token",
-			struct {
-				DeviceAuthID string `json:"device_auth_id"`
-				UserCode     string `json:"user_code"`
-			}{DeviceAuthID: uc.DeviceAuthID, UserCode: uc.UserCode}, &pollResp)
-		var ee *endpointError
-		switch {
-		case err == nil:
-			approval = pollResp
-			break poll
-		case errors.As(err, &ee) && (ee.status == http.StatusForbidden || ee.status == http.StatusNotFound):
-			// pending — keep polling (X20). RFC 8628 slow_down is NOT
-			// special-cased: codex-rs treats any non-2xx outside 403/404 as
-			// fatal, and PROxyLLM follows that (review NOTE, intended
-			// divergence — a slow issuer is indistinguishable from a broken
-			// one at the operator level, and the fixed poll interval already
-			// spaces requests out).
-		default:
+		approved, res, err := sess.Poll(ctx)
+		if err != nil {
 			return LoginResult{}, err
 		}
-		wait := min(interval, time.Until(deadline))
+		if approved {
+			return res, nil
+		}
+		wait := min(sess.Interval, time.Until(sess.deadline))
 		if wait < 0 {
 			wait = 0
 		}
@@ -400,18 +358,6 @@ poll:
 			return LoginResult{}, ctx.Err()
 		}
 	}
-	if approval.AuthorizationCode == "" || approval.CodeVerifier == "" {
-		return LoginResult{}, errors.New("codex: device approval response missing authorization_code/code_verifier (server-provided PKCE, X20)")
-	}
-
-	// 3. Exchange: the redirect_uri is the CONSTRUCTED issuer device
-	// callback — never a value echoed from the poll response (X20).
-	res, err := a.exchangeCode(ctx, approval.AuthorizationCode, a.issuer+"/deviceauth/callback", approval.CodeVerifier)
-	if err != nil {
-		return LoginResult{}, err
-	}
-	a.markRefreshed()
-	return res, nil
 }
 
 // Refresh rotates the token pair (X9/X11/X12): single-flight — concurrent

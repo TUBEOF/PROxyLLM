@@ -659,6 +659,306 @@ func TestDeviceFlow_DisabledIsOperatorError(t *testing.T) {
 	}
 }
 
+// --- stepwise device flow (X20, admin-API form) --------------------------------
+//
+// The admin API drives the device flow stepwise: StartDeviceLogin surfaces the
+// user_code and verification URL to the operator (the blocking LoginFromDevice
+// keeps them internal — the operator must enter the code on the verification
+// page, so the UI has to show it), and Poll performs exactly ONE issuer round
+// trip per call so the SPA polls at the issuer-provided interval. Expectations
+// derive from X20 (usercode wire shape, string interval, 403/404 pending, other
+// errors fatal, server-provided PKCE, {issuer}/deviceauth/callback exchange,
+// 15-min cap, 404-on-usercode = disabled) and the delegated X16 exchange —
+// never from provider code behavior.
+
+func TestStepwiseDevice_StartSurfacesUserCode(t *testing.T) {
+	var usercodeHits, tokenHits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/accounts/deviceauth/usercode":
+			usercodeHits.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			// X20: interval arrives as a STRING; user_code key.
+			_, _ = io.WriteString(w, `{"device_auth_id":"dev-7","user_code":"WDJB-MJHT","interval":"5"}`)
+		case "/api/accounts/deviceauth/token":
+			tokenHits.Add(1)
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			t.Errorf("unexpected issuer path %s", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	store := freshStore()
+	auth := testAuth(t, srv.URL, store)
+	sess, err := auth.StartDeviceLogin(context.Background(), 15*time.Minute)
+	if err != nil {
+		t.Fatalf("StartDeviceLogin: %v", err)
+	}
+	if sess.DeviceAuthID != "dev-7" || sess.UserCode != "WDJB-MJHT" {
+		t.Errorf("session = %q/%q, want dev-7/WDJB-MJHT (X20)", sess.DeviceAuthID, sess.UserCode)
+	}
+	if sess.VerificationURL != srv.URL+"/codex/device" {
+		t.Errorf("VerificationURL = %q, want {issuer}/codex/device (X20)", sess.VerificationURL)
+	}
+	if sess.Interval != 5*time.Second {
+		t.Errorf("Interval = %v, want 5s parsed from the STRING field (X20)", sess.Interval)
+	}
+	if tokenHits.Load() != 0 {
+		t.Errorf("token polls during start = %d, want 0 — start only requests the usercode", tokenHits.Load())
+	}
+	if usercodeHits.Load() != 1 {
+		t.Errorf("usercode requests = %d, want 1", usercodeHits.Load())
+	}
+}
+
+func TestStepwiseDevice_PollPendingCarriesWirePair(t *testing.T) {
+	var pollBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/accounts/deviceauth/usercode":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"device_auth_id":"dev-1","user_code":"WDJB","interval":"5"}`)
+		case "/api/accounts/deviceauth/token":
+			if err := json.NewDecoder(r.Body).Decode(&pollBody); err != nil {
+				t.Errorf("poll body must be JSON: %v", err)
+			}
+			w.WriteHeader(http.StatusForbidden) // X20: 403 = pending
+		default:
+			t.Errorf("unexpected issuer path %s", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	store := freshStore()
+	auth := testAuth(t, srv.URL, store)
+	sess, err := auth.StartDeviceLogin(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("StartDeviceLogin: %v", err)
+	}
+	approved, _, err := sess.Poll(context.Background())
+	if err != nil {
+		t.Fatalf("pending poll must not error: %v", err)
+	}
+	if approved {
+		t.Fatal("approved = true on 403, want pending (X20)")
+	}
+	if pollBody["device_auth_id"] != "dev-1" || pollBody["user_code"] != "WDJB" {
+		t.Errorf("poll body = %v, want the device_auth_id + user_code pair (X20)", pollBody)
+	}
+}
+
+func TestStepwiseDevice_PollThrottlesToIssuerInterval(t *testing.T) {
+	var tokenHits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/accounts/deviceauth/usercode":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"device_auth_id":"dev-1","user_code":"WDJB","interval":"5"}`)
+		case "/api/accounts/deviceauth/token":
+			tokenHits.Add(1)
+			w.WriteHeader(http.StatusForbidden)
+		default:
+			t.Errorf("unexpected issuer path %s", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	store := freshStore()
+	auth := testAuth(t, srv.URL, store)
+	sess, err := auth.StartDeviceLogin(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("StartDeviceLogin: %v", err)
+	}
+	if approved, _, err := sess.Poll(context.Background()); approved || err != nil {
+		t.Fatalf("first poll = %v/%v, want pending/nil", approved, err)
+	}
+	// RFC 8628 §3.5: the client polls at the issuer-provided interval — a
+	// second call inside the 5 s window must NOT hit the issuer again.
+	if approved, _, err := sess.Poll(context.Background()); approved || err != nil {
+		t.Fatalf("throttled poll = %v/%v, want pending/nil", approved, err)
+	}
+	if tokenHits.Load() != 1 {
+		t.Errorf("token polls = %d, want 1 — the interval window must throttle issuer calls", tokenHits.Load())
+	}
+}
+
+func TestStepwiseDevice_PollApprovedExchangesAndPersists(t *testing.T) {
+	var polls atomic.Int32
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/accounts/deviceauth/usercode":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"device_auth_id":"dev-1","user_code":"WDJB","interval":"1"}`)
+		case "/api/accounts/deviceauth/token":
+			if polls.Add(1) < 2 {
+				w.WriteHeader(http.StatusForbidden) // X20: pending
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			// X20: the SERVER provides the PKCE pair.
+			_, _ = io.WriteString(w, `{"authorization_code":"ac-9","code_verifier":"ver-9"}`)
+		case "/oauth/token":
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("exchange must be form-encoded (X16): %v", err)
+			}
+			if got := r.Form.Get("redirect_uri"); got != srv.URL+"/deviceauth/callback" {
+				t.Errorf("exchange redirect_uri = %q, want {issuer}/deviceauth/callback (X20)", got)
+			}
+			if got := r.Form.Get("code_verifier"); got != "ver-9" {
+				t.Errorf("exchange code_verifier = %q, want the server-provided ver-9 (X20)", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"access_token":"a1","refresh_token":"r1","id_token":%q}`+"\n", makeJWT(t, "acct-9"))
+		default:
+			t.Errorf("unexpected issuer path %s", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	store := freshStore()
+	auth := testAuth(t, srv.URL, store)
+	sess, err := auth.StartDeviceLogin(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("StartDeviceLogin: %v", err)
+	}
+	if approved, _, err := sess.Poll(context.Background()); approved || err != nil {
+		t.Fatalf("first poll = %v/%v, want pending/nil", approved, err)
+	}
+	// Interval is 1 s — the second poll rides after the window.
+	time.Sleep(1100 * time.Millisecond)
+	approved, res, err := sess.Poll(context.Background())
+	if err != nil {
+		t.Fatalf("approval poll: %v", err)
+	}
+	if !approved {
+		t.Fatal("approved = false on the 200 poll response, want true (X20)")
+	}
+	if res.AccountID != "acct-9" {
+		t.Errorf("AccountID = %q, want acct-9 from the id_token (X15)", res.AccountID)
+	}
+	if got := store.get(codex.KindAccessToken); got != "a1" {
+		t.Errorf("access_token = %q, want a1 persisted", got)
+	}
+	if got := store.get(codex.KindRefreshToken); got != "r1" {
+		t.Errorf("refresh_token = %q, want r1 persisted", got)
+	}
+}
+
+func TestStepwiseDevice_PollAfterApprovalIsTerminal(t *testing.T) {
+	var tokenHits, exchangeHits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/accounts/deviceauth/usercode":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"device_auth_id":"dev-1","user_code":"WDJB","interval":"1"}`)
+		case "/api/accounts/deviceauth/token":
+			tokenHits.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"authorization_code":"ac","code_verifier":"v"}`)
+		case "/oauth/token":
+			exchangeHits.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"access_token":"a1","refresh_token":"r1"}`)
+		default:
+			t.Errorf("unexpected issuer path %s", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	store := freshStore()
+	auth := testAuth(t, srv.URL, store)
+	sess, err := auth.StartDeviceLogin(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("StartDeviceLogin: %v", err)
+	}
+	if approved, _, err := sess.Poll(context.Background()); !approved || err != nil {
+		t.Fatalf("first poll = %v/%v, want approved/nil", approved, err)
+	}
+	// A re-poll after completion must not re-run the (single-use) flow.
+	if _, _, err := sess.Poll(context.Background()); err == nil {
+		t.Fatal("re-poll after approval must error — the authorization code is single-use")
+	}
+	if tokenHits.Load() != 1 || exchangeHits.Load() != 1 {
+		t.Errorf("hits after re-poll = token %d / exchange %d, want 1/1 — no second round trip", tokenHits.Load(), exchangeHits.Load())
+	}
+}
+
+func TestStepwiseDevice_PollFatalStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/accounts/deviceauth/usercode":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"device_auth_id":"dev-1","user_code":"WDJB","interval":"1"}`)
+		case "/api/accounts/deviceauth/token":
+			w.WriteHeader(http.StatusInternalServerError) // X20: not 403/404 → fatal
+		default:
+			t.Errorf("unexpected issuer path %s", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	store := freshStore()
+	auth := testAuth(t, srv.URL, store)
+	sess, err := auth.StartDeviceLogin(context.Background(), time.Minute)
+	if err != nil {
+		t.Fatalf("StartDeviceLogin: %v", err)
+	}
+	if approved, _, err := sess.Poll(context.Background()); approved || err == nil {
+		t.Fatal("500 on the poll must be fatal (X20)")
+	}
+}
+
+func TestStepwiseDevice_PollPastDeadline(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/accounts/deviceauth/usercode":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"device_auth_id":"dev-1","user_code":"WDJB","interval":"1"}`)
+		case "/api/accounts/deviceauth/token":
+			t.Error("the poll must not reach the issuer past the deadline (X20 cap)")
+		default:
+			t.Errorf("unexpected issuer path %s", r.URL.Path)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	store := freshStore()
+	auth := testAuth(t, srv.URL, store)
+	// A 1 ns timeout is in the past by the time Poll runs — the X20 hard cap
+	// applies to the stepwise flow the same way it does to the blocking one.
+	// (The sleep rides out the coarse Windows wall-clock tick so the deadline
+	// is provably past.)
+	sess, err := auth.StartDeviceLogin(context.Background(), time.Nanosecond)
+	if err != nil {
+		t.Fatalf("StartDeviceLogin: %v", err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if err != nil {
+		t.Fatalf("StartDeviceLogin: %v", err)
+	}
+	if _, _, err := sess.Poll(context.Background()); err == nil {
+		t.Fatal("poll past the deadline must fail (X20 cap)")
+	}
+}
+
+func TestStepwiseDevice_DisabledIsOperatorError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// X20: 404 on the INITIAL usercode request = device login disabled.
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+
+	store := freshStore()
+	auth := testAuth(t, srv.URL, store)
+	_, err := auth.StartDeviceLogin(context.Background(), time.Minute)
+	var op *codex.DeviceLoginDisabledError
+	if !errors.As(err, &op) {
+		t.Fatalf("error = %v (%T), want *codex.DeviceLoginDisabledError (X20)", err, err)
+	}
+}
+
 // --- helpers ------------------------------------------------------------------
 
 // seedRefreshable plants the minimal refreshable state (refresh token only).
