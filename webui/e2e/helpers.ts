@@ -60,7 +60,9 @@ export async function login(page: Page): Promise<void> {
  */
 export async function readyForCapture(page: Page): Promise<void> {
   await page.evaluate(() => document.fonts.ready);
-  await expect(page.locator('.loading, .empty-state:has-text("Loading")')).toHaveCount(0);
+  // Route-level loading states render as EmptyState (.empty, title
+  // "Loading …"); .loading is the lazy-chunk boundary. Both must be gone.
+  await expect(page.locator('.loading, .empty:has-text("Loading")')).toHaveCount(0);
 }
 
 /** KPI numbers depend on the seeded day window — mask them (V-2). */

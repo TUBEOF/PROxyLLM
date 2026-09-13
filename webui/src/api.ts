@@ -4,8 +4,10 @@
 //   session automatically (credentials: 'same-origin').
 // - Mutations carry Content-Type: application/json (C-4 — a non-simple
 //   content type forces a CORS preflight) and the X-CSRF-Token header
-//   (C-3). The token comes from the login/bootstrap response body; the
-//   csrf cookie copy exists only so the server can double-check it.
+//   (C-3). The token comes from login/bootstrap responses and from the
+//   X-CSRF-Token header on every authenticated response — the server
+//   re-issues it there, so a page refresh (memory lost, session cookie
+//   alive) recovers the token with the first authenticated GET.
 // - Error bodies are the admin API's uniform {"error": "..."} shape.
 
 export class ApiError extends Error {
@@ -39,6 +41,16 @@ async function authCall(path: string, username: string, password: string): Promi
   const payload = (await parseBody(res)) as { csrf_token?: unknown } | null;
   const token = payload?.csrf_token;
   if (typeof token === 'string' && token !== '') {
+    csrfToken = token;
+  }
+}
+
+// adoptReissuedToken picks up the server's re-issued CSRF token from an
+// authenticated response. A non-empty header always refreshes the stored
+// token (the server re-issues per session; staying current costs nothing).
+function adoptReissuedToken(res: Response): void {
+  const token = res.headers.get('X-CSRF-Token');
+  if (token !== null && token !== '') {
     csrfToken = token;
   }
 }
@@ -87,6 +99,7 @@ export async function apiCall<T>(
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   });
+  adoptReissuedToken(res);
   return (await parseBody(res)) as T;
 }
 

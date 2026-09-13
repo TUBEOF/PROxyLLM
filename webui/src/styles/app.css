@@ -70,7 +70,7 @@
   border: 1px solid var(--status-down);
   border-radius: var(--radius-md);
   color: var(--fg);
-  background: oklch(15% 0.03 25 / 60%);
+  background: color-mix(in oklab, var(--status-down) 12%, transparent);
   font-size: var(--fs-sm);
 }
 

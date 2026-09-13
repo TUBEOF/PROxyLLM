@@ -401,3 +401,80 @@ func TestLogin_InvalidCredentials401Shape(t *testing.T) {
 		}
 	}
 }
+
+// C-1/C-2 refresh path: a page reload wipes the SPA's in-memory token while
+// the session cookie stays alive. The middleware must re-issue the full
+// token (random + session-bound MAC) so a reloaded SPA can keep mutating —
+// and the re-issued token must actually authorize a mutation.
+func TestCSRF_TokenReissuedForLiveSession(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	l := env.login(t, "operator", testPassword, false)
+
+	// Simulate the reload: session cookie sent, csrf cookie absent (the
+	// cookie survives a reload, but keep the case strict — either way the
+	// server must mint a token for the live session).
+	w := env.authed(t, http.MethodGet, "/api/admin/providers", "", l.sessionCookie, "", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("live session rejected on GET: %d", w.Code)
+	}
+	reissued := w.Header().Get("X-CSRF-Token")
+	if reissued == "" {
+		t.Fatal("no X-CSRF-Token header on an authenticated response — a reloaded SPA has no token after refresh")
+	}
+	random, mac, ok := strings.Cut(reissued, ".")
+	if !ok || random == "" || mac == "" {
+		t.Fatalf("re-issued token malformed: %q", reissued)
+	}
+	// The re-issued token must authorize a mutation on the same session.
+	w = env.authed(t, http.MethodPost, "/api/admin/providers", `{}`,
+		l.cookieHeader(), reissued, "")
+	if w.Code != http.StatusOK {
+		t.Errorf("re-issued token rejected on mutation: %d", w.Code)
+	}
+}
+
+// C-1/C-2: the re-issued token is session-bound like a login-issued one —
+// one session's re-issued token must not authorize another session.
+func TestCSRF_ReissuedTokenSessionBound(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	l1 := env.login(t, "operator", testPassword, false)
+	l2 := env.login(t, "operator", testPassword, false)
+
+	w := env.authed(t, http.MethodGet, "/api/admin/providers", "", l1.sessionCookie, "", "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("live session rejected: %d", w.Code)
+	}
+	reissued := w.Header().Get("X-CSRF-Token")
+
+	reissuedRandom, _, _ := strings.Cut(reissued, ".")
+
+	// l1's re-issued token on l2's session → forbidden.
+	w = env.authed(t, http.MethodPost, "/api/admin/providers", `{}`,
+		l2.sessionCookie+"; csrf="+reissuedRandom, reissued, "")
+	if w.Code != http.StatusForbidden {
+		t.Errorf("cross-session re-issued token accepted: %d", w.Code)
+	}
+	// And it must pass on its own session.
+	w = env.authed(t, http.MethodPost, "/api/admin/providers", `{}`,
+		l1.sessionCookie+"; csrf="+reissuedRandom, reissued, "")
+	if w.Code != http.StatusOK {
+		t.Errorf("own-session re-issued token rejected: %d", w.Code)
+	}
+}
+
+// The re-issue never leaks a token for an unauthenticated request — no
+// header on 401 responses.
+func TestCSRF_NoReissueForUnauthenticated(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+
+	w := env.authed(t, http.MethodGet, "/api/admin/providers", "", "", "", "")
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated GET: %d", w.Code)
+	}
+	if got := w.Header().Get("X-CSRF-Token"); got != "" {
+		t.Errorf("token header on 401 response: %q", got)
+	}
+}

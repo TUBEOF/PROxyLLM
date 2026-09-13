@@ -215,6 +215,20 @@ func (sm *SessionManager) RequireAdmin(next http.Handler) http.Handler {
 			return
 		}
 
+		// Token re-issue (C-1/C-2): the SPA holds the CSRF token only in
+		// memory, so a page refresh loses it while the session lives on.
+		// The MAC needs the master key — the SPA cannot rebuild the token
+		// from the cookie's random half. Every authenticated response
+		// therefore carries the current token as a header, letting the SPA
+		// pick it back up on any request (login/bootstrap bodies still carry
+		// it for the initial acquisition).
+		random, err := csrfRandomFor(w, r)
+		if err != nil {
+			writeAdminError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+		w.Header().Set("X-CSRF-Token", random+"."+csrfHMAC(sm.masterKey, raw, random))
+
 		if isMutation(r.Method) {
 			// C-4: reject simple content types — a cross-site form or
 			// text/plain fetch must never be processable without preflight.
@@ -242,6 +256,24 @@ func (sm *SessionManager) RequireAdmin(next http.Handler) http.Handler {
 		ctx = context.WithValue(ctx, rawSessionCtxKey{}, raw)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// csrfRandomFor returns the CSRF random half for this session: the csrf
+// cookie's value when present (the common case — token stability across
+// requests), otherwise a freshly minted one, set as a replacement cookie.
+// The random alone authorizes nothing (C-2: the MAC carries the security);
+// it only binds cookie and header.
+func csrfRandomFor(w http.ResponseWriter, r *http.Request) (string, error) {
+	if c, err := r.Cookie(csrfCookieName); err == nil && c.Value != "" {
+		return c.Value, nil
+	}
+	random := make([]byte, csrfRandomBytes)
+	if _, err := rand.Read(random); err != nil {
+		return "", err
+	}
+	randomStr := base64.RawURLEncoding.EncodeToString(random)
+	setCSRFCookie(w, randomStr, r.TLS != nil)
+	return randomStr, nil
 }
 
 // csrfHMAC computes the MAC half of the CSRF token (C-1/C-2): HMAC over

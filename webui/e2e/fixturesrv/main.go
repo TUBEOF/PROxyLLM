@@ -117,11 +117,13 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 	}
 
 	// Providers (storage rows; the visual suite only drives the admin API,
-	// so no live provider registration is needed).
+	// so no live provider registration is needed). Type strings match the
+	// WebUI editor's canonical vocabulary (Providers.tsx PROVIDER_TYPES) —
+	// a save through the drawer must not rewrite the type.
 	for _, p := range []storage.Provider{
-		{ID: "prv-codex", Type: "codex_oauth", Name: "ChatGPT / Codex"},
-		{ID: "prv-ollama", Type: "ollama_cloud", Name: "Ollama Cloud"},
-		{ID: "prv-openai", Type: "custom_openai", Name: "Custom OpenAI-compatible"},
+		{ID: "prv-codex", Type: "codex-oauth", Name: "ChatGPT / Codex"},
+		{ID: "prv-ollama", Type: "ollama-cloud", Name: "Ollama Cloud"},
+		{ID: "prv-openai", Type: "custom-openai", Name: "Custom OpenAI-compatible"},
 	} {
 		if err := store.PutProvider(ctx, p); err != nil {
 			return fmt.Errorf("seed provider %s: %w", p.ID, err)
