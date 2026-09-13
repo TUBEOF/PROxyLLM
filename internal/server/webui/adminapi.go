@@ -17,9 +17,11 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/proxyllm/proxyllm/internal/auth"
+	"github.com/proxyllm/proxyllm/internal/provider/codex"
 	"github.com/proxyllm/proxyllm/internal/storage"
 )
 
@@ -37,11 +39,16 @@ type AdminParams struct {
 }
 
 // AdminAPI serves the /api/admin/ surface. It holds no state of its own
-// beyond the wired dependencies — all persistence goes through the store.
+// beyond the wired dependencies — all persistence goes through the store —
+// except the OAuth device-flow registry: active flows are transient session
+// state (issuer-side, single-use authorization codes), never persisted.
 type AdminAPI struct {
 	store         *storage.Store
 	reloadRouting func()
 	sessions      *auth.SessionManager
+
+	oauthMu    sync.Mutex
+	oauthFlows map[string]*codex.DeviceSession // providerID → active flow
 }
 
 // NewAdminAPI builds the admin API and its session manager (shared master
@@ -55,6 +62,7 @@ func NewAdminAPI(p AdminParams) *AdminAPI {
 		store:         p.Store,
 		reloadRouting: p.ReloadRouting,
 		sessions:      auth.NewSessionManager(p.Store, p.MasterKey, now),
+		oauthFlows:    map[string]*codex.DeviceSession{},
 	}
 }
 
@@ -73,6 +81,15 @@ func (a *AdminAPI) Handler() http.Handler {
 	mux.Handle("GET /api/admin/providers", a.sessions.RequireAdmin(http.HandlerFunc(a.listProviders)))
 	mux.Handle("PUT /api/admin/providers/{id}", a.sessions.RequireAdmin(http.HandlerFunc(a.putProvider)))
 	mux.Handle("DELETE /api/admin/providers/{id}", a.sessions.RequireAdmin(http.HandlerFunc(a.deleteProvider)))
+	// OAuth device flow (X20, plan §5.2): start surfaces the operator pair
+	// (user_code + verification URL); poll performs ONE issuer round trip
+	// per call, throttled to the issuer interval. There is deliberately NO
+	// /oauth/callback admin route — the device flow needs no inbound
+	// endpoint (that is the point: it works through Docker's isolation),
+	// and the browser flow's loopback listener belongs to the codex
+	// package's LoginFromBrowser, not the admin API.
+	mux.Handle("POST /api/admin/providers/{id}/oauth/start", a.sessions.RequireAdmin(http.HandlerFunc(a.oauthStart)))
+	mux.Handle("POST /api/admin/providers/{id}/oauth/poll", a.sessions.RequireAdmin(http.HandlerFunc(a.oauthPoll)))
 
 	mux.Handle("GET /api/admin/models", a.sessions.RequireAdmin(http.HandlerFunc(a.listModels)))
 	mux.Handle("PUT /api/admin/models/{id}", a.sessions.RequireAdmin(http.HandlerFunc(a.putModel)))
@@ -218,7 +235,129 @@ func (a *AdminAPI) deleteProvider(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	// A deleted provider's active flow dies with it — the SPA cannot poll a
+	// ghost.
+	a.oauthMu.Lock()
+	delete(a.oauthFlows, r.PathValue("id"))
+	a.oauthMu.Unlock()
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// ---------------------------------------------------------------------------
+// OAuth device flow (X20, plan §5.2)
+// ---------------------------------------------------------------------------
+
+// oauthFlowTimeout is the X20 hard cap for one device login (CLI: 15 min).
+const oauthFlowTimeout = 15 * time.Minute
+
+// oauthStart begins (or restarts) the device login for a codex-oauth
+// provider: it surfaces the pair the operator needs — user_code and the
+// verification URL — plus the issuer-provided poll interval the SPA paces
+// itself to. A second start replaces any active flow: the SPA restarts the
+// sign-in after an abandoned session, and the old user_code is dead either
+// way (issuer-side, single-use).
+//
+// The flow state lives in memory only: it is issuer-side session state (a
+// pending authorization), never a secret worth persisting, and the resulting
+// tokens ride the encrypted provider_tokens rows via the codex client's own
+// persistence path.
+func (a *AdminAPI) oauthStart(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	provider, err := a.store.GetProvider(r.Context(), id)
+	if err != nil {
+		writeStoreError(w, err) // missing row → 404, like every other resource
+		return
+	}
+	if provider.Type != "codex-oauth" {
+		// Only the codex OAuth provider has a flow; anything else is a client
+		// error, never a generic 500.
+		writeError(w, http.StatusBadRequest, "oauth flow requires a codex-oauth provider")
+		return
+	}
+	var cfg struct {
+		Issuer   string `json:"issuer"`
+		ClientID string `json:"client_id"`
+	}
+	if len(provider.Config) > 0 {
+		if err := json.Unmarshal(provider.Config, &cfg); err != nil {
+			writeError(w, http.StatusBadRequest, "provider config is not valid JSON")
+			return
+		}
+	}
+	if cfg.Issuer == "" {
+		writeError(w, http.StatusBadRequest, "codex-oauth provider config needs an issuer")
+		return
+	}
+	client := codex.NewAuthClient(codex.AuthConfig{
+		Issuer:     cfg.Issuer,
+		ClientID:   cfg.ClientID, // empty → pinned default (X13)
+		Store:      a.store,      // *storage.Store satisfies codex.TokenStore
+		ProviderID: id,
+	})
+	sess, err := client.StartDeviceLogin(r.Context(), oauthFlowTimeout)
+	if err != nil {
+		var disabled *codex.DeviceLoginDisabledError
+		if errors.As(err, &disabled) {
+			// X20: 404 on the usercode request = device login disabled — an
+			// operator action, not a retry candidate.
+			writeError(w, http.StatusBadRequest, "device login is not available for this issuer")
+			return
+		}
+		writeError(w, http.StatusBadGateway, "issuer request failed")
+		return
+	}
+	// Replace semantics: at most one active flow per provider.
+	a.oauthMu.Lock()
+	a.oauthFlows[id] = sess
+	a.oauthMu.Unlock()
+	writeJSON(w, http.StatusOK, oauthStartDTO{
+		UserCode:        sess.UserCode,
+		VerificationURL: sess.VerificationURL,
+		IntervalSeconds: int(sess.Interval / time.Second),
+	})
+}
+
+// oauthPoll drives one issuer round trip of the active flow (the codex
+// session throttles to the issuer interval itself). Outcomes:
+//   - pending  → 200 {"status":"pending"} — the SPA keeps polling
+//   - approved → 200 {"status":"approved","account_id":...} — the token
+//     triple is already exchanged AND persisted by the time this returns
+//   - terminal (fatal issuer failure, timeout) → 502 uniform error; the
+//     flow is dropped and the SPA must start a fresh one
+//
+// A poll with no active flow — never started, already approved (single-use
+// code), or failed — is uniformly 400: the SPA starts a flow first.
+func (a *AdminAPI) oauthPoll(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+
+	a.oauthMu.Lock()
+	sess := a.oauthFlows[id]
+	a.oauthMu.Unlock()
+	if sess == nil {
+		writeError(w, http.StatusBadRequest, "no active oauth flow — start first")
+		return
+	}
+
+	approved, res, err := sess.Poll(r.Context())
+	if err != nil {
+		// Terminal: the session pins the failure; drop it so a restart is not
+		// blocked by a dead session.
+		a.oauthMu.Lock()
+		delete(a.oauthFlows, id)
+		a.oauthMu.Unlock()
+		writeError(w, http.StatusBadGateway, "oauth flow failed")
+		return
+	}
+	if !approved {
+		writeJSON(w, http.StatusOK, oauthPollDTO{Status: "pending"})
+		return
+	}
+	// Approved — the flow is consumed. Remove it so the next sign-in must
+	// start a fresh flow (the authorization code is single-use anyway).
+	a.oauthMu.Lock()
+	delete(a.oauthFlows, id)
+	a.oauthMu.Unlock()
+	writeJSON(w, http.StatusOK, oauthPollDTO{Status: "approved", AccountID: res.AccountID})
 }
 
 // ---------------------------------------------------------------------------
@@ -556,6 +695,23 @@ type providerDTO struct {
 	Type   string          `json:"type"`
 	Name   string          `json:"name"`
 	Config json.RawMessage `json:"config"`
+}
+
+// oauthStartDTO is the X20 operator pair the SPA renders during sign-in:
+// the code to enter on the verification page, that page's URL, and the poll
+// pace the issuer prescribed. It carries no token material.
+type oauthStartDTO struct {
+	UserCode        string `json:"user_code"`
+	VerificationURL string `json:"verification_url"`
+	IntervalSeconds int    `json:"interval_seconds"`
+}
+
+// oauthPollDTO is one poll outcome: pending (keep polling at the issuer
+// pace) or approved (tokens exchanged and persisted; account_id from the
+// id_token claim, X15). No token material ever rides this body.
+type oauthPollDTO struct {
+	Status    string `json:"status"`
+	AccountID string `json:"account_id,omitempty"`
 }
 
 // modelDTO carries the per-model compat blob (§6.4) verbatim — the

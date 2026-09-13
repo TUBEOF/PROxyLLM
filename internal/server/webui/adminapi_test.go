@@ -24,6 +24,11 @@ package webui
 //   - POST   /api/admin/keys                  {"name"} → {"id","key"} (display-once)
 //   - GET    /api/admin/keys
 //   - POST   /api/admin/keys/{id}/revoke
+//   - POST   /api/admin/providers/{id}/oauth/start  (X20 device flow: user_code +
+//     verification URL surfaced to the operator; replaces any active flow)
+//   - POST   /api/admin/providers/{id}/oauth/poll   (one issuer round trip per call,
+//     throttled to the issuer interval: {"status":"pending"|"approved", account_id?};
+//     terminal failure → uniform 502 {"error"})
 //   - GET    /api/admin/usage?from=&to=       (inclusive YYYY-MM-DD day range)
 //   - GET    /api/admin/logs?limit=&offset=&model=&provider_id=&status=&since=&until=
 //   - GET    /api/admin/settings
@@ -32,12 +37,17 @@ package webui
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/proxyllm/proxyllm/internal/config"
 	"github.com/proxyllm/proxyllm/internal/storage"
@@ -644,4 +654,393 @@ func TestLogout_SessionKilled(t *testing.T) {
 
 	w = env.call(t, http.MethodGet, "/api/admin/providers", "", s.cookieHeader())
 	assertStatus(t, w, http.StatusUnauthorized, "old session after logout")
+}
+
+// ---------------------------------------------------------------------------
+// OAuth device flow endpoints (X20, plan §5.2: providers/{id}/oauth/start|poll)
+// ---------------------------------------------------------------------------
+
+// oauthEnv is an adminEnv whose store carries a secret envelope — the device
+// flow's approval path persists the token triple through PutProviderTokens,
+// which refuses plaintext writes without one (Analysis G control 2).
+func newOAuthEnv(t *testing.T) *adminEnv {
+	t.Helper()
+	env := newAdminEnv(t)
+	envelope, err := storage.NewEnvelope([]byte("0123456789abcdef0123456789abcdef"))
+	if err != nil {
+		t.Fatalf("new envelope: %v", err)
+	}
+	env.st.SetEnvelope(envelope)
+	return env
+}
+
+// issuerSrv is a scripted X20 issuer: usercode endpoint answering the pinned
+// device pair, token endpoint delegating to pollFn (default: 403 pending),
+// and the X16 form-encoded exchange answering the token triple with an
+// id_token JWT carrying the ChatGPT account id. pollFn returning ("", "", 0)
+// means pending; ("ac", "ver", 200) means approved; any other status is fatal.
+type issuerSrv struct {
+	srv     *httptest.Server
+	pollFn  func() (code, verifier string, status int)
+	approve func() bool // convenience: flips pollFn to approved when true
+
+	usercodeBody map[string]any // captured usercode request body
+	exchangeForm url.Values     // captured exchange form
+}
+
+func newIssuerSrv(t *testing.T, accountID string) *issuerSrv {
+	t.Helper()
+	is := &issuerSrv{}
+	is.approve = func() bool { return false }
+	is.pollFn = func() (string, string, int) {
+		if is.approve() {
+			return "ac-1", "ver-1", http.StatusOK
+		}
+		return "", "", http.StatusForbidden // X20: 403 while not yet approved
+	}
+	is.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/accounts/deviceauth/usercode":
+			if err := json.NewDecoder(r.Body).Decode(&is.usercodeBody); err != nil {
+				t.Errorf("usercode body must be JSON: %v", err)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			// X20: interval arrives as a STRING.
+			_, _ = io.WriteString(w, `{"device_auth_id":"dev-1","user_code":"WDJB-MJHT","interval":"1"}`)
+		case "/api/accounts/deviceauth/token":
+			code, verifier, status := is.pollFn()
+			if status != http.StatusOK {
+				w.WriteHeader(status)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"authorization_code":%q,"code_verifier":%q}`, code, verifier)
+		case "/oauth/token":
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("exchange must be form-encoded (X16): %v", err)
+			}
+			is.exchangeForm = r.Form
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"access_token":"acctok","refresh_token":"reftok","id_token":%q}`+"\n",
+				makeOAuthJWT(t, accountID))
+		default:
+			t.Errorf("unexpected issuer path %s", r.URL.Path)
+		}
+	}))
+	t.Cleanup(is.srv.Close)
+	return is
+}
+
+// makeOAuthJWT builds a 3-part JWT whose payload carries the ChatGPT account
+// id claim (X15: chatgpt_account_id) — the codex package parses it out of the
+// id_token, so the admin API's approval response must surface the account id.
+func makeOAuthJWT(t *testing.T, accountID string) string {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{
+		"chatgpt_account_id": accountID,
+		"exp":                time.Now().Add(time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte("x")) + "." +
+		base64.RawURLEncoding.EncodeToString(payload) + "." +
+		base64.RawURLEncoding.EncodeToString([]byte("y"))
+}
+
+// putCodexProvider stores a codex-oauth provider row pointing at the issuer.
+func putCodexProvider(t *testing.T, env *adminEnv, s loginState, id, issuer string) {
+	t.Helper()
+	w := env.authedCall(t, http.MethodPut, "/api/admin/providers/"+id,
+		fmt.Sprintf(`{"type":"codex-oauth","name":"ChatGPT / Codex","config":{"issuer":%q}}`, issuer), s)
+	assertStatus(t, w, http.StatusOK, "put codex provider "+id)
+}
+
+// oauthStart drives POST /api/admin/providers/{id}/oauth/start.
+func (e *adminEnv) oauthStart(t *testing.T, id string, s loginState) *httptest.ResponseRecorder {
+	t.Helper()
+	return e.authedCall(t, http.MethodPost, "/api/admin/providers/"+id+"/oauth/start", `{}`, s)
+}
+
+// oauthPoll drives POST /api/admin/providers/{id}/oauth/poll.
+func (e *adminEnv) oauthPoll(t *testing.T, id string, s loginState) *httptest.ResponseRecorder {
+	t.Helper()
+	return e.authedCall(t, http.MethodPost, "/api/admin/providers/"+id+"/oauth/poll", `{}`, s)
+}
+
+// X20 + §5.2: start surfaces the pair the operator needs (user_code +
+// verification URL) at the issuer-provided pace. The usercode request must
+// carry the pinned client_id.
+func TestOAuthStart_SurfacesUserCodeAndURL(t *testing.T) {
+	env := newOAuthEnv(t)
+	s := env.bootstrap(t, "operator")
+	is := newIssuerSrv(t, "acct-77")
+	putCodexProvider(t, env, s, "prv-codex", is.srv.URL)
+
+	w := env.oauthStart(t, "prv-codex", s)
+	assertStatus(t, w, http.StatusOK, "oauth start")
+	var start struct {
+		UserCode        string `json:"user_code"`
+		VerificationURL string `json:"verification_url"`
+		IntervalSeconds int    `json:"interval_seconds"`
+	}
+	decodeJSON(t, w, &start)
+	if start.UserCode != "WDJB-MJHT" {
+		t.Errorf("user_code = %q, want WDJB-MJHT (X20)", start.UserCode)
+	}
+	if !strings.HasPrefix(start.VerificationURL, is.srv.URL+"/codex/device") {
+		t.Errorf("verification_url = %q, want {issuer}/codex/device (X20)", start.VerificationURL)
+	}
+	if start.IntervalSeconds != 1 {
+		t.Errorf("interval_seconds = %d, want 1 (issuer-provided, X20)", start.IntervalSeconds)
+	}
+	if is.usercodeBody["client_id"] != "app_EMoamEEZ73f0CkXaXp7hrann" {
+		t.Errorf("usercode client_id = %v, want the pinned default (X13)", is.usercodeBody["client_id"])
+	}
+}
+
+// X20: poll reports pending while the issuer answers 403, then approved once
+// the approval has been exchanged AND persisted — the token triple must be on
+// disk (sealed) by the time the caller sees approved, and the response
+// surfaces the account id.
+func TestOAuthPoll_PendingThenApprovedPersistsTokens(t *testing.T) {
+	env := newOAuthEnv(t)
+	s := env.bootstrap(t, "operator")
+	is := newIssuerSrv(t, "acct-77")
+	putCodexProvider(t, env, s, "prv-codex", is.srv.URL)
+
+	w := env.oauthStart(t, "prv-codex", s)
+	assertStatus(t, w, http.StatusOK, "oauth start")
+
+	// Pending: the issuer still answers 403. The interval is 1 s, so a short
+	// wait clears the throttle window for the next poll.
+	time.Sleep(1100 * time.Millisecond)
+	w = env.oauthPoll(t, "prv-codex", s)
+	assertStatus(t, w, http.StatusOK, "oauth poll pending")
+	var poll struct {
+		Status    string `json:"status"`
+		AccountID string `json:"account_id"`
+	}
+	decodeJSON(t, w, &poll)
+	if poll.Status != "pending" {
+		t.Errorf("status = %q, want pending while the issuer answers 403 (X20)", poll.Status)
+	}
+	if poll.AccountID != "" {
+		t.Errorf("pending response must not carry an account_id: %q", poll.AccountID)
+	}
+
+	// Approve on the issuer side, then poll again after the window.
+	is.approve = func() bool { return true }
+	time.Sleep(1100 * time.Millisecond)
+	w = env.oauthPoll(t, "prv-codex", s)
+	assertStatus(t, w, http.StatusOK, "oauth poll approved")
+	decodeJSON(t, w, &poll)
+	if poll.Status != "approved" {
+		t.Fatalf("status = %q, want approved (X20)", poll.Status)
+	}
+	if poll.AccountID != "acct-77" {
+		t.Errorf("account_id = %q, want acct-77 from the id_token claim (X15)", poll.AccountID)
+	}
+
+	// The approval persisted the token triple through the store — sealed
+	// rows exist for all three kinds, and no plaintext token ever appeared
+	// in any admin response body.
+	ctx := context.Background()
+	for _, kind := range []string{"access_token", "refresh_token", "id_token"} {
+		tok, err := env.st.GetProviderToken(ctx, "prv-codex", kind)
+		if err != nil {
+			t.Fatalf("token %s not persisted after approval: %v", kind, err)
+		}
+		if len(tok.Secret) == 0 {
+			t.Errorf("token %s persisted empty", kind)
+		}
+	}
+
+	// After approval the session is terminal — the registry drops the flow, so
+	// a further poll is the honest "no active flow" 400, never a silent second
+	// approval (the authorization code is single-use).
+	time.Sleep(1100 * time.Millisecond)
+	w = env.oauthPoll(t, "prv-codex", s)
+	assertStatus(t, w, http.StatusBadRequest, "poll after terminal approval")
+	if !strings.Contains(w.Body.String(), `"error"`) {
+		t.Errorf("terminal poll body is not the uniform error shape: %s", w.Body.String())
+	}
+}
+
+// X20: a non-403/404 issuer failure is fatal — the poll endpoint reports the
+// terminal failure as the uniform error shape, and later polls replay it
+// without further issuer traffic.
+func TestOAuthPoll_FatalIssuerFailureIsTerminal(t *testing.T) {
+	env := newOAuthEnv(t)
+	s := env.bootstrap(t, "operator")
+	is := newIssuerSrv(t, "acct-77")
+	putCodexProvider(t, env, s, "prv-codex", is.srv.URL)
+
+	w := env.oauthStart(t, "prv-codex", s)
+	assertStatus(t, w, http.StatusOK, "oauth start")
+
+	// 500 on the poll endpoint is fatal (X20: only 403/404 keep polling).
+	var polls atomic.Int32
+	is.pollFn = func() (string, string, int) {
+		polls.Add(1)
+		return "", "", http.StatusInternalServerError
+	}
+	time.Sleep(1100 * time.Millisecond)
+	w = env.oauthPoll(t, "prv-codex", s)
+	assertStatus(t, w, http.StatusBadGateway, "oauth poll fatal")
+	if !strings.Contains(w.Body.String(), `"error"`) {
+		t.Errorf("fatal poll body is not the uniform error shape: %s", w.Body.String())
+	}
+
+	// The registry dropped the dead flow, so the replay is the uniform
+	// "no active flow" 400 — and it must not hit the issuer again.
+	before := polls.Load()
+	time.Sleep(1100 * time.Millisecond)
+	w = env.oauthPoll(t, "prv-codex", s)
+	assertStatus(t, w, http.StatusBadRequest, "oauth poll fatal replay")
+	if polls.Load() != before {
+		t.Errorf("terminal failure replay hit the issuer again: %d polls", polls.Load()-before)
+	}
+}
+
+// Only codex-oauth providers have an OAuth flow — any other type answers 400,
+// never a generic 500.
+func TestOAuthStart_NonCodexTypeRejected(t *testing.T) {
+	env := newOAuthEnv(t)
+	s := env.bootstrap(t, "operator")
+	w := env.authedCall(t, http.MethodPut, "/api/admin/providers/prv-custom",
+		`{"type":"custom-openai","name":"My endpoint","config":{"base_url":"https://api.example.com/v1"}}`, s)
+	assertStatus(t, w, http.StatusOK, "put custom provider")
+
+	w = env.oauthStart(t, "prv-custom", s)
+	assertStatus(t, w, http.StatusBadRequest, "oauth start on non-codex provider")
+}
+
+// A codex-oauth provider without an issuer in its config cannot start a flow
+// — 400, not a panic or a 500.
+func TestOAuthStart_MissingIssuerRejected(t *testing.T) {
+	env := newOAuthEnv(t)
+	s := env.bootstrap(t, "operator")
+	w := env.authedCall(t, http.MethodPut, "/api/admin/providers/prv-bare",
+		`{"type":"codex-oauth","name":"bare","config":{}}`, s)
+	assertStatus(t, w, http.StatusOK, "put bare codex provider")
+
+	w = env.oauthStart(t, "prv-bare", s)
+	assertStatus(t, w, http.StatusBadRequest, "oauth start without issuer")
+}
+
+// X20: 404 on the usercode request = device login disabled — an operator
+// action surfaced as 400, not a retry candidate masquerading as 500.
+func TestOAuthStart_DeviceLoginDisabledIsOperatorError(t *testing.T) {
+	env := newOAuthEnv(t)
+	s := env.bootstrap(t, "operator")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	t.Cleanup(srv.Close)
+	putCodexProvider(t, env, s, "prv-codex", srv.URL)
+
+	w := env.oauthStart(t, "prv-codex", s)
+	assertStatus(t, w, http.StatusBadRequest, "oauth start with device login disabled")
+}
+
+// Missing provider → 404 (the storage sentinel, same as every other resource).
+func TestOAuthStart_MissingProviderIs404(t *testing.T) {
+	env := newOAuthEnv(t)
+	s := env.bootstrap(t, "operator")
+	w := env.oauthStart(t, "ghost", s)
+	assertStatus(t, w, http.StatusNotFound, "oauth start on missing provider")
+}
+
+// Poll without a prior start is a client error — 400, not 500.
+func TestOAuthPoll_WithoutStartIs400(t *testing.T) {
+	env := newOAuthEnv(t)
+	s := env.bootstrap(t, "operator")
+	is := newIssuerSrv(t, "acct-77")
+	putCodexProvider(t, env, s, "prv-codex", is.srv.URL)
+
+	w := env.oauthPoll(t, "prv-codex", s)
+	assertStatus(t, w, http.StatusBadRequest, "oauth poll without start")
+}
+
+// A second start replaces the active flow — the SPA restarts the sign-in
+// after a typo or an abandoned session; the old user_code is dead.
+func TestOAuthStart_ReplacesActiveFlow(t *testing.T) {
+	env := newOAuthEnv(t)
+	s := env.bootstrap(t, "operator")
+	is := newIssuerSrv(t, "acct-77")
+	putCodexProvider(t, env, s, "prv-codex", is.srv.URL)
+
+	w := env.oauthStart(t, "prv-codex", s)
+	assertStatus(t, w, http.StatusOK, "first start")
+
+	w = env.oauthStart(t, "prv-codex", s)
+	assertStatus(t, w, http.StatusOK, "second start")
+	var start struct {
+		UserCode string `json:"user_code"`
+	}
+	decodeJSON(t, w, &start)
+	if start.UserCode != "WDJB-MJHT" {
+		t.Errorf("restarted user_code = %q, want the fresh pair from the issuer", start.UserCode)
+	}
+
+	// The replaced flow is gone: polling works against the NEW session
+	// (pending — the issuer has not approved).
+	time.Sleep(1100 * time.Millisecond)
+	w = env.oauthPoll(t, "prv-codex", s)
+	assertStatus(t, w, http.StatusOK, "poll after restart")
+	var poll struct {
+		Status string `json:"status"`
+	}
+	decodeJSON(t, w, &poll)
+	if poll.Status != "pending" {
+		t.Errorf("status after restart = %q, want pending on the fresh session", poll.Status)
+	}
+}
+
+// The OAuth endpoints sit behind the same auth gates as every admin
+// resource: uniform 401 unauthenticated, 403 without the CSRF header.
+func TestOAuthEndpoints_AuthGatesApply(t *testing.T) {
+	env := newOAuthEnv(t)
+	s := env.bootstrap(t, "operator")
+	is := newIssuerSrv(t, "acct-77")
+	putCodexProvider(t, env, s, "prv-codex", is.srv.URL)
+
+	// Unauthenticated → uniform 401 body on both endpoints.
+	for _, path := range []string{
+		"/api/admin/providers/prv-codex/oauth/start",
+		"/api/admin/providers/prv-codex/oauth/poll",
+	} {
+		w := env.call(t, http.MethodPost, path, "", "")
+		assertStatus(t, w, http.StatusUnauthorized, "POST "+path)
+		if !strings.Contains(w.Body.String(), `"error"`) {
+			t.Errorf("%s: 401 body is not the uniform error shape: %s", path, w.Body.String())
+		}
+	}
+
+	// Valid session, no X-CSRF-Token → 403.
+	w := env.call(t, http.MethodPost, "/api/admin/providers/prv-codex/oauth/start", `{}`, s.cookieHeader())
+	assertStatus(t, w, http.StatusForbidden, "oauth start without csrf header")
+}
+
+// Tokens never ride admin responses: the start/poll bodies must not echo the
+// access or refresh token even after a full approved flow.
+func TestOAuthResponses_NeverEchoTokens(t *testing.T) {
+	env := newOAuthEnv(t)
+	s := env.bootstrap(t, "operator")
+	is := newIssuerSrv(t, "acct-77")
+	putCodexProvider(t, env, s, "prv-codex", is.srv.URL)
+
+	env.oauthStart(t, "prv-codex", s)
+	is.approve = func() bool { return true }
+	time.Sleep(1100 * time.Millisecond)
+	w := env.oauthPoll(t, "prv-codex", s)
+	assertStatus(t, w, http.StatusOK, "approved poll")
+
+	// The issuer issued these exact values; none may appear in any body.
+	for _, secret := range []string{"acctok", "reftok"} {
+		if strings.Contains(w.Body.String(), secret) {
+			t.Errorf("oauth response echoes the token %q (Analysis G: upstream credentials never echo)", secret)
+		}
+	}
 }
