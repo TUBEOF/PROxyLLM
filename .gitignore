@@ -20,8 +20,13 @@ coverage.txt
 
 # Node / WebUI
 node_modules/
-webui/dist/
 webui/node_modules/
+# dist is a build artifact EXCEPT the committed placeholder index.html —
+# the go:embed directive in webui/embed.go requires the directory to
+# exist with at least one embeddable file, so a fresh clone builds
+# without a Node toolchain. CI builds the real assets over it.
+webui/dist/*
+!webui/dist/index.html
 
 # Go workspace
 go.work
