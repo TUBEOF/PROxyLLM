@@ -153,9 +153,13 @@ func (e *adminEnv) authedCall(t *testing.T, method, path, body string, s loginSt
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if isMutation(method) {
-		// C-4: the auth layer requires application/json on every mutation —
-		// bodyless DELETEs included — so the SPA helper sets it always.
-		req.Header.Set("Content-Type", "application/json")
+		// C-3: the CSRF header is required on every mutation. Content-Type is
+		// NOT set on bodyless requests — mirroring fetch exactly, where a
+		// bodyless POST/DELETE sends no Content-Type header (the auth layer
+		// accepts an absent one; see the C-4 note in auth/session.go).
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
 		req.Header.Set("X-CSRF-Token", s.csrfToken)
 	}
 	w := httptest.NewRecorder()
@@ -641,6 +645,18 @@ func TestAdminMutations_CSRFAndContentTypeEnforced(t *testing.T) {
 	rec := httptest.NewRecorder()
 	env.api.Handler().ServeHTTP(rec, req)
 	assertStatus(t, rec, http.StatusUnsupportedMediaType, "text/plain mutation")
+
+	// Bodyless mutation (no Content-Type at all — exactly what fetch sends
+	// for a bodyless POST/DELETE, e.g. provider delete or oauth start) →
+	// processed, not 415. Regression for the phase-2 review finding: the
+	// auth layer used to demand application/json on every mutation, which
+	// broke every bodyless admin mutation in the browser.
+	req = httptest.NewRequest(http.MethodPost, "/api/admin/logout", nil)
+	req.Header.Set("Cookie", s.cookieHeader())
+	req.Header.Set("X-CSRF-Token", s.csrfToken)
+	rec = httptest.NewRecorder()
+	env.api.Handler().ServeHTTP(rec, req)
+	assertStatus(t, rec, http.StatusOK, "bodyless mutation without content-type")
 }
 
 // S-10 via the mux: logout deletes the server-side session — the old cookie

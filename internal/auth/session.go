@@ -12,8 +12,12 @@ package auth
 //   - S-9: 30 min idle / 12 h absolute, enforced against DB timestamps
 //   - S-10: logout = row delete + cookie clear
 //   - C-1/C-2: CSRF token = random + HMAC-SHA-256(master key, sessionID‖random)
-//   - C-3: X-CSRF-Token + Content-Type application/json required on mutations
-//   - C-4: simple content types on mutations → 415
+//   - C-3: X-CSRF-Token required on mutations; a PRESENT Content-Type on a
+//     mutation must be application/json
+//   - C-4: simple content types on mutations → 415 (an ABSENT one is legal:
+//     bodyless mutations — DELETEs, the oauth start/poll POSTs — carry no
+//     header, and no cross-site vector can omit it; a form post always
+//     carries urlencoded/text/plain, which still 415)
 //   - C-6: Origin (when present) must match scheme+host exactly → 403
 //
 // Failure responses never distinguish causes (Analysis G: 401 bodies are
@@ -232,10 +236,16 @@ func (sm *SessionManager) RequireAdmin(next http.Handler) http.Handler {
 		if isMutation(r.Method) {
 			// C-4: reject simple content types — a cross-site form or
 			// text/plain fetch must never be processable without preflight.
-			mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-			if err != nil || mt != "application/json" {
-				writeAdminError(w, http.StatusUnsupportedMediaType, "content type must be application/json")
-				return
+			// An ABSENT header is legal: bodyless mutations (DELETEs, the
+			// oauth start/poll POSTs) carry none, and fetch does not set a
+			// default — while every cross-site form vector always sends one.
+			// The CSRF token check below (C-5) gates those independently.
+			if ct := r.Header.Get("Content-Type"); ct != "" {
+				mt, _, err := mime.ParseMediaType(ct)
+				if err != nil || mt != "application/json" {
+					writeAdminError(w, http.StatusUnsupportedMediaType, "content type must be application/json")
+					return
+				}
 			}
 			// C-6: when Origin is present it must match scheme+host exactly.
 			if origin := r.Header.Get("Origin"); origin != "" && origin != requestOrigin(r) {

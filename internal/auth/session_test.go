@@ -225,6 +225,42 @@ func TestLogout_DeletesRowAndClearsCookie(t *testing.T) {
 	}
 }
 
+// C-4 (refined by the phase-2 review): a PRESENT Content-Type on a mutation
+// must be application/json (415 otherwise); an ABSENT one is legal — a
+// bodyless POST/DELETE (fetch sends no Content-Type without a body) is
+// processed, and no cross-site form vector can omit the header.
+func TestMutation_ContentTypeRules(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	l := env.login(t, "operator", testPassword, false)
+
+	// Bodyless mutation without Content-Type → accepted (OK handler ran).
+	w := env.authed(t, http.MethodPost, "/api/admin/logout", "", l.cookieHeader(), l.csrfToken, "")
+	if w.Code != http.StatusOK {
+		t.Errorf("bodyless mutation without content-type: status %d (body %s)", w.Code, w.Body.String())
+	}
+
+	// A PRESENT non-JSON content type is still 415.
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/logout", strings.NewReader(`{}`))
+	req.Header.Set("Cookie", l.cookieHeader())
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("X-CSRF-Token", l.csrfToken)
+	rec := httptest.NewRecorder()
+	env.sm.RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("text/plain mutation reached the handler")
+	})).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Errorf("text/plain mutation: status %d, want 415", rec.Code)
+	}
+
+	// Bodyless mutation without the CSRF header → 403 (C-5 gates bodyless
+	// mutations independently of the content type).
+	w = env.authed(t, http.MethodPost, "/api/admin/logout", "", l.cookieHeader(), "", "")
+	if w.Code != http.StatusForbidden {
+		t.Errorf("bodyless mutation without csrf token: status %d, want 403", w.Code)
+	}
+}
+
 // S-3: __Host- prefix on TLS arrivals, plain id otherwise — per-request
 // split from the arrival scheme.
 func TestLogin_CookiePrefixPerTLS(t *testing.T) {
