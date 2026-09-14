@@ -162,3 +162,57 @@ Gates at close-out: gofmt/vet clean, full Go suite green
 (`./cmd/... ./internal/...`), tsc + ESLint green for the SPA commits. The
 providers.png visual baseline is unaffected — drawer states are not snapshotted
 (the table screenshot is).
+## 7. Task 5 Gap #2 close-out — live provider construction & type validation (2026-09-14)
+
+Stored provider rows now become live routing targets without a restart, and every
+provider write is validated against the canonical provider types before storage
+(closing finding 9's issuer/base-URL SSRF gap together with the write-path gap).
+
+### Deliverables (commits)
+
+| Commit | Scope |
+|---|---|
+| `47c1f41` | `webui`: provider-type validation at `putProvider` — canonical types (`custom-openai` / `ollama-cloud` / `codex-oauth`), strict config parse (`DisallowUnknownFields`), required `base_url`/`issuer`, cross-type URL prohibitions, strict capability key names, private-address SSRF guard on both `base_url` and `issuer` with documented opt-out (Analysis G control 5). Top-level `api_key` on the PUT routes into the encrypted `provider_tokens` store — config never carries secrets. Plus the `ollamacoud` → `ollamacloud` doc-comment fix. |
+| `064cc16` | `server`: `provider.LiveRegistry` (thread-safe runtime-mutable registry; statics survive reloads, dynamics atomically swapped), startup construction from stored rows (same validator as writes, keys from the token store, codex auth keyed to the provider's own ID, bad rows skip+log instead of startup death), reload hook after every successful provider write/delete (last known-good kept on failure). |
+
+### Validation contract (pinned)
+
+- Unknown type, missing `base_url` (custom-openai) / `issuer` (codex-oauth),
+  unknown config keys, unknown capability names, cross-type URL fields → **400**
+  with an operator-facing error naming the offending field.
+- `base_url`/`issuer` must be absolute http(s) URLs resolving to a non-private
+  address; loopback/RFC1918/link-local (incl. 169.254.169.254) → **400** with the
+  opt-out hint. `PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS=1` disables the private check
+  (not the scheme/host check) — the documented operator escape (Analysis G
+  control 5).
+- `ollama-cloud` with an empty config is a legal save (hosted default URL).
+- The API-layer guard resolves DNS at write time; unit tests that are not about
+  the guard run under the opt-out so they do not depend on DNS (the guard itself
+  is pinned by `TestPutProvider_PrivateURLsRejected`).
+- Storage's secret-shaped-config rejection (Analysis G control 2) stays in place
+  as defense-in-depth (its own tests in `internal/storage`); the strict API parser
+  now rejects unknown/nested keys before it is even reached.
+
+### Live-registry contract (pinned)
+
+- Startup: every stored row constructs (custom/ollamacloud/codex paths); a row
+  that fails parse is skipped with an error log — never a startup death; keys come
+  exclusively from `provider_tokens` kind `access_token` (missing row = keyless
+  provider, legal).
+- Write/delete → reload hook: the next request resolves against the NEW set;
+  a failed reload keeps the last known-good set (error logged).
+- Static `WithProvider` registrations are never removed by a reload.
+
+### New tests
+
+Server wiring (real mux, end-to-end): `TestServer_StoredProviderRoutesWithoutWithProvider`
+(provider from store routes traffic with the encrypted-store key, no
+`WithProvider`), `TestServer_ProviderWriteReloadsLiveRegistry` (pre-save 404 →
+post-save live routing with the new key). Admin API: `TestPutProvider_*` (5
+validation cases incl. SSRF + opt-out), `TestProviderWriteReloadsLiveRegistry`
+(hook on write/delete, never on rejected write). Existing CRUD/model tests
+updated to the canonical type strings.
+
+Gates: gofmt/vet clean, full Go suite green (`./cmd/... ./internal/...`). No SPA
+change (the SPA save path sends the same PUT shape; `api_key` is accepted
+top-level from the next UI iteration).
