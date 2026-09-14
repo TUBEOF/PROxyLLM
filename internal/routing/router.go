@@ -98,6 +98,15 @@ func (r *Router) SetRules(rules []Rule) {
 	r.rules = rules
 }
 
+// SetAliases atomically replaces the live alias map (the admin API's
+// reload hook: WebUI settings writes push the freshly stored alias map
+// into the router without restart — same contract as SetRules).
+func (r *Router) SetAliases(aliases map[string]string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cfg.Aliases = aliases
+}
+
 // ResolveChain resolves model to its fallback chain — alias resolution and
 // rule matching only, no capability/health filtering (the plain rule-model
 // view; used for chain preview in tests and the WebUI).
