@@ -16,7 +16,21 @@ permissions:
   packages: write
 
 jobs:
+  # Hard release gate (plan §8): the §8 perf budgets block release. The CI
+  # benchmark job runs the same tests on main non-blocking; here the budget
+  # assertions in TestPerfBudgets fail the tag build loudly.
+  perf-budgets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - run: go test ./internal/e2e -run TestPerfBudgets -v -count=1
+
   release:
+    needs: [perf-budgets]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

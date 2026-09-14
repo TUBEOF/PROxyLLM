@@ -147,6 +147,23 @@ jobs:
           retention-days: 7
         if-no-files-found: ignore
 
+  # Benchmark job (plan §8): perf budgets are measured on main so the
+  # numbers are visible per commit and regressions trend in the log. NOT
+  # blocking here — plan §8: "regressions block release, not every PR";
+  # release.yml runs the same budget test as a hard release gate.
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: perf budgets (TestPerfBudgets, verbose)
+        run: go test ./internal/e2e -run TestPerfBudgets -v -count=1
+      - name: benchmark baselines
+        run: go test ./internal/e2e -bench . -benchtime=200x -run xxx -v
+
   # Gate 6: Docker image build — blocking
   docker:
     runs-on: ubuntu-latest
