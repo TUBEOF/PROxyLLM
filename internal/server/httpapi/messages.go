@@ -35,13 +35,24 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	keyID := auth.ClientKeyIDFromContext(ctx)
 
+	// Global non-Claude switch (§6.4, ADR-008): gate before compat/routing
+	// so block dispatches nothing. The gate's events ride the same trace
+	// the compat application builds — one route_trace, never silent.
+	compatTrace := &routing.Trace{}
+	if err := a.applyNonClaudeGate(ctx, req.Model, compatTrace); err != nil {
+		_, _ = a.writeRouteError(w, anthropicErrorWriter(), err)
+		a.writeRequestLog(ctx, keyID, req.Model, "", http.StatusBadRequest, 0,
+			nil, routeTrace(compatTrace), redactedMessage(err))
+		return
+	}
+
 	compat := a.compatFor(ctx, req.Model)
-	req, compatTrace, err := routing.ApplyCompat(compat, req)
+	req, applyTrace, err := routing.ApplyCompat(compat, req)
 	if err != nil {
 		// ErrThinkingBlocked → 400 A13 envelope + log row.
 		_, _ = a.writeRouteError(w, anthropicErrorWriter(), err)
 		a.writeRequestLog(ctx, keyID, req.Model, "", http.StatusBadRequest, 0,
-			nil, routeTrace(compatTrace), redactedMessage(err))
+			nil, routeTrace(compatTrace, applyTrace), redactedMessage(err))
 		return
 	}
 
@@ -50,12 +61,12 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		_, _ = a.writeRouteError(w, anthropicErrorWriter(), err)
 		a.writeRequestLog(ctx, keyID, req.Model, "", mapRouteErrorStatus(err), 0,
-			nil, routeTrace(compatTrace, routerTrace), redactedMessage(err))
+			nil, routeTrace(compatTrace, applyTrace, routerTrace), redactedMessage(err))
 		return
 	}
 
 	if req.Stream {
-		a.streamMessages(w, r, keyID, req, chain, compatTrace, routerTrace)
+		a.streamMessages(w, r, keyID, req, chain, compatTrace, applyTrace, routerTrace)
 		return
 	}
 
@@ -66,7 +77,7 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 		_, msg := a.writeRouteError(w, anthropicErrorWriter(), err)
 		a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
 			mapRouteErrorStatus(err), latency, nil,
-			routeTrace(compatTrace, routerTrace, execTrace), msg)
+			routeTrace(compatTrace, applyTrace, routerTrace, execTrace), msg)
 		return
 	}
 
@@ -79,7 +90,7 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 		_, msg := a.writeRouteError(w, anthropicErrorWriter(), err)
 		a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
 			http.StatusInternalServerError, latency, nil,
-			routeTrace(compatTrace, routerTrace, execTrace), msg)
+			routeTrace(compatTrace, applyTrace, routerTrace, execTrace), msg)
 		return
 	}
 
@@ -90,7 +101,7 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 	usage := resp.Usage
 	a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
 		http.StatusOK, latency, &usage,
-		routeTrace(compatTrace, routerTrace, execTrace), "")
+		routeTrace(compatTrace, applyTrace, routerTrace, execTrace), "")
 }
 
 // streamMessages relays an upstream stream as named Anthropic events

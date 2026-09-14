@@ -10,7 +10,9 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/proxyllm/proxyllm/internal/provider"
@@ -84,6 +86,65 @@ func (a *api) compatFor(ctx context.Context, model string) routing.Compat {
 	c.ContextWindow = w.ContextWindow
 	c.CacheControl = w.CacheControl
 	return c
+}
+
+// Settings keys read by this package (the SPA Settings surface writes them
+// into the same settings KV the server's DB override layer owns).
+const (
+	settingKeyNonClaude = "anthropic_surface_non_claude"
+)
+
+// Non-Claude gate values (§6.4 global switch, ADR-008).
+const (
+	gateAllow = "allow"
+	gateWarn  = "warn"
+	gateBlock = "block"
+)
+
+// ErrNonClaudeBlocked is the terminal error for the block gate.
+var ErrNonClaudeBlocked = errors.New("httpapi: non-Claude models are blocked on the Anthropic surface")
+
+// nonClaudeGate reads the global switch from the settings KV. Any missing,
+// unreadable, or invalid value is allow — the safety net must never
+// de-route on store noise (§6.4 default allow).
+func (a *api) nonClaudeGate(ctx context.Context) string {
+	raw, ok, err := a.store.GetConfigValue(ctx, settingKeyNonClaude)
+	if err != nil || !ok {
+		return gateAllow
+	}
+	switch raw {
+	case gateAllow, gateWarn, gateBlock:
+		return raw
+	default:
+		return gateAllow
+	}
+}
+
+// isClaudeModel reports whether the requested model name is a Claude
+// family model (the gate spares them). `claude-` is the Anthropic naming
+// convention across the published catalog (§2.1); anything else on the
+// Anthropic surface is a non-Claude target by OP-2 definition.
+func isClaudeModel(model string) bool {
+	return strings.HasPrefix(model, "claude-")
+}
+
+// applyNonClaudeGate enforces the global switch (§6.4): a non-Claude
+// target on the Anthropic surface is annotated under warn (compat_policy
+// event on the trace), refused under block, and passes untouched under
+// allow. The trace records every applied policy — never silent.
+func (a *api) applyNonClaudeGate(ctx context.Context, model string, trace *routing.Trace) error {
+	switch a.nonClaudeGate(ctx) {
+	case gateBlock:
+		if !isClaudeModel(model) {
+			trace.CompatPolicy(settingKeyNonClaude, gateBlock, "non-Claude target refused by the global Anthropic-surface switch")
+			return ErrNonClaudeBlocked
+		}
+	case gateWarn:
+		if !isClaudeModel(model) {
+			trace.CompatPolicy(settingKeyNonClaude, gateWarn, "non-Claude target allowed with warning")
+		}
+	}
+	return nil
 }
 
 // requiredCapabilities derives the capability set the request needs from

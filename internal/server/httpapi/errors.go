@@ -107,6 +107,9 @@ func mapRouteErrorStatus(err error) int {
 // non-streaming and streaming error paths.
 func mapRouteError(err error) (int, string, string) {
 	switch {
+	case errors.Is(err, ErrNonClaudeBlocked):
+		return http.StatusBadRequest, errTypeInvalidRequest,
+			"Non-Claude models are blocked on the Anthropic surface (anthropic_surface_non_claude=block)."
 	case errors.Is(err, routing.ErrThinkingBlocked):
 		return http.StatusBadRequest, errTypeInvalidRequest,
 			"This model's compatibility policy does not allow thinking requests (thinking_handling=block)."
