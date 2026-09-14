@@ -163,8 +163,10 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 			ReloadProviders: func() {
 				// Same contract as ReloadRouting: only a successful read
 				// swaps the live set; a transient store failure keeps the
-				// last known-good providers (providers.go).
-				loadAndReplaceProviders(context.Background(), store, logger, reg)
+				// last known-good providers (providers.go). The error is
+				// already logged inside loadAndReplaceProviders — nothing
+				// further this hook can do with it.
+				_ = loadAndReplaceProviders(context.Background(), store, logger, reg)
 			},
 			ReloadSettings: func() {
 				// Settings KV writes reach the live runtime without restart:

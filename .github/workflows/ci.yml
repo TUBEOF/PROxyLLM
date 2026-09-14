@@ -49,7 +49,10 @@ jobs:
         with:
           go-version-file: go.mod
 
-  # Gate 5: secret scan + dependency audit — blocking
+  # Gate 5: secret scan + SAST + dependency audit — blocking
+  # gosec rides Gate 1 via golangci-lint (gosec linter enabled, nolintlint
+  # enforcing annotated suppressions) — a standalone gosec CLI run would
+  # ignore the //nolint:gosec annotations and double-report.
   security:
     runs-on: ubuntu-latest
     steps:
@@ -60,6 +63,12 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+      - name: CodeQL analyze
+        uses: github/codeql-action/analyze@v3
 
   # Gate 4: WebUI build + bundle budget + visual regression — blocking
   webui:

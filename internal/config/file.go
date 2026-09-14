@@ -64,7 +64,7 @@ type fileWire struct {
 // other read/parse failures error loudly.
 func applyFile(cfg *Config) (*Config, error) {
 	path := configFile()
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) //nolint:gosec // operator-configured path (PROXYLLM_CONFIG_FILE or config.json default), never request-derived — no inclusion taint
 	if os.IsNotExist(err) {
 		return cfg, nil
 	}
