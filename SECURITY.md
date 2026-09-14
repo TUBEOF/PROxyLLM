@@ -2,36 +2,39 @@
 
 ## Supported versions
 
-Security fixes target the latest released version.
+| Version | Supported |
+|---|---|
+| 1.0.x | ✅ |
 
 ## Reporting a vulnerability
 
-**Do not open a public issue for security vulnerabilities.**
+Please report vulnerabilities via GitHub's **private vulnerability
+reporting** (Security tab → "Report a vulnerability") — do **not** open a
+public issue.
 
-Please use GitHub's private vulnerability reporting
-(GitHub → Security → Report a vulnerability). Include reproduction steps
-and impact assessment. You will receive an acknowledgement within 72 hours.
+Include what you can of:
 
-## Security model
+- affected component/endpoint and version
+- reproduction steps (a minimal request is ideal)
+- impact assessment
 
-- **Authentication default-ON**: WebUI login + per-client API keys. Opt-out
-  is only via explicit ENV (`PROXYLLM_AUTH_DISABLED=1`) with a loud startup
-  warning — never default-off.
-- **Secrets at rest**: provider credentials are AES-256-GCM-encrypted with
-  a master key from ENV or a generated keyfile (0600). Client keys are
-  stored as Argon2id hashes only; the raw secret is displayed exactly once
-  at creation.
-- **Redaction-first logging**: all logs flow through a tested redaction
-  layer (Bearer tokens, `sk-`/`fc-`/`pk-` keys, JWTs, oversized base64).
-- **Container hardening**: distroless image, non-root, read-only rootfs,
-  dropped capabilities.
+You will receive an acknowledgment within **7 days** and a status update
+at least every 14 days until resolution. Credit in the release notes is
+default (opt out by saying so).
 
-See [docs/adr/ADR-007-security-concept.md](docs/adr/ADR-007-security-concept.md)
-for the full concept.
+## Scope
 
-## Hardening for exposure beyond LAN
+In scope: the PROxyLLM proxy binary and its WebUI, the client-facing API
+surfaces, the admin API, the bundled Docker setup, and the release
+artifacts themselves (binary/image integrity).
 
-PROxyLLM v1 targets LAN/home-lab deployment behind a trusted network. If
-you expose it further, put TLS termination in front (Caddy, nginx, Traefik)
-and keep auth enabled. Internet-scale multi-tenant exposure is out of scope
-for v1.
+Out of scope for v1 (documented limitation): internet-scale multi-tenant
+exposure of a single proxy deployment — see
+[docs/security.md](docs/security.md) for the at-operator's-risk hardening
+guidance. Deployment-specific misconfiguration (e.g. disabling auth via
+ENV deliberately) is out of scope.
+
+## Safe harbor
+
+Good-faith research within this policy is welcomed; we will not pursue
+action against you for responsibly reported issues.

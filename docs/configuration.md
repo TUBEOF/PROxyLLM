@@ -86,6 +86,7 @@ resolved in this order:
 2. Keyfile at `storage.master_key_path` (0600 permissions, generated on
    first start if absent)
 
-Rotation: replace the key material and run the re-encryption task
-*(planned for Phase 3)*; the envelope stores a `key_id` per row for
-exactly this purpose.
+Rotation (v1.1): the envelope wire format reserves version + `key_id`
+fields so the format does not change, but the re-encryption task is not
+implemented in v1 — treat the master key as immutable for now and back it
+up with the database.

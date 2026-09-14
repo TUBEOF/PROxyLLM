@@ -1,0 +1,73 @@
+# Translation Matrix (Reference)
+
+Canonical field mapping between the four protocol shapes PROxyLLM speaks
+(plan §6.1). This is the reference for the canonical-IR hub-and-spoke
+translation engine (Analysis D): each protocol contributes a codec pair;
+crossing protocols means two codecs + the IR.
+
+Legend for non-mappable fields: fields that exist on one protocol only
+ride in the per-request **passthrough map** — re-emitted verbatim when the
+response crosses the same protocol, dropped with a debug log (exact field
+path) when crossing protocols. Degradation is documented per field below
+and recorded in `route_trace` where a compat policy applies it; policy
+application is never silent.
+
+## Request-side mapping
+
+| Concept | OpenAI Chat Completions | OpenAI Responses | Anthropic Messages | Ollama native |
+|---|---|---|---|---|
+| System prompt | `system` / `developer` role | `instructions` / system items | `system` (block form preserved verbatim) | system role |
+| Text content | `content` parts | `input` string or typed items | `content` blocks | message content |
+| Image | `image_url` part (URL or data: URI) | `input_image` item | `image` block (URL or base64) | base64 images |
+| Tool definitions | `tools[].function` | function items | `tools[]` | `tools` |
+| Tool call | `tool_calls[]` (index-assembled deltas) | function-call items | `tool_use` blocks | `tool_calls` |
+| Tool result | role `tool` message | `function_call_output` item | `tool_result` block | tool response role |
+| Extended thinking | — | `reasoning` + `encrypted_content` | `thinking` param + thinking blocks (signature opaque) | `reasoning_effort` |
+| Cache markers | n/a | n/a | `cache_control` (forwarded verbatim on Anthropic→Anthropic only) | n/a |
+| Server tools | n/a | `web_search` etc. | server_tool_use blocks | n/a |
+
+Per-model compatibility policy (`models.compat`) governs degradation on
+non-Claude targets — see the compat table below.
+
+## Response-side mapping
+
+| Concept | OpenAI Chat | OpenAI Responses | Anthropic | Ollama native |
+|---|---|---|---|---|
+| Text | `choices[0].message.content` | `output_text` / message item | `text` block | content |
+| Tool call | `tool_calls[]` with `finish_reason: tool_calls` | function-call item | `tool_use` block + `stop_reason: tool_use` | `tool_calls` |
+| Thinking | — | reasoning items | thinking blocks (+ signature) | stripped (compat policy) |
+| Stop reason | `finish_reason` | `status`/finish | `stop_reason` | `done_reason` |
+| Usage | `prompt_tokens` / `completion_tokens` / `total_tokens` | usage in terminal events | `input_tokens` / `output_tokens` (+ cache fields) | eval counts |
+
+## Compat policy effects (non-Claude targets)
+
+Per-model compatibility settings (`models.compat` in the DB, WebUI
+"Models & Compatibility" editor; plan §6.4) govern the translation on the
+Anthropic surface:
+
+| Setting | Values | Effect on translation |
+|---|---|---|
+| `thinking_handling` | `strip` (default for non-Claude) / `map-to-reasoning-effort` / `block` | strip removes thinking blocks and the `thinking` param upstream — never fabricates signatures back; map converts `budget_tokens` → `reasoning_effort` where the target supports it; block refuses with a protocol-conform error |
+| `server_tool_emulation` | `native` / `emulate-firecrawl` / `off` | Whether Firecrawl substitutes missing web tools; substitution is recorded in route_trace |
+| `max_tokens_clamp` | int / off | Clamp for targets with lower output limits (C7 default 32000 for unknown model IDs) |
+| `context_window` | int | Context window for capability filtering + the count_tokens heuristic |
+| `cache_control` | `forward` / `drop` | `forward` on Anthropic→Anthropic only; `drop` logs the degradation |
+
+## Known degradations (v1)
+
+- **Ollama native**: no server tools, no cache markers; thinking only via
+  `reasoning_effort` mapping. Server-tool requests on an Ollama-routed
+  model fall to Firecrawl emulation (§6.2) when `server_tool_emulation`
+  is `emulate-firecrawl`, else capability-gap error.
+- **Cache markers** (`cache_control`) only survive Anthropic→Anthropic;
+  every other crossing drops them with a debug log naming the field path.
+- **Token counting** on non-Anthropic-shaped upstream is heuristic
+  (chars/4 calibrated), marked `estimation: heuristic` (C1).
+- **count_tokens** on the Anthropic surface: native passthrough for
+  Anthropic-shaped upstream, heuristic otherwise.
+
+## Source basis
+
+Mapping derived from the official protocol docs (plan §2, facts A1–A14,
+O1–O12, L1–L6, verified live 2026-09-10) — the same facts the golden
+fixtures in `testdata/golden/` annotate.

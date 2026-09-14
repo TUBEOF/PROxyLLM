@@ -3,10 +3,12 @@
 A modular, high-performance LLM proxy written in Go — a lean, open-source
 alternative to overloaded existing proxies.
 
-> **Status: Phase 0 (foundation)** — actively being built. Not yet usable
-> end-to-end. See the [roadmap](#roadmap) below.
+[![CI](https://github.com/proxyllm/proxyllm/actions/workflows/ci.yml/badge.svg)](https://github.com/proxyllm/proxyllm/actions/workflows/ci.yml)
+[![Release](https://github.com/proxyllm/proxyllm/actions/workflows/release.yml/badge.svg)](https://github.com/proxyllm/proxyllm/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Go version](https://img.shields.io/badge/go-1.26-blue.svg)](go.mod)
 
-## What it will do
+## What it does
 
 PROxyLLM exposes **two client-facing API surfaces** from one service:
 
@@ -23,7 +25,8 @@ configurable compatibility handling.
 Built-in providers:
 
 - **ChatGPT / Codex OAuth** — full PKCE browser flow, native in the proxy
-- **Ollama Cloud** — native `https://ollama.com/api/chat`
+- **Ollama Cloud** — native `https://ollama.com/api/chat` (note the spelling:
+  `ollamacloud`)
 - **Firecrawl v2** — universal web-tool fallback (web-search / web-fetch
   emulation for models without native server tools)
 - **Custom** — arbitrary OpenAI-compatible endpoints by configuration alone
@@ -41,26 +44,42 @@ Core properties:
 - **Single service**: one static CGO-free binary (embedded WebUI) + one
   SQLite data directory
 
-## Quickstart (once Phase 0 lands)
+## Quickstart
 
 ```bash
-docker compose up
-# health check
+git clone https://github.com/proxyllm/proxyllm.git
+cd proxyllm
+docker compose -f docker/compose.yaml up -d
 curl http://localhost:8080/healthz
 ```
 
-## Roadmap
+Open `http://localhost:8080` for the admin WebUI (first-run bootstrap).
+Create a client key (**Keys**), then point your client at the proxy:
 
-| Phase | Scope |
-|---|---|
-| 0 | Foundation: repo skeleton, CI, layered config, SQLite storage, envelope crypto, redaction layer, health endpoint |
-| 1 | Proxy core: providers, both API surfaces, translation engine with streaming, routing with fallback chains, Firecrawl tool emulation |
-| 2 | WebUI: UpGuard-designed admin interface incl. "Models & Compatibility" editor |
-| 3 | Hardening & release: security audit, docs, release pipeline, v1.0 |
+```bash
+# Claude Code
+export ANTHROPIC_BASE_URL="http://localhost:8080"
+export ANTHROPIC_AUTH_TOKEN="pk_..."
+
+# OpenAI-SDK clients
+# base_url = http://localhost:8080/v1
+# api_key  = pk_...
+```
+
+Prebuilt multi-arch images are published per release tag
+(`ghcr.io/proxyllm/proxyllm:<tag>`); binary archives on the
+[Releases page](https://github.com/proxyllm/proxyllm/releases).
 
 ## Documentation
 
 - [Getting started](docs/getting-started.md)
+- [Configuration reference](docs/configuration.md)
+- [API reference](docs/api-reference.md)
+- [Routing & fallbacks](docs/routing-and-fallbacks.md)
+- [Claude Code with non-Claude models](docs/claude-code-with-non-claude-models.md)
+- [Translation matrix](docs/reference/translation-matrix.md)
+- [Deployment](docs/deployment.md)
+- [Security guide](docs/security.md) + [SECURITY.md](SECURITY.md)
 - [Architecture decision records](docs/adr/README.md)
 - [Golden fixture policy](testdata/golden/README.md)
 
