@@ -191,4 +191,36 @@ func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID stri
 	// The log write must not break the response already streamed to the
 	// client; a failed audit row is a server defect, not a client error.
 	_, _ = a.store.InsertRequestLog(ctx, row)
+
+	// usage_daily increment (Analysis C schema): the Overview dashboard's
+	// data source. Same tuple as the log row, day = today (UTC). Every
+	// observable request counts (+1); a failed one also counts as failure
+	// (Analysis E — failure is never silent). Token deltas only when the
+	// request produced usage; a request that died before an upstream saw
+	// it aggregates zeros on its tuple. Same swallow-failure rule: the
+	// response is already on the wire.
+	inc := storage.UsageDaily{
+		Day:         time.Now().UTC().Format("2006-01-02"),
+		ClientKeyID: keyID,
+		ProviderID:  providerID,
+		Model:       model,
+		Requests:    1,
+		Failures:    failureDelta(status),
+	}
+	if usage != nil {
+		inc.InputTokens = int64(usage.InputTokens)
+		inc.OutputTokens = int64(usage.OutputTokens)
+		inc.CacheReadTokens = int64(usage.CacheReadInputTokens)
+	}
+	_ = a.store.IncrUsageDaily(ctx, inc)
+}
+
+// failureDelta counts a failure for status >= 400: any client-visible
+// error response (auth reject, unroutable model, upstream failure after
+// failover) is a failure row on the dashboard, not only upstream errors.
+func failureDelta(status int) int64 {
+	if status >= 400 {
+		return 1
+	}
+	return 0
 }
