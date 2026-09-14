@@ -154,10 +154,18 @@ func run() error {
 		return err
 	}
 
+	// Timeout policy (phase-3 research T-1..T-3): a streaming proxy must
+	// NOT set ReadTimeout/WriteTimeout — they are absolute per-connection
+	// deadlines that kill legitimate long SSE streams (no per-Write
+	// deadline access from ServeHTTP). Stream liveness is enforced by the
+	// executor's relayed-bytes watchdog (C2), not the server socket. What
+	// the server does set: the Slowloris guard on headers and the
+	// keep-alive idle bound.
 	httpSrv := &http.Server{
 		Addr:              cfg.Server.Addr,
 		Handler:           srv,
 		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Serve until interrupted, then shut down gracefully.
