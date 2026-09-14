@@ -17,6 +17,11 @@ services:
     tmpfs:
       - /tmp:size=16m,noexec,nosuid
     pids_limit: 100
+    # Plan §8 perf budget: RSS ≤ 128 MB @ 100 concurrent streams (verified
+    # in the phase-3 report); the limit gives headroom over the budget —
+    # a wedging container is restarted instead of wedged forever (research
+    # D-1: healthcheck + resource limits work as a pair).
+    mem_limit: 384m
     security_opt:
       - no-new-privileges:true
     cap_drop:
