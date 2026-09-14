@@ -23,6 +23,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -46,9 +47,13 @@ import (
 // aimed at it. mock-main (OpenAI chat wire, all capabilities) is the sole
 // upstream.
 type env struct {
-	store   *storage.Store
-	mock    *mockprovider.Server
-	srv     *httptest.Server
+	store *storage.Store
+	mock  *mockprovider.Server
+	srv   *httptest.Server
+	// h is the underlying httpapi handler (auth middleware already wrapped
+	// into srv); it lets benchmark variants re-wrap the same stack with a
+	// different middleware configuration without reassembling everything.
+	h       http.Handler
 	openai  openaiclient.Client
 	anthrop anthropic.Client
 }
@@ -124,7 +129,7 @@ func newEnv(t *testing.T, rules ...routing.Rule) *env {
 	t.Cleanup(srv.Close)
 
 	e := &env{
-		store: st, mock: mock, srv: srv,
+		store: st, mock: mock, srv: srv, h: h,
 		// OpenAI SDK: base URL carries /v1; retries pinned 0 (default 2
 		// would re-drive mock scripts and break deterministic error tests).
 		openai: openaiclient.NewClient(
