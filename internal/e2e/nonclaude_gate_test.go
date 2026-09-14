@@ -12,8 +12,6 @@ import (
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
-
-	"github.com/proxyllm/proxyllm/internal/storage"
 )
 
 // seedNonClaude stores the switch in the settings KV (the SPA key).
@@ -116,5 +114,4 @@ func TestNonClaudeGate_InvalidValueTreatedAsAllow(t *testing.T) {
 	if err := claudeMessage(t, e, "gpt-5"); err != nil {
 		t.Fatalf("invalid setting must fall back to allow: %v", err)
 	}
-	_ = storage.ConfigEntry{} // keep the storage import meaningful
 }
