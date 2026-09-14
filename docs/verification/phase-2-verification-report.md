@@ -276,3 +276,61 @@ requests=2, tokens=2500). All RED first (rows = 0 before the fix), then GREEN.
 
 Gates: gofmt/vet clean, full Go suite green (`./cmd/... ./internal/...`).
 **Gap #3 close-out: PASS.**
+
+---
+
+## 9. Gap #4 close-out — config file layer + settings-KV DB overrides (2026-09-14)
+
+**Gap**: The plan's config layering (Analysis C: defaults → config file → ENV → DB
+overrides) had only defaults + ENV. The config-file layer (2) and the settings-KV
+override layer (4) were missing: `config.json` was never read, and two settings keys
+the SPA already wrote (`model_aliases`, `anthropic_surface_non_claude`) had no server-side
+reader — the WebUI wrote values that changed nothing.
+
+**Status: CLOSED (commits `09a05ee`, `4ca2ac8`, `201867f`, `d88c609`, `51ee021`).**
+
+### Deliverables
+
+| Change | Where | Commit |
+|---|---|---|
+| Config-file layer 2: `PROXYLLM_CONFIG_FILE` (default `config.json`), strict parsing (DisallowUnknownFields + trailing-data check), non-secret settings only, missing file = normal | `internal/config/file.go` (+ tests) | `09a05ee` |
+| `Router.SetAliases` — live alias-map swap, mutex-guarded, same contract as `SetRules` | `internal/routing/router.go` | `4ca2ac8` |
+| Alias resolution in the resolve pipeline (step 2, EventAlias trace before rule match) | `internal/routing/router.go` | `4ca2ac8` |
+| `loadModelAliases`: settings-KV reader at assembly — invalid blob logs + yields empty map (never hard-fails; defaults never silently route) | `internal/server/server.go` | `201867f` |
+| `ReloadSettings` admin hook: every successful settings write re-loads the KV into the live runtime (last-known-good contract) | `internal/server/webui/adminapi.go`, `internal/server/server.go` | `201867f` |
+| Global `anthropic_surface_non_claude` gate: enforced in handleMessages before compat/routing; block → 400 A13 envelope with zero upstream dispatch; warn → compat_policy trace event; missing/invalid → allow (never fails closed); Claude targets spared via `claude-` prefix | `internal/server/httpapi/{httpapi,messages,errors}.go` | `d88c609` |
+
+### Contract (spec-derived, plan §6.4 / ADR-008 / Analysis C layering)
+
+- Layer order: defaults → config file → ENV → settings KV. Strict file parsing:
+  a typo in `config.json` is a startup failure, never silent misconfiguration.
+- Settings KV is the DB override layer: values the SPA writes reach the live
+  runtime at assembly AND on every successful write — no restart.
+- The non-Claude gate is a safety net that must never de-route on store noise:
+  every missing/unreadable/invalid value is `allow`. `block` dispatches nothing;
+  every applied policy rides `route_trace` (never silent).
+- count_tokens is deliberately NOT gated: the heuristic runs locally with no
+  upstream dispatch (Analysis E); gating it would slow Claude Code's hot path
+  (C1) while protecting nothing.
+
+### New tests
+
+| Test | Package | Pins |
+|---|---|---|
+| `TestConfigFile_*` (file.go tests: env path, defaults, strict unknown-key/trailing-data failure, secret exclusion) | `internal/config` | Layer 2 |
+| `TestRouter_AliasResolvesAndTraces`, `TestRouter_SetAliasesReplacesLive` | `internal/routing` | alias resolution + live swap |
+| `TestServer_ModelAliasesFromStoreRoute`, `TestServer_SettingsWriteReloadsLiveAliases` | `internal/server` | KV → assembly + live reload (PUT routes, DELETE un-resolves) |
+| `TestNonClaudeGate_{DefaultAllow,WarnTracesAndRoutes,BlockRejects,BlockSparesClaudeTargets,InvalidValueTreatedAsAllow}` | `internal/e2e` | all five gate transitions, upstream-dispatch-free block |
+
+### Adversarial review findings (Gap #4 pass over `d88c609`)
+
+| # | Finding | Severity | Resolution |
+|---|---|---|---|
+| R1 | Gate test kept an unused `storage` import alive with a throwaway expression. | MINOR (test quality) | Fixed in `51ee021`. |
+| R2 | Gate reads the settings KV per `/v1/messages` request (aliases are cached instead). | — | Accepted: a SQLite PK lookup is µs-class; the gate must reflect operator changes immediately, and correctness beats caching here. Documented. |
+| R3 | Gate matches on the requested model name BEFORE alias resolution — an alias named `claude-*` pointing at a non-Claude target inherits the exemption. | — | Accepted: the switch is a name-based safety net, not a capability oracle; operator-owned edge case, documented. |
+| R4 | `handleCountTokens` is not gated. | — | Correct: local heuristic, no upstream dispatch (see Contract). |
+
+Gates: gofmt/vet clean, full Go suite green (`./cmd/... ./internal/...`).
+**Gap #4 close-out: PASS.** Remaining known limitation carried into Phase 3:
+runtime dial-path SSRF-rebinding hardening (Gap #2 review R6).
