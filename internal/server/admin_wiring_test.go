@@ -21,6 +21,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -340,5 +341,194 @@ func TestServer_RoutingWriteReloadsLiveRouter(t *testing.T) {
 
 	if got := chat(adminTS); got != "from-main" {
 		t.Fatalf("after rule delete: content %q, want from-main (live router did not reload)", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Task 5 Gap #2: live provider construction + re-registration
+// ---------------------------------------------------------------------------
+
+// 4. Startup construction: a provider row stored in the DB (via the admin
+// API, as the WebUI does it) is constructed and registered by New itself —
+// the WebUI-edited provider routes live traffic with NO WithProvider option
+// and no restart. The custom-openai type exercises the full production
+// stack: config JSON → custom.New → registry → router chain.
+//
+// (RED: New currently builds the registry only from WithProvider options.)
+func TestServer_StoredProviderRoutesWithoutWithProvider(t *testing.T) {
+	ctx := context.Background()
+	cfg := newConfig(t)
+
+	// The mock upstream is an httptest loopback server — exercise the
+	// documented private-address opt-out (Analysis G control 5).
+	t.Setenv("PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS", "1")
+
+	st, err := storage.Open(cfg.Storage)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+
+	upstream := mockprovider.New(t)
+	// The API key lives in the encrypted token store (provider_tokens,
+	// kind "access_token"), never in the provider config — storage
+	// rejects secret-shaped config keys by design (Analysis G control 2).
+	envelope, err := storage.NewEnvelope(wiringMasterKey(t))
+	if err != nil {
+		t.Fatalf("new envelope: %v", err)
+	}
+	st.SetEnvelope(envelope)
+	if err := st.PutProvider(ctx, storage.Provider{
+		ID:     "stored-main",
+		Type:   "custom-openai",
+		Name:   "Stored Main",
+		Config: json.RawMessage(fmt.Sprintf(`{"base_url":%q}`, upstream.URL())),
+	}); err != nil {
+		t.Fatalf("put provider: %v", err)
+	}
+	if err := st.PutProviderTokens(ctx, storage.ProviderToken{
+		ProviderID: "stored-main", Kind: "access_token", Secret: []byte("stored-key"),
+	}); err != nil {
+		t.Fatalf("put token: %v", err)
+	}
+	if err := st.PutRoutingRule(ctx, storage.RoutingRule{
+		ID: "r1", MatchModel: "gpt-5", Chain: []string{"stored-main"}, Priority: 100, Enabled: true,
+	}); err != nil {
+		t.Fatalf("put rule: %v", err)
+	}
+
+	// No WithProvider at all: the provider must come from the store.
+	srv, err := New(&cfg, st, nil, WithMasterKey(wiringMasterKey(t)))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	_, key, err := authCreateKey(ctx, st)
+	if err != nil {
+		t.Fatalf("create key: %v", err)
+	}
+
+	upstream.Enqueue(mockprovider.NewScript().JSONResponse(http.StatusOK,
+		`{"id":"c","object":"chat.completion","model":"gpt-5","choices":[{"index":0,"message":{"role":"assistant","content":"from-stored"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`, nil))
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions",
+		strings.NewReader(`{"model":"gpt-5","messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := ensureBodyClosed(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("chat: status %d, body %s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, "from-stored") {
+		t.Fatalf("chat: stored provider did not serve the request, body %s", body)
+	}
+	// The Bearer came from the stored config, not thin air.
+	for _, r := range upstream.Requests() {
+		if got := r.Header.Get("Authorization"); got != "Bearer stored-key" {
+			t.Fatalf("upstream Authorization %q, want Bearer stored-key", got)
+		}
+	}
+}
+
+// 5. Live re-registration: a provider PUT through the admin API reaches the
+// live registry without restart — a NEW provider becomes routable on the
+// very next request (the stored-config provider was not present at server
+// assembly).
+//
+// (RED: there is no ReloadProviders hook yet.)
+func TestServer_ProviderWriteReloadsLiveRegistry(t *testing.T) {
+	ctx := context.Background()
+	cfg := newConfig(t)
+
+	// The PUTed provider targets an httptest loopback URL — the documented
+	// private-address opt-out (Analysis G control 5).
+	t.Setenv("PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS", "1")
+
+	st, err := storage.Open(cfg.Storage)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+
+	if err := st.PutRoutingRule(ctx, storage.RoutingRule{
+		ID: "r1", MatchModel: "gpt-5", Chain: []string{"late-main"}, Priority: 100, Enabled: true,
+	}); err != nil {
+		t.Fatalf("put rule: %v", err)
+	}
+
+	// The PUTed api_key lands in the encrypted token store, which refuses
+	// plaintext writes without the envelope (Analysis G control 2) —
+	// attach it, mirroring production where main.go seals the store
+	// before server assembly.
+	envelope, err := storage.NewEnvelope(wiringMasterKey(t))
+	if err != nil {
+		t.Fatalf("new envelope: %v", err)
+	}
+	st.SetEnvelope(envelope)
+
+	// A rule already targets "late-main", but no provider exists yet —
+	// routing cannot resolve.
+	upstream := mockprovider.New(t)
+	srv, err := New(&cfg, st, nil, WithMasterKey(wiringMasterKey(t)))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	adminTS := ts // the admin surface shares the mux
+	login := bootstrapAdmin(t, adminTS)
+	_, key, err := authCreateKey(ctx, st)
+	if err != nil {
+		t.Fatalf("create key: %v", err)
+	}
+
+	chat := func(wantStatus int) string {
+		upstream.Enqueue(mockprovider.NewScript().JSONResponse(http.StatusOK,
+			`{"id":"c","object":"chat.completion","model":"gpt-5","choices":[{"index":0,"message":{"role":"assistant","content":"from-late"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`, nil))
+		req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions",
+			strings.NewReader(`{"model":"gpt-5","messages":[{"role":"user","content":"hi"}]}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+key)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body := ensureBodyClosed(t, resp)
+		if resp.StatusCode != wantStatus {
+			t.Fatalf("chat: status %d, body %s", resp.StatusCode, body)
+		}
+		return body
+	}
+
+	// Before: the chain target does not exist → routing fails with the
+	// uniform not-found error (no rule resolves to a live provider).
+	chat(http.StatusNotFound)
+
+	// The WebUI save: a new provider PUT, then the NEXT chat resolves it.
+	// The API key rides the request body as a TOP-LEVEL api_key field —
+	// the admin API routes it into the encrypted token store and never
+	// into the provider config (storage rejects secret-shaped config).
+	resp := adminCall(t, adminTS, http.MethodPut, "/api/admin/providers/late-main",
+		fmt.Sprintf(`{"type":"custom-openai","name":"Late","config":{"base_url":%q},"api_key":"late-key"}`, upstream.URL()),
+		login)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("put late-main: status %d, body %s", resp.StatusCode, ensureBodyClosed(t, resp))
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if got := chat(http.StatusOK); !strings.Contains(got, "from-late") {
+		t.Fatalf("after provider put: body %s, want from-late (registry did not reload)", got)
+	}
+	// The key was routed into the token store and reached the upstream.
+	for _, r := range upstream.Requests() {
+		if got := r.Header.Get("Authorization"); got != "Bearer late-key" {
+			t.Fatalf("upstream Authorization %q, want Bearer late-key", got)
+		}
 	}
 }

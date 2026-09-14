@@ -79,10 +79,15 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		mux:    http.NewServeMux(),
 	}
 
-	// Provider registry: every WithProvider-registered provider joins once.
-	reg := provider.NewRegistry()
+	// Provider registry: static providers join once; stored provider rows
+	// (WebUI-edited) are constructed here and re-registered on every
+	// admin-API provider write (Task 5 Gap #2) — no restart.
+	reg := provider.NewLiveRegistry()
 	for _, p := range o.providers {
 		reg.Register(p)
+	}
+	if err := loadAndReplaceProviders(context.Background(), store, logger, reg); err != nil {
+		return nil, err
 	}
 
 	// Routing rules live in the store (Analysis E: rule state is
@@ -147,6 +152,12 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 				}
 				router.SetRules(fresh)
 			},
+			ReloadProviders: func() {
+				// Same contract as ReloadRouting: only a successful read
+				// swaps the live set; a transient store failure keeps the
+				// last known-good providers (providers.go).
+				loadAndReplaceProviders(context.Background(), store, logger, reg)
+			},
 			MasterKey: o.masterKey,
 		})
 		s.mux.Handle("/api/admin/", admin.Handler())
@@ -163,6 +174,20 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 
 	return s, nil
+}
+
+// loadAndReplaceProviders builds the provider set from the store and swaps
+// it into the live registry's dynamic slot. On a store failure the live set
+// is kept (last known-good) and the error is logged — the contract mirrors
+// ReloadRouting.
+func loadAndReplaceProviders(ctx context.Context, store *storage.Store, logger *slog.Logger, reg *provider.LiveRegistry) error {
+	fresh, err := loadProviders(ctx, store, logger)
+	if err != nil {
+		logger.Error("provider reload failed; keeping last known-good providers", "error", err)
+		return err
+	}
+	reg.ReplaceDynamics(fresh)
+	return nil
 }
 
 // loadRoutingRules converts stored rules to router rules, skipping
