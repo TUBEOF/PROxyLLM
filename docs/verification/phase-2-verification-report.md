@@ -230,3 +230,49 @@ top-level from the next UI iteration).
 
 Gates after the fixes: gofmt/vet clean, full Go suite green
 (`./cmd/... ./internal/...`). **Gap #2 close-out: PASS.**
+
+---
+
+## 8. Gap #3 close-out — usage_daily writer in the request-completion path
+
+**Gap**: the storage layer shipped `IncrUsageDaily`/`QueryUsageDaily` (Analysis C
+schema, migration v1), but no caller ever incremented the table — the Overview
+dashboard's data source was write-orphaned. **Status: CLOSED (commits `29ec360`,
+`1384bee`).**
+
+### Deliverables
+
+| Change | Where |
+|---|---|
+| usage_daily delta in `writeRequestLog` | `internal/server/httpapi/httpapi.go` |
+| day = today (UTC), same tuple as the log row, requests +1, failures +1 at status >= 400 | `internal/server/httpapi/httpapi.go` |
+| Token deltas only when usage exists; pre-upstream requests aggregate zeros on their tuple | `internal/server/httpapi/httpapi.go` |
+| Streaming terminal usage feeds the same counters (O4) | via `terminalUsage`/`usageArg` plumbing (no call-site change) |
+
+### Contract (spec-derived, Analysis C/E)
+
+- Every observable request counts: requests +1 on every `writeRequestLog` call
+  (success, route error, pre-route 400, count_tokens heuristic).
+- Failures: status >= 400 → failures +1 (any client-visible error, Analysis E —
+  not only upstream failures).
+- Tuple accumulation: two requests on the same (day, key, provider, model) produce
+  ONE row — PK semantics, never row-per-request drift.
+
+### New tests (`internal/server/httpapi/usage_test.go`)
+
+`TestUsageDaily_IncrementedOnChatSuccess` (golden 1250/77/8192),
+`TestUsageDaily_IncrementedOnFailure` (failures=1), `TestUsageDaily_IncrementedOnStreamSuccess`
+(exact 1250/128), `TestUsageDaily_IncrementedOnMessagesSuccess` (Anthropic surface
+feeds the same aggregation), `TestUsageDaily_AccumulatesSameTuple` (2 requests → 1 row,
+requests=2, tokens=2500). All RED first (rows = 0 before the fix), then GREEN.
+
+### Adversarial review findings (Gap #3 pass over `29ec360`)
+
+| # | Finding | Severity | Resolution |
+|---|---|---|---|
+| R1 | chat/messages Decode-error path (400 before the model is known) writes no log/usage row. | MINOR | Accepted: pre-existing behavior, consistent on both surfaces, model unknown at that point. |
+| R2 | count_tokens counts as a request (requests+1). | — | Correct: it is a served request (Analysis E). |
+| R3 | Streaming test asserted `!= 0` instead of exact golden numbers. | MINOR (test quality) | Fixed in `1384bee`: exact 1250/128 pinned. |
+
+Gates: gofmt/vet clean, full Go suite green (`./cmd/... ./internal/...`).
+**Gap #3 close-out: PASS.**
