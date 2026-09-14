@@ -1,4 +1,4 @@
-package ollamacoud_test
+package ollamacloud_test
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/provider/ollamacoud"
+	"github.com/proxyllm/proxyllm/internal/provider/ollamacloud"
 	"github.com/proxyllm/proxyllm/internal/translate/ir"
 	"github.com/proxyllm/proxyllm/internal/translate/ollama"
 	"github.com/proxyllm/proxyllm/internal/translate/testutil"
@@ -54,11 +54,11 @@ func mustWriteString(t *testing.T, w io.Writer, s string) {
 	}
 }
 
-func newProvider(t *testing.T, handler http.HandlerFunc) *ollamacoud.Provider {
+func newProvider(t *testing.T, handler http.HandlerFunc) *ollamacloud.Provider {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	return ollamacoud.New("ollama-cloud", srv.URL, testAPIKey, provider.Capabilities{
+	return ollamacloud.New("ollama-cloud", srv.URL, testAPIKey, provider.Capabilities{
 		Streaming: true,
 		Tools:     true,
 	})

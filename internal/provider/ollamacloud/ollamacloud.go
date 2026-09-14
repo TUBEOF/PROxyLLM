@@ -3,7 +3,7 @@
 // /api/chat wire protocol (L1–L11) through the Ollama codec and the
 // shared HTTP transport foundation — Ollama's OpenAI-compat surface is
 // local-only, so cloud requests ride the native endpoint (L4).
-package ollamacoud
+package ollamacloud
 
 import (
 	"context"
