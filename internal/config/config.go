@@ -3,9 +3,14 @@
 // (highest precedence).
 package config
 
-// Load assembles the effective configuration from all layers: defaults
-// first, then ENV. File and DB layers follow in later phases (file before
-// ENV, DB after — DB is highest).
+// Load assembles the effective configuration from all layers: defaults,
+// then the config file (docs/configuration.md layer 2), then ENV. The DB
+// layer (highest precedence) applies after assembly via the settings
+// overrides the server reads from the store.
 func Load() (*Config, error) {
-	return applyEnv(Default())
+	cfg, err := applyFile(Default())
+	if err != nil {
+		return nil, err
+	}
+	return applyEnv(cfg)
 }
