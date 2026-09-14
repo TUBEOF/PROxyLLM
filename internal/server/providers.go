@@ -57,10 +57,12 @@ func loadProviders(ctx context.Context, store *storage.Store, logger *slog.Logge
 }
 
 // buildProvider constructs one provider from its stored row. The config is
-// parsed with the same validator the admin API uses on write — a row that
-// cannot parse here cannot be written by the WebUI anymore.
+// parsed with the STATIC variant of the write-path validator: full shape
+// checks, but no DNS resolution — rows were already SSRF-guarded when they
+// were written, and a transient DNS failure at reload must never drop a
+// live provider.
 func buildProvider(ctx context.Context, store *storage.Store, row storage.Provider, logger *slog.Logger) (provider.Provider, error) {
-	cfg, err := webui.ParseProviderConfig(row.Type, row.Config)
+	cfg, err := webui.ParseProviderConfigStatic(row.Type, row.Config)
 	if err != nil {
 		return nil, err
 	}
@@ -68,12 +70,12 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 
 	switch row.Type {
 	case webui.ProviderTypeCustomOpenAI:
-		return custom.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, store, row.ID), caps), nil
+		return custom.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), caps), nil
 
 	case webui.ProviderTypeOllamaCloud:
 		// Empty base_url is a legal save: the provider defaults to the
 		// hosted endpoint.
-		return ollamacloud.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, store, row.ID), caps), nil
+		return ollamacloud.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), caps), nil
 
 	case webui.ProviderTypeCodexOAuth:
 		// The codex provider speaks the ChatGPT backend (X7/X19); the
@@ -155,13 +157,13 @@ func defaultCaps(typ string) provider.Capabilities {
 // providerAPIKey reads the provider's access_token from the encrypted
 // token store. No row is legal (the provider routes without a key — the
 // upstream answers the auth failure; never a startup death).
-func providerAPIKey(ctx context.Context, store *storage.Store, providerID string) string {
+func providerAPIKey(ctx context.Context, logger *slog.Logger, store *storage.Store, providerID string) string {
 	tok, err := store.GetProviderToken(ctx, providerID, "access_token")
 	if err != nil {
 		if !errors.Is(err, storage.ErrNotFound) {
 			// A transient store failure degrades to "no key" rather than
 			// failing construction — the error is loud in the log.
-			slog.ErrorContext(ctx, "provider token read failed — routing without a key",
+			logger.ErrorContext(ctx, "provider token read failed — routing without a key",
 				"provider_id", providerID, "error", err)
 		}
 		return ""

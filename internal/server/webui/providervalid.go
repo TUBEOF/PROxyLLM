@@ -10,6 +10,7 @@ package webui
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
 	"os"
@@ -66,13 +67,35 @@ var knownCapabilities = map[string]bool{
 // ParseProviderConfig validates (type, config) and returns the parsed
 // shape. The error is operator-facing: it names the offending field, never
 // the internals. An empty raw config (len 0) parses as an empty shape.
+//
+// This is the WRITE-path parse: base_url/issuer go through the private-
+// address SSRF guard, which resolves DNS. Construction-time callers (the
+// server building providers from stored rows) must use
+// ParseProviderConfigStatic instead — a transient DNS failure at reload or
+// startup must never drop a provider that passed the write-path guard.
 func ParseProviderConfig(typ string, raw []byte) (ProviderConfig, error) {
+	return parseProviderConfig(typ, raw, true)
+}
+
+// ParseProviderConfigStatic parses a stored provider config without the
+// network-touching part of the guard (shape checks still apply: scheme,
+// host, type fields, unknown keys). Rows reaching this path were already
+// guarded when they were written.
+func ParseProviderConfigStatic(typ string, raw []byte) (ProviderConfig, error) {
+	return parseProviderConfig(typ, raw, false)
+}
+
+func parseProviderConfig(typ string, raw []byte, guardURLs bool) (ProviderConfig, error) {
 	var cfg ProviderConfig
 	if len(raw) > 0 {
 		dec := json.NewDecoder(strings.NewReader(string(raw)))
 		dec.DisallowUnknownFields()
 		if err := dec.Decode(&cfg); err != nil {
 			return cfg, fmt.Errorf("config: %w", err)
+		}
+		// Strict input means the whole blob, not just its first value.
+		if _, err := dec.Token(); err != io.EOF {
+			return cfg, fmt.Errorf("config: unexpected trailing data")
 		}
 	}
 
@@ -81,7 +104,7 @@ func ParseProviderConfig(typ string, raw []byte) (ProviderConfig, error) {
 		if cfg.BaseURL == "" {
 			return cfg, fmt.Errorf("custom-openai requires base_url (the upstream OpenAI-compatible root, e.g. https://api.example.com/v1)")
 		}
-		if err := guardPublicURL(cfg.BaseURL, "base_url"); err != nil {
+		if err := checkURL(cfg.BaseURL, "base_url", guardURLs); err != nil {
 			return cfg, err
 		}
 		if cfg.Issuer != "" {
@@ -89,7 +112,7 @@ func ParseProviderConfig(typ string, raw []byte) (ProviderConfig, error) {
 		}
 	case ProviderTypeOllamaCloud:
 		if cfg.BaseURL != "" {
-			if err := guardPublicURL(cfg.BaseURL, "base_url"); err != nil {
+			if err := checkURL(cfg.BaseURL, "base_url", guardURLs); err != nil {
 				return cfg, err
 			}
 		}
@@ -100,7 +123,7 @@ func ParseProviderConfig(typ string, raw []byte) (ProviderConfig, error) {
 		if cfg.Issuer == "" {
 			return cfg, fmt.Errorf("codex-oauth requires issuer (the OAuth issuer, e.g. https://auth.openai.com)")
 		}
-		if err := guardPublicURL(cfg.Issuer, "issuer"); err != nil {
+		if err := checkURL(cfg.Issuer, "issuer", guardURLs); err != nil {
 			return cfg, err
 		}
 		if cfg.BaseURL != "" {
@@ -120,11 +143,21 @@ func ParseProviderConfig(typ string, raw []byte) (ProviderConfig, error) {
 	return cfg, nil
 }
 
-// guardPublicURL validates an operator-supplied URL: absolute http(s) URL
-// with a host, whose resolved addresses are not private infrastructure
-// unless the documented opt-out is set (Analysis G control 5 — the SSRF
-// guard for WebUI-supplied provider endpoints).
-func guardPublicURL(raw, field string) error {
+// checkURL validates an operator-supplied URL field. Shape checks (absolute
+// http(s) URL with a host) always apply; the private-address check — which
+// resolves DNS — runs only on the write path (guardURLs).
+func checkURL(raw, field string, guardURLs bool) error {
+	if err := urlShape(raw, field); err != nil {
+		return err
+	}
+	if !guardURLs {
+		return nil
+	}
+	return guardPublicURL(raw, field)
+}
+
+// urlShape validates an absolute http(s) URL with a host (no DNS).
+func urlShape(raw, field string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return fmt.Errorf("%s: %w", field, err)
@@ -139,11 +172,21 @@ func guardPublicURL(raw, field string) error {
 	if u.Host == "" {
 		return fmt.Errorf("%s: missing host", field)
 	}
+	return nil
+}
 
+// guardPublicURL resolves the host of an operator-supplied URL and rejects
+// private-address targets (Analysis G control 5 — the SSRF guard for
+// WebUI-supplied provider endpoints). Write path only.
+func guardPublicURL(raw, field string) error {
 	if privateOptOut() {
 		return nil
 	}
 
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%s: %w", field, err)
+	}
 	host := u.Hostname() // strip brackets for IPv6 literals
 	addrs, err := net.LookupIP(host)
 	if err != nil {

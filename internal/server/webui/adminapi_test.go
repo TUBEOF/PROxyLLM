@@ -984,6 +984,17 @@ func TestPutProvider_OllamaCloudEmptyConfigAccepted(t *testing.T) {
 	assertStatus(t, w, http.StatusOK, "put ollamacloud with empty config")
 }
 
+// Unknown top-level fields reject the save: a typo'd "apiKey" must fail
+// loudly, not return 200 while silently dropping the credential.
+func TestPutProvider_UnknownTopLevelFieldRejected(t *testing.T) {
+	env := newAdminEnv(t)
+	s := env.bootstrap(t, "operator")
+	t.Setenv("PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS", "1")
+	w := env.authedCall(t, http.MethodPut, "/api/admin/providers/prv-t",
+		`{"type":"ollama-cloud","name":"cloud","config":{},"apiKey":"typo-key"}`, s)
+	assertStatus(t, w, http.StatusBadRequest, "put provider with typo'd apiKey")
+}
+
 // Private-address SSRF guard (Analysis G control 5): loopback and RFC1918
 // base URLs are rejected at save. The documented opt-out is an ENV the
 // operator sets explicitly.

@@ -220,7 +220,12 @@ func (a *AdminAPI) putProvider(w http.ResponseWriter, r *http.Request) {
 		// "access_token", the same row the device flow persists).
 		APIKey string `json:"api_key"`
 	}
-	if err := decodeBody(w, r, &req); err != nil {
+	// Strict decode: unknown top-level fields reject the save — a typo'd
+	// "apiKey" must fail loudly, not silently drop the credential (same
+	// rule the config parser enforces for its own fields).
+	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
