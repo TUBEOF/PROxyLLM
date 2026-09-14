@@ -94,10 +94,10 @@ dependency on a Node build. No findings from the audit.
 
 ## 4. What is deliberately not in this gate
 
-- **OAuth flow endpoints** (`/api/admin/providers/{id}/oauth/start|poll|callback`)
+- ~~**OAuth flow endpoints** (`/api/admin/providers/{id}/oauth/start|poll|callback`)
   and live provider construction from stored config (incl. type-string validation)
   are Task 5 scope (plan §5.2), tracked as known gaps — the Providers UI renders
-  the flow states already.
+  the flow states already.~~ **Gap #1 closed** post-gate (2026-09-14) — see §6.
 - **usage_daily writer** in the request-log path (stats flow from real traffic) —
   Task 5 scope.
 - **Config-file/DB layering in `internal/config`** (WebUI settings → effective
@@ -114,3 +114,51 @@ end-to-end against the assembled proxy via the real admin API, the visual regres
 suite is CI-wired with design-rule assertions, and the independent review pass is
 complete with blocking findings fixed. Phase 2 close-out: **PASS**, with the Task 5
 gaps above explicitly carried.
+
+## 6. Task 5 Gap #1 close-out — OAuth flow endpoints (2026-09-14)
+
+The §5.2 OAuth sign-in surface is implemented as a **stepwise device flow**
+(RFC 8628) instead of the planned browser-callback route — pinned decision:
+RFC 8628 needs no inbound endpoint, so it is the Docker-compatible primary
+path; the loopback browser flow (`codex.LoginFromBrowser`, X1–X5) stays a
+local-run option, and the planned `oauth/callback` admin route is
+**deliberately not implemented** (deviation from plan §5.2, documented here
+instead).
+
+### Deliverables (commits)
+
+| Commit | Scope |
+|---|---|
+| `44e63c9` | `codex`: stepwise device flow — `StartDeviceLogin` / `DeviceSession.Poll`, one issuer round trip per poll, throttled to the issuer interval (RFC 8628 §3.5), exchange+persist inside the poll flight, concurrent-poll coalescing (X20 wire facts) |
+| `1e6aa7f` | Admin API `POST /providers/{id}/oauth/start` + `oauth/poll`, in-memory flow registry (replace semantics, drop-on-terminal), 10 contract tests |
+| `efece10` | SPA: `CodexSignIn` in the Providers drawer — start → user_code + verification link → issuer-paced polling → terminal badges, restart via replace; tokens never reach the browser |
+| `983b21e` | **Review fix** (blocking, found by this close-out's adversarial pass): bodyless admin mutations 415'd — see finding 6 |
+
+### HTTP contract (pinned)
+
+- `start` → `200 {user_code, verification_url, interval_seconds}` | `400`
+  (non-codex type, missing issuer, invalid config JSON, device-login-disabled) |
+  `404` | `502`.
+- `poll` → `200 {"status":"pending"}` | `200 {"status":"approved","account_id"}`
+  (tokens exchanged AND persisted before this returns) | `400` "no active oauth
+  flow — start first" (never started / already approved — single-use code — /
+  previously failed) | `502` (terminal issuer failure; flow dropped).
+- Flow state is **in-memory only** (issuer-side pending authorization, never a
+  secret; tokens ride the encrypted `provider_tokens` rows); `deleteProvider`
+  removes an active flow; a second `start` replaces the active one.
+- Uniform `{"error": ...}` bodies; `RequireAdmin` (session + CSRF) gates both.
+
+### Adversarial review findings (close-out pass over `44e63c9`+`1e6aa7f`+`efece10`)
+
+| # | Finding | Severity | Resolution |
+|---|---|---|---|
+| 6 | Bodyless mutations 415'd in the browser: `RequireAdmin` demanded `application/json` on EVERY mutation (C-4 as written), but fetch sends no Content-Type without a body — logout, provider delete, key revoke, `oauth/start`, `oauth/poll` all failed. The admin test helper set the header on bodyless requests with a comment claiming "the SPA helper sets it always" — it never did: the test mirrored a wishstate, not the real client (the exact defect the test-quality audit exists to catch). | **BLOCKING** | Fixed in `983b21e`: an ABSENT Content-Type is legal (no cross-site form vector can omit it — form posts always carry urlencoded/text/plain, which still 415; the CSRF check gates bodyless mutations independently). `authedCall` now mirrors fetch exactly. New tests: `TestMutation_ContentTypeRules` (bodyless-OK, text/plain-415, bodyless-no-CSRF-403) + a through-the-mux logout regression. |
+| 7 | Race `deleteProvider` ↔ in-flight `Poll`: token persist after the provider row is gone hits the `provider_tokens REFERENCES providers` FK → poll error → 502 + flow drop. | MEDIUM | Accepted as designed: an honest, operator-caused failure of a flow the operator destroyed; no orphan rows, no secret exposure, uniform error. Documented here, no code change. |
+| 8 | Race `oauthStart` replace ↔ in-flight `Poll` on the old session: a late issuer approval can still exchange+persist under the replaced flow (last-approval-wins). | MEDIUM | Accepted: operator-driven, authorization codes are single-use, the new start kills the old user_code issuer-side anyway. Documented. |
+| 9 | `cfg.Issuer` from provider config is used unchecked in issuer URLs — same SSRF class as the custom-openai `base_url` guard. | MEDIUM (deferred) | Tracked into Task 5 Gap #2 (provider-type validation at `putProvider` + live registration), where the issuer/base-URL allowlist + private-address guard is implemented once for both types. |
+| 10 | Client disconnect mid-poll pins `context.Canceled` as the session's terminal error. | LOW | Accepted: self-healing via "Start over" (replace semantics). Documented. |
+
+Gates at close-out: gofmt/vet clean, full Go suite green
+(`./cmd/... ./internal/...`), tsc + ESLint green for the SPA commits. The
+providers.png visual baseline is unaffected — drawer states are not snapshotted
+(the table screenshot is).
