@@ -216,3 +216,17 @@ updated to the canonical type strings.
 Gates: gofmt/vet clean, full Go suite green (`./cmd/... ./internal/...`). No SPA
 change (the SPA save path sends the same PUT shape; `api_key` is accepted
 top-level from the next UI iteration).
+
+### Adversarial review findings (Gap #2 pass over `47c1f41`+`064cc16`)
+
+| # | Finding | Severity | Resolution |
+|---|---|---|---|
+| R1 | The reload/startup construction re-ran the WRITE-path SSRF guard, which resolves DNS: a transient DNS failure during a reload could skip previously-saved providers (skip+log) and empty the live registry → 404s on all their models. | **BLOCKING** | Fixed in `00d5592`: guard split — `ParseProviderConfigStatic` (construction path) keeps full shape checks but never resolves DNS; rows were already guarded at write time. |
+| R2 | Provider PUT decoded the top-level body non-strictly: a typo'd `apiKey` returned 200 while silently dropping the credential. | MEDIUM | Fixed in `00d5592`: strict `DisallowUnknownFields` decode on the PUT body; `TestPutProvider_UnknownTopLevelFieldRejected` pins it. |
+| R3 | Token-write failure after a successful provider PUT → 500 with the provider row persisted but the reload skipped (dormant until next write). | MEDIUM | Accepted: FK keeps the write ordered, the operator retries, no partial state. Documented. |
+| R4 | `providerAPIKey` logged via the package-level slog default instead of the injected logger. | MINOR | Fixed in `00d5592`. |
+| R5 | `ParseProviderConfig` accepted trailing JSON after the config object (Decode reads only the first value). | MINOR | Fixed in `00d5592` (EOF token check). |
+| R6 | Write-time DNS guard is TOCTOU-prone (DNS rebinding between save and request). | MEDIUM (deferred) | Documented limitation for v1: the runtime dial path is a separate hardening layer (Phase 3 security pass). The write-time guard stops the direct save-a-private-endpoint vector. |
+
+Gates after the fixes: gofmt/vet clean, full Go suite green
+(`./cmd/... ./internal/...`). **Gap #2 close-out: PASS.**
