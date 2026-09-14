@@ -33,11 +33,15 @@ import (
 // provider set after every successful provider write (Task 5 Gap #2:
 // WebUI provider edits reach the live registry without a restart — the
 // exact contract TestServer_ProviderWriteReloadsLiveRegistry pins).
+// ReloadSettings re-loads the settings KV into the live runtime after every
+// successful settings write (model aliases → router.SetAliases) — the DB
+// override layer is live, not restart-pinned.
 // Now is injectable so tests can pin the clock.
 type AdminParams struct {
 	Store           *storage.Store
 	ReloadRouting   func()
 	ReloadProviders func()
+	ReloadSettings  func()
 	Now             func() int64
 	MasterKey       []byte
 }
@@ -50,6 +54,7 @@ type AdminAPI struct {
 	store           *storage.Store
 	reloadRouting   func()
 	reloadProviders func()
+	reloadSettings  func()
 	sessions        *auth.SessionManager
 
 	oauthMu    sync.Mutex
@@ -67,6 +72,7 @@ func NewAdminAPI(p AdminParams) *AdminAPI {
 		store:           p.Store,
 		reloadRouting:   p.ReloadRouting,
 		reloadProviders: p.ReloadProviders,
+		reloadSettings:  p.ReloadSettings,
 		sessions:        auth.NewSessionManager(p.Store, p.MasterKey, now),
 		oauthFlows:      map[string]*codex.DeviceSession{},
 	}
@@ -720,6 +726,11 @@ func (a *AdminAPI) putSetting(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	// Reload only after a successful write — the live runtime never sees a
+	// value that is not the persisted one (ReloadRouting contract).
+	if a.reloadSettings != nil {
+		a.reloadSettings()
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -729,6 +740,10 @@ func (a *AdminAPI) deleteSetting(w http.ResponseWriter, r *http.Request) {
 	if err := a.store.DeleteConfigValue(r.Context(), r.PathValue("key")); err != nil {
 		writeStoreError(w, err)
 		return
+	}
+	// Same live-swap contract as putSetting.
+	if a.reloadSettings != nil {
+		a.reloadSettings()
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }

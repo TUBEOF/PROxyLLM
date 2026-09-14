@@ -5,9 +5,11 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/proxyllm/proxyllm/internal/auth"
 	"github.com/proxyllm/proxyllm/internal/config"
@@ -97,8 +99,14 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		return nil, err
 	}
 
+	// The alias map rides the same DB override layer (docs/configuration.md
+	// layer 4, SPA key `model_aliases`): stored overrides must route, and
+	// an invalid blob skips the map (log + empty), never a hard startup
+	// failure — the KV also holds unrelated operator settings.
+	aliases := loadModelAliases(context.Background(), store, logger)
+
 	health := routing.NewHealthTracker()
-	router := routing.NewRouter(routing.Config{Rules: rules},
+	router := routing.NewRouter(routing.Config{Rules: rules, Aliases: aliases},
 		routing.WithRegistry(reg),
 		routing.WithHealth(health),
 	)
@@ -158,6 +166,12 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 				// last known-good providers (providers.go).
 				loadAndReplaceProviders(context.Background(), store, logger, reg)
 			},
+			ReloadSettings: func() {
+				// Settings KV writes reach the live runtime without restart:
+				// only a successfully read alias map swaps in (SetAliases,
+				// same last-known-good contract as SetRules above).
+				router.SetAliases(loadModelAliases(context.Background(), store, logger))
+			},
 			MasterKey: o.masterKey,
 		})
 		s.mux.Handle("/api/admin/", admin.Handler())
@@ -188,6 +202,37 @@ func loadAndReplaceProviders(ctx context.Context, store *storage.Store, logger *
 	}
 	reg.ReplaceDynamics(fresh)
 	return nil
+}
+
+// loadModelAliases reads the SPA's `model_aliases` settings blob (JSON
+// object alias→model-id) from the settings KV. An absent key is the
+// normal state (empty map, nil error). An invalid blob never fails the
+// server: it logs and yields an empty map — the KV also holds unrelated
+// operator settings, and defaults never silently route (the map stays
+// empty until a valid blob is written).
+func loadModelAliases(ctx context.Context, store *storage.Store, logger *slog.Logger) map[string]string {
+	raw, ok, err := store.GetConfigValue(ctx, "model_aliases")
+	if err != nil {
+		logger.Error("model_aliases read failed; routing without aliases", "error", err)
+		return map[string]string{}
+	}
+	if !ok || strings.TrimSpace(raw) == "" {
+		return map[string]string{}
+	}
+	var parsed map[string]string
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		logger.Error("model_aliases blob invalid; routing without aliases (fix it in the WebUI)", "error", err)
+		return map[string]string{}
+	}
+	clean := make(map[string]string, len(parsed))
+	for alias, target := range parsed {
+		if strings.TrimSpace(alias) == "" || strings.TrimSpace(target) == "" {
+			logger.Error("model_aliases entry invalid; entry skipped (fix it in the WebUI)", "alias", alias, "target", target)
+			continue
+		}
+		clean[alias] = target
+	}
+	return clean
 }
 
 // loadRoutingRules converts stored rules to router rules, skipping
