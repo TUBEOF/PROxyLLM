@@ -69,6 +69,20 @@ export interface SettingsEntry {
   value: string;
 }
 
+// OAuth device-flow payloads (X20): start surfaces the operator pair plus
+// the issuer-prescribed poll pace; poll reports pending/approved with the
+// account id from the id_token claim. No token material ever rides these.
+export interface OAuthStartResult {
+  user_code: string;
+  verification_url: string;
+  interval_seconds: number;
+}
+
+export interface OAuthPollResult {
+  status: 'pending' | 'approved';
+  account_id?: string;
+}
+
 // List-response envelopes: {"providers": [...]}, {"models": [...]}, etc.
 export interface ProvidersResponse {
   providers: Provider[];
