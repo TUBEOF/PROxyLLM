@@ -1,0 +1,70 @@
+# GoReleaser v2 config (phase 3, research R-1..R-4).
+#
+# Ships the two artifacts that matter for v1:
+#   1. Binary archives per OS/arch as GitHub Release assets — the static
+#      CGO-free binary with the embedded WebUI (release workflow runs
+#      `npm run build` before GoReleaser so go:embed picks up the SPA).
+#   2. Multi-arch Docker images on GHCR (amd64 + arm64 manifest list) —
+#      docker/Dockerfile.release expects GoReleaser's prebuilt binary in
+#      the build context, so the image does NOT re-compile Go under QEMU.
+version: 2
+
+project_name: proxyllm
+
+builds:
+  - id: proxyllm
+    main: ./cmd/proxyllm
+    binary: proxyllm
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      # no arm64 windows builds — nothing ships it, keep the matrix honest
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+
+dockers:
+  - image_templates:
+      - ghcr.io/proxyllm/proxyllm:{{ .Tag }}-amd64
+    dockerfile: docker/Dockerfile.release
+    use: buildx
+    build_flag_templates:
+      - --pull
+      - --platform=linux/amd64
+    goarch: amd64
+  - image_templates:
+      - ghcr.io/proxyllm/proxyllm:{{ .Tag }}-arm64
+    dockerfile: docker/Dockerfile.release
+    use: buildx
+    build_flag_templates:
+      - --pull
+      - --platform=linux/arm64
+    goarch: arm64
+
+docker_manifests:
+  - name_template: ghcr.io/proxyllm/proxyllm:{{ .Tag }}
+    image_templates:
+      - ghcr.io/proxyllm/proxyllm:{{ .Tag }}-amd64
+      - ghcr.io/proxyllm/proxyllm:{{ .Tag }}-arm64
+  - name_template: ghcr.io/proxyllm/proxyllm:latest
+    image_templates:
+      - ghcr.io/proxyllm/proxyllm:{{ .Tag }}-amd64
+      - ghcr.io/proxyllm/proxyllm:{{ .Tag }}-arm64
+
+changelog:
+  use: github

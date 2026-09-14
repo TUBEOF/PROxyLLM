@@ -1,0 +1,69 @@
+name: Release
+
+# Tag-triggered release pipeline (phase 3, research R-1..R-4):
+#   1. npm run build (real SPA bundle, embedded into the binary)
+#   2. GoReleaser: per-OS/arch binary archives as GitHub Release assets +
+#      multi-arch Docker images pushed to GHCR (amd64 + arm64 manifest list)
+# GoReleaser needs contents: write for the GitHub Release; the GHCR push
+# needs packages: write (R-4).
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+
+      # QEMU + buildx for the arm64 image leg (research R-2); login before
+      # GoReleaser because its publish phase pushes during the run.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      # The binary embeds the SPA (go:embed webui/dist) — build the real
+      # bundle before GoReleaser compiles, never the committed placeholder.
+      - name: build SPA
+        working-directory: webui
+        run: npm ci && npm run build
+
+      # GHCR login BEFORE GoReleaser: the dockers/docker_manifests publish
+      # phase pushes during the GoReleaser run and needs the credentials
+      # already present.
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # go:embed reads webui/dist at compile time; GoReleaser's build step
+      # must see the real assets. (The committed dist/index.html placeholder
+      # is replaced in the working tree only — it stays committed for
+      # fresh-clone compiles.)
+      - name: run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

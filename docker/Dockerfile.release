@@ -1,0 +1,27 @@
+# syntax=docker/dockerfile:1
+
+# Release image (GoReleaser `dockers`, phase 3 R-2/R-3): expects the
+# prebuilt static binary named `proxyllm` in the build context — GoReleaser
+# places the per-arch binary there before each buildx invocation. The
+# binary was compiled AFTER `npm run build` in the release workflow, so the
+# embedded WebUI is the real bundle. CI and localhost builds use the
+# source-building docker/Dockerfile instead.
+
+# /data must pre-exist owned by the nonroot UID (distroless has no shell):
+# a tiny prep stage creates it, ownership applied on COPY.
+FROM alpine:3.22 AS prep
+RUN mkdir -p /data
+
+FROM gcr.io/distroless/static-debian12:nonroot
+
+COPY --from=prep --chown=65532:65532 /data /data
+COPY proxyllm /proxyllm
+
+WORKDIR /
+USER nonroot:nonroot
+
+ENV PROXYLLM_STORAGE_PATH=/data/proxyllm.db \
+    PROXYLLM_MASTER_KEY_PATH=/data/master.key
+
+EXPOSE 8080
+ENTRYPOINT ["/proxyllm"]

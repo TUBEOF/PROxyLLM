@@ -1,0 +1,17 @@
+# Docker build context: the SPA's node_modules must never reach the build
+# stage (the webui stage installs deps itself from the lockfile), and the
+# data dir, git metadata, and local build artifacts do not belong in the
+# image build context at all (smaller context, no secret/SQLite leakage).
+.git
+.github
+data
+docker
+docs
+design
+webui/node_modules
+webui/e2e/.artifacts*
+webui/dist
+*.db
+*.db-shm
+*.db-wal
+*.key
