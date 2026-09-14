@@ -96,8 +96,8 @@ func TestUsageDaily_IncrementedOnStreamSuccess(t *testing.T) {
 	if rows[0].Requests != 1 || rows[0].Failures != 0 {
 		t.Errorf("requests/failures = %d/%d, want 1/0", rows[0].Requests, rows[0].Failures)
 	}
-	if rows[0].InputTokens == 0 && rows[0].OutputTokens == 0 {
-		t.Error("stream usage not propagated: input and output both 0")
+	if rows[0].InputTokens != 1250 || rows[0].OutputTokens != 128 {
+		t.Errorf("tokens = %d/%d, want 1250/128 (golden stream usage)", rows[0].InputTokens, rows[0].OutputTokens)
 	}
 }
 
