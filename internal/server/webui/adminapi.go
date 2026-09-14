@@ -29,13 +29,17 @@ import (
 // SAME bytes that sealed the storage envelope; the Store itself keeps only
 // the *Envelope, so the caller (cmd/proxyllm) must pass the key here.
 // ReloadRouting re-runs rule loading into the live router after every
-// successful routing-rule write (Analysis E: WebUI edits must reach the
-// router without a restart). Now is injectable so tests can pin the clock.
+// successful routing-rule write; ReloadProviders re-registers the stored
+// provider set after every successful provider write (Task 5 Gap #2:
+// WebUI provider edits reach the live registry without a restart — the
+// exact contract TestServer_ProviderWriteReloadsLiveRegistry pins).
+// Now is injectable so tests can pin the clock.
 type AdminParams struct {
-	Store         *storage.Store
-	ReloadRouting func()
-	Now           func() int64
-	MasterKey     []byte
+	Store           *storage.Store
+	ReloadRouting   func()
+	ReloadProviders func()
+	Now             func() int64
+	MasterKey       []byte
 }
 
 // AdminAPI serves the /api/admin/ surface. It holds no state of its own
@@ -43,9 +47,10 @@ type AdminParams struct {
 // except the OAuth device-flow registry: active flows are transient session
 // state (issuer-side, single-use authorization codes), never persisted.
 type AdminAPI struct {
-	store         *storage.Store
-	reloadRouting func()
-	sessions      *auth.SessionManager
+	store           *storage.Store
+	reloadRouting   func()
+	reloadProviders func()
+	sessions        *auth.SessionManager
 
 	oauthMu    sync.Mutex
 	oauthFlows map[string]*codex.DeviceSession // providerID → active flow
@@ -59,10 +64,11 @@ func NewAdminAPI(p AdminParams) *AdminAPI {
 		now = func() int64 { return time.Now().Unix() }
 	}
 	return &AdminAPI{
-		store:         p.Store,
-		reloadRouting: p.ReloadRouting,
-		sessions:      auth.NewSessionManager(p.Store, p.MasterKey, now),
-		oauthFlows:    map[string]*codex.DeviceSession{},
+		store:           p.Store,
+		reloadRouting:   p.ReloadRouting,
+		reloadProviders: p.ReloadProviders,
+		sessions:        auth.NewSessionManager(p.Store, p.MasterKey, now),
+		oauthFlows:      map[string]*codex.DeviceSession{},
 	}
 }
 
@@ -207,6 +213,12 @@ func (a *AdminAPI) putProvider(w http.ResponseWriter, r *http.Request) {
 		Type   string          `json:"type"`
 		Name   string          `json:"name"`
 		Config json.RawMessage `json:"config"`
+		// APIKey is the optional top-level credential field. The provider
+		// config must never carry it (the storage layer rejects
+		// secret-shaped config keys — Analysis G control 2); the admin
+		// API routes it into the encrypted token store instead (kind
+		// "access_token", the same row the device flow persists).
+		APIKey string `json:"api_key"`
 	}
 	if err := decodeBody(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -218,6 +230,12 @@ func (a *AdminAPI) putProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "config is not valid JSON")
 		return
 	}
+	// Canonical provider types + URL/issuer validation incl. the
+	// private-address SSRF guard (Task 5 Gap #2, Analysis G control 5).
+	if _, err := ParseProviderConfig(req.Type, req.Config); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := a.store.PutProvider(r.Context(), storage.Provider{
 		ID:     id,
 		Type:   req.Type,
@@ -226,6 +244,26 @@ func (a *AdminAPI) putProvider(w http.ResponseWriter, r *http.Request) {
 	}); err != nil {
 		writeStoreError(w, err)
 		return
+	}
+	// The optional credential lands in the encrypted token store, not the
+	// config (rejectSecretConfig covers the config path; this covers the
+	// legitimate save path). An empty api_key is a no-op — the SPA sends
+	// it only when the operator typed one.
+	if req.APIKey != "" {
+		if err := a.store.PutProviderTokens(r.Context(), storage.ProviderToken{
+			ProviderID: id,
+			Kind:       "access_token",
+			Secret:     []byte(req.APIKey),
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+	}
+	// The reload runs only after a successful write (the ReloadRouting
+	// contract): the live registry never sees a set that is not the
+	// persisted one.
+	if a.reloadProviders != nil {
+		a.reloadProviders()
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
@@ -240,6 +278,12 @@ func (a *AdminAPI) deleteProvider(w http.ResponseWriter, r *http.Request) {
 	a.oauthMu.Lock()
 	delete(a.oauthFlows, r.PathValue("id"))
 	a.oauthMu.Unlock()
+	// DeleteProvider cascades models + tokens, so the live registry must
+	// drop the provider too (Task 5 Gap #2: deletes take effect without
+	// a restart).
+	if a.reloadProviders != nil {
+		a.reloadProviders()
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

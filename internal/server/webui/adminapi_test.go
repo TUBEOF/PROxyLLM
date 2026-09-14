@@ -86,10 +86,11 @@ func newAdminEnv(t *testing.T) *adminEnv {
 
 	env := &adminEnv{st: st, now: 1_000_000}
 	env.api = NewAdminAPI(AdminParams{
-		Store:         st,
-		ReloadRouting: env.keys.record,
-		Now:           func() int64 { return env.now },
-		MasterKey:     []byte("0123456789abcdef0123456789abcdef"),
+		Store:           st,
+		ReloadRouting:   env.keys.record,
+		ReloadProviders: env.keys.record,
+		Now:             func() int64 { return env.now },
+		MasterKey:       []byte("0123456789abcdef0123456789abcdef"),
 	})
 	return env
 }
@@ -268,15 +269,19 @@ func TestAdminEndpoints_RequireSession(t *testing.T) {
 func TestProviders_CRUDAndSecretConfigRejected(t *testing.T) {
 	env := newAdminEnv(t)
 	s := env.bootstrap(t, "operator")
+	// The guard resolves base_url hosts (SSRF, Analysis G control 5) —
+	// unit tests must not depend on DNS; guard behavior is pinned by
+	// TestPutProvider_PrivateURLsRejected.
+	t.Setenv("PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS", "1")
 
 	w := env.authedCall(t, http.MethodPut, "/api/admin/providers/prov-a",
-		`{"type":"custom","name":"My endpoint","config":{"base_url":"https://api.example.com/v1"}}`, s)
+		`{"type":"custom-openai","name":"My endpoint","config":{"base_url":"https://api.example.com/v1"}}`, s)
 	assertStatus(t, w, http.StatusOK, "put provider")
 
 	// Secret-shaped config keys are refused at ANY depth — the API must
 	// surface the storage guard as 400, never persist the value.
 	w = env.authedCall(t, http.MethodPut, "/api/admin/providers/prov-b",
-		`{"type":"custom","name":"Bad","config":{"nested":{"api_key":"sk-live-secret"}}}`, s)
+		`{"type":"custom-openai","name":"Bad","config":{"nested":{"api_key":"sk-live-secret"}}}`, s)
 	assertStatus(t, w, http.StatusBadRequest, "secret-shaped config")
 
 	w = env.authedCall(t, http.MethodGet, "/api/admin/providers", "", s)
@@ -293,7 +298,7 @@ func TestProviders_CRUDAndSecretConfigRejected(t *testing.T) {
 	if len(list.Providers) != 1 || list.Providers[0].ID != "prov-a" {
 		t.Fatalf("list: %+v", list.Providers)
 	}
-	if list.Providers[0].Type != "custom" || list.Providers[0].Name != "My endpoint" {
+	if list.Providers[0].Type != "custom-openai" || list.Providers[0].Name != "My endpoint" {
 		t.Errorf("provider fields not round-tripped: %+v", list.Providers[0])
 	}
 	if !strings.Contains(string(list.Providers[0].Config), "api.example.com") {
@@ -322,7 +327,7 @@ func TestModels_CRUDAndCompatRoundTrip(t *testing.T) {
 	env := newAdminEnv(t)
 	s := env.bootstrap(t, "operator")
 	w := env.authedCall(t, http.MethodPut, "/api/admin/providers/prov-a",
-		`{"type":"custom","name":"My endpoint","config":{}}`, s)
+		`{"type":"ollama-cloud","name":"My endpoint","config":{}}`, s)
 	assertStatus(t, w, http.StatusOK, "put provider")
 
 	w = env.authedCall(t, http.MethodPut, "/api/admin/models/gpt-5",
@@ -681,6 +686,10 @@ func TestLogout_SessionKilled(t *testing.T) {
 // which refuses plaintext writes without one (Analysis G control 2).
 func newOAuthEnv(t *testing.T) *adminEnv {
 	t.Helper()
+	// Issuer stubs are httptest loopback servers — the private-address SSRF
+	// guard must be opted out for the whole suite (the documented operator
+	// opt-out, exercised for real here).
+	t.Setenv("PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS", "1")
 	env := newAdminEnv(t)
 	envelope, err := storage.NewEnvelope([]byte("0123456789abcdef0123456789abcdef"))
 	if err != nil {
@@ -932,17 +941,111 @@ func TestOAuthStart_NonCodexTypeRejected(t *testing.T) {
 	assertStatus(t, w, http.StatusBadRequest, "oauth start on non-codex provider")
 }
 
-// A codex-oauth provider without an issuer in its config cannot start a flow
-// — 400, not a panic or a 500.
-func TestOAuthStart_MissingIssuerRejected(t *testing.T) {
-	env := newOAuthEnv(t)
+// A codex-oauth provider without an issuer in its config is rejected at save
+// time — the type vocabulary and per-type required fields are validated by
+// putProvider (Task 5 Gap #2: stored config must be live-constructible).
+func TestPutProvider_BareCodexConfigRejected(t *testing.T) {
+	env := newAdminEnv(t)
 	s := env.bootstrap(t, "operator")
 	w := env.authedCall(t, http.MethodPut, "/api/admin/providers/prv-bare",
 		`{"type":"codex-oauth","name":"bare","config":{}}`, s)
-	assertStatus(t, w, http.StatusOK, "put bare codex provider")
+	assertStatus(t, w, http.StatusBadRequest, "put bare codex provider")
+}
 
-	w = env.oauthStart(t, "prv-bare", s)
-	assertStatus(t, w, http.StatusBadRequest, "oauth start without issuer")
+// An unknown provider type string is rejected at save: only the canonical
+// vocabulary is constructible at startup.
+func TestPutProvider_UnknownTypeRejected(t *testing.T) {
+	env := newAdminEnv(t)
+	s := env.bootstrap(t, "operator")
+	for _, typ := range []string{"gptx", "custom_openai", "ollama", ""} {
+		w := env.authedCall(t, http.MethodPut, "/api/admin/providers/prv-t",
+			fmt.Sprintf(`{"type":%q,"name":"t","config":{}}`, typ), s)
+		assertStatus(t, w, http.StatusBadRequest, "put unknown type "+typ)
+	}
+}
+
+// A custom-openai provider without base_url is rejected at save: the field
+// is mandatory there (no sensible default endpoint exists).
+func TestPutProvider_CustomOpenAIMissingBaseURLRejected(t *testing.T) {
+	env := newAdminEnv(t)
+	s := env.bootstrap(t, "operator")
+	w := env.authedCall(t, http.MethodPut, "/api/admin/providers/prv-c",
+		`{"type":"custom-openai","name":"c","config":{}}`, s)
+	assertStatus(t, w, http.StatusBadRequest, "put custom without base_url")
+}
+
+// ollama-cloud is the one type where every field is optional: an empty
+// config defaults to the hosted API root (L1).
+func TestPutProvider_OllamaCloudEmptyConfigAccepted(t *testing.T) {
+	env := newAdminEnv(t)
+	s := env.bootstrap(t, "operator")
+	w := env.authedCall(t, http.MethodPut, "/api/admin/providers/prv-l",
+		`{"type":"ollama-cloud","name":"cloud","config":{}}`, s)
+	assertStatus(t, w, http.StatusOK, "put ollamacloud with empty config")
+}
+
+// Private-address SSRF guard (Analysis G control 5): loopback and RFC1918
+// base URLs are rejected at save. The documented opt-out is an ENV the
+// operator sets explicitly.
+func TestPutProvider_PrivateURLsRejected(t *testing.T) {
+	env := newAdminEnv(t)
+	s := env.bootstrap(t, "operator")
+	for _, u := range []string{
+		"http://127.0.0.1:8080/v1",
+		"http://10.0.0.5/v1",
+		"http://192.168.1.10/v1",
+		"http://172.16.0.2/v1",
+		"http://169.254.169.254/v1",
+		"ftp://example.com/v1",
+	} {
+		w := env.authedCall(t, http.MethodPut, "/api/admin/providers/prv-ssrf",
+			fmt.Sprintf(`{"type":"custom-openai","name":"x","config":{"base_url":%q}}`, u), s)
+		assertStatus(t, w, http.StatusBadRequest, "put base_url "+u)
+	}
+	// The same guard applies to the codex issuer.
+	w := env.authedCall(t, http.MethodPut, "/api/admin/providers/prv-ssrf-i",
+		`{"type":"codex-oauth","name":"x","config":{"issuer":"http://127.0.0.1:1"}}`, s)
+	assertStatus(t, w, http.StatusBadRequest, "put private issuer")
+
+	// The opt-out is explicit and per-process: the operator sets it via ENV.
+	t.Setenv("PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS", "1")
+	w = env.authedCall(t, http.MethodPut, "/api/admin/providers/prv-ssrf",
+		`{"type":"custom-openai","name":"x","config":{"base_url":"http://127.0.0.1:8080/v1"}}`, s)
+	assertStatus(t, w, http.StatusOK, "opted-out private base_url accepted")
+}
+
+// The reload hook fires after a successful provider write AND delete — the
+// live registry must learn about both — and never for a rejected write.
+func TestProviderWriteReloadsLiveRegistry(t *testing.T) {
+	env := newAdminEnv(t)
+	s := env.bootstrap(t, "operator")
+	// The guard resolves base_url hosts (SSRF, Analysis G control 5) —
+	// unit tests must not depend on DNS, so this hook test runs under the
+	// documented opt-out. Guard behavior itself is pinned by
+	// TestPutProvider_PrivateURLsRejected.
+	t.Setenv("PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS", "1")
+
+	before := env.keys.calls
+	w := env.authedCall(t, http.MethodPut, "/api/admin/providers/prv-x",
+		`{"type":"custom-openai","name":"x","config":{"base_url":"https://api.example.com/v1"}}`, s)
+	assertStatus(t, w, http.StatusOK, "put provider prv-x")
+	if env.keys.calls != before+1 {
+		t.Errorf("reload hook not called after provider put: %d calls", env.keys.calls-before)
+	}
+
+	w = env.authedCall(t, http.MethodDelete, "/api/admin/providers/prv-x", "", s)
+	assertStatus(t, w, http.StatusOK, "delete provider prv-x")
+	if env.keys.calls != before+2 {
+		t.Errorf("reload hook not called after provider delete: %d calls", env.keys.calls-before)
+	}
+
+	// A rejected write must not reload.
+	w = env.authedCall(t, http.MethodPut, "/api/admin/providers/prv-y",
+		`{"type":"nope","name":"x","config":{}}`, s)
+	assertStatus(t, w, http.StatusBadRequest, "rejected write")
+	if env.keys.calls != before+2 {
+		t.Errorf("reload hook fired for a rejected provider write: %d calls", env.keys.calls-before)
+	}
 }
 
 // X20: 404 on the usercode request = device login disabled — an operator

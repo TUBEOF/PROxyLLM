@@ -1,4 +1,4 @@
-// Package ollamacoud implements the Ollama Cloud provider (plan §4.1):
+// Package ollamacloud implements the Ollama Cloud provider (plan §4.1):
 // the hosted native API at https://ollama.com. It speaks the native
 // /api/chat wire protocol (L1–L11) through the Ollama codec and the
 // shared HTTP transport foundation — Ollama's OpenAI-compat surface is

@@ -1,0 +1,174 @@
+package webui
+
+// Provider-type validation (Task 5 Gap #2, plan §5.2 / Analysis G control 5):
+// every provider PUT is validated against the canonical provider types
+// before it reaches the storage layer. Invalid shapes are rejected with 400
+// — the storage layer only checks JSON validity and secret-shaped keys, so
+// a WebUI typo (wrong type string, missing base_url, wrong field name)
+// would otherwise persist silently and only fail at first traffic.
+
+import (
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/url"
+	"os"
+	"strings"
+)
+
+// Canonical provider types (plan §4.1, SPA PROVIDER_TYPES). The storage
+// layer's seed strings are the same hyphenated forms (review fix `f9d6429`),
+// so WebUI saves never rewrite a seeded provider's type.
+const (
+	ProviderTypeCustomOpenAI = "custom-openai"
+	ProviderTypeOllamaCloud  = "ollama-cloud"
+	ProviderTypeCodexOAuth   = "codex-oauth"
+)
+
+// OptOutEnv is the documented operator opt-out for the private-address
+// SSRF guard (Analysis G control 5: base-URL validation with documented
+// opt-out). Operators behind a proxy mesh that legitimately targets
+// private backends set it to "1".
+const OptOutEnv = "PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS"
+
+// ProviderConfig is the validated shape of a provider config blob. Unknown
+// keys are rejected (strict): a typo'd "baseurl" must fail the save, not
+// silently route with the default URL. Exported so the server's
+// construction path shares the exact same parse (one vocabulary).
+type ProviderConfig struct {
+	// custom-openai: upstream root including the version prefix (the
+	// provider appends "/chat/completions"). Required.
+	// ollama-cloud: overrides DefaultBaseURL ("https://ollama.com") when
+	// set. Optional — an empty config is a valid save.
+	// codex-oauth: unused (codex pins its backend URL).
+	BaseURL string `json:"base_url"`
+	// codex-oauth only: the OAuth issuer (e.g. https://auth.openai.com).
+	// Required for codex-oauth (an issuer-less codex provider cannot ever
+	// sign in).
+	Issuer string `json:"issuer"`
+	// Per-provider capability pins. Optional; only the seven known keys
+	// are accepted.
+	Capabilities map[string]bool `json:"capabilities"`
+}
+
+// knownCapabilities are the provider-level capability pins (snake_case,
+// matching the IR capability vocabulary). Unknown keys are rejected.
+var knownCapabilities = map[string]bool{
+	"streaming":      true,
+	"tools":          true,
+	"vision":         true,
+	"web_search":     true,
+	"web_fetch":      true,
+	"code_execution": true,
+	"thinking":       true,
+}
+
+// ParseProviderConfig validates (type, config) and returns the parsed
+// shape. The error is operator-facing: it names the offending field, never
+// the internals. An empty raw config (len 0) parses as an empty shape.
+func ParseProviderConfig(typ string, raw []byte) (ProviderConfig, error) {
+	var cfg ProviderConfig
+	if len(raw) > 0 {
+		dec := json.NewDecoder(strings.NewReader(string(raw)))
+		dec.DisallowUnknownFields()
+		if err := dec.Decode(&cfg); err != nil {
+			return cfg, fmt.Errorf("config: %w", err)
+		}
+	}
+
+	switch typ {
+	case ProviderTypeCustomOpenAI:
+		if cfg.BaseURL == "" {
+			return cfg, fmt.Errorf("custom-openai requires base_url (the upstream OpenAI-compatible root, e.g. https://api.example.com/v1)")
+		}
+		if err := guardPublicURL(cfg.BaseURL, "base_url"); err != nil {
+			return cfg, err
+		}
+		if cfg.Issuer != "" {
+			return cfg, fmt.Errorf("base_url is the only URL field for custom-openai (issuer belongs to codex-oauth)")
+		}
+	case ProviderTypeOllamaCloud:
+		if cfg.BaseURL != "" {
+			if err := guardPublicURL(cfg.BaseURL, "base_url"); err != nil {
+				return cfg, err
+			}
+		}
+		if cfg.Issuer != "" {
+			return cfg, fmt.Errorf("base_url is the only URL field for ollama-cloud (issuer belongs to codex-oauth)")
+		}
+	case ProviderTypeCodexOAuth:
+		if cfg.Issuer == "" {
+			return cfg, fmt.Errorf("codex-oauth requires issuer (the OAuth issuer, e.g. https://auth.openai.com)")
+		}
+		if err := guardPublicURL(cfg.Issuer, "issuer"); err != nil {
+			return cfg, err
+		}
+		if cfg.BaseURL != "" {
+			return cfg, fmt.Errorf("issuer is the only URL field for codex-oauth (the backend URL is pinned by the provider)")
+		}
+	case "":
+		return cfg, fmt.Errorf("type is required (custom-openai, ollama-cloud, codex-oauth)")
+	default:
+		return cfg, fmt.Errorf("unknown provider type %q (custom-openai, ollama-cloud, codex-oauth)", typ)
+	}
+
+	for name := range cfg.Capabilities {
+		if !knownCapabilities[name] {
+			return cfg, fmt.Errorf("unknown capability %q (streaming, tools, vision, web_search, web_fetch, code_execution, thinking)", name)
+		}
+	}
+	return cfg, nil
+}
+
+// guardPublicURL validates an operator-supplied URL: absolute http(s) URL
+// with a host, whose resolved addresses are not private infrastructure
+// unless the documented opt-out is set (Analysis G control 5 — the SSRF
+// guard for WebUI-supplied provider endpoints).
+func guardPublicURL(raw, field string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("%s: %w", field, err)
+	}
+	switch u.Scheme {
+	case "http", "https":
+	case "":
+		return fmt.Errorf("%s: missing scheme (http or https)", field)
+	default:
+		return fmt.Errorf("%s: scheme %q not allowed (http or https)", field, u.Scheme)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("%s: missing host", field)
+	}
+
+	if privateOptOut() {
+		return nil
+	}
+
+	host := u.Hostname() // strip brackets for IPv6 literals
+	addrs, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("%s: resolving %q: %w", field, host, err)
+	}
+	for _, addr := range addrs {
+		if isPrivateAddr(addr) {
+			return fmt.Errorf("%s: %q resolves to a private address (%s) — set %s=1 to allow private provider endpoints", field, host, addr, OptOutEnv)
+		}
+	}
+	return nil
+}
+
+// privateOptOut reads the documented opt-out ENV (Analysis G control 5).
+func privateOptOut() bool {
+	return os.Getenv(OptOutEnv) == "1"
+}
+
+// isPrivateAddr reports whether addr is loopback, RFC 1918 private,
+// link-local (incl. the cloud metadata endpoint), or otherwise a
+// non-routable address class a SSRF should not reach.
+func isPrivateAddr(addr net.IP) bool {
+	return addr.IsLoopback() ||
+		addr.IsPrivate() || // RFC 1918 (10/8, 172.16/12, 192.168/16)
+		addr.IsLinkLocalUnicast() || // 169.254.0.0/16 incl. 169.254.169.254
+		addr.IsLinkLocalMulticast() ||
+		addr.IsUnspecified()
+}
