@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 
 	"github.com/proxyllm/proxyllm/internal/translate"
 	"github.com/proxyllm/proxyllm/internal/translate/ir"
@@ -34,21 +35,19 @@ type streamDecoder struct {
 	// queue holds canonical events decoded but not yet returned.
 	queue []ir.StreamEvent
 
-	started   bool          // Start + initial text BlockStart emitted
-	openBlock int           // IR index of the open block; -1 = none
-	blockCnt  int           // blocks opened so far (next index)
-	toolIndex int           // last seen wire tool_calls index
-	toolBlock int           // IR index of the open tool_use block; -1 = text/none
-	finish    ir.StopReason // recorded finish_reason ("" until seen)
-	pendingMD bool          // finish seen but MessageDelta not yet emitted
-	done      bool          // [DONE] or terminal error decoded
+	started    bool          // Start + initial text BlockStart emitted
+	openBlock  int           // IR index of the open TEXT block; -1 = none
+	blockCnt   int           // blocks opened so far (next index)
+	toolBlocks map[int]int   // wire tool_calls index → IR index (open tool blocks)
+	finish     ir.StopReason // recorded finish_reason ("" until seen)
+	pendingMD  bool          // finish seen but MessageDelta not yet emitted
+	done       bool          // [DONE] or terminal error decoded
 }
 
 func newStreamDecoder(r io.Reader) translate.StreamDecoder {
 	return &streamDecoder{
 		reader:    sse.NewReader(r),
 		openBlock: -1,
-		toolBlock: -1,
 	}
 }
 
@@ -143,38 +142,63 @@ func (d *streamDecoder) mapChunk(w *wireChunk) {
 	}
 	ch := w.Choices[0]
 	if ch.Delta != nil && ch.Delta.Content.Str != nil && *ch.Delta.Content.Str != "" {
-		// Content delta; only while a text block is open.
-		if d.openBlock >= 0 && d.toolBlock < 0 {
+		// Content delta; only while a text block is open (a tool block
+		// having been opened means the text block was closed).
+		if d.openBlock >= 0 && len(d.toolBlocks) == 0 {
 			d.queue = append(d.queue, ir.StreamEvent{Type: ir.Delta, Index: d.openBlock,
 				Delta: ir.DeltaPayload{Kind: ir.DeltaText, Text: *ch.Delta.Content.Str}})
 		}
 	} else if ch.Delta != nil && len(ch.Delta.ToolCalls) > 0 {
-		tc := ch.Delta.ToolCalls[0]
-		if d.toolBlock < 0 || tc.Index != d.toolIndex {
-			// New tool call: close the open block, open a tool_use block.
-			if d.openBlock >= 0 {
-				d.queue = append(d.queue, ir.StreamEvent{Type: ir.BlockStop, Index: d.openBlock})
+		// Parallel tool calls (O4): one chunk can carry several
+		// tool_calls entries, each assembling by its OWN index — loop
+		// over all entries. Blocks stay open until finish_reason: a
+		// later chunk can resume any index (interleaved fragments), so
+		// toolBlocks maps wire index → IR index instead of tracking a
+		// single open call.
+		for _, tc := range ch.Delta.ToolCalls {
+			if d.toolBlocks == nil {
+				d.toolBlocks = make(map[int]int)
 			}
-			d.toolIndex = tc.Index
-			d.toolBlock = d.blockCnt
-			d.blockCnt++
-			d.openBlock = d.toolBlock
-			d.queue = append(d.queue, ir.StreamEvent{Type: ir.BlockStart, Index: d.toolBlock,
-				Part: ir.ToolCallPart{ID: tc.ID, Name: tc.Function.Name}})
-		} else if tc.Function.Arguments != "" {
-			// Argument fragment for the open tool call.
-			d.queue = append(d.queue, ir.StreamEvent{Type: ir.Delta, Index: d.toolBlock,
-				Delta: ir.DeltaPayload{Kind: ir.DeltaToolInput, PartialJSON: tc.Function.Arguments}})
+			block, open := d.toolBlocks[tc.Index]
+			if !open {
+				// First entry for this index: close the open text
+				// block, open a tool_use block.
+				if d.openBlock >= 0 {
+					d.queue = append(d.queue, ir.StreamEvent{Type: ir.BlockStop, Index: d.openBlock})
+					d.openBlock = -1
+				}
+				block = d.blockCnt
+				d.blockCnt++
+				d.toolBlocks[tc.Index] = block
+				d.queue = append(d.queue, ir.StreamEvent{Type: ir.BlockStart, Index: block,
+					Part: ir.ToolCallPart{ID: tc.ID, Name: tc.Function.Name}})
+			} else if tc.Function.Arguments != "" {
+				// Argument fragment for this index's tool block.
+				d.queue = append(d.queue, ir.StreamEvent{Type: ir.Delta, Index: block,
+					Delta: ir.DeltaPayload{Kind: ir.DeltaToolInput, PartialJSON: tc.Function.Arguments}})
+			}
 		}
 	}
 	if ch.FinishReason != "" {
 		d.finish = stopReasonFromWire(ch.FinishReason)
 		d.pendingMD = true
+		// Close the text block and every open tool block, in open
+		// order: text first (its BlockStop already ran when the first
+		// tool opened, so only emit if still open), then the tool
+		// blocks in ascending IR index.
 		if d.openBlock >= 0 {
 			d.queue = append(d.queue, ir.StreamEvent{Type: ir.BlockStop, Index: d.openBlock})
 			d.openBlock = -1
-			d.toolBlock = -1
 		}
+		indices := make([]int, 0, len(d.toolBlocks))
+		for _, block := range d.toolBlocks {
+			indices = append(indices, block)
+		}
+		sort.Ints(indices)
+		for _, block := range indices {
+			d.queue = append(d.queue, ir.StreamEvent{Type: ir.BlockStop, Index: block})
+		}
+		d.toolBlocks = nil
 	}
 	// A chunk may carry usage alongside or without choices (stream_options
 	// include_usage, O4); it closes out the MessageDelta.

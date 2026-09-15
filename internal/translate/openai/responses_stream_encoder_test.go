@@ -428,6 +428,78 @@ func TestResponsesStreamEncode_FunctionCallItem(t *testing.T) {
 	}
 }
 
+// TestResponsesStreamEncode_FunctionCallArgumentsAccumulate (RED-GREEN):
+// fragmented tool-argument deltas must reassemble in the
+// response.completed snapshot. Spec: the Responses completed snapshot
+// carries the function_call item with the FULL assembled arguments
+// string (fixture testdata/golden/openai/responses-stream.sse documents
+// completed snapshots as full state; OpenAI stream function-calls
+// fragment arguments across many function_call_arguments.delta events).
+// The encoder must accumulate DeltaToolInput fragments just as it does
+// DeltaText, or every completed function_call ships arguments:"" — and a
+// Responses client re-issuing the tool call from the snapshot calls the
+// tool with no arguments at all.
+func TestResponsesStreamEncode_FunctionCallArgumentsAccumulate(t *testing.T) {
+	evs := []ir.StreamEvent{
+		{Type: ir.Start, Response: &ir.Response{ID: "resp_1", Model: "gpt-5"}},
+		{Type: ir.BlockStart, Index: 0, Part: ir.ToolCallPart{
+			ID:   "call_1",
+			Name: "get_weather",
+		}},
+		// Arguments arrive fragmented, as they do on the wire.
+		{Type: ir.Delta, Index: 0, Delta: ir.DeltaPayload{
+			Kind:        ir.DeltaToolInput,
+			PartialJSON: `{"loc`,
+		}},
+		{Type: ir.Delta, Index: 0, Delta: ir.DeltaPayload{
+			Kind:        ir.DeltaToolInput,
+			PartialJSON: `ation":"SF"}`,
+		}},
+		{Type: ir.BlockStop, Index: 0},
+		{Type: ir.MessageDelta, MessageDelta: &ir.MessageDeltaPayload{
+			StopReason: ir.StopToolUse,
+			Usage:      ir.Usage{InputTokens: 10, OutputTokens: 3},
+		}},
+		{Type: ir.Done},
+	}
+	encoded := encodeResponsesAll(t, evs)
+	events := parseSSEEvents(t, encoded)
+
+	var completed *sseNamedEvent
+	for i := range events {
+		if events[i].Name == "response.completed" {
+			completed = &events[i]
+			break
+		}
+	}
+	if completed == nil {
+		t.Fatalf("no response.completed in %v", events)
+	}
+	want := `{"location":"SF"}`
+	var snap struct {
+		Response struct {
+			Output []struct {
+				Type      string `json:"type"`
+				CallID    string `json:"call_id"`
+				Name      string `json:"name"`
+				Arguments string `json:"arguments"`
+			} `json:"output"`
+		} `json:"response"`
+	}
+	if err := json.Unmarshal([]byte(completed.Data), &snap); err != nil {
+		t.Fatalf("decode completed snapshot: %v", err)
+	}
+	if len(snap.Response.Output) != 1 {
+		t.Fatalf("completed snapshot must carry exactly one output item, got %d: %s", len(snap.Response.Output), completed.Data)
+	}
+	if snap.Response.Output[0].Type != "function_call" || snap.Response.Output[0].CallID != "call_1" || snap.Response.Output[0].Name != "get_weather" {
+		t.Errorf("unexpected function_call item: %+v", snap.Response.Output[0])
+	}
+	if snap.Response.Output[0].Arguments != want {
+		t.Errorf("completed snapshot must carry assembled arguments %q, got %q", want, snap.Response.Output[0].Arguments)
+	}
+}
+
 // TestResponsesStreamEncode_ReasoningItem: BlockStart with ir.ThinkingPart →
 // response.output_item.added with type:"reasoning" (O7).
 func TestResponsesStreamEncode_ReasoningItem(t *testing.T) {

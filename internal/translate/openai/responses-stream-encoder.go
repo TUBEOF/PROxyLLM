@@ -183,6 +183,12 @@ func (e *responsesStreamEncoder) emitDelta(ev ir.StreamEvent) error {
 		return e.emitComment("")
 	}
 	item := e.openItems[ev.Index]
+	if item == nil {
+		// The slot was closed by BlockStop (which leaves a nil
+		// placeholder so indices stay stable); a delta for a closed item
+		// must not panic on malformed upstream interleavings.
+		return e.emitComment("")
+	}
 	switch ev.Delta.Kind {
 	case ir.DeltaText:
 		item.text += ev.Delta.Text
@@ -193,6 +199,12 @@ func (e *responsesStreamEncoder) emitDelta(ev ir.StreamEvent) error {
 		return e.emitEvent("response.reasoning_summary_text.delta",
 			e.reasoningDelta(item, ev.Delta.Text))
 	case ir.DeltaToolInput:
+		// Accumulate for the completed snapshot's arguments (function_call
+		// items are FLAT, O7): the completed snapshot carries the FULL
+		// assembled arguments string, so fragments must be collected like
+		// DeltaText — arguments:"" would make a client re-issuing the tool
+		// call from the snapshot call the tool with no arguments.
+		item.text += ev.Delta.PartialJSON
 		return e.emitEvent("response.function_call_arguments.delta",
 			e.toolInputDelta(item, ev.Delta.PartialJSON))
 	case ir.DeltaSignature:

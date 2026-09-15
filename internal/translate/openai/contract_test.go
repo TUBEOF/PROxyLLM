@@ -163,6 +163,63 @@ func TestStreamDecode_DataOnlyAndDoneSentinel(t *testing.T) {
 	}
 }
 
+// One chunk may carry several tool_calls entries — parallel tool calls
+// (O4): each entry assembles by its OWN index, id/name riding the first
+// entry of each index. The decoder must open one ToolCallPart block per
+// index, not drop every entry after the first.
+func TestStreamDecode_ParallelToolCalls(t *testing.T) {
+	wire := "data: {\"id\":\"c1\",\"model\":\"gpt-5\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[" +
+		"{\"index\":0,\"id\":\"call_a\",\"type\":\"function\",\"function\":{\"name\":\"get_weather\",\"arguments\":\"\"}}," +
+		"{\"index\":1,\"id\":\"call_b\",\"type\":\"function\",\"function\":{\"name\":\"get_time\",\"arguments\":\"\"}}]},\"finish_reason\":null}]}\n\n" +
+		"data: {\"id\":\"c1\",\"model\":\"gpt-5\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[" +
+		"{\"index\":0,\"function\":{\"arguments\":\"{\\\"city\\\":\\\"SF\\\"}\"}}," +
+		"{\"index\":1,\"function\":{\"arguments\":\"{\\\"tz\\\":\\\"PST\\\"}\"}}]},\"finish_reason\":null}]}\n\n" +
+		"data: {\"id\":\"c1\",\"model\":\"gpt-5\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n" +
+		"data: [DONE]\n\n"
+
+	got := testutil.DrainStreamDecoder(t, oa.NewStreamDecoder(strings.NewReader(wire)))
+	var starts []ir.StreamEvent
+	for _, ev := range got {
+		if ev.Type == ir.BlockStart {
+			starts = append(starts, ev)
+		}
+	}
+	if len(starts) != 3 {
+		t.Fatalf("want 3 BlockStarts (text + 2 tool_use), got %d: %+v", len(starts), starts)
+	}
+	// starts[0] is the implicit text block; 1 and 2 are the tool blocks.
+	for i, want := range []struct{ id, name string }{{"call_a", "get_weather"}, {"call_b", "get_time"}} {
+		part, ok := starts[i+1].Part.(ir.ToolCallPart)
+		if !ok {
+			t.Fatalf("BlockStart %d: want ToolCallPart, got %T", i+1, starts[i+1].Part)
+		}
+		if part.ID != want.id || part.Name != want.name {
+			t.Errorf("BlockStart %d part = %+v, want id=%q name=%q", i+1, part, want.id, want.name)
+		}
+	}
+	// Each tool block must accumulate its own argument fragments as deltas
+	// against its own index — entry index 0 → block 1, entry index 1 →
+	// block 2.
+	for _, want := range []struct {
+		index int
+		args  string
+	}{
+		{1, `{"city":"SF"}`},
+		{2, `{"tz":"PST"}`},
+	} {
+		found := false
+		for _, ev := range got {
+			if ev.Type == ir.Delta && ev.Index == want.index &&
+				ev.Delta.Kind == ir.DeltaToolInput && ev.Delta.PartialJSON == want.args {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("missing DeltaToolInput %q at index %d in %+v", want.args, want.index, got)
+		}
+	}
+}
+
 func TestEncodeResponse_FromIR(t *testing.T) {
 	resp := ir.Response{
 		ID:    "chatcmpl_test",
