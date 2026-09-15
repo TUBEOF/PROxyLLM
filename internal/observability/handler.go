@@ -59,5 +59,13 @@ func redactAttr(r Redactor, a slog.Attr) slog.Attr {
 	if a.Value.Kind() == slog.KindString {
 		return slog.Attr{Key: a.Key, Value: slog.StringValue(r.Redact(a.Value.String()))}
 	}
+	if a.Value.Kind() == slog.KindAny {
+		// slog has no dedicated bytes kind (slog.Any wraps []byte as
+		// KindAny); bytes carry the same payloads strings do, so mask on
+		// the raw bytes before the inner handler renders them.
+		if bs, ok := a.Value.Any().([]byte); ok {
+			return slog.Attr{Key: a.Key, Value: slog.StringValue(r.Redact(string(bs)))}
+		}
+	}
 	return a
 }

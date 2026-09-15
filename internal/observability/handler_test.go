@@ -64,6 +64,25 @@ func TestRedactingHandler_WithAttrsRedactedAtAttach(t *testing.T) {
 	}
 }
 
+func TestRedactingHandler_MasksBytesAttrs(t *testing.T) {
+	var buf bytes.Buffer
+	inner := slog.NewJSONHandler(&buf, nil)
+	log := slog.New(NewRedactingHandler(inner, NewRedactor()))
+
+	// []byte-kind attribute values carry the same secrets string values
+	// can; the JSON handler renders them base64, but the redaction must
+	// happen before rendering — mask on the raw bytes.
+	log.Error("payload rejected", "body", []byte(`{"secret_key":"0123456789abcdef0123456789abcdef"}`))
+
+	out := buf.String()
+	if strings.Contains(out, "0123456789abcdef0123456789abcdef") {
+		t.Errorf("secret in bytes attr survived: %s", out)
+	}
+	if !strings.Contains(out, "payload rejected") {
+		t.Errorf("message lost: %s", out)
+	}
+}
+
 func TestRedactingHandler_JSONStillValid(t *testing.T) {
 	var buf bytes.Buffer
 	inner := slog.NewJSONHandler(&buf, nil)

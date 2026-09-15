@@ -20,6 +20,16 @@ func TestRedact_BearerToken(t *testing.T) {
 	if !strings.Contains(got, "Bearer") {
 		t.Errorf("structure lost: %q", got)
 	}
+	// Base64-padded bearer tokens: the trailing '=' must not let the tail
+	// of the credential survive the character class.
+	padded := "Authorization: Bearer YWJjZGVmZ2hpamtsbW5vcA=="
+	got = r.Redact(padded)
+	if strings.Contains(got, "YWJjZGVmZ2hpamtsbW5vcA==") {
+		t.Errorf("base64-padded bearer survived: %q", got)
+	}
+	if !strings.Contains(got, "Bearer") {
+		t.Errorf("structure lost: %q", got)
+	}
 }
 
 func TestRedact_XApiKeyHeader(t *testing.T) {
@@ -60,6 +70,30 @@ func TestRedact_JWT(t *testing.T) {
 	got := r.Redact(in)
 	if strings.Contains(got, jwt) {
 		t.Errorf("JWT survived: %q", got)
+	}
+}
+
+func TestRedact_JSONCredentialKeyNames(t *testing.T) {
+	r := NewRedactor()
+	// JSON payloads ride the key-name/value secret family. The common
+	// credential key names secret_key, refresh_token, and access_token
+	// must be masked in JSON form ("key":"value"): the secretKeyRe
+	// context pattern cannot backstop JSON (its [:=] precedes the quote,
+	// JSON puts the quote first), so the JSON alternation must cover them.
+	cases := []struct {
+		key   string
+		value string
+	}{
+		{"secret_key", "0123456789abcdef0123456789abcdef"},
+		{"refresh_token", "rtg_0123456789abcdef01234567"},
+		{"access_token", "eyJhbGciOiJIUzI1NiIsInR5cCI6Ikp"},
+	}
+	for _, tc := range cases {
+		in := `{"` + tc.key + `":"` + tc.value + `"}`
+		got := r.Redact(in)
+		if strings.Contains(got, tc.value) {
+			t.Errorf("%s value survived in JSON form: in=%q got=%q", tc.key, in, got)
+		}
 	}
 }
 

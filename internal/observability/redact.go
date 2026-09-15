@@ -22,7 +22,7 @@ type redactor struct{}
 // secret was present.
 var (
 	// Bearer tokens: "Bearer <token>" — mask the token, keep "Bearer".
-	bearerRe = regexp.MustCompile(`(?i)\b(bearer)\s+[A-Za-z0-9\-._~+/]{8,}`)
+	bearerRe = regexp.MustCompile(`(?i)\b(bearer)\s+[A-Za-z0-9\-._~+/=]{8,}`)
 	// Credential-header values: x-api-key, x-auth-token, api-key,
 	// authorization — including an optional scheme word (Token, Basic,
 	// Digest, …; Bearer is handled by bearerRe). Anchored to the header
@@ -46,7 +46,12 @@ var (
 	// Generic key/token query params in URLs.
 	urlTokenRe = regexp.MustCompile(`(?i)(api_key|token|key|secret)=([A-Za-z0-9\-._~+/]{8,})`)
 	// JSON-form key/value pairs: "api_key": "value", "secret": "value", …
-	jsonSecretRe = regexp.MustCompile(`(?i)["'](api_?key|access_?key|secret|token|password|credential)["']\s*:\s*["']([^"']{16,})["']`)
+	// JSON key/value secrets: keep the key name, mask the value. The
+	// alternation lists the multi-word names (secret_?key, refresh_?token,
+	// access_?token) before their short prefixes: RE2 alternations match
+	// leftmost-first, so a bare `secret` or `token` would otherwise claim
+	// the key name and the extended spellings would never fire.
+	jsonSecretRe = regexp.MustCompile(`(?i)["'](api_?key|access_?key|secret_?key|refresh_?token|access_?token|secret|token|password|credential)["']\s*:\s*["']([^"']{16,})["']`)
 	// Oversized base64-ish blobs (>= 256 chars) — likely key/cert/image
 	// material that should not appear in logs verbatim.
 	bigBlobRe = regexp.MustCompile(`[A-Za-z0-9+/]{256,}={0,2}`)
