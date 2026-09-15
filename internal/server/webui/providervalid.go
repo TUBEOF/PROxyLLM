@@ -13,8 +13,9 @@ import (
 	"io"
 	"net"
 	"net/url"
-	"os"
 	"strings"
+
+	"github.com/proxyllm/proxyllm/internal/httpguard"
 )
 
 // Canonical provider types (plan §4.1, SPA PROVIDER_TYPES). The storage
@@ -29,8 +30,9 @@ const (
 // OptOutEnv is the documented operator opt-out for the private-address
 // SSRF guard (Analysis G control 5: base-URL validation with documented
 // opt-out). Operators behind a proxy mesh that legitimately targets
-// private backends set it to "1".
-const OptOutEnv = "PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS"
+// private backends set it to "1". Aliased from the shared guard package
+// so the write path and the runtime redirect guard share one vocabulary.
+const OptOutEnv = httpguard.OptOutEnv
 
 // ProviderConfig is the validated shape of a provider config blob. Unknown
 // keys are rejected (strict): a typo'd "baseurl" must fail the save, not
@@ -177,9 +179,11 @@ func urlShape(raw, field string) error {
 
 // guardPublicURL resolves the host of an operator-supplied URL and rejects
 // private-address targets (Analysis G control 5 — the SSRF guard for
-// WebUI-supplied provider endpoints). Write path only.
+// WebUI-supplied provider endpoints). Write path only. Delegates the
+// address classification to the shared guard package so the write path
+// and the runtime redirect guard cannot drift apart.
 func guardPublicURL(raw, field string) error {
-	if privateOptOut() {
+	if httpguard.OptOut() {
 		return nil
 	}
 
@@ -193,25 +197,9 @@ func guardPublicURL(raw, field string) error {
 		return fmt.Errorf("%s: resolving %q: %w", field, host, err)
 	}
 	for _, addr := range addrs {
-		if isPrivateAddr(addr) {
+		if httpguard.IsPrivateAddr(addr) {
 			return fmt.Errorf("%s: %q resolves to a private address (%s) — set %s=1 to allow private provider endpoints", field, host, addr, OptOutEnv)
 		}
 	}
 	return nil
-}
-
-// privateOptOut reads the documented opt-out ENV (Analysis G control 5).
-func privateOptOut() bool {
-	return os.Getenv(OptOutEnv) == "1"
-}
-
-// isPrivateAddr reports whether addr is loopback, RFC 1918 private,
-// link-local (incl. the cloud metadata endpoint), or otherwise a
-// non-routable address class a SSRF should not reach.
-func isPrivateAddr(addr net.IP) bool {
-	return addr.IsLoopback() ||
-		addr.IsPrivate() || // RFC 1918 (10/8, 172.16/12, 192.168/16)
-		addr.IsLinkLocalUnicast() || // 169.254.0.0/16 incl. 169.254.169.254
-		addr.IsLinkLocalMulticast() ||
-		addr.IsUnspecified()
 }

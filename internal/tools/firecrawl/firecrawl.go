@@ -13,7 +13,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
+
+	"github.com/proxyllm/proxyllm/internal/httpguard"
 )
 
 // DefaultBaseURL is the production Firecrawl API host (F1).
@@ -109,7 +110,10 @@ func New(baseURL, apiKey string, httpClient *http.Client) *Client {
 		baseURL = DefaultBaseURL
 	}
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+		// Guarded default: same 30s total budget as before, with redirects
+		// re-validated against the private-address SSRF guard — the
+		// Bearer fc-... key rides a followed redirect.
+		httpClient = httpguard.NewClient(0)
 	}
 	return &Client{baseURL: strings.TrimSuffix(baseURL, "/"), apiKey: apiKey, http: httpClient}
 }

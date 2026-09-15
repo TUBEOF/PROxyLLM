@@ -1,0 +1,193 @@
+package httpguard
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
+
+// stubLookup replaces the resolver seam with fixed answers for the named
+// hosts, restoring the real resolver on cleanup.
+func stubLookup(hosts map[string][]net.IPAddr) func() {
+	prev := lookupIPAddr
+	lookupIPAddr = func(_ context.Context, host string) ([]net.IPAddr, error) {
+		if addrs, ok := hosts[host]; ok {
+			return addrs, nil
+		}
+		return nil, fmt.Errorf("no such host %s", host)
+	}
+	return func() { lookupIPAddr = prev }
+}
+
+// Spec: the write-path SSRF guard (Analysis G control 5) validates the
+// operator-supplied base URL once, at config time. The runtime dial path
+// must re-apply the same guarantee on every redirect: an upstream that
+// answers 301/302 toward a private address (e.g. the cloud metadata
+// endpoint 169.254.169.254) must not be followed, because Go re-sends
+// the Authorization header on redirects — a followed redirect leaks the
+// operator's Bearer key to the redirect target.
+
+func TestNewClient_RefusesPrivateRedirect(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// A hostile upstream redirecting to the cloud metadata endpoint.
+		http.Redirect(w, r, "http://169.254.169.254/latest/meta-data", http.StatusFound)
+	}))
+	defer ts.Close()
+
+	client := NewClient(0)
+	resp, err := client.Get(ts.URL)
+	if err == nil {
+		defer func() { _ = resp.Body.Close() }()
+		t.Fatalf("redirect to private address must be refused, got status %d", resp.StatusCode)
+	}
+	var ge *GuardError
+	if !errors.As(err, &ge) {
+		t.Fatalf("refusal must be a *GuardError, got %T: %v", err, err)
+	}
+}
+
+func TestNewClient_AllowsPublicRedirect(t *testing.T) {
+	// httptest listeners bind loopback, so a public redirect target is
+	// simulated through the resolver seam: the target host resolves to a
+	// public IP and the stub answers the guard's lookup. CI must not
+	// depend on live DNS or a routable public listener.
+	restore := stubLookup(map[string][]net.IPAddr{
+		"public-target.test": {{IP: net.ParseIP("203.0.113.7")}}, // TEST-NET-3
+	})
+	defer restore()
+
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+	targetURL := strings.Replace(target.URL, "127.0.0.1", "public-target.test", 1)
+
+	// After the guard approves the redirect, the client dials the target
+	// host for real — shim the dial so the simulated public host lands on
+	// the httptest listener (CI must not need routable public networking).
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	innerDial := transport.DialContext
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if strings.HasPrefix(addr, "public-target.test:") {
+			addr = strings.Replace(addr, "public-target.test", "127.0.0.1", 1)
+		}
+		return innerDial(ctx, network, addr)
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, targetURL, http.StatusFound)
+	}))
+	defer ts.Close()
+
+	client := NewClient(0)
+	client.Transport = transport
+	resp, err := client.Get(ts.URL)
+	if err != nil {
+		t.Fatalf("legitimate redirect must be followed: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 after redirect, got %d", resp.StatusCode)
+	}
+	if resp.Request.URL.Hostname() != "public-target.test" {
+		t.Fatalf("expected to land on the redirect target, got %s", resp.Request.URL)
+	}
+}
+
+func TestNewClient_RefusesLoopbackRedirect(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://127.0.0.1:9/inner", http.StatusMovedPermanently)
+	}))
+	defer ts.Close()
+
+	client := NewClient(0)
+	_, err := client.Get(ts.URL)
+	if err == nil {
+		t.Fatal("redirect to loopback must be refused")
+	}
+	var ge *GuardError
+	if !errors.As(err, &ge) {
+		t.Fatalf("refusal must be a *GuardError, got %T: %v", err, err)
+	}
+	if ge.Reason != "loopback" {
+		t.Errorf("expected loopback reason, got %q", ge.Reason)
+	}
+}
+
+// RED-GREEN pinned test: the streaming variant must guard redirects the
+// same way — streaming is the attack surface with the longest-lived
+// credentials (OAuth access tokens ride the codex transport).
+func TestNewStreamingClient_RefusesPrivateRedirect(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://192.168.1.10/latest", http.StatusFound)
+	}))
+	defer ts.Close()
+
+	client := NewStreamingClient()
+	_, err := client.Get(ts.URL)
+	if err == nil {
+		t.Fatal("streaming client must refuse redirect to RFC 1918 target")
+	}
+	var ge *GuardError
+	if !errors.As(err, &ge) {
+		t.Fatalf("refusal must be a *GuardError, got %T: %v", err, err)
+	}
+	if ge.Reason != "RFC 1918" {
+		t.Errorf("expected RFC 1918 reason, got %q", ge.Reason)
+	}
+}
+
+func TestNewClient_OptOutFollowsPrivateRedirect(t *testing.T) {
+	t.Setenv(OptOutEnv, "1")
+
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Private-by-IP: httptest binds 127.0.0.1, so a redirect to the
+		// target server is a redirect to a loopback address — exactly the
+		// class the opt-out must allow. Without the opt-out this redirect
+		// is refused (pinned by the loopback test above).
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer ts.Close()
+
+	client := NewClient(0)
+	resp, err := client.Get(ts.URL)
+	if err != nil {
+		t.Fatalf("with opt-out, redirect to loopback must be followed: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 after opted-out redirect, got %d", resp.StatusCode)
+	}
+}
+
+// The write-path guard and the redirect guard share the classification —
+// pin the private/public boundary so the two consumers cannot drift.
+func TestIsPrivateAddr(t *testing.T) {
+	private := []string{
+		"127.0.0.1", "::1", // loopback
+		"10.0.0.1", "172.16.0.1", "192.168.1.1", // RFC 1918
+		"169.254.169.254", "fe80::1", // link-local + metadata endpoint
+		"0.0.0.0", "::", // unspecified
+	}
+	for _, s := range private {
+		if !IsPrivateAddr(net.ParseIP(s)) {
+			t.Errorf("%s must classify as private", s)
+		}
+	}
+	public := []string{"8.8.8.8", "1.1.1.1", "2606:4700::1111"}
+	for _, s := range public {
+		if IsPrivateAddr(net.ParseIP(s)) {
+			t.Errorf("%s must classify as public", s)
+		}
+	}
+}

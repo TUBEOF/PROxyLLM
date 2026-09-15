@@ -8,8 +8,8 @@ package ollamacloud
 import (
 	"context"
 	"io"
-	"net/http"
 
+	"github.com/proxyllm/proxyllm/internal/httpguard"
 	"github.com/proxyllm/proxyllm/internal/provider"
 	"github.com/proxyllm/proxyllm/internal/provider/internal/httpx"
 	"github.com/proxyllm/proxyllm/internal/translate"
@@ -43,7 +43,11 @@ func New(id, baseURL, apiKey string, caps provider.Capabilities) *Provider {
 			ChatPath:   "/api/chat", // native endpoint (L1/L4)
 			APIKey:     apiKey,      // Bearer $OLLAMA_API_KEY (L2)
 			ErrorShape: httpx.ErrorOllama,
-			HTTP:       &http.Client{},
+			// Streaming transport: no total-body budget (long generations
+			// must not be cut off), but redirects re-validated against the
+			// private-address SSRF guard — the Bearer header would ride a
+			// followed redirect.
+			HTTP: httpguard.NewStreamingClient(),
 		},
 		id:    id,
 		caps:  caps,

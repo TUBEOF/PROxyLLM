@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/proxyllm/proxyllm/internal/httpguard"
 	"github.com/proxyllm/proxyllm/internal/provider"
 	"github.com/proxyllm/proxyllm/internal/provider/internal/httpx"
 	"github.com/proxyllm/proxyllm/internal/translate"
@@ -45,7 +46,10 @@ type ProviderConfig struct {
 func New(cfg ProviderConfig) *Provider {
 	httpc := cfg.HTTP
 	if httpc == nil {
-		httpc = http.DefaultClient
+		// Streaming transport with guarded redirects — the OAuth access
+		// token rides the Bearer header and would follow a redirect to a
+		// private target on the default client.
+		httpc = httpguard.NewStreamingClient()
 	}
 	client := &httpx.Client{
 		BaseURL:    cfg.BaseURL,

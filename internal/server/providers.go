@@ -26,6 +26,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/proxyllm/proxyllm/internal/httpguard"
 	"github.com/proxyllm/proxyllm/internal/provider"
 	"github.com/proxyllm/proxyllm/internal/provider/codex"
 	"github.com/proxyllm/proxyllm/internal/provider/custom"
@@ -86,12 +87,16 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 			Issuer:     cfg.Issuer,
 			Store:      store,
 			ProviderID: row.ID,
+			HTTP:       httpguard.NewClient(0),
 		})
 		return codex.New(codex.ProviderConfig{
 			ID:           row.ID,
 			BaseURL:      codexBaseURL,
 			Capabilities: caps,
 			Auth:         authc,
+			// Streaming transport with guarded redirects — the OAuth access
+			// token rides the Bearer header on every dispatch.
+			HTTP: httpguard.NewStreamingClient(),
 		}), nil
 
 	default:

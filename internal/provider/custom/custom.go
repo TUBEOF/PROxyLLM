@@ -7,8 +7,8 @@ package custom
 import (
 	"context"
 	"io"
-	"net/http"
 
+	"github.com/proxyllm/proxyllm/internal/httpguard"
 	"github.com/proxyllm/proxyllm/internal/provider"
 	"github.com/proxyllm/proxyllm/internal/provider/internal/httpx"
 	"github.com/proxyllm/proxyllm/internal/translate"
@@ -36,7 +36,11 @@ func New(id, baseURL, apiKey string, caps provider.Capabilities) *Provider {
 			ChatPath:   "/chat/completions",
 			APIKey:     apiKey,
 			ErrorShape: httpx.ErrorOpenAI,
-			HTTP:       &http.Client{},
+			// Streaming transport: no total-body budget (a legitimate long
+			// generation must not be cut off), but every redirect is
+			// re-validated against the private-address SSRF guard — Go
+			// re-sends the Bearer header to redirect targets.
+			HTTP: httpguard.NewStreamingClient(),
 		},
 		id:    id,
 		caps:  caps,

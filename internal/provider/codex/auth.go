@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/proxyllm/proxyllm/internal/httpguard"
 	"github.com/proxyllm/proxyllm/internal/storage"
 )
 
@@ -131,7 +132,8 @@ type AuthConfig struct {
 	Issuer string
 	// ClientID defaults to OAuthClientID (X13) when empty.
 	ClientID string
-	// HTTP is the issuer-facing HTTP client; defaults to http.DefaultClient.
+	// HTTP is the issuer-facing HTTP client; defaults to a guarded client
+	// (redirects re-validated against the private-address SSRF guard).
 	HTTP *http.Client
 	// Store persists the token triple (encrypted in production; X12/OA-2).
 	Store TokenStore
@@ -170,7 +172,10 @@ func NewAuthClient(cfg AuthConfig) Auth {
 	}
 	httpc := cfg.HTTP
 	if httpc == nil {
-		httpc = http.DefaultClient
+		// OAuth token exchanges: bounded round trips, but redirects
+		// re-validated against the private-address SSRF guard — the auth
+		// endpoints take operator-configured issuers.
+		httpc = httpguard.NewClient(0)
 	}
 	providerID := cfg.ProviderID
 	if providerID == "" {
