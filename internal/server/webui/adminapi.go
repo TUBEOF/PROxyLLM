@@ -859,10 +859,15 @@ func writeStoreError(w http.ResponseWriter, err error) {
 }
 
 // decodeBody parses one bounded JSON request body (Analysis G: every admin
-// input is size-capped and must be valid JSON).
+// input is size-capped and must be valid JSON) with strict field checking:
+// unknown fields reject the request, not get silently dropped — the same
+// typo'd-field-must-fail-loudly contract putProvider already enforces. The
+// admin API's only client is the bundled WebUI, which sends known shapes.
 func decodeBody(w http.ResponseWriter, r *http.Request, v any) error {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
-	return json.NewDecoder(r.Body).Decode(v)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	return dec.Decode(v)
 }
 
 // isDay reports whether s is a well-formed YYYY-MM-DD day string — the

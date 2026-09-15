@@ -265,6 +265,46 @@ func TestChatCompletions_StreamRequestLog(t *testing.T) {
 	}
 }
 
+// Mid-stream error messages are redacted before they reach request_logs
+// (writeRequestLog's ErrorRedacted column contract): an upstream error
+// carrying credential-shaped text must persist masked, never raw.
+func TestChatCompletions_StreamErrorRedactsCredentialsInRequestLog(t *testing.T) {
+	// Spec: writeRequestLog's ErrorRedacted column contract ("the terminal
+	// error message with credentials never echoed", ADR-007 log-redaction
+	// doctrine). An upstream mid-stream error message carrying a bearer
+	// token and an sk- key must never persist those shapes in request_logs.
+	e := newEnv(t)
+	errChunk := `data: {"id":"x","object":"chat.completion.chunk","model":"gpt-5","error":{"message":"upstream exploded: Bearer sk-live-abcd1234efgh","type":"server_error"}}` + "\n\n"
+	e.mock.Enqueue(mockprovider.NewScript().SSEFrames(errChunk))
+
+	req := strings.Replace(string(golden(t, "openai/chat-request.json")), `"stream": false`, `"stream": true`, 1)
+	if req == string(golden(t, "openai/chat-request.json")) {
+		t.Fatal("fixture lacks a stream field to flip")
+	}
+	status, body := e.postStream(t, "/v1/chat/completions", req)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (SSE already started, body %s)", status, body)
+	}
+	if !strings.Contains(body, `"error":{"message"`) {
+		t.Fatalf("mid-stream failure produced no error chunk: %s", body)
+	}
+
+	logs := e.requestLogs(t)
+	if len(logs) != 1 {
+		t.Fatalf("request_logs rows = %d, want 1", len(logs))
+	}
+	msg := logs[0].ErrorRedacted
+	if msg == "" {
+		t.Fatal("mid-stream failure left no error message in the request log")
+	}
+	if strings.Contains(msg, "sk-live-abcd1234efgh") {
+		t.Errorf("request log carries the raw upstream key: %q", msg)
+	}
+	if !strings.Contains(msg, "[REDACTED]") {
+		t.Errorf("redaction left no marker — the message must survive masked, not vanish: %q", msg)
+	}
+}
+
 // --- GET /v1/models (O9) ---
 
 // 8. GET /v1/models lists every model row from the store (O9 shape:

@@ -114,7 +114,8 @@ func (a *api) streamResponses(w http.ResponseWriter, r *http.Request, keyID stri
 
 	var errMsg string
 	if streamErr != nil {
-		errMsg = streamErr.Message
+		// ErrorRedacted contract: credential shapes never persist raw.
+		errMsg = redactUpstreamMessage(streamErr.Message)
 	}
 	a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
 		http.StatusOK, time.Since(start).Milliseconds(), terminalUsage,

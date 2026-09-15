@@ -147,7 +147,8 @@ func (a *api) streamChat(w http.ResponseWriter, r *http.Request, keyID string, r
 	status := http.StatusOK
 	var errMsg string
 	if streamErr != nil {
-		errMsg = streamErr.Message
+		// ErrorRedacted contract: credential shapes never persist raw.
+		errMsg = redactUpstreamMessage(streamErr.Message)
 	}
 	var usageArg *ir.Usage
 	if terminalUsage != nil {

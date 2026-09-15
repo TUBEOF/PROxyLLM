@@ -157,7 +157,16 @@ func upstreamErrorFields(err error) (string, string) {
 // messages only, but defense in depth: mask token-shaped substrings
 // before any storage or echo.
 func redactedMessage(err error) string {
-	msg := err.Error()
+	return redactUpstreamMessage(err.Error())
+}
+
+// redactUpstreamMessage masks credential shapes in a raw upstream error
+// message before it reaches request_logs' ErrorRedacted column. Mid-stream
+// failures carry the provider's message verbatim (ir.UpstreamError.Message
+// never contains headers), but defense in depth: the same masking rules as
+// redactedMessage apply — a misbehaving upstream echoing a bearer token or
+// key-shaped substring must never persist raw.
+func redactUpstreamMessage(msg string) string {
 	msg = maskAfter(msg, "Bearer ")
 	msg = maskKeyPrefixes(msg)
 	return msg

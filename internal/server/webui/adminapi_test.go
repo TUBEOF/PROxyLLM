@@ -995,6 +995,31 @@ func TestPutProvider_UnknownTopLevelFieldRejected(t *testing.T) {
 	assertStatus(t, w, http.StatusBadRequest, "put provider with typo'd apiKey")
 }
 
+// Strict decoding is not a putProvider specialty: every decodeBody route
+// (models, routing rules, client keys, settings) rejects unknown fields —
+// the same typo'd-field-must-fail-loudly contract. A typo'd "value" key on
+// the settings route must 400, not save the row with an empty value.
+func TestAdminBodies_UnknownFieldsRejected(t *testing.T) {
+	env := newAdminEnv(t)
+	s := env.bootstrap(t, "operator")
+
+	w := env.authedCall(t, http.MethodPut, "/api/admin/settings",
+		`{"key":"routing.non_claude","valu":"warn"}`, s)
+	assertStatus(t, w, http.StatusBadRequest, "put setting with typo'd value field")
+
+	w = env.authedCall(t, http.MethodPut, "/api/admin/models/prv-m",
+		`{"provider_id":"p","name":"m","priority":1,"priorit":2}`, s)
+	assertStatus(t, w, http.StatusBadRequest, "put model with typo'd priority field")
+
+	w = env.authedCall(t, http.MethodPut, "/api/admin/routing/r1",
+		`{"match_model":"gpt-*","chain":["p"],"priority":1,"enabled":true,"enabld":false}`, s)
+	assertStatus(t, w, http.StatusBadRequest, "put routing rule with typo'd enabled field")
+
+	w = env.authedCall(t, http.MethodPost, "/api/admin/keys",
+		`{"name":"k","nme":"x"}`, s)
+	assertStatus(t, w, http.StatusBadRequest, "create key with typo'd name field")
+}
+
 // Private-address SSRF guard (Analysis G control 5): loopback and RFC1918
 // base URLs are rejected at save. The documented opt-out is an ENV the
 // operator sets explicitly.
