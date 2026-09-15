@@ -37,6 +37,34 @@ func (s *Store) CreateAdmin(ctx context.Context, id, username, passwordHash stri
 	return err
 }
 
+// EnsureFirstAdmin creates the first admin row only, closing the
+// TOCTOU window of a count-then-insert bootstrap: the count and the insert
+// run in ONE transaction, and SQLite serializes writers transaction-wide —
+// so of two concurrent bootstrap attempts exactly one wins. The loser
+// gets ErrConflict, never a silent second row. The id/username uniqueness
+// constraints remain the last line of defense on top.
+func (s *Store) EnsureFirstAdmin(ctx context.Context, id, username, passwordHash string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var n int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM webui_admins`).Scan(&n); err != nil {
+		return err
+	}
+	if n > 0 {
+		return ErrConflict
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO webui_admins (id, username, password_hash) VALUES (?, ?, ?)`,
+		id, username, passwordHash); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // GetAdminByUsername resolves the login lookup. Unknown usernames are
 // ErrNotFound — a single not-found shape the auth layer maps to a generic
 // 401 that never reveals whether the username exists.

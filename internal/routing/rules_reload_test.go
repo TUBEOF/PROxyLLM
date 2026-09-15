@@ -7,28 +7,57 @@ package routing
 // never observe a torn state (old rules on one lookup, new on the next).
 //
 // The contract these tests pin:
-//   - SetRules replaces the active rule set; subsequent ResolveChain calls
-//     use the new rules.
+//   - SetRules replaces the active rule set; subsequent ResolveChainFor
+//     calls use the new rules.
 //   - A nil/empty slice is a valid target: it de-routes everything
 //     (ErrNoRoute), it does not panic.
-//   - ResolveChain stays correct while SetRules runs concurrently (atomic
-//     swap, no torn reads) — the swap is one happens-before edge, not a
-//     field-by-field update.
+//   - ResolveChainFor stays correct while SetRules runs concurrently
+//     (atomic swap, no torn reads) — the swap is one happens-before edge,
+//     not a field-by-field update.
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"testing"
+
+	"github.com/proxyllm/proxyllm/internal/provider"
+	"github.com/proxyllm/proxyllm/internal/translate/ir"
 )
+
+// reloadStub satisfies the Provider contract for the reload tests; the
+// registry is the only surface routing touches during chain resolution.
+type reloadStub struct{ id string }
+
+func (s *reloadStub) ID() string                                 { return s.id }
+func (s *reloadStub) Capabilities() provider.Capabilities        { return provider.Capabilities{} }
+func (s *reloadStub) RefreshCredentials(_ context.Context) error { return nil }
+func (s *reloadStub) Complete(_ context.Context, _ ir.Request) (ir.Response, error) {
+	return ir.Response{}, errors.New("stub")
+}
+func (s *reloadStub) Stream(_ context.Context, _ ir.Request) (<-chan ir.StreamEvent, func(), error) {
+	return nil, func() {}, errors.New("stub")
+}
+
+// reloadRouter builds a router whose registry carries a live stub for every
+// named provider — ResolveChainFor skips unregistered entries, so the chain
+// must be backed by registered stubs to be observable.
+func reloadRouter(rules []Rule, ids ...string) *Router {
+	reg := provider.NewRegistry()
+	for _, id := range ids {
+		reg.Register(&reloadStub{id: id})
+	}
+	return NewRouter(Config{Rules: rules}, WithRegistry(reg))
+}
 
 // 1. A rule write replaces the live rule set: the model routed before must
 // route elsewhere after SetRules.
 func TestRouter_SetRules_ReplacesLiveRuleSet(t *testing.T) {
-	r := NewRouter(Config{Rules: []Rule{
+	r := reloadRouter([]Rule{
 		{MatchModel: "gpt-5", Chain: []string{"prov-a"}, Enabled: true},
-	}})
+	}, "prov-a", "prov-b")
 
-	chain, err := r.ResolveChain("gpt-5")
+	chain, _, err := r.ResolveChainFor("gpt-5", provider.Capabilities{})
 	if err != nil {
 		t.Fatalf("before SetRules: %v", err)
 	}
@@ -41,7 +70,7 @@ func TestRouter_SetRules_ReplacesLiveRuleSet(t *testing.T) {
 		{MatchModel: "gpt-5", Chain: []string{"prov-b"}, Enabled: true},
 	})
 
-	chain, err = r.ResolveChain("gpt-5")
+	chain, _, err = r.ResolveChainFor("gpt-5", provider.Capabilities{})
 	if err != nil {
 		t.Fatalf("after SetRules: %v", err)
 	}
@@ -53,12 +82,12 @@ func TestRouter_SetRules_ReplacesLiveRuleSet(t *testing.T) {
 // 2. The old rules must be fully gone after a swap: a model that only the
 // first set covered must now ErrNoRoute.
 func TestRouter_SetRules_OldRulesFullyReplaced(t *testing.T) {
-	r := NewRouter(Config{Rules: []Rule{
+	r := reloadRouter([]Rule{
 		{MatchModel: "gpt-5", Chain: []string{"prov-a"}, Enabled: true},
-	}})
+	}, "prov-a")
 
 	r.SetRules(nil)
-	if _, err := r.ResolveChain("gpt-5"); !errors.Is(err, ErrNoRoute) {
+	if _, _, err := r.ResolveChainFor("gpt-5", provider.Capabilities{}); !errors.Is(err, ErrNoRoute) {
 		t.Fatalf("after SetRules(nil): err = %v, want ErrNoRoute", err)
 	}
 }
@@ -67,9 +96,9 @@ func TestRouter_SetRules_OldRulesFullyReplaced(t *testing.T) {
 // torn state — every observed chain is a coherent snapshot of EITHER the
 // old or the new rule set (never a mix).
 func TestRouter_SetRules_ConcurrentSwapIsAtomic(t *testing.T) {
-	r := NewRouter(Config{Rules: []Rule{
+	r := reloadRouter([]Rule{
 		{MatchModel: "gpt-5", Chain: []string{"server-a"}, Enabled: true},
-	}})
+	}, "server-a", "server-b")
 
 	setA := []Rule{
 		{MatchModel: "gpt-5", Chain: []string{"server-a"}, Enabled: true},
@@ -90,9 +119,9 @@ func TestRouter_SetRules_ConcurrentSwapIsAtomic(t *testing.T) {
 					return
 				default:
 				}
-				chain, err := r.ResolveChain("gpt-5")
+				chain, _, err := r.ResolveChainFor("gpt-5", provider.Capabilities{})
 				if err != nil {
-					t.Errorf("concurrent ResolveChain: %v", err)
+					t.Errorf("concurrent ResolveChainFor: %v", err)
 					return
 				}
 				// Coherence: the chain reflects one whole rule set.

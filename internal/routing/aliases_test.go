@@ -22,9 +22,9 @@ func TestRouter_AliasResolvesAndTraces(t *testing.T) {
 		Aliases: map[string]string{"claude-opus-alias": "primary-model"},
 	}, routing.WithRegistry(reg))
 
-	entries, err := r.ResolveChain("claude-opus-alias")
+	entries, _, err := r.ResolveChainFor("claude-opus-alias", provider.Capabilities{}, routing.WithKeyID("k1"))
 	if err != nil {
-		t.Fatalf("ResolveChain: %v", err)
+		t.Fatalf("ResolveChainFor: %v", err)
 	}
 	if len(entries) != 1 || entries[0].ProviderID != "p1" || entries[0].Model != "primary-model" {
 		t.Fatalf("entries = %+v, want p1/primary-model (alias resolved)", entries)
@@ -50,25 +50,26 @@ func TestRouter_AliasResolvesAndTraces(t *testing.T) {
 // observable.
 func TestRouter_SetAliasesReplacesLive(t *testing.T) {
 	reg := provider.NewLiveRegistry()
+	reg.Register(&stubProvider{id: "p1", caps: provider.Capabilities{}})
 	rules := []routing.Rule{{MatchModel: "primary-model", Chain: []string{"p1"}, Priority: 100, Enabled: true}}
 	r := routing.NewRouter(routing.Config{Rules: rules}, routing.WithRegistry(reg))
 
 	// No alias yet: the raw name rejects.
-	if _, err := r.ResolveChain("alias-x"); errors.Is(err, routing.ErrNoRoute) == false {
+	if _, _, err := r.ResolveChainFor("alias-x", provider.Capabilities{}); errors.Is(err, routing.ErrNoRoute) == false {
 		t.Fatalf("pre-alias: err = %v, want no route", err)
 	}
 
 	r.SetAliases(map[string]string{"alias-x": "primary-model"})
-	entries, err := r.ResolveChain("alias-x")
+	entries, _, err := r.ResolveChainFor("alias-x", provider.Capabilities{})
 	if err != nil {
-		t.Fatalf("post-alias ResolveChain: %v", err)
+		t.Fatalf("post-alias ResolveChainFor: %v", err)
 	}
 	if len(entries) != 1 || entries[0].ProviderID != "p1" {
 		t.Fatalf("entries = %+v, want resolved via new alias", entries)
 	}
 
 	r.SetAliases(map[string]string{})
-	if _, err := r.ResolveChain("alias-x"); !errors.Is(err, routing.ErrNoRoute) {
+	if _, _, err := r.ResolveChainFor("alias-x", provider.Capabilities{}); !errors.Is(err, routing.ErrNoRoute) {
 		t.Errorf("cleared alias still resolves: err = %v", err)
 	}
 }

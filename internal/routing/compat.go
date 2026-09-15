@@ -310,11 +310,3 @@ func emulatedToolDescription(family, clientDesc string) string {
 		return "Server tool emulated by the proxy (" + family + ")."
 	}
 }
-
-// ThinkingBudget returns the request's thinking budget (0 when unset).
-func ThinkingBudget(req ir.Request) int {
-	if req.Thinking == nil {
-		return 0
-	}
-	return req.Thinking.BudgetTokens
-}

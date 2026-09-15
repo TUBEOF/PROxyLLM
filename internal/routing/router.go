@@ -107,27 +107,6 @@ func (r *Router) SetAliases(aliases map[string]string) {
 	r.cfg.Aliases = aliases
 }
 
-// ResolveChain resolves model to its fallback chain — alias resolution and
-// rule matching only, no capability/health filtering (the plain rule-model
-// view; used for chain preview in tests and the WebUI).
-func (r *Router) ResolveChain(model string) ([]ChainEntry, error) {
-	// Step 1+2 of the shared pipeline: alias resolution, then rule match.
-	// The chain rides through unfiltered: this view answers "what does the
-	// rule say", not "what is currently usable".
-	if target, ok := r.cfg.Aliases[model]; ok {
-		model = target
-	}
-	rules, err := r.matchingRules(model)
-	if err != nil {
-		return nil, err
-	}
-	entries := make([]ChainEntry, 0, len(rules[0].Chain))
-	for _, pid := range rules[0].Chain {
-		entries = append(entries, ChainEntry{ProviderID: pid, Model: model})
-	}
-	return entries, nil
-}
-
 // ResolveOptions carries per-request resolution modifiers.
 type ResolveOptions struct {
 	// KeyID is the client key; its scope gates the request (step 1).

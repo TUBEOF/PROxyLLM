@@ -95,21 +95,29 @@ func TestResolveChain(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := routing.NewRouter(routing.Config{Rules: tc.rules, Aliases: map[string]string{
+			// ResolveChainFor skips unregistered providers and rejects the
+			// emptied chain — register every provider any rule names.
+			reg := provider.NewRegistry()
+			for _, r := range tc.rules {
+				for _, pid := range r.Chain {
+					reg.Register(&stubProvider{id: pid, caps: provider.Capabilities{}})
+				}
+			}
+			rr := routing.NewRouter(routing.Config{Rules: tc.rules, Aliases: map[string]string{
 				"claude-sonnet-5": "gpt-5", // C6-style alias for the test
-			}})
-			got, err := r.ResolveChain(tc.model)
+			}}, routing.WithRegistry(reg))
+			got, _, err := rr.ResolveChainFor(tc.model, provider.Capabilities{})
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("ResolveChain(%q) = %v, want error", tc.model, got)
+					t.Fatalf("ResolveChainFor(%q) = %v, want error", tc.model, got)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("ResolveChain(%q): %v", tc.model, err)
+				t.Fatalf("ResolveChainFor(%q): %v", tc.model, err)
 			}
 			if len(got) != len(tc.want) {
-				t.Fatalf("ResolveChain(%q) = %v, want %v", tc.model, got, tc.want)
+				t.Fatalf("ResolveChainFor(%q) = %v, want %v", tc.model, got, tc.want)
 			}
 			for i := range got {
 				if got[i].ProviderID != tc.want[i] {
@@ -127,15 +135,19 @@ func TestResolveChain_Deterministic(t *testing.T) {
 		{MatchModel: "claude-*", Chain: []string{"a", "b", "c"}, Priority: 1, Enabled: true},
 		{MatchModel: "claude-*", Chain: []string{"x"}, Priority: 5, Enabled: true},
 	}
-	r := routing.NewRouter(routing.Config{Rules: rules})
-	first, err := r.ResolveChain("claude-opus-5")
+	reg := provider.NewRegistry()
+	for _, pid := range []string{"a", "b", "c", "x"} {
+		reg.Register(&stubProvider{id: pid, caps: provider.Capabilities{}})
+	}
+	r := routing.NewRouter(routing.Config{Rules: rules}, routing.WithRegistry(reg))
+	first, _, err := r.ResolveChainFor("claude-opus-5", provider.Capabilities{})
 	if err != nil {
-		t.Fatalf("ResolveChain: %v", err)
+		t.Fatalf("ResolveChainFor: %v", err)
 	}
 	for i := 0; i < 10; i++ {
-		again, err := r.ResolveChain("claude-opus-5")
+		again, _, err := r.ResolveChainFor("claude-opus-5", provider.Capabilities{})
 		if err != nil {
-			t.Fatalf("ResolveChain #%d: %v", i, err)
+			t.Fatalf("ResolveChainFor #%d: %v", i, err)
 		}
 		if len(again) != len(first) {
 			t.Fatalf("call #%d: chain length %d, want %d", i, len(again), len(first))

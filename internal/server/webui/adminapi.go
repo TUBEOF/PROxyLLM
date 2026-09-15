@@ -155,22 +155,20 @@ func (a *AdminAPI) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	n, err := a.store.CountAdmins(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-	if n > 0 {
-		// The zero-admin window is closed. 409, never a second admin.
-		writeError(w, http.StatusConflict, "bootstrap unavailable")
-		return
-	}
 	hash, err := storage.NewArgon2Hasher().Hash(req.Password)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	if err := a.store.CreateAdmin(r.Context(), newAdminID(), req.Username, hash); err != nil {
+	// TOCTOU fix (Analysis G): count + insert run in ONE transaction — a
+	// concurrent second bootstrap loses the race and gets ErrConflict, never
+	// a silent second admin row.
+	if err := a.store.EnsureFirstAdmin(r.Context(), newAdminID(), req.Username, hash); err != nil {
+		if errors.Is(err, storage.ErrConflict) {
+			// The zero-admin window is closed. 409, never a second admin.
+			writeError(w, http.StatusConflict, "bootstrap unavailable")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}

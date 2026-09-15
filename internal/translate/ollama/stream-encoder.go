@@ -62,9 +62,6 @@ type streamEncoder struct {
 
 	model string
 
-	// curKind is the payload kind of the block the IR stream has open:
-	// "", "text", "thinking", "tool".
-	curKind string
 	// toolName/toolArgs assemble the open tool block's wire entry from IR
 	// fragments; toolOpen reports whether an entry is pending, toolSent
 	// whether its line was already emitted (BlockStop must not double-emit).
@@ -110,19 +107,16 @@ func (e *streamEncoder) Write(ctx context.Context, ev ir.StreamEvent) error {
 	case ir.Delta:
 		switch ev.Delta.Kind {
 		case ir.DeltaText:
-			e.curKind = "text"
 			return e.writeLine(wireResponse{
 				Model:   e.model,
 				Message: wireMessage{Role: "assistant", Content: ev.Delta.Text},
 			})
 		case ir.DeltaThinking:
-			e.curKind = "thinking"
 			return e.writeLine(wireResponse{
 				Model:   e.model,
 				Message: wireMessage{Role: "assistant", Thinking: ev.Delta.Text},
 			})
 		case ir.DeltaToolInput:
-			e.curKind = "tool"
 			if !e.toolOpen {
 				return nil // fragment for a tool block we never saw open
 			}
@@ -157,7 +151,6 @@ func (e *streamEncoder) Write(ctx context.Context, ev ir.StreamEvent) error {
 			e.toolName = ""
 			e.toolArgs.Reset()
 		}
-		e.curKind = ""
 		return err
 	case ir.MessageDelta:
 		return e.writeDone(ev.MessageDelta)

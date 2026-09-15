@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
+	"sync"
 	"testing"
 )
 
@@ -97,5 +99,72 @@ func TestAdmins_UpdatePassword(t *testing.T) {
 	}
 	if got.PasswordHash != "new-hash" {
 		t.Errorf("password hash = %q, want new-hash (replaced, not appended)", got.PasswordHash)
+	}
+}
+
+// TestAdmins_EnsureFirstAdminParallelBootstrap: the TOCTOU fix (Analysis G):
+// two concurrent first-admin bootstraps race the count-then-insert window —
+// SQLite serializes writers, but only inside ONE transaction. Exactly one
+// racer must win; the loser gets a conflict error, never a silent second
+// admin row.
+func TestAdmins_EnsureFirstAdminParallelBootstrap(t *testing.T) {
+	s := openTokenStore(t)
+	ctx := context.Background()
+
+	const racers = 2
+	errs := make([]error, racers)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := range racers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			errs[i] = s.EnsureFirstAdmin(ctx, fmt.Sprintf("admin-%d", i), fmt.Sprintf("operator-%d", i), "h")
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	wins := 0
+	for _, err := range errs {
+		if err == nil {
+			wins++
+		}
+	}
+	if wins != 1 {
+		t.Errorf("concurrent bootstrap: %d winners, want exactly 1 (errs: %v)", wins, errs)
+	}
+
+	// The winner's row is the only row — the zero-admin window closed
+	// atomically.
+	n, err := s.CountAdmins(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("admin rows = %d, want exactly 1", n)
+	}
+}
+
+// TestAdmins_EnsureFirstAdminRefusesWhenOccupied: once an admin exists, a
+// later EnsureFirstAdmin call is a conflict — never a silent overwrite or
+// second row.
+func TestAdmins_EnsureFirstAdminRefusesWhenOccupied(t *testing.T) {
+	s := openTokenStore(t)
+	ctx := context.Background()
+
+	if err := s.CreateAdmin(ctx, "adm-1", "operator", "h1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnsureFirstAdmin(ctx, "adm-2", "attacker", "h2"); !errors.Is(err, ErrConflict) {
+		t.Errorf("EnsureFirstAdmin on occupied store: got %v, want ErrConflict", err)
+	}
+	n, err := s.CountAdmins(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("admin rows = %d, want 1 (original untouched)", n)
 	}
 }

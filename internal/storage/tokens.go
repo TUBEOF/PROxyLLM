@@ -16,6 +16,11 @@ var ErrNotFound = errors.New("storage: not found")
 // without matching on message strings.
 var ErrInvalid = errors.New("storage: invalid")
 
+// ErrConflict is returned when a write loses a uniqueness/state race — the
+// row or state it required was taken between check and commit (e.g. a
+// second first-admin bootstrap). Callers map it to 409.
+var ErrConflict = errors.New("storage: conflict")
+
 // ProviderToken is one decrypted provider credential row. Secrets exist in
 // plaintext ONLY inside this struct — at rest they are AES-256-GCM
 // envelopes (ADR-sec-storage; research digest X12).
