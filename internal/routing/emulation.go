@@ -68,7 +68,7 @@ func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry,
 		return ir.Response{}, err
 	}
 	defs := emulatedToolDefs(req.Tools)
-	if e.cfg.Emulator == nil || len(defs) == 0 {
+	if len(defs) == 0 {
 		return resp, nil
 	}
 
@@ -153,6 +153,13 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 		tr := ir.ToolResultPart{ToolUseID: call.ID, IsError: true,
 			Content: []ir.Part{ir.TextPart{Text: `{"error_code":` + strconvQuote(code) + `}`}}}
 		return use, res, tr
+	}
+
+	// Degrade contract (CLAUDE.md): no emulator configured (no Firecrawl
+	// key) → emulated tool calls get the documented "unavailable" error
+	// result, never a nil-pointer pass-through to the client.
+	if e.cfg.Emulator == nil {
+		return fail(errCodeEmulatorUnavailable, "web-tool emulation unavailable: no emulator configured")
 	}
 
 	// max_uses budget (A10): exceeded calls get the protocol-conform

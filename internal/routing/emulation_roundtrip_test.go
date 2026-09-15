@@ -420,3 +420,68 @@ func (p *loopingProvider) Stream(ctx context.Context, req ir.Request) (<-chan ir
 func itoa(n int) string {
 	return strconv.Itoa(n)
 }
+
+// TestExecute_EmulatorNilAnswersUnavailable: 4b — the CLAUDE.md degrade
+// contract: "no Firecrawl key → web-tool emulation returns documented
+// 'unavailable' errors". With the emulate policy applied (tool def carries
+// the Emulated marker) but no emulator configured, a model tool call against
+// the emulated tool must be answered with a protocol-conform error result
+// (error_code "unavailable") and the loop re-dispatches so the model can
+// recover — instead of passing the unexecutable tool call through to the
+// client (RED today: pass-through).
+func TestExecute_EmulatorNilAnswersUnavailable(t *testing.T) {
+	p := &emulProvider{}
+	e := roundTripExecutor(p, nil) // policy emulate, no emulator configured
+
+	resp, trace, err := e.Execute(context.Background(), []routing.ChainEntry{{ProviderID: "emul"}}, emulatedSearchRequest())
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	var res *ir.ServerToolResultPart
+	for _, part := range resp.Content {
+		if r, ok := part.(ir.ServerToolResultPart); ok && r.ToolName == "web_search" {
+			res = &r
+		}
+	}
+	if res == nil {
+		t.Fatalf("no web_search result part in response (pass-through): %+v", resp.Content)
+	}
+	if !res.IsError || res.ErrorCode != "unavailable" {
+		t.Errorf("result = error?%v code=%q, want unavailable", res.IsError, res.ErrorCode)
+	}
+
+	// The unavailable result must be re-dispatched so the model can
+	// recover (same loop discipline as url_not_in_prior_context), and the
+	// re-dispatched ToolResultPart carries the documented error code.
+	if p.calls < 2 {
+		t.Fatalf("provider calls = %d, want >= 2 (error result must re-dispatch)", p.calls)
+	}
+	lastMsg := p.lastReq.Messages[len(p.lastReq.Messages)-1]
+	var tr *ir.ToolResultPart
+	for _, part := range lastMsg.Parts {
+		if r, ok := part.(ir.ToolResultPart); ok {
+			tr = &r
+		}
+	}
+	if tr == nil {
+		t.Fatalf("re-dispatch carries no tool result: %+v", p.lastReq.Messages)
+	}
+	if !tr.IsError || len(tr.Content) == 0 {
+		t.Fatalf("re-dispatched tool result = %+v, want error result with content", tr)
+	}
+	if txt, ok := tr.Content[0].(ir.TextPart); !ok || txt.Text != `{"error_code":"unavailable"}` {
+		t.Errorf("re-dispatched tool result content = %+v, want {\"error_code\":\"unavailable\"}", tr.Content[0])
+	}
+
+	// Emulated-tool answers must be traced — never silent (§6.4).
+	found := false
+	for _, ev := range trace.Events() {
+		if ev.Type == routing.EventEmulatedTool {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("trace must record the emulated-tool answer")
+	}
+}

@@ -44,7 +44,8 @@ type scriptedProvider struct {
 	// streamScript: per-attempt event sequences (default: start + done).
 	streamScript [][]ir.StreamEvent
 
-	calls int
+	calls       int
+	cancelCalls int // invocations of the cancel func handed out by Stream
 }
 
 // Calls exposes the attempt counter to the pipeline determinism suite
@@ -64,11 +65,18 @@ func (p *scriptedProvider) Complete(_ context.Context, _ ir.Request) (ir.Respons
 	return ir.Response{ID: "ok"}, nil
 }
 
+// countingCancel returns a cancel func that records its invocations on p
+// (4c leak probe: the executor must release a failed attempt's upstream
+// resources when failing over).
+func (p *scriptedProvider) countingCancel() func() {
+	return func() { p.cancelCalls++ }
+}
+
 func (p *scriptedProvider) Stream(_ context.Context, _ ir.Request) (<-chan ir.StreamEvent, func(), error) {
 	i := p.calls
 	p.calls++
 	if i < len(p.streamErr) && p.streamErr[i] != nil {
-		return nil, func() {}, p.streamErr[i]
+		return nil, p.countingCancel(), p.streamErr[i]
 	}
 	script := []ir.StreamEvent{
 		{Type: ir.Start, Response: &ir.Response{ID: "ok"}},
@@ -82,7 +90,7 @@ func (p *scriptedProvider) Stream(_ context.Context, _ ir.Request) (<-chan ir.St
 		ch <- ev
 	}
 	close(ch)
-	return ch, func() {}, nil
+	return ch, p.countingCancel(), nil
 }
 
 // upErr builds a typed upstream error.
@@ -418,5 +426,132 @@ func TestExecutor_Stream_SingleProviderDispatchExhaustion(t *testing.T) {
 	_, _, _, err := e.ExecuteStream(context.Background(), chain("p1"), ir.Request{Model: "m"})
 	if err == nil {
 		t.Fatal("dispatch failure with an exhausted chain must be terminal")
+	}
+}
+
+// TestExecutor_Stream_CancelReleasedOnFailover: a dispatch-failure
+// failover must release the failed attempt's upstream resources — the
+// cancel func returned alongside the dispatch error must be invoked (4c;
+// FO-1 failover must not leak the aborted attempt's connection).
+func TestExecutor_Stream_CancelReleasedOnFailover(t *testing.T) {
+	p1 := &scriptedProvider{id: "p1", streamErr: []error{upErr(500, "")}}
+	p2 := &scriptedProvider{id: "p2"}
+	e := newExecutor(t, p1, p2)
+
+	ch, cancel, _, err := e.ExecuteStream(context.Background(), chain("p1", "p2"), ir.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("ExecuteStream: %v", err)
+	}
+	defer cancel()
+	for range ch {
+	}
+	if p1.cancelCalls != 1 {
+		t.Errorf("p1 cancel calls = %d, want 1 — the failed attempt's cancel must run on failover", p1.cancelCalls)
+	}
+	if p2.cancelCalls != 0 {
+		t.Errorf("p2 cancel calls = %d, want 0 — the serving attempt's cancel belongs to the caller", p2.cancelCalls)
+	}
+}
+
+// TestExecutor_ReportStreamOutcome_MidStreamFailureCounts: 4a — a
+// dispatch that succeeds but fails mid-stream must still count as a
+// breaker failure. ExecuteStream reports success at dispatch (FO-5: the
+// stream is never retried); once httpapi has relayed the stream it calls
+// ReportStreamOutcome to correct the record. The caller of this method
+// is the HTTP layer, so the test drives it directly, exactly as httpapi
+// will (dispatch success → drain → outcome callback).
+func TestExecutor_ReportStreamOutcome_MidStreamFailureCounts(t *testing.T) {
+	h := routing.NewHealthTracker()
+	p1 := &scriptedProvider{id: "p1", streamScript: [][]ir.StreamEvent{{
+		{Type: ir.Start, Response: &ir.Response{ID: "s"}},
+		{Type: ir.Error, Error: &ir.UpstreamError{Message: "mid-stream"}},
+	}}}
+	e := routing.NewExecutor(routing.ExecutorConfig{Registry: regOf(p1), Health: h})
+
+	ch, cancel, _, err := e.ExecuteStream(context.Background(), chain("p1"), ir.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("ExecuteStream: %v", err)
+	}
+	for range ch {
+	}
+	cancel()
+
+	// Dispatch success was reported; the breaker must not be open yet.
+	if h.Cooldown("p1") {
+		t.Fatal("breaker open before the mid-stream outcome was reported")
+	}
+
+	// httpapi relays the stream, sees the Error event, and reports the
+	// outcome with the upstream error (same threshold-3 pattern as the
+	// non-streaming health test).
+	e.ReportStreamOutcome("p1", &ir.UpstreamError{Message: "mid-stream"})
+	if h.Cooldown("p1") {
+		t.Fatal("one failure must not open the breaker (threshold 3)")
+	}
+	h.ReportFailure("p1")
+	h.ReportFailure("p1")
+	if !h.Cooldown("p1") {
+		t.Error("mid-stream failure must count toward the breaker like any other failure")
+	}
+}
+
+// TestExecutor_ReportStreamOutcome_CleanStreamKeepsSuccess: a clean
+// stream outcome reports success — and stays idempotent with the
+// dispatch-time success report (FO-5: no double-counting, no flap).
+func TestExecutor_ReportStreamOutcome_CleanStreamKeepsSuccess(t *testing.T) {
+	h := routing.NewHealthTracker()
+	p1 := &scriptedProvider{id: "p1"}
+	e := routing.NewExecutor(routing.ExecutorConfig{Registry: regOf(p1), Health: h})
+
+	ch, cancel, _, err := e.ExecuteStream(context.Background(), chain("p1"), ir.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("ExecuteStream: %v", err)
+	}
+	for range ch {
+	}
+	cancel()
+
+	// Two failures so far; a clean outcome must NOT open the breaker —
+	// the dispatch success and the outcome success agree.
+	h.ReportFailure("p1")
+	h.ReportFailure("p1")
+	e.ReportStreamOutcome("p1", nil)
+	if h.Cooldown("p1") {
+		t.Error("clean stream outcome must leave the breaker closed (2 failures, threshold 3)")
+	}
+}
+
+// TestExecutor_ReportStreamOutcome_EmptyProviderNoop: httpapi resolves
+// the provider from the trace; an empty ID (no attempt recorded) must be
+// a no-op, not a panic or a report against "".
+func TestExecutor_ReportStreamOutcome_EmptyProviderNoop(t *testing.T) {
+	h := routing.NewHealthTracker()
+	p1 := &scriptedProvider{id: "p1"}
+	e := routing.NewExecutor(routing.ExecutorConfig{Registry: regOf(p1), Health: h})
+
+	e.ReportStreamOutcome("", &ir.UpstreamError{Message: "no provider"})
+	e.ReportStreamOutcome("", nil)
+	if h.Cooldown("") {
+		t.Error("empty provider ID must not register any health entry")
+	}
+}
+
+// TestExecutor_Stream_CancelReleasedOnRetrySameClassFailover: FO-5 turns
+// a 429-class dispatch failure into a failover too — that branch must
+// equally release the failed attempt's cancel (4c).
+func TestExecutor_Stream_CancelReleasedOnRetrySameClassFailover(t *testing.T) {
+	p1 := &scriptedProvider{id: "p1", streamErr: []error{upErr(429, "")}}
+	p2 := &scriptedProvider{id: "p2"}
+	e := newExecutor(t, p1, p2)
+
+	ch, cancel, _, err := e.ExecuteStream(context.Background(), chain("p1", "p2"), ir.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("ExecuteStream: %v", err)
+	}
+	defer cancel()
+	for range ch {
+	}
+	if p1.cancelCalls != 1 {
+		t.Errorf("p1 cancel calls = %d, want 1 — rate_limit failover must release the failed attempt's cancel", p1.cancelCalls)
 	}
 }

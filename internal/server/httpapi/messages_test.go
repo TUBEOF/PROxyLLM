@@ -309,6 +309,35 @@ func TestMessages_StreamMidStreamError(t *testing.T) {
 	}
 }
 
+// 4a wiring: a mid-stream upstream failure must reach the shared
+// HealthTracker via ReportStreamOutcome — dispatch reported success, the
+// relayed Error event corrects it to a failure. One request leaves the
+// breaker closed (threshold 3); two more direct failures on top open it,
+// proving the mid-stream failure counted.
+func TestMessages_StreamMidStreamErrorReportsHealthFailure(t *testing.T) {
+	e := newClaudeEnv(t)
+	firstDelta := `data: {"id":"x","object":"chat.completion.chunk","model":"gpt-5","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}` + "\n\n"
+	e.mock.Enqueue(mockprovider.NewScript().SSEFrames(firstDelta).Abort())
+
+	status, body := e.postStream(t, "/v1/messages", claudeStreamReq(t))
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (SSE already started, body %s)", status, body)
+	}
+	if !strings.Contains(body, "event: error") {
+		t.Fatalf("mid-stream failure produced no error event (A13): %s", body)
+	}
+
+	// The mid-stream failure was reported: 1 failure so far, threshold 3.
+	if e.health.Cooldown("mock-main") {
+		t.Fatal("breaker open after one mid-stream failure (threshold 3)")
+	}
+	e.health.ReportFailure("mock-main")
+	e.health.ReportFailure("mock-main")
+	if !e.health.Cooldown("mock-main") {
+		t.Error("mid-stream failure must count toward the circuit breaker")
+	}
+}
+
 // 5. count_tokens heuristic (A2/C1): with an OpenAI-shaped upstream the
 // native Anthropic token counting is impossible, so the heuristic
 // estimate (chars/4, Analysis D) must answer — marked as heuristic, never

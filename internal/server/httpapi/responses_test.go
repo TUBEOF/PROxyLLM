@@ -308,6 +308,34 @@ func TestResponses_StreamMidStreamError(t *testing.T) {
 	}
 }
 
+// 4a wiring (Responses surface): the mid-stream failure must reach the
+// shared HealthTracker via ReportStreamOutcome — dispatch reported
+// success, the relayed Error event corrects it to a failure.
+func TestResponses_StreamMidStreamErrorReportsHealthFailure(t *testing.T) {
+	e := newEnv(t)
+	firstDelta := `data: {"id":"x","object":"chat.completion.chunk","model":"gpt-5","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}` + "\n\n"
+	e.mock.Enqueue(mockprovider.NewScript().SSEFrames(firstDelta).Abort())
+
+	req := strings.Replace(string(golden(t, "openai/responses-request.json")), `"stream": false`, `"stream": true`, 1)
+	status, body := e.postStream(t, "/v1/responses", req)
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (SSE already started, body %s)", status, body)
+	}
+	if !strings.Contains(body, "\"type\":\"error\"") {
+		t.Fatalf("mid-stream failure produced no error event: %s", body)
+	}
+
+	// The mid-stream failure was reported: 1 failure so far, threshold 3.
+	if e.health.Cooldown("mock-main") {
+		t.Fatal("breaker open after one mid-stream failure (threshold 3)")
+	}
+	e.health.ReportFailure("mock-main")
+	e.health.ReportFailure("mock-main")
+	if !e.health.Cooldown("mock-main") {
+		t.Error("mid-stream failure must count toward the circuit breaker")
+	}
+}
+
 // 6. No-route (§5.3): a request for a model with no rule → 4xx with the
 // OpenAI error shape (O10).
 func TestResponses_NoRoute(t *testing.T) {

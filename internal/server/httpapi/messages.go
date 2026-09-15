@@ -126,6 +126,10 @@ func (a *api) streamMessages(w http.ResponseWriter, r *http.Request, keyID strin
 	var terminalUsage *ir.Usage
 	var streamErr *ir.UpstreamError
 	relayStream(ctx, ch, enc, &terminalUsage, &streamErr, req.Model)
+	// Mid-stream outcome correction (4a): dispatch success was reported
+	// at ExecuteStream; a stream that failed mid-stream still counts as
+	// a breaker failure.
+	a.executor.ReportStreamOutcome(lastProvider(execTrace), streamErr)
 
 	var errMsg string
 	if streamErr != nil {

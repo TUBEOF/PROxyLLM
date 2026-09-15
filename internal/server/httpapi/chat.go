@@ -138,6 +138,10 @@ func (a *api) streamChat(w http.ResponseWriter, r *http.Request, keyID string, r
 	var terminalUsage *ir.Usage
 	var streamErr *ir.UpstreamError
 	relayStream(ctx, ch, enc, &terminalUsage, &streamErr, req.Model)
+	// Mid-stream outcome correction (4a): dispatch success was reported
+	// at ExecuteStream; a stream that failed mid-stream still counts as
+	// a breaker failure.
+	a.executor.ReportStreamOutcome(lastProvider(execTrace), streamErr)
 
 	latency := time.Since(start).Milliseconds()
 	status := http.StatusOK

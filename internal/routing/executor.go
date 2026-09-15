@@ -61,9 +61,11 @@ type ExecutorConfig struct {
 	RetrySleeper func(time.Duration)
 
 	// Emulator executes emulated web tools (§6.2 Firecrawl fallback) for
-	// the tool-call round-trip loop in Execute. Nil disables the loop —
-	// model tool calls against emulated tools then surface to the client
-	// unchanged.
+	// the tool-call round-trip loop in Execute. Nil disables actual
+	// emulation but keeps the loop: model tool calls against emulated
+	// tools are answered with a protocol-conform "unavailable" error
+	// result (the CLAUDE.md degrade contract: no Firecrawl key →
+	// documented unavailable errors), then re-dispatched.
 	Emulator Emulator
 
 	// now stamps attempt latencies; injectable for tests.
@@ -193,13 +195,37 @@ func (e *Executor) executeOnce(ctx context.Context, chain []ChainEntry, req ir.R
 	return ir.Response{}, &exhaustedError{last: lastErr}
 }
 
+// ReportStreamOutcome records the final outcome of a stream that was
+// dispatched successfully: a nil streamErr reports success (idempotent
+// with the dispatch-time success report — no double counting), a
+// non-nil streamErr corrects the premature dispatch success into a
+// breaker failure, because a mid-stream upstream failure is a real
+// signal about provider health even though the client-facing stream is
+// never retried (FO-5). httpapi calls this after relaying the stream,
+// with the provider resolved from the trace and the streamErr surfaced
+// by the relay (streamErr is *ir.UpstreamError, not a plain error,
+// because mid-stream failures surface as typed upstream errors).
+func (e *Executor) ReportStreamOutcome(providerID string, streamErr *ir.UpstreamError) {
+	if providerID == "" {
+		return
+	}
+	if streamErr == nil {
+		e.reportSuccess(providerID)
+		return
+	}
+	e.reportFailure(providerID)
+}
+
 // ExecuteStream performs a streaming request against the chain. FO-5:
 // streams are never retried once dispatched — dispatch failures (before
 // the first event) fail over; anything after the first event is terminal
 // and surfaces as an Error event on the returned channel.
 //
 // The returned cancel must be called when the caller is done with the
-// channel to release upstream resources.
+// channel to release upstream resources. Dispatch-time success is
+// reported to the HealthTracker immediately; once the caller has fully
+// relayed the stream it must call ReportStreamOutcome so a mid-stream
+// failure still counts (ReportStreamOutcome).
 func (e *Executor) ExecuteStream(ctx context.Context, chain []ChainEntry, req ir.Request) (<-chan ir.StreamEvent, func(), *Trace, error) {
 	trace := &Trace{}
 	var lastErr error
@@ -239,6 +265,13 @@ func (e *Executor) ExecuteStream(ctx context.Context, chain []ChainEntry, req ir
 			}
 			return nil, func() {}, trace, err
 		case ActionFailOver:
+			// Release the failed attempt's upstream resources before
+			// moving on (4c: a dispatch error may still have opened a
+			// connection; httpx hands out nil cancel only when it never
+			// started one).
+			if cancel != nil {
+				cancel()
+			}
 			if ci+1 < len(chain) && ci+1 < e.cfg.MaxProviders {
 				trace.Failover(entry.ProviderID, chain[ci+1].ProviderID, "chain failover after "+string(c.Class))
 			}
@@ -248,6 +281,9 @@ func (e *Executor) ExecuteStream(ctx context.Context, chain []ChainEntry, req ir
 			// FO-5: a 429-class dispatch failure on a stream still never
 			// retries the same provider — "partial data may already have
 			// been sent" upstream. Fail over if a next entry exists.
+			if cancel != nil {
+				cancel()
+			}
 			if ci+1 < len(chain) && ci+1 < e.cfg.MaxProviders {
 				trace.Failover(entry.ProviderID, chain[ci+1].ProviderID, "stream rate_limit: fail over, never retry (FO-5)")
 			}
