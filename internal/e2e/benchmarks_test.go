@@ -42,7 +42,6 @@ import (
 type benchEnv struct {
 	*env
 	client     *http.Client
-	key        string
 	goldenBody string
 	// openURL is the auth-disabled variant of the harness server.
 	openURL string
@@ -61,8 +60,10 @@ const benchStreamBody = `{"model":"gpt-5","messages":[{"role":"user","content":"
 func newBenchEnv(t *testing.T) *benchEnv {
 	t.Helper()
 	e := newEnv(t)
-	_, key, err := auth.CreateClientKey(context.Background(), e.store, "bench")
-	if err != nil {
+	// The bench key exists only so the auth-on path has a valid client
+	// key registered; the raw-HTTP helpers below use the auth-disabled
+	// mirror (openURL), so the literal key never needs to be kept.
+	if _, _, err := auth.CreateClientKey(context.Background(), e.store, "bench"); err != nil {
 		t.Fatalf("create bench key: %v", err)
 	}
 	// Auth-disabled variant of the same harness handler: the measurement
@@ -87,7 +88,6 @@ func newBenchEnv(t *testing.T) *benchEnv {
 				MaxIdleConnsPerHost: 100,
 			},
 		},
-		key:        key,
 		goldenBody: chatResponseBody(t),
 		openURL:    openSrv.URL,
 	}
@@ -99,19 +99,6 @@ func newBenchEnv(t *testing.T) *benchEnv {
 func newEnvForBench(b *testing.B) *benchEnv {
 	t := &testing.T{}
 	return newBenchEnv(t)
-}
-
-// postChat issues one authenticated POST to the OpenAI surface (full
-// production path, auth on).
-func (b *benchEnv) postChat(body string) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodPost, b.srv.URL+"/v1/chat/completions",
-		bytes.NewReader([]byte(body)))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+b.key)
-	req.Header.Set("Content-Type", "application/json")
-	return b.client.Do(req)
 }
 
 // postChatOpen hits the auth-disabled mirror (proxy path only, no Argon2id):
