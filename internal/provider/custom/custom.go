@@ -54,6 +54,14 @@ func New(id, baseURL, apiKey string, caps provider.Capabilities) *Provider {
 // ID returns the stable, unique provider identifier from config.
 func (p *Provider) ID() string { return p.id }
 
+// Type reports the canonical provider type (ADR-009): this account is a
+// custom-openai endpoint. A chain entry naming the type expands to all
+// accounts of it. Deliberately NO HasCredential: a keyless custom endpoint
+// is a legal routing state (the construction path routes without a key;
+// local endpoints are auth-free), so every constructed account joins the
+// type expansion.
+func (p *Provider) Type() string { return "custom-openai" }
+
 // Capabilities reports the operator-configured capability set; routing
 // filters and failsover on it.
 func (p *Provider) Capabilities() provider.Capabilities { return p.caps }

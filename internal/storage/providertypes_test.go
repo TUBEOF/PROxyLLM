@@ -23,11 +23,11 @@ func TestRoutingRule_StrategyRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
 	in := RoutingRule{
-		ID:       "rule-rr",
+		ID:         "rule-rr",
 		MatchModel: "claude-*",
-		Chain:    []string{"ollama-cloud"},
-		Priority: 1,
-		Enabled:  true,
+		Chain:      []string{"ollama-cloud"},
+		Priority:   1,
+		Enabled:    true,
 		// Explicit per-rule strategy wins over the global default.
 		Strategy: "round_robin",
 	}

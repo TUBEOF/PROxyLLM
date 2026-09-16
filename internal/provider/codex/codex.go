@@ -71,6 +71,18 @@ func New(cfg ProviderConfig) *Provider {
 // ID identifies the provider instance (registry key).
 func (p *Provider) ID() string { return p.id }
 
+// Type reports the canonical provider type (ADR-009): this account is a
+// codex-oauth account.
+func (p *Provider) Type() string { return "codex-oauth" }
+
+// HasCredential reports whether the token store holds an access token for
+// this account (ADR-009 decision 4: a draft account whose device sign-in
+// never completed stays out of type expansion).
+func (p *Provider) HasCredential() bool {
+	tok, err := p.auth.AccessToken(context.Background())
+	return err == nil && tok.Access != ""
+}
+
 // Capabilities reports what the provider supports (routing filter input).
 func (p *Provider) Capabilities() provider.Capabilities { return p.caps }
 

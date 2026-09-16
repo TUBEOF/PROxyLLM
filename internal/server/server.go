@@ -106,7 +106,16 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 	aliases := loadModelAliases(context.Background(), store, logger)
 
 	health := routing.NewHealthTracker()
-	router := routing.NewRouter(routing.Config{Rules: rules, Aliases: aliases},
+	globalStrategy := routing.Strategy(storage.DefaultRoutingStrategy)
+	if stored, err := store.GetRoutingStrategy(context.Background()); err != nil {
+		// The storage read folds missing/invalid rows into the default — a
+		// hard error here is a real store failure, logged + default, never
+		// a startup death (the model_aliases precedent).
+		logger.Error("routing strategy unreadable — defaulting to "+storage.DefaultRoutingStrategy, "error", err)
+	} else {
+		globalStrategy = routing.Strategy(stored)
+	}
+	router := routing.NewRouter(routing.Config{Rules: rules, Aliases: aliases, GlobalStrategy: globalStrategy},
 		routing.WithRegistry(reg),
 		routing.WithHealth(health),
 	)
@@ -174,6 +183,16 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 				// same last-known-good contract as SetRules above).
 				router.SetAliases(loadModelAliases(context.Background(), store, logger))
 			},
+			ReloadStrategy: func() {
+				// ADR-009: the routing_strategy KV write swaps the live
+				// global strategy — same last-known-good contract: a failed
+				// read keeps the live strategy.
+				if stored, err := store.GetRoutingStrategy(context.Background()); err != nil {
+					logger.Error("routing strategy reload failed; keeping last known-good strategy", "error", err)
+				} else {
+					router.SetStrategy(routing.Strategy(stored))
+				}
+			},
 			MasterKey: o.masterKey,
 		})
 		s.mux.Handle("/api/admin/", admin.Handler())
@@ -238,7 +257,9 @@ func loadModelAliases(ctx context.Context, store *storage.Store, logger *slog.Lo
 }
 
 // loadRoutingRules converts stored rules to router rules, skipping
-// disabled ones (they must not participate in resolution).
+// disabled ones (they must not participate in resolution). ID and Strategy
+// ride along (ADR-009): the ID keys the round-robin rotation counters, the
+// per-rule strategy overrides the global default at resolve time.
 func loadRoutingRules(ctx context.Context, store *storage.Store) ([]routing.Rule, error) {
 	stored, err := store.ListRoutingRules(ctx)
 	if err != nil {
@@ -250,10 +271,12 @@ func loadRoutingRules(ctx context.Context, store *storage.Store) ([]routing.Rule
 			continue
 		}
 		rules = append(rules, routing.Rule{
+			ID:         r.ID,
 			MatchModel: r.MatchModel,
 			Chain:      r.Chain,
 			Priority:   r.Priority,
 			Enabled:    true,
+			Strategy:   routing.Strategy(r.Strategy),
 		})
 	}
 	return rules, nil

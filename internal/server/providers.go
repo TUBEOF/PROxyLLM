@@ -23,6 +23,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 
@@ -39,14 +40,26 @@ import (
 // logged per row (skip + continue); the returned set is every row that
 // constructed. A store failure returns the error — the caller decides
 // whether that is startup-fatal or a reload-keep-last-known-good.
+//
+// ADR-009: each row's effective config is the type settings blob overlaid
+// by the row's own config (account fields win). Both sides were validated
+// per type on their write paths; the static parse below re-checks the
+// merged shape. A type-settings read failure logs and degrades to empty —
+// never a startup death on store noise.
 func loadProviders(ctx context.Context, store *storage.Store, logger *slog.Logger) ([]provider.Provider, error) {
 	rows, err := store.ListProviders(ctx)
 	if err != nil {
 		return nil, err
 	}
+	typeSettings, err := store.GetProviderTypeSettings(ctx)
+	if err != nil {
+		logger.Error("provider type settings unreadable — constructing from account config only",
+			"error", err)
+		typeSettings = map[string]json.RawMessage{}
+	}
 	out := make([]provider.Provider, 0, len(rows))
 	for _, row := range rows {
-		p, err := buildProvider(ctx, store, row, logger)
+		p, err := buildProvider(ctx, store, row, typeSettings, logger)
 		if err != nil {
 			logger.Error("provider row not constructable — skipping (fix it in the WebUI)",
 				"provider_id", row.ID, "type", row.Type, "error", err)
@@ -61,9 +74,15 @@ func loadProviders(ctx context.Context, store *storage.Store, logger *slog.Logge
 // parsed with the STATIC variant of the write-path validator: full shape
 // checks, but no DNS resolution — rows were already SSRF-guarded when they
 // were written, and a transient DNS failure at reload must never drop a
-// live provider.
-func buildProvider(ctx context.Context, store *storage.Store, row storage.Provider, logger *slog.Logger) (provider.Provider, error) {
-	cfg, err := webui.ParseProviderConfigStatic(row.Type, row.Config)
+// live provider. The parse input is the ADR-009 merged config (type
+// settings ⊕ own fields, own wins).
+func buildProvider(ctx context.Context, store *storage.Store, row storage.Provider,
+	typeSettings map[string]json.RawMessage, logger *slog.Logger) (provider.Provider, error) {
+	merged, err := webui.MergeProviderConfig(typeSettings[row.Type], row.Config)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := webui.ParseProviderConfigStatic(row.Type, merged)
 	if err != nil {
 		return nil, err
 	}

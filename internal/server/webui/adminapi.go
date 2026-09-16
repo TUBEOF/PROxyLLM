@@ -10,13 +10,16 @@ package webui
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,8 +45,12 @@ type AdminParams struct {
 	ReloadRouting   func()
 	ReloadProviders func()
 	ReloadSettings  func()
-	Now             func() int64
-	MasterKey       []byte
+	// ReloadStrategy pushes the global routing strategy into the live
+	// router after every successful routing-strategy write (ADR-009 →
+	// router.SetStrategy) — same live-swap contract as ReloadSettings.
+	ReloadStrategy func()
+	Now            func() int64
+	MasterKey      []byte
 }
 
 // AdminAPI serves the /api/admin/ surface. It holds no state of its own
@@ -55,6 +62,7 @@ type AdminAPI struct {
 	reloadRouting   func()
 	reloadProviders func()
 	reloadSettings  func()
+	reloadStrategy  func()
 	sessions        *auth.SessionManager
 
 	oauthMu    sync.Mutex
@@ -73,6 +81,7 @@ func NewAdminAPI(p AdminParams) *AdminAPI {
 		reloadRouting:   p.ReloadRouting,
 		reloadProviders: p.ReloadProviders,
 		reloadSettings:  p.ReloadSettings,
+		reloadStrategy:  p.ReloadStrategy,
 		sessions:        auth.NewSessionManager(p.Store, p.MasterKey, now),
 		oauthFlows:      map[string]*codex.DeviceSession{},
 	}
@@ -90,6 +99,10 @@ func (a *AdminAPI) Handler() http.Handler {
 	mux.HandleFunc("POST /api/admin/logout", a.sessions.HandleLogout)
 
 	// Resource routes — session-gated.
+	mux.Handle("GET /api/admin/provider-types", a.sessions.RequireAdmin(http.HandlerFunc(a.listProviderTypes)))
+	mux.Handle("GET /api/admin/provider-types/{type}", a.sessions.RequireAdmin(http.HandlerFunc(a.getProviderType)))
+	mux.Handle("PUT /api/admin/provider-types/{type}/settings", a.sessions.RequireAdmin(http.HandlerFunc(a.putProviderTypeSettings)))
+	mux.Handle("POST /api/admin/provider-types/{type}/accounts", a.sessions.RequireAdmin(http.HandlerFunc(a.postProviderTypeAccount)))
 	mux.Handle("GET /api/admin/providers", a.sessions.RequireAdmin(http.HandlerFunc(a.listProviders)))
 	mux.Handle("PUT /api/admin/providers/{id}", a.sessions.RequireAdmin(http.HandlerFunc(a.putProvider)))
 	mux.Handle("DELETE /api/admin/providers/{id}", a.sessions.RequireAdmin(http.HandlerFunc(a.deleteProvider)))
@@ -110,6 +123,8 @@ func (a *AdminAPI) Handler() http.Handler {
 	mux.Handle("GET /api/admin/routing", a.sessions.RequireAdmin(http.HandlerFunc(a.listRouting)))
 	mux.Handle("PUT /api/admin/routing/{id}", a.sessions.RequireAdmin(http.HandlerFunc(a.putRoutingRule)))
 	mux.Handle("DELETE /api/admin/routing/{id}", a.sessions.RequireAdmin(http.HandlerFunc(a.deleteRoutingRule)))
+	mux.Handle("GET /api/admin/routing-strategy", a.sessions.RequireAdmin(http.HandlerFunc(a.getRoutingStrategy)))
+	mux.Handle("PUT /api/admin/routing-strategy", a.sessions.RequireAdmin(http.HandlerFunc(a.putRoutingStrategy)))
 
 	mux.Handle("POST /api/admin/keys", a.sessions.RequireAdmin(http.HandlerFunc(a.createKey)))
 	mux.Handle("GET /api/admin/keys", a.sessions.RequireAdmin(http.HandlerFunc(a.listKeys)))
@@ -338,7 +353,22 @@ func (a *AdminAPI) oauthStart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if cfg.Issuer == "" {
-		writeError(w, http.StatusBadRequest, "codex-oauth provider config needs an issuer")
+		// ADR-009 decision 1: draft accounts created through the type
+		// surface carry no own fields — the issuer comes from the type
+		// settings instead. This is the same overlay construction applies
+		// (server/providers.go), not a second config source.
+		settings, err := a.store.GetProviderTypeSettings(r.Context())
+		if err == nil && len(settings[provider.Type]) > 0 {
+			var shared struct {
+				Issuer string `json:"issuer"`
+			}
+			if json.Unmarshal(settings[provider.Type], &shared) == nil {
+				cfg.Issuer = shared.Issuer
+			}
+		}
+	}
+	if cfg.Issuer == "" {
+		writeError(w, http.StatusBadRequest, "codex-oauth provider config needs an issuer (set the type's issuer in its settings)")
 		return
 	}
 	client := codex.NewAuthClient(codex.AuthConfig{
@@ -411,6 +441,282 @@ func (a *AdminAPI) oauthPoll(w http.ResponseWriter, r *http.Request) {
 	delete(a.oauthFlows, id)
 	a.oauthMu.Unlock()
 	writeJSON(w, http.StatusOK, oauthPollDTO{Status: "approved", AccountID: res.AccountID})
+}
+
+// ---------------------------------------------------------------------------
+// Provider types (ADR-009 catalog + per-type settings + accounts)
+// ---------------------------------------------------------------------------
+
+// listProviderTypes serves the static catalog the Providers page renders
+// its type cards and forms from (providertypes.go). Adding a provider type
+// is a catalog entry + a parseProviderConfig case — this endpoint needs no
+// change.
+func (a *AdminAPI) listProviderTypes(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"types": providerTypes})
+}
+
+// getProviderType serves one type's settings (provider_type_settings KV)
+// and its accounts (the providers rows of that type). Unknown types are a
+// 404, not an empty detail — the SPA must not render a form for a type the
+// server does not know.
+func (a *AdminAPI) getProviderType(w http.ResponseWriter, r *http.Request) {
+	typ := r.PathValue("type")
+	if _, ok := providerTypeByID(typ); !ok {
+		writeError(w, http.StatusNotFound, "unknown provider type")
+		return
+	}
+	settings, err := a.store.GetProviderTypeSettings(r.Context())
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	accounts, err := a.store.ListProvidersByProviderType(r.Context(), typ)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	out := make([]accountDTO, 0, len(accounts))
+	for _, p := range accounts {
+		out = append(out, accountDTO{
+			ID:            p.ID,
+			Type:          p.Type,
+			Name:          p.Name,
+			HasCredential: a.hasCredential(r, p.ID),
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"settings": settings[typ],
+		"accounts": out,
+	})
+}
+
+// putProviderTypeSettings validates and persists one type's shared
+// settings. The per-type parse runs the write-path validation (URL shape +
+// private-address SSRF guard) — type settings are provider config like any
+// other. A successful save reloads the live provider set: construction
+// overlays type settings with account config (server/providers.go).
+func (a *AdminAPI) putProviderTypeSettings(w http.ResponseWriter, r *http.Request) {
+	typ := r.PathValue("type")
+	if _, ok := providerTypeByID(typ); !ok {
+		writeError(w, http.StatusNotFound, "unknown provider type")
+		return
+	}
+	var req struct {
+		Settings json.RawMessage `json:"settings"`
+	}
+	if err := decodeBody(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if len(req.Settings) == 0 {
+		req.Settings = json.RawMessage("{}")
+	}
+	if _, err := ParseProviderConfig(typ, req.Settings); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	settings, err := a.store.GetProviderTypeSettings(r.Context())
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	settings[typ] = req.Settings
+	if err := a.store.PutProviderTypeSettings(r.Context(), settings); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if a.reloadProviders != nil {
+		a.reloadProviders()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// postProviderTypeAccount creates one account (providers row) of a type —
+// the form path of the provider settings page. The server mints the ID
+// (operator-supplied IDs are a footgun: they collide with type strings and
+// each other); an optional api_key lands in the encrypted token store, the
+// same kind "access_token" row the provider PUT and the device flow use.
+// OAuth types refuse api_key — their credential arrives via the device
+// flow, and a form key would be dead material.
+func (a *AdminAPI) postProviderTypeAccount(w http.ResponseWriter, r *http.Request) {
+	typ := r.PathValue("type")
+	desc, ok := providerTypeByID(typ)
+	if !ok {
+		writeError(w, http.StatusNotFound, "unknown provider type")
+		return
+	}
+	var req struct {
+		Name   string          `json:"name"`
+		APIKey string          `json:"api_key"`
+		Config json.RawMessage `json:"config"`
+	}
+	if err := decodeBody(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if desc.Auth == "oauth" && req.APIKey != "" {
+		writeError(w, http.StatusBadRequest, "oauth accounts sign in via the device flow, not an api key")
+		return
+	}
+	if desc.Auth == "api_key" && req.APIKey == "" && len(req.Config) == 0 {
+		// An api_key type without a key is legal (the upstream answers the
+		// auth failure; keyless local endpoints exist) — but it must be a
+		// deliberate empty config, not a forgotten form field. Requiring
+		// the explicit empty config keeps the honest-state contract.
+		writeError(w, http.StatusBadRequest, "api key is required for api-key providers")
+		return
+	}
+
+	id := newAccountID()
+	// ADR-009 decision 1: the effective config is type settings overlaid by
+	// the account's own fields (account wins). The account row stores only
+	// its own blob; the merge happens at validation (here) and at
+	// construction (server/providers.go) — so an oauth draft with no own
+	// fields validates against the type's issuer, exactly like a row
+	// created through the provider PUT with the issuer inline.
+	own := req.Config
+	if len(own) == 0 {
+		own = json.RawMessage("{}")
+	}
+	if err := a.validateAccountConfig(r, typ, own); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := a.store.PutProvider(r.Context(), storage.Provider{
+		ID: id, Type: typ, Name: req.Name, Config: own,
+	}); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if req.APIKey != "" {
+		if err := a.store.PutProviderTokens(r.Context(), storage.ProviderToken{
+			ProviderID: id,
+			Kind:       "access_token",
+			Secret:     []byte(req.APIKey),
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+	}
+	if a.reloadProviders != nil {
+		a.reloadProviders()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"account": accountDTO{
+		ID:            id,
+		Type:          typ,
+		Name:          req.Name,
+		HasCredential: req.APIKey != "",
+	}})
+}
+
+// validateAccountConfig checks an account's own config blob against the
+// type's validation rules with the type settings overlaid (ADR-009
+// decision 1: shared fields come from provider_type_settings, the account's
+// own fields win). The account row persists ONLY its own blob; the merge is
+// a validation-and-construction concern, never stored twice.
+func (a *AdminAPI) validateAccountConfig(r *http.Request, typ string, own json.RawMessage) error {
+	settings, err := a.store.GetProviderTypeSettings(r.Context())
+	if err != nil {
+		return err
+	}
+	merged, err := MergeProviderConfig(settings[typ], own)
+	if err != nil {
+		return err
+	}
+	_, err = ParseProviderConfig(typ, merged)
+	return err
+}
+
+// hasCredential probes the encrypted token store for the account's
+// access_token — display-only presence, the secret itself never leaves the
+// store. Mirrors providerAPIKey's error-swallowing: a transient store
+// failure degrades to "no credential" rather than failing the list.
+func (a *AdminAPI) hasCredential(r *http.Request, providerID string) bool {
+	_, err := a.store.GetProviderToken(r.Context(), providerID, "access_token")
+	return err == nil
+}
+
+// newAccountID mints an unguessable account row id (newAdminID pattern).
+func newAccountID() string {
+	raw := make([]byte, 16)
+	if _, err := rand.Read(raw); err != nil {
+		// A broken CSPRNG must not silently degrade ids.
+		panic("webui: rand.Read failed: " + err.Error())
+	}
+	return "acc-" + hex.EncodeToString(raw)
+}
+
+// ---------------------------------------------------------------------------
+// Routing strategy (ADR-009 global default)
+// ---------------------------------------------------------------------------
+
+// getRoutingStrategy serves the global strategy override. The storage read
+// already folds missing/invalid rows into the round_robin default.
+func (a *AdminAPI) getRoutingStrategy(w http.ResponseWriter, r *http.Request) {
+	strategy, err := a.store.GetRoutingStrategy(r.Context())
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"strategy": strategy})
+}
+
+// putRoutingStrategy persists the global strategy and pushes it into the
+// live router (ReloadStrategy hook — the same live-swap contract as the
+// rule reload). Invalid values are a 400 at the boundary, never a value
+// the resolver would have to guess about.
+func (a *AdminAPI) putRoutingStrategy(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Strategy string `json:"strategy"`
+	}
+	if err := decodeBody(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if err := a.store.SetRoutingStrategy(r.Context(), req.Strategy); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if a.reloadStrategy != nil {
+		a.reloadStrategy()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// validateChain rejects chain entries that reference nothing (ADR-009).
+// Entries name a provider type, a provider ID, or — the legacy wire syntax
+// still stored by seeds and older rules — a "provider-id/model-id" pair;
+// the provider part before any "/" is what must resolve. The runtime
+// skip + trace stays as the safety net for accounts deleted after the
+// rule was saved — but entries that never referenced anything must not
+// persist.
+func (a *AdminAPI) validateChain(ctx context.Context, chain []string) error {
+	if len(chain) == 0 {
+		return nil // the storage layer rejects empty chains its own way
+	}
+	providers, err := a.store.ListProviders(ctx)
+	if err != nil {
+		return err
+	}
+	known := make(map[string]bool, len(providers))
+	for _, p := range providers {
+		known[p.ID] = true
+	}
+	for _, entry := range chain {
+		providerID, _, _ := strings.Cut(entry, "/")
+		if known[providerID] {
+			continue
+		}
+		if _, ok := providerTypeByID(entry); ok {
+			continue
+		}
+		return fmt.Errorf("chain entry %q is not a known provider type or provider id", entry)
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------------------
@@ -500,6 +806,7 @@ func (a *AdminAPI) listRouting(w http.ResponseWriter, r *http.Request) {
 			Chain:      rule.Chain,
 			Priority:   rule.Priority,
 			Enabled:    rule.Enabled,
+			Strategy:   rule.Strategy,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"rules": out})
@@ -512,9 +819,20 @@ func (a *AdminAPI) putRoutingRule(w http.ResponseWriter, r *http.Request) {
 		Chain      []string `json:"chain"`
 		Priority   int      `json:"priority"`
 		Enabled    bool     `json:"enabled"`
+		Strategy   string   `json:"strategy"`
 	}
 	if err := decodeBody(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	// Chain validation (ADR-009): every entry must be a known provider type
+	// or an existing provider ID — a typo must fail the save, not silently
+	// skip at request time (the same loud-typo doctrine as the strategy
+	// field). Registered-at-write-time IDs may later vanish (account
+	// delete); the resolver's "provider not registered" skip + trace
+	// covers that runtime case.
+	if err := a.validateChain(r.Context(), req.Chain); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if err := a.store.PutRoutingRule(r.Context(), storage.RoutingRule{
@@ -523,6 +841,7 @@ func (a *AdminAPI) putRoutingRule(w http.ResponseWriter, r *http.Request) {
 		Chain:      req.Chain,
 		Priority:   req.Priority,
 		Enabled:    req.Enabled,
+		Strategy:   req.Strategy,
 	}); err != nil {
 		writeStoreError(w, err)
 		return
@@ -793,6 +1112,19 @@ type ruleDTO struct {
 	Chain      []string `json:"chain"`
 	Priority   int      `json:"priority"`
 	Enabled    bool     `json:"enabled"`
+	// Strategy is the per-rule strategy (ADR-009): "" inherits the global
+	// default, otherwise round_robin or fill_first.
+	Strategy string `json:"strategy"`
+}
+
+// accountDTO is one account of a provider type (ADR-009): a providers row
+// projected WITHOUT any secret material — HasCredential is a presence
+// probe of the encrypted token store, the secret itself never leaves it.
+type accountDTO struct {
+	ID            string `json:"id"`
+	Type          string `json:"type"`
+	Name          string `json:"name"`
+	HasCredential bool   `json:"has_credential"`
 }
 
 type keyDTO struct {

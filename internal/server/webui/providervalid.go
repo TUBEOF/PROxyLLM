@@ -66,6 +66,32 @@ var knownCapabilities = map[string]bool{
 	"thinking":       true,
 }
 
+// MergeProviderConfig overlays own onto shared (ADR-009 decision 1: type
+// settings first, the account's own fields win per key, shallow merge of
+// the two JSON objects). A nil side contributes nothing. Exported because
+// the server's construction path (server/providers.go) must merge with
+// exactly the same rules the write path validated with — one vocabulary.
+func MergeProviderConfig(shared, own json.RawMessage) (json.RawMessage, error) {
+	var s, o map[string]json.RawMessage
+	if len(shared) > 0 {
+		if err := json.Unmarshal(shared, &s); err != nil {
+			return nil, fmt.Errorf("stored type settings are not valid JSON")
+		}
+	}
+	if len(own) > 0 {
+		if err := json.Unmarshal(own, &o); err != nil {
+			return nil, fmt.Errorf("account config is not valid JSON")
+		}
+	}
+	if s == nil {
+		s = map[string]json.RawMessage{}
+	}
+	for k, v := range o {
+		s[k] = v
+	}
+	return json.Marshal(s)
+}
+
 // ParseProviderConfig validates (type, config) and returns the parsed
 // shape. The error is operator-facing: it names the offending field, never
 // the internals. An empty raw config (len 0) parses as an empty shape.

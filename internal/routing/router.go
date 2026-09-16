@@ -8,6 +8,7 @@ import (
 
 	"github.com/tubeof/proxyllm/internal/provider"
 )
+
 // Rule is one routing rule (Analysis E rule model; storage:
 // routing_rules table, extended by ADR-009). The deterministic resolution
 // order is: key scope → model match → chain expansion → strategy →
@@ -61,7 +62,7 @@ type Router struct {
 	// RLock; the reload path takes Lock for one whole-set swap. Aliases and
 	// KeyScopes stay startup-fixed: only rules are DB-editable today.
 	mu         sync.RWMutex
-	rules       []Rule
+	rules      []Rule
 	rrCounters map[string]uint64
 }
 

@@ -84,6 +84,16 @@ func newAdminEnv(t *testing.T) *adminEnv {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
+	// The envelope the account-create path seals api keys into the token
+	// store with (the production path always has one — cmd/proxyllm sets
+	// it before the server builds).
+	key := make([]byte, 32)
+	e, err := storage.NewEnvelope(key)
+	if err != nil {
+		t.Fatalf("NewEnvelope: %v", err)
+	}
+	st.SetEnvelope(e)
+
 	env := &adminEnv{st: st, now: 1_000_000}
 	env.api = NewAdminAPI(AdminParams{
 		Store:           st,
@@ -376,8 +386,14 @@ func TestRoutingRules_CRUDTriggersReload(t *testing.T) {
 	env := newAdminEnv(t)
 	s := env.bootstrap(t, "operator")
 
+	// ADR-009 chain validation: entries must reference a provider (the
+	// part before "/"), so the reload test seeds its target first.
+	w := env.authedCall(t, http.MethodPut, "/api/admin/providers/prov-a",
+		`{"type":"ollama-cloud","name":"Endpoint","config":{}}`, s)
+	assertStatus(t, w, http.StatusOK, "seed chain target")
+
 	before := env.keys.calls
-	w := env.authedCall(t, http.MethodPut, "/api/admin/routing/rule-low",
+	w = env.authedCall(t, http.MethodPut, "/api/admin/routing/rule-low",
 		`{"match_model":"claude-*","chain":["prov-a/gpt-5"],"priority":1,"enabled":true}`, s)
 	assertStatus(t, w, http.StatusOK, "put rule-low")
 	w = env.authedCall(t, http.MethodPut, "/api/admin/routing/rule-high",

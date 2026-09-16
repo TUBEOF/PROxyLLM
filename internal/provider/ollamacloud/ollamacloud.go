@@ -61,6 +61,11 @@ func New(id, baseURL, apiKey string, caps provider.Capabilities) *Provider {
 // ID returns the stable, unique provider identifier.
 func (p *Provider) ID() string { return p.id }
 
+// Type reports the canonical provider type (ADR-009): this account is an
+// ollama-cloud account. Deliberately NO HasCredential (same reasoning as
+// custom: the construction contract treats a missing key as legal).
+func (p *Provider) Type() string { return "ollama-cloud" }
+
 // Capabilities reports the configured capability set.
 func (p *Provider) Capabilities() provider.Capabilities { return p.caps }
 

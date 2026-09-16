@@ -1,0 +1,105 @@
+package webui
+
+// Provider type catalog (ADR-009): the static metadata the Providers page
+// renders its type cards and per-type settings forms from, and the account
+// editor builds its inputs from. Adding a provider type = one entry here +
+// one parseProviderConfig case + one buildProvider case — the WebUI needs
+// no code change (it renders whatever the catalog describes).
+
+// fieldKind is the input kind the settings form renders for a field.
+type fieldKind string
+
+const (
+	fieldKindText fieldKind = "text"
+	fieldKindURL  fieldKind = "url"
+)
+
+// fieldDesc describes one form field of a provider type's settings or
+// account config.
+type fieldDesc struct {
+	// Key is the config-blob key the input writes.
+	Key string `json:"key"`
+	// Label is the human-facing input label.
+	Label string `json:"label"`
+	// Kind selects the input type (text/url).
+	Kind fieldKind `json:"kind"`
+	// Required marks inputs the save refuses when empty.
+	Required bool `json:"required"`
+	// Hint is the per-field explanation under the input.
+	Hint string `json:"hint"`
+}
+
+// providerTypeDesc is one catalog entry.
+type providerTypeDesc struct {
+	// Type is the canonical type string (providers.type column value,
+	// parseProviderConfig's case).
+	Type string `json:"type"`
+	// Label is the display name on the card.
+	Label string `json:"label"`
+	// Description is the card's one-liner.
+	Description string `json:"description"`
+	// Auth is how accounts authenticate: "api_key" (form input) or "oauth"
+	// (device-flow sign-in button).
+	Auth string `json:"auth"`
+	// SettingsFields are the per-type shared settings inputs (rendered from
+	// provider_type_settings).
+	SettingsFields []fieldDesc `json:"settings_fields"`
+	// AccountFields are the per-account config inputs (rendered from each
+	// account's own config blob; type settings fill the same keys first).
+	AccountFields []fieldDesc `json:"account_fields"`
+	// DefaultCapabilities are the type's baseline pins (server/providers.go
+	// defaultCaps) so the settings form can pre-check the boxes.
+	DefaultCapabilities map[string]bool `json:"default_capabilities"`
+}
+
+// providerTypes is the catalog — order is the card order on the Providers
+// page. The Type values match ProviderTypeCustomOpenAI/OllamaCloud/
+// CodexOAuth exactly (parseProviderConfig rejects everything else).
+var providerTypes = []providerTypeDesc{
+	{
+		Type:        ProviderTypeCustomOpenAI,
+		Label:       "Custom OpenAI-compatible",
+		Description: "Any OpenAI-compatible chat-completions endpoint: base URL plus API key.",
+		Auth:        "api_key",
+		SettingsFields: []fieldDesc{
+			{Key: "base_url", Label: "Base URL", Kind: fieldKindURL, Required: true,
+				Hint: "The API root including the version prefix, e.g. https://api.example.com/v1"},
+		},
+		AccountFields:       nil, // the account is its key; settings carry the URL
+		DefaultCapabilities: map[string]bool{"streaming": true, "tools": true},
+	},
+	{
+		Type:        ProviderTypeOllamaCloud,
+		Label:       "Ollama Cloud",
+		Description: "The hosted Ollama API at ollama.com (native /api/chat). Multiple API keys = multiple accounts.",
+		Auth:        "api_key",
+		SettingsFields: []fieldDesc{
+			{Key: "base_url", Label: "Base URL", Kind: fieldKindURL, Required: false,
+				Hint: "Optional override; defaults to https://ollama.com"},
+		},
+		AccountFields:       nil,
+		DefaultCapabilities: map[string]bool{"streaming": true, "tools": true},
+	},
+	{
+		Type:        ProviderTypeCodexOAuth,
+		Label:       "ChatGPT / Codex",
+		Description: "ChatGPT backend via device-flow sign-in (RFC 8628). Multiple sign-ins = multiple accounts.",
+		Auth:        "oauth",
+		SettingsFields: []fieldDesc{
+			{Key: "issuer", Label: "OAuth issuer", Kind: fieldKindURL, Required: true,
+				Hint: "e.g. https://auth.openai.com — the issuer all accounts of this type sign in against"},
+		},
+		AccountFields:       nil, // tokens arrive via the device flow, not a form
+		DefaultCapabilities: map[string]bool{"streaming": true, "tools": true},
+	},
+}
+
+// providerTypeByID returns the catalog entry for a canonical type.
+func providerTypeByID(typ string) (providerTypeDesc, bool) {
+	for _, pt := range providerTypes {
+		if pt.Type == typ {
+			return pt, true
+		}
+	}
+	return providerTypeDesc{}, false
+}

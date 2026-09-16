@@ -73,10 +73,15 @@ so "100% used" can never be observed directly.
    executor is untouched: it receives the expanded, optionally rotated
    chain and its FO-1/FO-5 invariants hold by construction.
 
-4. **Accounts without a credential are excluded from expansion.** An
-   abandoned OAuth draft (token row absent) would otherwise route live
-   traffic into a guaranteed auth failure; the UI surfaces it with a
-   "sign-in required" badge instead.
+4. **OAuth draft accounts are excluded from expansion; keyless API-key
+   accounts are not.** An abandoned codex draft (no token row) would route
+   live traffic into a guaranteed auth failure, so the codex provider
+   reports credential presence and the expansion skips credentialless
+   accounts of that type — the UI surfaces them with a "sign-in required"
+   badge instead. For api-key types (custom-openai, ollama-cloud) a missing
+   key is a legal routing state by the existing construction contract
+   (local auth-free endpoints), so their providers do not report credential
+   presence at all and every constructed account joins the expansion.
 
 5. **route_trace gains a `version` field** (`version: 2`; the previous
    unversioned `{"events":[...]}` shape is v1 retroactively). New event
