@@ -250,6 +250,24 @@ func TestPerfBudgets(t *testing.T) {
 	const samples = 200
 	bench.nonStreamingScripts(t, samples)
 	lat := make([]float64, 0, samples)
+	// Warmup: the budget asserts steady-state proxy overhead, but the first
+	// requests pay one-time costs (first-translation init, SQLite page cache,
+	// transport connection setup) and CI runners add scheduler/GC spikes on
+	// top. Drive the full stack once and settle before the measured window.
+	bench.nonStreamingScripts(t, 20)
+	for i := 0; i < 20; i++ {
+		resp, err := bench.postChatOpen(benchChatBody)
+		if err != nil {
+			t.Fatalf("warmup post: %v", err)
+		}
+		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+			t.Fatalf("warmup read body: %v", err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("warmup status %d", resp.StatusCode)
+		}
+	}
 	for i := 0; i < samples; i++ {
 		start := time.Now()
 		resp, err := bench.postChatOpen(benchChatBody)

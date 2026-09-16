@@ -96,12 +96,26 @@ test('tokens-only colors on all routes', async ({ page }) => {
                 h = Math.round((h * 60 + 360) % 360);
                 ok = inWindows(h, srgbWindows);
               }
-            } else {
+            } else if (v.startsWith('oklch(')) {
               const m = v.match(/^oklch\(([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
               // oklch() serializations are checked in their native hue space.
               ok =
                 !!m &&
                 (Number(m[2]) === 0 || inWindows(Math.round(Number(m[3])), oklchWindows));
+            } else {
+              // WebKit serializes color-mix(in oklab, ...) composites as
+              // oklab(L a b) — the a/b axes are the same as oklch's, so the
+              // hue (atan2(b, a)) checks against the oklch windows directly.
+              const m = v.match(/^oklab\(([\d.]+)\s+(-?[\d.]+)\s+(-?[\d.]+)/);
+              ok = !!m && (() => {
+                const a = Number(m[2]);
+                const b = Number(m[3]);
+                const chroma = Math.sqrt(a * a + b * b);
+                if (chroma === 0) return true; // achromatic
+                if (chroma < 0.01) return true; // border-collapse hairline composites
+                const hue = Math.round(((Math.atan2(b, a) * 180) / Math.PI + 360) % 360);
+                return inWindows(hue, oklchWindows);
+              })();
             }
             if (!ok) {
               offenders.push(`${routeLabel} ${el.tagName}.${el.className} ${prop}=${v}`);
