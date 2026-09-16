@@ -25,8 +25,7 @@ configurable compatibility handling.
 Built-in providers:
 
 - **ChatGPT / Codex OAuth** — full PKCE browser flow, native in the proxy
-- **Ollama Cloud** — native `https://ollama.com/api/chat` (note the spelling:
-  `ollamacloud`)
+- **Ollama Cloud** — native `https://ollama.com/api/chat`
 - **Firecrawl v2** — universal web-tool fallback (web-search / web-fetch
   emulation for models without native server tools)
 - **Custom** — arbitrary OpenAI-compatible endpoints by configuration alone

@@ -245,6 +245,9 @@ func TestPerfBudgets(t *testing.T) {
 	if testing.Short() {
 		t.Skip("perf budgets need the full stack (skipped in -short)")
 	}
+	if raceEnabled {
+		t.Skip("race detector instrumentation inflates wall-clock latency ~40x (observed 165 ms p99 batches vs 3-5 ms without); the budget asserts uninstrumented timing and is enforced by the benchmark and release jobs, which run without -race")
+	}
 	bench := newBenchEnv(t)
 
 	// p99 over one 200-sample window is hostage to a handful of

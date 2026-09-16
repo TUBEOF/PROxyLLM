@@ -73,12 +73,10 @@ full `route_trace` (routing decisions, never credentials).
 
 ## Container hardening
 
-- Distroless static image, non-root UID 65532, read-only rootfs, dropped
-  capabilities, no shell — see `docker/Dockerfile`,
-  `docker/Dockerfile.release`, `docker/compose.yaml`.
-- Compose adds `no-new-privileges`, `cap_drop: ALL`, `pids_limit`, tmpfs
-  `/tmp`; the only writable path is the mounted `/data` (named volume
-  or bind mount).
+- Distroless static image, no shell — see `docker/Dockerfile`,
+  `docker/Dockerfile.release`.
+- Compose runs a read-only rootfs with tmpfs `/tmp`; the only writable
+  path is the bind-mounted `/data`.
 - In-binary healthcheck (`/proxyllm -healthcheck`) — distroless has no
   shell/curl.
 

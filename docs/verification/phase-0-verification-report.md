@@ -47,7 +47,7 @@ Binary boot with ENV-only config:
 - In-container healthcheck (`/proxyllm -healthcheck`) exits 0
 - `docker compose -f docker/compose.yaml up` → service reaches **healthy**
 - **Hardening re-verified against the running container** (post review-fix, 2026-09-10): `docker inspect` confirms `ReadonlyRootfs=true`, `PidsLimit=100`, `/tmp` tmpfs `size=16m,noexec,nosuid`, `no-new-privileges:true`, `cap_drop ALL`, user `nonroot:nonroot`; rootfs write probe fails (distroless, no shell); SQLite DB + WAL/SHM + `master.key` exist only under the `/data` bind mount; `/healthz` → 200; in-binary healthcheck exit 0
-- **Environment caveat (not a product defect)**: the repository lives on an SMB network share (X:), which Docker Desktop's Linux VM cannot bind-mount. Local compose verification required a `compose.override.yaml` pointing the `./data` bind mount at a local C: drive path. CI builds on GitHub-hosted ubuntu runners where this is moot. Documented for local-developer onboarding in `docs/getting-started.md`.
+- **Environment caveat (not a product defect)**: on Docker Desktop, bind mounts into paths that the Linux VM's file sharing cannot expose (e.g. certain network-backed host paths) require a `compose.override.yaml` pointing the `./data` bind mount at a local drive path for local verification. CI builds on GitHub-hosted ubuntu runners where this is moot. Documented for local-developer onboarding in `docs/getting-started.md`.
 
 ---
 

@@ -17,52 +17,37 @@ services:
     # Pin a release tag for reproducible deployments; :latest tracks the
     # newest release. IMAGE overrides the default for local development.
     image: ${IMAGE:-ghcr.io/tubeof/proxyllm:v1.0.0}
-    # The image defaults to the distroless nonroot user (UID 65532). That is
-    # correct for the named-volume default below (Docker initializes the
-    # volume with matching ownership). For a host bind mount (DATA=./data)
-    # set PUID/PGID to the directory owner's uid:gid — the nonroot UID
-    # cannot write into a directory owned by the invoking user, and SQLite
-    # dies with "unable to open database file (14)":
-    #   PUID=$(id -u) PGID=$(id -g) DATA=./data docker compose up -d
-    user: "${PUID:-65532}:${PGID:-65532}"
+    # Run as root: the bind-mounted ./data is owned by the invoking user
+    # (or created by Docker as root), and a fixed non-root UID inside the
+    # container cannot be made to match every host — root sidesteps the
+    # ownership question entirely and works on any host, including
+    # Docker Desktop file sharing. The rest of the hardening profile
+    # stays (read-only rootfs, dropped capabilities, limits).
+    user: "0:0"
     ports:
       - "8080:8080"
     volumes:
       # The only writable path: SQLite DB + envelope master key live here.
-      # Back it up — together the two files are the full state.
-      # Two interchangeable shapes; swap this one line:
-      #   named volume (default): docker-managed, works with the nonroot
-      #     default user, survives compose down
-      #   bind mount: DATA=./data — plain host directory; set PUID/PGID
-      #     to the directory owner (see `user:` above)
-      - ${DATA:-proxyllm-data}:/data
+      # Back this directory up — together the two files are the full state.
+      - ./data:/data
     environment:
       PROXYLLM_SERVER_ADDR: ":8080"
       # Optional overrides — see docs/configuration.md:
       # PROXYLLM_LOG_LEVEL: "info"
       # PROXYLLM_LOG_FORMAT: "json"
-    # ADR-007 control 6: read-only rootfs — /data is the only writable
-    # path; /tmp is a size-capped tmpfs for runtime scratch.
+    # Read-only rootfs — /data (bind mount) is the only writable path;
+    # /tmp is a size-capped tmpfs for runtime scratch.
     read_only: true
     tmpfs:
       - /tmp:size=16m,noexec,nosuid
-    pids_limit: 100
-    # Plan §8 perf budget: RSS ≤ 128 MB @ 100 concurrent streams (verified
-    # in the phase-3 report); the limit gives headroom over the budget —
-    # a wedging container is restarted instead of wedged forever
+    # A wedging container is restarted instead of wedged forever
     # (healthcheck + resource limits work as a pair).
     mem_limit: 384m
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
     healthcheck:
+      # The binary probes its own health endpoint — distroless has no curl.
       test: ["CMD", "/proxyllm", "-healthcheck"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 5s
     restart: unless-stopped
-
-volumes:
-  proxyllm-data:

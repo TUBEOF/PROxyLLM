@@ -19,9 +19,8 @@ From a source checkout, `make docker` builds the image locally and runs
 the same compose file against it.
 
 Open `http://localhost:8080` — the WebUI's first-run bootstrap creates the
-admin account. The data lives in the `proxyllm-data` volume by default
-(SQLite database + generated master key, 0600); a host bind mount works
-too — see [deployment](deployment.md#data-named-volume-default-or-host-bind-mount).
+admin account. The `./data` directory (bind-mounted) holds the SQLite
+database and the generated master key (0600).
 
 The container runs hardened: read-only rootfs, dropped capabilities,
 non-root, pids/memory limits (see [docker/compose.yaml](../docker/compose.yaml)).
