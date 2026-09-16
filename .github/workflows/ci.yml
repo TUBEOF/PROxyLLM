@@ -9,8 +9,13 @@ permissions:
   # security-events: write — the CodeQL analyze step uploads its SARIF
   # results; with only contents: read it fails with
   # "Resource not accessible by integration".
+  # actions: read — the same step queries the workflow-run API for its
+  # status reporting; on private repos the GITHUB_TOKEN integration
+  # refuses that call without it (the upload aborts with
+  # "Resource not accessible by integration").
   contents: read
   security-events: write
+  actions: read
 
 env:
   # Go packages scoped to the module's own code — `./...` would descend
