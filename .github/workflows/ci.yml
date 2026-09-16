@@ -144,8 +144,11 @@ jobs:
           path: |
             webui/e2e/.artifacts
             webui/e2e/.artifacts-empty
+          # retention-days and if-no-files-found are upload-artifact inputs —
+          # as step-level keys they make the workflow unparseable (GitHub
+          # rejects unknown step keys; js-yaml does not validate the schema).
           retention-days: 7
-        if-no-files-found: ignore
+          if-no-files-found: ignore
 
   # Benchmark job (plan §8): perf budgets are measured on main so the
   # numbers are visible per commit and regressions trend in the log. NOT
