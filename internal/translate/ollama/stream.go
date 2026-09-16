@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/proxyllm/proxyllm/internal/translate"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // streamDecoder decodes the Ollama /api/chat NDJSON stream (L6 pinned via

@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/testutil/mockprovider"
+	"github.com/tubeof/proxyllm/internal/testutil/mockprovider"
 )
 
 // sseEvent is one named SSE frame parsed off a Responses stream body.

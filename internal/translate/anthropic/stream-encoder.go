@@ -7,8 +7,8 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/proxyllm/proxyllm/internal/translate"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // streamEncoder encodes canonical IR events into the Anthropic Messages SSE

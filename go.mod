@@ -1,4 +1,4 @@
-module github.com/proxyllm/proxyllm
+module github.com/tubeof/proxyllm
 
 go 1.26.0
 

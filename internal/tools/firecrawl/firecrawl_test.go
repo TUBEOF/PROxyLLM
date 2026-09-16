@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	ttestutil "github.com/proxyllm/proxyllm/internal/translate/testutil"
+	ttestutil "github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
 // capture records one incoming request for assertions.

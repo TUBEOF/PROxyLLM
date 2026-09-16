@@ -15,7 +15,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // emuCapture records the incoming upstream requests for assertions.

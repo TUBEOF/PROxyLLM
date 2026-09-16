@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	anth "github.com/proxyllm/proxyllm/internal/translate/anthropic"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
-	"github.com/proxyllm/proxyllm/internal/translate/testutil"
+	anth "github.com/tubeof/proxyllm/internal/translate/anthropic"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
 // Stream-encoder contract tests, RED-GREEN per Analysis F. The encoder must

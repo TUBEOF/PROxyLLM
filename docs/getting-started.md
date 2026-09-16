@@ -8,8 +8,8 @@ admin WebUI.
 ## Quickstart (Docker)
 
 ```bash
-git clone https://github.com/proxyllm/proxyllm.git
-cd proxyllm
+git clone https://github.com/TUBEOF/PROxyLLM.git
+cd PROxyLLM
 docker compose -f docker/compose.yaml up -d
 ```
 

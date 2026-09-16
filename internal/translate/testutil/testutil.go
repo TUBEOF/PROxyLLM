@@ -18,7 +18,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // goldenRoot resolves the repository's golden fixture directory by walking

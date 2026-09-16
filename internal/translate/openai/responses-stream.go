@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/proxyllm/proxyllm/internal/translate"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
-	"github.com/proxyllm/proxyllm/internal/translate/sse"
+	"github.com/tubeof/proxyllm/internal/translate"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate/sse"
 )
 
 // responsesStreamDecoder decodes the Responses-API SSE stream (facts O5, O7;

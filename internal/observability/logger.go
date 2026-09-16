@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/proxyllm/proxyllm/internal/config"
+	"github.com/tubeof/proxyllm/internal/config"
 )
 
 // NewLogger builds the application logger. Level and format come from

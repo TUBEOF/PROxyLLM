@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/storage"
-	"github.com/proxyllm/proxyllm/internal/testutil/mockprovider"
+	"github.com/tubeof/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/testutil/mockprovider"
 )
 
 // 1. Assembly: an alias stored in the settings KV before server assembly

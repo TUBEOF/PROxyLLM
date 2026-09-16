@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/provider/custom"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/provider/custom"
 )
 
 // RecordedRequest captures what the upstream received, for assertions on

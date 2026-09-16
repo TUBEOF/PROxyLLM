@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/translate/sse"
+	"github.com/tubeof/proxyllm/internal/translate/sse"
 )
 
 // SSE writer contract tests, RED-GREEN per Analysis F. The writer must emit

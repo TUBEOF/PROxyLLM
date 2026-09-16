@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/routing"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/routing"
 )
 
 // Error-classification contract tests, RED-GREEN. The table derives from

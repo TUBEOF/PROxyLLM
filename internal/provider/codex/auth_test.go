@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/provider/codex"
-	"github.com/proxyllm/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/provider/codex"
+	"github.com/tubeof/proxyllm/internal/storage"
 )
 
 // Codex OAuth login contract tests, RED-GREEN (plan §6.3, Analysis F).

@@ -10,8 +10,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/routing"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/routing"
 )
 
 func TestRouter_AliasResolvesAndTraces(t *testing.T) {

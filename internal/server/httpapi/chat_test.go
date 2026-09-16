@@ -15,8 +15,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/routing"
-	"github.com/proxyllm/proxyllm/internal/testutil/mockprovider"
+	"github.com/tubeof/proxyllm/internal/routing"
+	"github.com/tubeof/proxyllm/internal/testutil/mockprovider"
 )
 
 // mockJSON builds one upstream script answering a JSON body.

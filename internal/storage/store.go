@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
-	"github.com/proxyllm/proxyllm/internal/config"
+	"github.com/tubeof/proxyllm/internal/config"
 	_ "modernc.org/sqlite" // registers the "sqlite" driver (CGO-free)
 )
 

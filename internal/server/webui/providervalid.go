@@ -15,7 +15,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/proxyllm/proxyllm/internal/httpguard"
+	"github.com/tubeof/proxyllm/internal/httpguard"
 )
 
 // Canonical provider types (plan §4.1, SPA PROVIDER_TYPES). The storage

@@ -6,9 +6,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/routing"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/routing"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // Executor tool-call round-trip tests for the §6.2 Firecrawl emulation:

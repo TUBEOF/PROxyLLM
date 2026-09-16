@@ -9,12 +9,12 @@ import (
 	"context"
 	"io"
 
-	"github.com/proxyllm/proxyllm/internal/httpguard"
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/provider/internal/httpx"
-	"github.com/proxyllm/proxyllm/internal/translate"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
-	"github.com/proxyllm/proxyllm/internal/translate/ollama"
+	"github.com/tubeof/proxyllm/internal/httpguard"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/provider/internal/httpx"
+	"github.com/tubeof/proxyllm/internal/translate"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate/ollama"
 )
 
 // DefaultBaseURL is the hosted Ollama Cloud API root (L1).

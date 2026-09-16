@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/proxyllm/proxyllm/internal/translate"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
-	"github.com/proxyllm/proxyllm/internal/translate/sse"
+	"github.com/tubeof/proxyllm/internal/translate"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate/sse"
 )
 
 // streamDecoder decodes the Anthropic Messages SSE stream (facts A5–A7,

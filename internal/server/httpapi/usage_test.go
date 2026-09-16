@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/storage"
 )
 
 // usageRows reads the usage_daily table.

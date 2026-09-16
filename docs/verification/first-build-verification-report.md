@@ -27,7 +27,7 @@ page on every URL.
 
 `docker/Dockerfile`'s build stage copied `go.mod`, `cmd/`, `internal/` and
 the webui-stage `dist/` — but not `webui/embed.go`, the embed package's only
-Go source. The `github.com/proxyllm/proxyllm/webui` import (`server.go:17`)
+Go source. The `github.com/tubeof/proxyllm/webui` import (`server.go:17`)
 had no Go files in the build context, so `go build ./cmd/proxyllm` failed
 inside the image build. Any container image that ever ran was therefore not
 built from the committed Dockerfile path.

@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/config"
+	"github.com/tubeof/proxyllm/internal/config"
 )
 
 // Spec: ADR-003 — SQLite via modernc.org/sqlite, WAL journal mode, foreign

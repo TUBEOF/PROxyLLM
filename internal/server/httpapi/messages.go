@@ -11,10 +11,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/auth"
-	"github.com/proxyllm/proxyllm/internal/routing"
-	"github.com/proxyllm/proxyllm/internal/translate/anthropic"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/auth"
+	"github.com/tubeof/proxyllm/internal/routing"
+	"github.com/tubeof/proxyllm/internal/translate/anthropic"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // handleMessages serves POST /v1/messages (streaming + non-streaming).

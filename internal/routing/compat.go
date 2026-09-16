@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // Compat is the per-model compatibility policy (plan §6.4, OP-2 resolution;

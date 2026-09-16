@@ -17,8 +17,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/routing"
-	"github.com/proxyllm/proxyllm/internal/testutil/mockprovider"
+	"github.com/tubeof/proxyllm/internal/routing"
+	"github.com/tubeof/proxyllm/internal/testutil/mockprovider"
 )
 
 // newClaudeEnv assembles the cross-surface environment: one rule routing

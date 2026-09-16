@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/config"
+	"github.com/tubeof/proxyllm/internal/config"
 )
 
 // Spec: ADR-007 control 3 — the redacting handler wraps every logger;

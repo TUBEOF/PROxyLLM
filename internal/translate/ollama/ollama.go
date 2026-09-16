@@ -11,8 +11,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/proxyllm/proxyllm/internal/translate"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // Codec decodes and encodes Ollama /api/chat wire bodies.

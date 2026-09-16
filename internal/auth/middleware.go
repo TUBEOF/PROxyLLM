@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/proxyllm/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/storage"
 )
 
 // KeyPrefix is the wire prefix of every client key (§5.1: pk_<prefix>_<secret>).

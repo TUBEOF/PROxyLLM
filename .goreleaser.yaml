@@ -40,7 +40,7 @@ checksum:
 
 dockers:
   - image_templates:
-      - ghcr.io/proxyllm/proxyllm:{{ .Tag }}-amd64
+      - ghcr.io/tubeof/proxyllm:{{ .Tag }}-amd64
     dockerfile: docker/Dockerfile.release
     use: buildx
     build_flag_templates:
@@ -48,7 +48,7 @@ dockers:
       - --platform=linux/amd64
     goarch: amd64
   - image_templates:
-      - ghcr.io/proxyllm/proxyllm:{{ .Tag }}-arm64
+      - ghcr.io/tubeof/proxyllm:{{ .Tag }}-arm64
     dockerfile: docker/Dockerfile.release
     use: buildx
     build_flag_templates:
@@ -57,14 +57,14 @@ dockers:
     goarch: arm64
 
 docker_manifests:
-  - name_template: ghcr.io/proxyllm/proxyllm:{{ .Tag }}
+  - name_template: ghcr.io/tubeof/proxyllm:{{ .Tag }}
     image_templates:
-      - ghcr.io/proxyllm/proxyllm:{{ .Tag }}-amd64
-      - ghcr.io/proxyllm/proxyllm:{{ .Tag }}-arm64
-  - name_template: ghcr.io/proxyllm/proxyllm:latest
+      - ghcr.io/tubeof/proxyllm:{{ .Tag }}-amd64
+      - ghcr.io/tubeof/proxyllm:{{ .Tag }}-arm64
+  - name_template: ghcr.io/tubeof/proxyllm:latest
     image_templates:
-      - ghcr.io/proxyllm/proxyllm:{{ .Tag }}-amd64
-      - ghcr.io/proxyllm/proxyllm:{{ .Tag }}-arm64
+      - ghcr.io/tubeof/proxyllm:{{ .Tag }}-amd64
+      - ghcr.io/tubeof/proxyllm:{{ .Tag }}-arm64
 
 changelog:
   use: github

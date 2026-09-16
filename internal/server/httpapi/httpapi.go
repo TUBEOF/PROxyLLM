@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/routing"
-	"github.com/proxyllm/proxyllm/internal/storage"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/routing"
+	"github.com/tubeof/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // Params wires the API surfaces to their collaborators.

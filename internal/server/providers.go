@@ -26,13 +26,13 @@ import (
 	"errors"
 	"log/slog"
 
-	"github.com/proxyllm/proxyllm/internal/httpguard"
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/provider/codex"
-	"github.com/proxyllm/proxyllm/internal/provider/custom"
-	"github.com/proxyllm/proxyllm/internal/provider/ollamacloud"
-	"github.com/proxyllm/proxyllm/internal/server/webui"
-	"github.com/proxyllm/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/httpguard"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/provider/codex"
+	"github.com/tubeof/proxyllm/internal/provider/custom"
+	"github.com/tubeof/proxyllm/internal/provider/ollamacloud"
+	"github.com/tubeof/proxyllm/internal/server/webui"
+	"github.com/tubeof/proxyllm/internal/storage"
 )
 
 // loadProviders builds live providers from the stored rows. Errors are

@@ -172,7 +172,7 @@ race/backpressure suites (race detector in CI), and the new perf-budget test.
 | SAST/secret-scan/govulncheck clean | CI-blocking; verified on CI runners |
 | Perf budgets met | §3 — PASS |
 | Full E2E matrix re-run | §7 — green |
-| Tagged v1.0.0, image published | **tag `v1.0.0` created** (annotated, on `fbd7d29`, local). The repo has **no git remote configured** — this working repository is local-only, so a push (and with it the release pipeline run that publishes the image and binary archives) cannot be performed from here. When the repository gains a remote (GitHub `proxyllm/proxyllm` per README/docs), `git push origin v1.0.0` triggers release.yml: perf-budgets gate → GoReleaser (binaries + GHCR images). Publishing on an external service remains an explicit user action by nature. |
+| Tagged v1.0.0, image published | **tag `v1.0.0` created** (annotated, on `fbd7d29`, local). The repo has **no git remote configured** — this working repository is local-only, so a push (and with it the release pipeline run that publishes the image and binary archives) cannot be performed from here. When the repository gains a remote (GitHub `TUBEOF/PROxyLLM` per README/docs), `git push origin v1.0.0` triggers release.yml: perf-budgets gate → GoReleaser (binaries + GHCR images). Publishing on an external service remains an explicit user action by nature. |
 | README quickstart verified from clean clone | §6 — verified as far as locally possible; container path CI-verified |
 
 **Phase 3 gate: PASSED.** Tag `v1.0.0` created on `fbd7d29`; the only step that

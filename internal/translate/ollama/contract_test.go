@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
-	ol "github.com/proxyllm/proxyllm/internal/translate/ollama"
-	"github.com/proxyllm/proxyllm/internal/translate/testutil"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
+	ol "github.com/tubeof/proxyllm/internal/translate/ollama"
+	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
 // Contract tests for the Ollama native /api/chat codec, RED-GREEN per

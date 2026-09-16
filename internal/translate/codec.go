@@ -7,7 +7,7 @@ package translate
 import (
 	"context"
 
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // RequestDecoder decodes a protocol wire request body into the IR.

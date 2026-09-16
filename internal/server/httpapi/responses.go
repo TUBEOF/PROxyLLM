@@ -9,10 +9,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/auth"
-	"github.com/proxyllm/proxyllm/internal/routing"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
-	"github.com/proxyllm/proxyllm/internal/translate/openai"
+	"github.com/tubeof/proxyllm/internal/auth"
+	"github.com/tubeof/proxyllm/internal/routing"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate/openai"
 )
 
 // handleResponses serves POST /v1/responses (streaming + non-streaming).

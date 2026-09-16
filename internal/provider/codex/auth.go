@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/httpguard"
-	"github.com/proxyllm/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/httpguard"
+	"github.com/tubeof/proxyllm/internal/storage"
 )
 
 const (

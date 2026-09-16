@@ -3,8 +3,8 @@
 A modular, high-performance LLM proxy written in Go — a lean, open-source
 alternative to overloaded existing proxies.
 
-[![CI](https://github.com/proxyllm/proxyllm/actions/workflows/ci.yml/badge.svg)](https://github.com/proxyllm/proxyllm/actions/workflows/ci.yml)
-[![Release](https://github.com/proxyllm/proxyllm/actions/workflows/release.yml/badge.svg)](https://github.com/proxyllm/proxyllm/actions/workflows/release.yml)
+[![CI](https://github.com/TUBEOF/PROxyLLM/actions/workflows/ci.yml/badge.svg)](https://github.com/TUBEOF/PROxyLLM/actions/workflows/ci.yml)
+[![Release](https://github.com/TUBEOF/PROxyLLM/actions/workflows/release.yml/badge.svg)](https://github.com/TUBEOF/PROxyLLM/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.26-blue.svg)](go.mod)
 
@@ -47,8 +47,8 @@ Core properties:
 ## Quickstart
 
 ```bash
-git clone https://github.com/proxyllm/proxyllm.git
-cd proxyllm
+git clone https://github.com/TUBEOF/PROxyLLM.git
+cd PROxyLLM
 docker compose -f docker/compose.yaml up -d
 curl http://localhost:8080/healthz
 ```
@@ -67,8 +67,8 @@ export ANTHROPIC_AUTH_TOKEN="pk_..."
 ```
 
 Prebuilt multi-arch images are published per release tag
-(`ghcr.io/proxyllm/proxyllm:<tag>`); binary archives on the
-[Releases page](https://github.com/proxyllm/proxyllm/releases).
+(`ghcr.io/tubeof/proxyllm:<tag>`); binary archives on the
+[Releases page](https://github.com/TUBEOF/PROxyLLM/releases).
 
 ## Documentation
 

@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
-	ttestutil "github.com/proxyllm/proxyllm/internal/translate/testutil"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
+	ttestutil "github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
 // initialChunk is a spec-conform first chat.completion.chunk (O4): role

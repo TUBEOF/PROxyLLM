@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
-	oa "github.com/proxyllm/proxyllm/internal/translate/openai"
-	"github.com/proxyllm/proxyllm/internal/translate/sse"
-	"github.com/proxyllm/proxyllm/internal/translate/testutil"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
+	oa "github.com/tubeof/proxyllm/internal/translate/openai"
+	"github.com/tubeof/proxyllm/internal/translate/sse"
+	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
 // Responses-API stream-encoder contract tests, RED-GREEN per Analysis F.

@@ -22,8 +22,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/proxyllm/proxyllm/internal/translate"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // ResponsesCodec decodes and encodes OpenAI Responses-API wire bodies.

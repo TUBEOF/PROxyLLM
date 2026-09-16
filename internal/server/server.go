@@ -11,14 +11,14 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/proxyllm/proxyllm/internal/auth"
-	"github.com/proxyllm/proxyllm/internal/config"
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/routing"
-	"github.com/proxyllm/proxyllm/internal/server/httpapi"
-	"github.com/proxyllm/proxyllm/internal/server/webui"
-	"github.com/proxyllm/proxyllm/internal/storage"
-	embedui "github.com/proxyllm/proxyllm/webui"
+	"github.com/tubeof/proxyllm/internal/auth"
+	"github.com/tubeof/proxyllm/internal/config"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/routing"
+	"github.com/tubeof/proxyllm/internal/server/httpapi"
+	"github.com/tubeof/proxyllm/internal/server/webui"
+	"github.com/tubeof/proxyllm/internal/storage"
+	embedui "github.com/tubeof/proxyllm/webui"
 )
 
 // Server is the root http.Handler for PROxyLLM.

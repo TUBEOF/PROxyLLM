@@ -49,8 +49,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/config"
-	"github.com/proxyllm/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/config"
+	"github.com/tubeof/proxyllm/internal/storage"
 )
 
 // ---------------------------------------------------------------------------

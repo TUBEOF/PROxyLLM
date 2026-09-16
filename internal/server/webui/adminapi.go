@@ -20,9 +20,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/auth"
-	"github.com/proxyllm/proxyllm/internal/provider/codex"
-	"github.com/proxyllm/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/auth"
+	"github.com/tubeof/proxyllm/internal/provider/codex"
+	"github.com/tubeof/proxyllm/internal/storage"
 )
 
 // AdminParams wires the admin API. MasterKey is the CSRF HMAC secret — the

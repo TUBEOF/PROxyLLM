@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/routing"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/routing"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // Routing rule-model contract tests, RED-GREEN per Analysis F. The rule

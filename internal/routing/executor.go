@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // Executor is the request-level failover loop (plan Analysis E failover

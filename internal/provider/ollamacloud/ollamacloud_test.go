@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/provider/ollamacloud"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
-	"github.com/proxyllm/proxyllm/internal/translate/ollama"
-	"github.com/proxyllm/proxyllm/internal/translate/testutil"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/provider/ollamacloud"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate/ollama"
+	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
 // Ollama Cloud provider contract tests, RED-GREEN (plan §4.1, Analysis F).

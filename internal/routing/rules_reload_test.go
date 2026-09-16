@@ -21,8 +21,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // reloadStub satisfies the Provider contract for the reload tests; the

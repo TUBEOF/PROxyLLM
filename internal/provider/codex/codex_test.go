@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/provider/codex"
-	"github.com/proxyllm/proxyllm/internal/storage"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
-	"github.com/proxyllm/proxyllm/internal/translate/openai"
-	"github.com/proxyllm/proxyllm/internal/translate/testutil"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/provider/codex"
+	"github.com/tubeof/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate/openai"
+	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
 // Codex provider contract tests, RED-GREEN (plan §6.3, Analysis F).

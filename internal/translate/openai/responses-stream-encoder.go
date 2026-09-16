@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/translate"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // responsesStreamEncoder encodes canonical IR events into the OpenAI

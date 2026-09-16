@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/proxyllm/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/provider"
 )
 
 // Rule is one routing rule (Analysis E rule model; storage:

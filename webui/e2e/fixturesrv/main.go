@@ -20,9 +20,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/config"
-	"github.com/proxyllm/proxyllm/internal/server"
-	"github.com/proxyllm/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/config"
+	"github.com/tubeof/proxyllm/internal/server"
+	"github.com/tubeof/proxyllm/internal/storage"
 )
 
 // seedAdmin credentials — fixed values so the Playwright login helper can

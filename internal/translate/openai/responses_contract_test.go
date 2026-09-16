@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
-	oa "github.com/proxyllm/proxyllm/internal/translate/openai"
-	"github.com/proxyllm/proxyllm/internal/translate/testutil"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
+	oa "github.com/tubeof/proxyllm/internal/translate/openai"
+	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
 // Contract tests for the OpenAI Responses-API codec, RED-GREEN per Analysis

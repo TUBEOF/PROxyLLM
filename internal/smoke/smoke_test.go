@@ -39,12 +39,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/config"
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/provider/codex"
-	"github.com/proxyllm/proxyllm/internal/storage"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
-	"github.com/proxyllm/proxyllm/internal/translate/ollama"
+	"github.com/tubeof/proxyllm/internal/config"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/provider/codex"
+	"github.com/tubeof/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate/ollama"
 )
 
 // smokeEnabled reports whether the operator opted in (§8: never default).

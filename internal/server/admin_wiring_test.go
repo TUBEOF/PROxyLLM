@@ -28,8 +28,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/storage"
-	"github.com/proxyllm/proxyllm/internal/testutil/mockprovider"
+	"github.com/tubeof/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/testutil/mockprovider"
 )
 
 // wiringMasterKey is a fresh 32-byte master key per test — never a shared

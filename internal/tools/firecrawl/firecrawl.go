@@ -14,7 +14,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/proxyllm/proxyllm/internal/httpguard"
+	"github.com/tubeof/proxyllm/internal/httpguard"
 )
 
 // DefaultBaseURL is the production Firecrawl API host (F1).

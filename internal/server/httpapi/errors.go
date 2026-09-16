@@ -14,8 +14,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/proxyllm/proxyllm/internal/provider"
-	"github.com/proxyllm/proxyllm/internal/routing"
+	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/routing"
 )
 
 // errorType codes the surfaces emit for internal (non-upstream) failures.

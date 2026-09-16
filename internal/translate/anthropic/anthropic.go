@@ -10,8 +10,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/proxyllm/proxyllm/internal/translate"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/translate"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // Codec decodes and encodes Anthropic Messages wire bodies.

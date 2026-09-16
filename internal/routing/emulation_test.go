@@ -3,8 +3,8 @@ package routing_test
 import (
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/routing"
-	"github.com/proxyllm/proxyllm/internal/translate/ir"
+	"github.com/tubeof/proxyllm/internal/routing"
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // Server-tool emulation policy tests (RED-GREEN). Derived from plan §6.2

@@ -27,8 +27,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/proxyllm/proxyllm/internal/auth"
-	"github.com/proxyllm/proxyllm/internal/testutil/mockprovider"
+	"github.com/tubeof/proxyllm/internal/auth"
+	"github.com/tubeof/proxyllm/internal/testutil/mockprovider"
 )
 
 // benchEnv is an env plus the raw-HTTP pieces the benchmarks need: the

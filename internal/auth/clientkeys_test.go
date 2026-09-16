@@ -15,8 +15,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/proxyllm/proxyllm/internal/config"
-	"github.com/proxyllm/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/config"
+	"github.com/tubeof/proxyllm/internal/storage"
 )
 
 // newTestStore opens a store over a fresh temp-dir database, closed at

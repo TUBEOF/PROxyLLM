@@ -22,7 +22,7 @@ Healthcheck: the in-binary probe (`/proxyllm -healthcheck`, 3 s timeout,
 Release tags publish multi-arch images (amd64 + arm64):
 
 ```bash
-docker run -d -p 8080:8080 -v ./data:/data ghcr.io/proxyllm/proxyllm:v1.0.0
+docker run -d -p 8080:8080 -v ./data:/data ghcr.io/tubeof/proxyllm:v1.0.0
 ```
 
 The image is distroless non-root; no shell. Configuration via ENV or the
