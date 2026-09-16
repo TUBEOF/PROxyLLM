@@ -54,9 +54,11 @@ docker compose -f compose.example.yaml up -d
 curl http://localhost:8080/healthz
 ```
 
-(`docker/compose.example.yaml` pins the released multi-arch image; the
-repo also ships a from-source variant, `docker/compose.yaml`, for
-development.)
+While this repository is private, that raw URL needs an authenticated
+curl (`-H "Authorization: token <PAT>"`) — or copy the file from a
+checkout. `docker/compose.example.yaml` pins the released multi-arch
+image; the repo also ships a from-source variant, `docker/compose.yaml`,
+for development.
 
 Open `http://localhost:8080` for the admin WebUI (first-run bootstrap).
 Create a client key (**Keys**), then point your client at the proxy:
