@@ -81,3 +81,22 @@
     animation: none;
   }
 }
+
+/* Modal stacking (D-3): the kit renders .modal-backdrop as a fixed,
+   z-index:200 sibling, but .modal itself is unpositioned — the backdrop
+   covers it and swallows every click (Overlays.tsx renders the pair as
+   siblings, unlike the kit demo which nests the modal inside). Position
+   the modal over its backdrop using the token layer's own --z-modal.
+   The kit file stays verbatim (K-1); this is a webui-local addition. */
+.modal {
+  position: relative;
+  z-index: var(--z-modal);
+}
+
+/* Brand link color (D-4): .sidebar-brand is an <a> but only its child
+   .name span carries a color — the anchor itself falls back to the
+   UA dark-mode link blue (rgb(158,158,255)), which the tokens-only
+   design rule rightly rejects. Inherit like every other nav link. */
+a.sidebar-brand {
+  color: var(--fg);
+}
