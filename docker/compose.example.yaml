@@ -1,0 +1,49 @@
+# Example deployment with the published image — no source checkout needed.
+#
+# This is the copy-paste example for running PROxyLLM from the registry:
+#   cp docker/compose.example.yaml compose.yaml
+#   docker compose up -d
+#
+# docker/compose.yaml is the from-source variant (builds the image from the
+# repository) — use that one during development instead.
+# Both carry the same hardening profile (ADR-007 control 6).
+
+name: proxyllm
+
+services:
+  proxyllm:
+    # Multi-arch (amd64 + arm64) image published per release tag; :latest
+    # tracks the newest release. Pin a tag for reproducible deployments.
+    image: ghcr.io/tubeof/proxyllm:v1.0.0
+    ports:
+      - "8080:8080"
+    volumes:
+      # The only writable path: SQLite DB + envelope master key live here.
+      # Back this directory up — together the two files are the full state.
+      - ./data:/data
+    environment:
+      PROXYLLM_SERVER_ADDR: ":8080"
+      # Optional overrides — see docs/configuration.md:
+      # PROXYLLM_LOG_LEVEL: "info"
+      # PROXYLLM_LOG_FORMAT: "json"
+    # ADR-007 control 6: read-only rootfs — /data (bind mount) is the only
+    # writable path; /tmp is a size-capped tmpfs for runtime scratch.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid
+    pids_limit: 100
+    # Plan §8 perf budget: RSS ≤ 128 MB @ 100 concurrent streams; the limit
+    # gives headroom over the budget — a wedging container is restarted
+    # instead of wedged forever (healthcheck + limits work as a pair).
+    mem_limit: 384m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/proxyllm", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped

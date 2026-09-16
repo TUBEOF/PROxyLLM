@@ -2,17 +2,29 @@
 
 ## Docker Compose (recommended)
 
-`docker/compose.yaml` ships a single hardened service:
+Two compose variants ship in [docker/](../docker):
 
-```bash
-docker compose -f docker/compose.yaml up -d
-```
+- `docker/compose.example.yaml` — runs the published multi-arch image
+  (`ghcr.io/tubeof/proxyllm:<tag>`); the copy-paste starting point for
+  running a release, no source checkout needed:
 
-Hardening in place: `read_only` rootfs, tmpfs `/tmp`, `pids_limit`,
-`mem_limit`, `cap_drop: ALL`, `no-new-privileges`, non-root distroless
-image. The only writable path is the bind-mounted `./data` (SQLite
-database + master key file — back both up; together they are the full
-state).
+  ```bash
+  cp docker/compose.example.yaml compose.yaml
+  docker compose up -d
+  ```
+
+- `docker/compose.yaml` — builds the image from the repository; the
+  development variant:
+
+  ```bash
+  docker compose -f docker/compose.yaml up -d
+  ```
+
+Both carry the same hardening profile: `read_only` rootfs, tmpfs `/tmp`,
+`pids_limit`, `mem_limit`, `cap_drop: ALL`, `no-new-privileges`,
+non-root distroless image. The only writable path is the bind-mounted
+`./data` (SQLite database + master key file — back both up; together
+they are the full state).
 
 Healthcheck: the in-binary probe (`/proxyllm -healthcheck`, 3 s timeout,
 30 s interval, 5 s start period) — distroless has no shell/curl.

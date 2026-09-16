@@ -46,12 +46,17 @@ Core properties:
 
 ## Quickstart
 
+The quickest path runs the published image — no source checkout needed:
+
 ```bash
-git clone https://github.com/TUBEOF/PROxyLLM.git
-cd PROxyLLM
-docker compose -f docker/compose.yaml up -d
+curl -O https://raw.githubusercontent.com/TUBEOF/PROxyLLM/main/docker/compose.example.yaml
+docker compose -f compose.example.yaml up -d
 curl http://localhost:8080/healthz
 ```
+
+(`docker/compose.example.yaml` pins the released multi-arch image; the
+repo also ships a from-source variant, `docker/compose.yaml`, for
+development.)
 
 Open `http://localhost:8080` for the admin WebUI (first-run bootstrap).
 Create a client key (**Keys**), then point your client at the proxy:
@@ -66,9 +71,10 @@ export ANTHROPIC_AUTH_TOKEN="pk_..."
 # api_key  = pk_...
 ```
 
-Prebuilt multi-arch images are published per release tag
-(`ghcr.io/tubeof/proxyllm:<tag>`); binary archives on the
-[Releases page](https://github.com/TUBEOF/PROxyLLM/releases).
+The same multi-arch images (`ghcr.io/tubeof/proxyllm:<tag>`) also run
+plain `docker run` (see [deployment](docs/deployment.md)); binary
+archives are on the [Releases
+page](https://github.com/TUBEOF/PROxyLLM/releases).
 
 ## Documentation
 
