@@ -73,11 +73,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: CodeQL
+        # Code scanning on private repos requires GitHub Advanced Security
+        # (a paid plan feature). The workflow cannot enable it; if the
+        # repo is private without GHAS, skip the SAST leg with a visible
+        # notice instead of failing the gate on a settings limitation.
+        # gitleaks and the gosec linter in Gate 1 still run regardless.
+        if: ${{ github.event.repository.visibility != 'private' }}
         uses: github/codeql-action/init@v3
         with:
           languages: go
       - name: CodeQL analyze
+        if: ${{ github.event.repository.visibility != 'private' }}
         uses: github/codeql-action/analyze@v3
+      - name: CodeQL skipped (no GHAS on private repo)
+        if: ${{ github.event.repository.visibility == 'private' }}
+        run: |
+          echo "::notice::CodeQL skipped: code scanning needs GitHub Advanced Security on private repos. Make the repo public or enable GHAS in Settings → Code security."
 
   # Gate 4: WebUI build + bundle budget + visual regression — blocking
   webui:
