@@ -41,7 +41,7 @@ encrypted store.
 | Setting | Default | Notes |
 |---|---|---|
 | `server.addr` | `:8080` | HTTP listen address |
-| `storage.path` | `data/proxyllm.db` | SQLite file (bind-mounted in Docker) |
+| `storage.path` | `data/proxyllm.db` | SQLite file (mounted at `/data` in Docker) |
 | `storage.master_key_path` | `data/master.key` | Envelope key file (0600) |
 | `log.level` | `info` | `debug`, `info`, `warn`, `error` |
 | `log.format` | `json` | `json` (structured) or `text` (dev) |

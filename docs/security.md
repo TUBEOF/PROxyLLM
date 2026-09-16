@@ -77,7 +77,8 @@ full `route_trace` (routing decisions, never credentials).
   capabilities, no shell — see `docker/Dockerfile`,
   `docker/Dockerfile.release`, `docker/compose.yaml`.
 - Compose adds `no-new-privileges`, `cap_drop: ALL`, `pids_limit`, tmpfs
-  `/tmp`; the only writable path is the bind-mounted `/data`.
+  `/tmp`; the only writable path is the mounted `/data` (named volume
+  or bind mount).
 - In-binary healthcheck (`/proxyllm -healthcheck`) — distroless has no
   shell/curl.
 
