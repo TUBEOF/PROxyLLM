@@ -31,8 +31,11 @@ run: build
 clean:
 	rm -f $(BINARY) $(BINARY).exe
 
+# Development: build the image from source and run the deployment compose
+# file against it (IMAGE overrides the pinned registry image).
 docker:
-	docker compose -f docker/compose.yaml up --build
+	docker build -f docker/Dockerfile -t proxyllm:dev .
+	IMAGE=proxyllm:dev docker compose -f docker/compose.yaml up
 
 # --- WebUI (plan §9; dist is embedded via webui/embed.go) --------------
 

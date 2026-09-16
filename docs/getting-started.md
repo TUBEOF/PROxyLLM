@@ -7,30 +7,23 @@ admin WebUI.
 
 ## Quickstart (Docker)
 
-No checkout required — the example compose file runs the published
+No checkout required — the deployment compose file runs the published
 image:
 
 ```bash
-curl -O https://raw.githubusercontent.com/TUBEOF/PROxyLLM/main/docker/compose.example.yaml
-docker compose -f compose.example.yaml up -d
+curl -O https://raw.githubusercontent.com/TUBEOF/PROxyLLM/main/docker/compose.yaml
+docker compose up -d
 ```
 
-From a source checkout, the from-source variant builds the image
-locally:
-
-```bash
-git clone https://github.com/TUBEOF/PROxyLLM.git
-cd PROxyLLM
-docker compose -f docker/compose.yaml up -d
-```
+From a source checkout, `make docker` builds the image locally and runs
+the same compose file against it.
 
 Open `http://localhost:8080` — the WebUI's first-run bootstrap creates the
 admin account. The `./data` directory (bind-mounted) holds the SQLite
 database and the generated master key (0600).
 
 The container runs hardened: read-only rootfs, dropped capabilities,
-non-root, pids/memory limits (see
-[docker/compose.example.yaml](../docker/compose.example.yaml)).
+non-root, pids/memory limits (see [docker/compose.yaml](../docker/compose.yaml)).
 
 ## Run from source
 

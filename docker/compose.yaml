@@ -1,16 +1,33 @@
-# PROxyLLM — single service, single data directory.
+# PROxyLLM deployment — single service, single data directory.
+#
+# Runs the published multi-arch image (amd64 + arm64). Copy it out of the
+# checkout (or curl it from the repo) and adjust to taste:
+#
+#   docker compose up -d
+#
+# Development from a source checkout: point the image at a local build —
+#   IMAGE=proxyllm:dev make docker
+# (the Makefile target builds and starts the same file via the IMAGE
+# override below; no second compose file exists).
+
+name: proxyllm
+
 services:
   proxyllm:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    # Pin a release tag for reproducible deployments; :latest tracks the
+    # newest release. IMAGE overrides the default for local development.
+    image: ${IMAGE:-ghcr.io/tubeof/proxyllm:v1.0.0}
     ports:
       - "8080:8080"
     volumes:
       # The only writable path: SQLite DB + envelope master key live here.
+      # Back this directory up — together the two files are the full state.
       - ./data:/data
     environment:
       PROXYLLM_SERVER_ADDR: ":8080"
+      # Optional overrides — see docs/configuration.md:
+      # PROXYLLM_LOG_LEVEL: "info"
+      # PROXYLLM_LOG_FORMAT: "json"
     # ADR-007 control 6: read-only rootfs — /data (bind mount) is the only
     # writable path; /tmp is a size-capped tmpfs for runtime scratch.
     read_only: true
@@ -19,8 +36,8 @@ services:
     pids_limit: 100
     # Plan §8 perf budget: RSS ≤ 128 MB @ 100 concurrent streams (verified
     # in the phase-3 report); the limit gives headroom over the budget —
-    # a wedging container is restarted instead of wedged forever (research
-    # D-1: healthcheck + resource limits work as a pair).
+    # a wedging container is restarted instead of wedged forever
+    # (healthcheck + resource limits work as a pair).
     mem_limit: 384m
     security_opt:
       - no-new-privileges:true

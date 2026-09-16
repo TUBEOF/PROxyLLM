@@ -49,16 +49,16 @@ Core properties:
 The quickest path runs the published image — no source checkout needed:
 
 ```bash
-curl -O https://raw.githubusercontent.com/TUBEOF/PROxyLLM/main/docker/compose.example.yaml
-docker compose -f compose.example.yaml up -d
+curl -O https://raw.githubusercontent.com/TUBEOF/PROxyLLM/main/docker/compose.yaml
+docker compose up -d
 curl http://localhost:8080/healthz
 ```
 
 While this repository is private, that raw URL needs an authenticated
-curl (`-H "Authorization: token <PAT>"`) — or copy the file from a
-checkout. `docker/compose.example.yaml` pins the released multi-arch
-image; the repo also ships a from-source variant, `docker/compose.yaml`,
-for development.
+curl (`-H "Authorization: token <PAT>"`) — or copy
+[`docker/compose.yaml`](docker/compose.yaml) from a checkout. From a
+checkout, `make docker` builds the image locally and runs the same
+compose file against it.
 
 Open `http://localhost:8080` for the admin WebUI (first-run bootstrap).
 Create a client key (**Keys**), then point your client at the proxy:
@@ -73,10 +73,9 @@ export ANTHROPIC_AUTH_TOKEN="pk_..."
 # api_key  = pk_...
 ```
 
-The same multi-arch images (`ghcr.io/tubeof/proxyllm:<tag>`) also run
-plain `docker run` (see [deployment](docs/deployment.md)); binary
-archives are on the [Releases
-page](https://github.com/TUBEOF/PROxyLLM/releases).
+The same multi-arch image also runs via plain `docker run` (see
+[deployment](docs/deployment.md)); binary archives are on the
+[Releases page](https://github.com/TUBEOF/PROxyLLM/releases).
 
 ## Documentation
 
