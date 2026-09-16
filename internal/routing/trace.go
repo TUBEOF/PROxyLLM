@@ -47,6 +47,15 @@ const (
 	// thinking strip/map/block, clamps, emulation) — never silent.
 	EventCompatPolicy EventType = "compat_policy"
 
+	// EventExpand: a chain type entry expanded to the accounts of that
+	// type (ADR-009) — From carries the type, To the comma-joined
+	// account IDs. Expansions are never silent.
+	EventExpand EventType = "expand"
+
+	// EventRotation: the round-robin strategy rotated the candidate list
+	// (ADR-009) — From/To carry the old/new first entry. Never silent.
+	EventRotation EventType = "rotation"
+
 	// EventEmulatedTool: a server tool was served by the §6.2 emulation
 	// layer (model tool call answered via the Firecrawl fallback) —
 	// substitutions are never silent.

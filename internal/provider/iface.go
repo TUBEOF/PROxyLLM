@@ -130,6 +130,31 @@ type Registry interface {
 	Register(p Provider)
 }
 
+// TypedProvider is the optional account-type surface a provider exposes
+// (ADR-009): a provider row IS an account, and its type groups the
+// accounts the routing engine pools under a chain's type entries. Every
+// storage-backed provider (custom, ollamacloud, codex) implements this;
+// test stubs may not — a provider without it never matches a type entry.
+type TypedProvider interface {
+	// Type returns the canonical provider type string (e.g.
+	// "ollama-cloud", "codex-oauth") — the same value as the providers
+	// table's type column the chain entries name.
+	Type() string
+}
+
+// CredentialedProvider is the optional credential-presence surface
+// (ADR-009 decision 4): accounts without a credential (abandoned OAuth
+// drafts) are excluded from type expansion — routing live traffic to a
+// guaranteed auth failure serves nobody. Providers without this surface
+// are treated as credentialed (statically-keyed or keyless providers
+// where "no key" is a legal routing state, mirroring the construction
+// path's providerAPIKey contract).
+type CredentialedProvider interface {
+	// HasCredential reports whether the account can authenticate: an API
+	// key or OAuth token is present.
+	HasCredential() bool
+}
+
 // NewRegistry returns the default registry with no providers registered.
 func NewRegistry() Registry {
 	return &registry{providers: make(map[string]Provider)}

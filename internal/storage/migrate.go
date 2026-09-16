@@ -94,6 +94,11 @@ var migrations = []string{
 	`CREATE INDEX IF NOT EXISTS idx_request_logs_model ON request_logs(model);`,
 	`CREATE INDEX IF NOT EXISTS idx_request_logs_provider ON request_logs(provider_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_request_logs_status ON request_logs(status);`,
+	// v3: ADR-009 — per-rule routing strategy. "" (the default) inherits the
+	// global default from the config-KV (routing_strategy); the canonical
+	// values are round_robin and fill_first. Append-only: v1/v2 statements
+	// are never edited; existing rules read as "" = inherit.
+	`ALTER TABLE routing_rules ADD COLUMN strategy TEXT NOT NULL DEFAULT '';`,
 }
 
 func (s *Store) migrate() error {

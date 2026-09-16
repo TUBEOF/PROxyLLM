@@ -14,5 +14,6 @@ consequences.
 | [ADR-006](ADR-006-test-strategy.md) | Testing: spec-derived golden fixtures, RED-GREEN | Accepted |
 | [ADR-007](ADR-007-security-concept.md) | Security: auth default-on, envelope encryption, redaction-first | Accepted |
 | [ADR-008](ADR-008-non-claude-routing.md) | Non-Claude routing via Anthropic surface: first-class feature | Accepted |
+| [ADR-009](ADR-009-provider-accounts-and-strategies.md) | Provider accounts (rows per type) and routing strategies (round robin / fill-first) | Accepted |
 
 ADR template: [TEMPLATE.md](TEMPLATE.md)

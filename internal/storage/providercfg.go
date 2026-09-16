@@ -126,6 +126,32 @@ func (s *Store) ListProviders(ctx context.Context) ([]Provider, error) {
 	return out, rows.Err()
 }
 
+// ListProvidersByProviderType returns every account (provider row) of one
+// type, id-ascending — the per-type accounts list of the provider settings
+// page (ADR-009: an account is a providers row; a type's accounts are all
+// rows sharing the type value). A type with no rows returns an empty list,
+// never an error.
+func (s *Store) ListProvidersByProviderType(ctx context.Context, providerType string) ([]Provider, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, type, name, config FROM providers WHERE type = ? ORDER BY id ASC`, providerType)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	out := make([]Provider, 0)
+	for rows.Next() {
+		var p Provider
+		var cfg string
+		if err := rows.Scan(&p.ID, &p.Type, &p.Name, &cfg); err != nil {
+			return nil, err
+		}
+		p.Config = json.RawMessage(cfg)
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // DeleteProvider removes a provider together with its models and its
 // (encrypted) token rows in one transaction — no orphan rows, no credential
 // residue for a provider the operator removed. Missing rows are

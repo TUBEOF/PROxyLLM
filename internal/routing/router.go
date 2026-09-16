@@ -8,16 +8,23 @@ import (
 
 	"github.com/tubeof/proxyllm/internal/provider"
 )
-
 // Rule is one routing rule (Analysis E rule model; storage:
-// routing_rules table). The deterministic resolution order is:
-// key scope → model match → capability filter → chain → health gate.
+// routing_rules table, extended by ADR-009). The deterministic resolution
+// order is: key scope → model match → chain expansion → strategy →
+// capability filter → health gate.
 type Rule struct {
+	// ID is the rule's storage identity. It keys the round-robin rotation
+	// counters (per-rule, ADR-009) — empty ID rules share one counter.
+	ID string
+
 	// MatchModel is the model pattern to match: exact name or wildcard
 	// with a single trailing `*` (e.g. `claude-*`).
 	MatchModel string
 
-	// Chain is the ordered fallback chain of provider IDs.
+	// Chain is the ordered fallback chain of provider IDs OR provider
+	// types. A type entry expands to all credentialed accounts of that
+	// type at resolve time (ADR-009); an exact provider ID always wins
+	// over a type of the same name.
 	Chain []string
 
 	// Priority orders rules with overlapping matches; higher wins.
@@ -26,6 +33,10 @@ type Rule struct {
 
 	// Enabled gates the rule; disabled rules are skipped.
 	Enabled bool
+
+	// Strategy is the per-rule candidate-ordering strategy (ADR-009):
+	// empty inherits GlobalStrategy, otherwise round_robin or fill_first.
+	Strategy Strategy
 }
 
 // ChainEntry is one resolved fallback step: the provider and the model to
@@ -38,17 +49,20 @@ type ChainEntry struct {
 // Router resolves requests to deterministic fallback chains (plan
 // Analysis E: deterministic and testable; score/weight fuzzy routing was
 // rejected as primary mechanism precisely because it is neither).
+// ADR-009 restates determinism per request sequence: the round-robin
+// counters are the only sequence-dependent state, per-rule and observable.
 type Router struct {
 	cfg    Config
 	reg    provider.Registry
 	health *HealthTracker
 
-	// mu guards rules — the live rule set is replaceable at runtime
-	// (WebUI routing writes reload it). Readers take RLock; the reload
-	// path takes Lock for one whole-set swap. Aliases and KeyScopes stay
-	// startup-fixed: only rules are DB-editable today.
-	mu    sync.RWMutex
-	rules []Rule
+	// mu guards rules and the round-robin counters — the live rule set is
+	// replaceable at runtime (WebUI routing writes reload it). Readers take
+	// RLock; the reload path takes Lock for one whole-set swap. Aliases and
+	// KeyScopes stay startup-fixed: only rules are DB-editable today.
+	mu         sync.RWMutex
+	rules       []Rule
+	rrCounters map[string]uint64
 }
 
 // Config carries the routing inputs.
@@ -63,6 +77,11 @@ type Config struct {
 	// KeyScopes maps client key ID → allowed model patterns; a key with
 	// no entry is unrestricted (Analysis E step 1).
 	KeyScopes map[string][]string
+
+	// GlobalStrategy is the strategy for rules whose own Strategy is
+	// StrategyInherit (ADR-009; config-KV routing_strategy, storage
+	// default round_robin). Swappable at runtime via SetStrategy.
+	GlobalStrategy Strategy
 }
 
 // Option configures a Router.
@@ -81,7 +100,7 @@ func WithHealth(h *HealthTracker) Option {
 
 // NewRouter returns a Router for cfg.
 func NewRouter(cfg Config, opts ...Option) *Router {
-	r := &Router{cfg: cfg, rules: cfg.Rules}
+	r := &Router{cfg: cfg, rules: cfg.Rules, rrCounters: make(map[string]uint64)}
 	for _, opt := range opts {
 		opt(r)
 	}
@@ -105,6 +124,15 @@ func (r *Router) SetAliases(aliases map[string]string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.cfg.Aliases = aliases
+}
+
+// SetStrategy atomically replaces the live global strategy (the admin
+// API's reload hook for the routing_strategy KV write — same live-swap
+// contract as SetRules/SetAliases). Per-rule strategies ride SetRules.
+func (r *Router) SetStrategy(s Strategy) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cfg.GlobalStrategy = s
 }
 
 // ResolveOptions carries per-request resolution modifiers.
@@ -166,31 +194,138 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 		trace.add(Event{Type: EventRejected, Reason: "no matching routing rule", Model: model})
 		return nil, trace, err
 	}
+	rule := rules[0]
 
-	// Steps 4+5: filter the chain by capability and health, recording
-	// every skip (never silent).
-	entries := make([]ChainEntry, 0, len(rules[0].Chain))
-	for _, pid := range rules[0].Chain {
-		p, ok := r.lookup(pid)
+	// Step 4 (ADR-009): chain expansion. Each entry resolves as an exact
+	// provider ID first (legacy rows whose id equals a type string keep
+	// their behavior); otherwise a known provider type expands to all its
+	// credentialed accounts in stable registry order. Every expansion and
+	// every dead entry is traced — never silent.
+	entries, err := r.expandChain(rule.Chain, trace, model)
+	if err != nil {
+		trace.add(Event{Type: EventRejected, Reason: "chain empty after expansion", Model: model})
+		return nil, trace, err
+	}
+
+	// Step 5 (ADR-009): strategy. Round robin rotates the expanded
+	// candidates by the per-rule counter BEFORE the capability/health
+	// filter — rotation never overrides the gates, it only reorders.
+	strategy := rule.Strategy.Resolve(r.cfg.GlobalStrategy)
+	if strategy == StrategyRoundRobin && len(entries) > 1 {
+		entries = r.rotate(rule, entries, trace)
+	}
+
+	// Step 6: capability + health filter, recording every skip (never
+	// silent). The filter loop is unchanged — it walks whatever order the
+	// strategy produced.
+	out := make([]ChainEntry, 0, len(entries))
+	for _, entry := range entries {
+		p, ok := r.lookup(entry)
 		if !ok {
-			trace.add(Event{Type: EventSkipped, ProviderID: pid, Reason: "provider not registered"})
+			trace.add(Event{Type: EventSkipped, ProviderID: entry, Reason: "provider not registered"})
 			continue
 		}
 		if missing := missingCapabilities(p.Capabilities(), required); missing != "" {
-			trace.add(Event{Type: EventSkipped, ProviderID: pid, Reason: "capability gap: " + missing})
+			trace.add(Event{Type: EventSkipped, ProviderID: entry, Reason: "capability gap: " + missing})
 			continue
 		}
-		if r.health != nil && r.health.Cooldown(pid) {
-			trace.add(Event{Type: EventSkipped, ProviderID: pid, Reason: "health cooldown"})
+		if r.health != nil && r.health.Cooldown(entry) {
+			trace.add(Event{Type: EventSkipped, ProviderID: entry, Reason: "health cooldown"})
 			continue
 		}
-		entries = append(entries, ChainEntry{ProviderID: pid, Model: model})
+		out = append(out, ChainEntry{ProviderID: entry, Model: model})
 	}
-	if len(entries) == 0 {
+	if len(out) == 0 {
 		trace.add(Event{Type: EventRejected, Reason: "chain empty after capability/health filtering", Model: model})
 		return nil, trace, ErrNoRoute
 	}
-	return entries, trace, nil
+	return out, trace, nil
+}
+
+// expandChain resolves each chain entry to concrete provider IDs (ADR-009).
+// An exact registry hit wins (the entry is that provider); a miss against a
+// known type expands to the type's credentialed accounts in registry order;
+// anything else is a traced skip. The terminal error fires only when every
+// entry resolved to nothing.
+func (r *Router) expandChain(chain []string, trace *Trace, model string) ([]string, error) {
+	candidates := make([]string, 0, len(chain))
+	for _, entry := range chain {
+		if p, ok := r.lookup(entry); ok {
+			// Exact ID beat: never expand a registered provider, even if
+			// its ID collides with a type string (legacy compatibility).
+			if cp, credentialed := p.(provider.CredentialedProvider); credentialed && !cp.HasCredential() {
+				trace.add(Event{Type: EventSkipped, ProviderID: entry, Reason: "account has no credential"})
+				continue
+			}
+			candidates = append(candidates, entry)
+			continue
+		}
+		accounts, excluded := r.accountsOfType(entry)
+		if len(accounts) == 0 && len(excluded) == 0 {
+			trace.add(Event{Type: EventSkipped, ProviderID: entry, Reason: "no accounts for type " + entry})
+			continue
+		}
+		for _, skipped := range excluded {
+			trace.add(Event{Type: EventSkipped, ProviderID: skipped, Reason: "account has no credential (excluded from type expansion)"})
+		}
+		if len(accounts) == 0 {
+			trace.add(Event{Type: EventSkipped, ProviderID: entry, Reason: "no credentialed accounts for type " + entry})
+			continue
+		}
+		trace.add(Event{Type: EventExpand, From: entry, To: strings.Join(accounts, ","), Model: model})
+		candidates = append(candidates, accounts...)
+	}
+	if len(candidates) == 0 {
+		return nil, ErrNoRoute
+	}
+	return candidates, nil
+}
+
+// accountsOfType returns the registered accounts of one provider type in
+// stable registry order (insertion = store id ASC), split into credentialed
+// accounts and credentialless ones. Providers that do not expose a type
+// never match; credentialless accounts (abandoned OAuth drafts, ADR-009
+// decision 4) are excluded from expansion — routing live traffic to a
+// guaranteed auth failure serves nobody — and returned separately so the
+// caller can trace the exclusion (never silent).
+func (r *Router) accountsOfType(typ string) (accounts, excluded []string) {
+	if r.reg == nil {
+		return nil, nil
+	}
+	for _, p := range r.reg.List() {
+		tp, ok := p.(provider.TypedProvider)
+		if !ok || tp.Type() != typ {
+			continue
+		}
+		if cp, credentialed := p.(provider.CredentialedProvider); credentialed && !cp.HasCredential() {
+			excluded = append(excluded, p.ID())
+			continue
+		}
+		accounts = append(accounts, p.ID())
+	}
+	return accounts, excluded
+}
+
+// rotate applies the round-robin strategy to the expanded candidates: the
+// per-rule counter picks the rotation offset, the list rotates left by it,
+// and the rotation is traced (never silent) — including the offset-0 turn,
+// because "this request's rotation landed on the first account" is exactly
+// the observable the operator needs. Counter and read run under one Lock —
+// the increment and the rotation must not interleave with a concurrent
+// SetRules swap.
+func (r *Router) rotate(rule Rule, entries []string, trace *Trace) []string {
+	r.mu.Lock()
+	offset := r.rrCounters[rule.ID]
+	r.rrCounters[rule.ID] = offset + 1
+	r.mu.Unlock()
+
+	off := int(offset % uint64(len(entries)))
+	rotated := make([]string, len(entries))
+	copy(rotated, entries[off:])
+	copy(rotated[len(entries)-off:], entries[:off])
+	trace.add(Event{Type: EventRotation, From: entries[0], To: rotated[0],
+		Reason: "round_robin: rotate " + rule.ID})
+	return rotated
 }
 
 // matchingRules returns the rules matching model, ordered best-first:
