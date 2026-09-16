@@ -169,6 +169,37 @@ verbatim): the anchor now inherits `var(--fg)`.
 
 | Commit | Scope |
 |---|---|
+| `18f6140` | fix(webui): mount AuthProvider (D-1) |
+| `ff73ca9` | fix(docker): copy embed.go into the build stage (D-2) |
+| `a6847b5` | fix(webui): modal stacking (D-3) + brand link color (D-4), design-rules test repairs (T-1/T-2), this report |
+
+---
+
+## 6. First CI execution (2026-09-16, repo gained its remote)
+
+The repo was pushed to `github.com/TUBEOF/PROxyLLM` (private) with the
+module path rewritten to `github.com/tubeof/proxyllm` (module paths and
+GHCR image names must be lowercase; GitHub URLs are case-insensitive).
+The **first CI execution in the project's history** then surfaced eight
+more latent defects in configuration that no local gate can exercise —
+each fixed in its own commit:
+
+| # | Defect | Fix |
+|---|---|---|
+| 1 | `update-visual-baselines.yml` was unparseable YAML (multiline `git commit -m` ended the block scalar) — an invalid workflow file in a push fails **every** run of that push as a "workflow file issue" | commit message as `-m` arguments |
+| 2 | `ci.yml` had `upload-artifact` inputs at step level (not under `with:`) — unparseable, run dies with 0 jobs; js-yaml only validates syntax, not GitHub's step schema | inputs moved under `with:` |
+| 3 | `iPhone 13` Playwright device runs on the **WebKit** engine; CI installed only chromium → every mobile test failed | install `chromium webkit` in both workflows |
+| 4 | GoReleaser release failed "git is in a dirty state": the SPA build overwrites the committed dist placeholder; no per-file allowlist exists (`GORELEASER_ALLOW_DIRTY` is not a thing) | `git update-index --assume-unchanged` before the GoReleaser step |
+| 5 | gosec G101 flagged the fixturesrv seed password | `//nolint:gosec` with reason (fixture seed, disposable store) |
+| 6 | CodeQL: SARIF upload needs `security-events: write`, status query needs `actions: read`; code scanning on a private repo additionally needs GitHub Advanced Security (paid) — the workflow now skips CodeQL with a visible notice when the repo is private without GHAS; gitleaks + gosec still cover the gate | permissions + visibility condition |
+| 7 | Perf-budget p99 was hostage to shared-runner stalls (observed 163 / 12 / 490 ms windows for code that measures 5.97 ms) | warmup + best-of-5 batches; per-batch values logged |
+| 8 | The tokens-only design rule did not know WebKit's `oklab(L a b)` serialization for color-mix composites (Chromium emits oklch()/rgba()) | oklab branch: hue via atan2(b, a) against the same oklch windows |
+
+After these fixes: lint, test, security, benchmark, docker green; the
+visual baselines were captured in CI via the (repaired)
+`update-visual-baselines` workflow and committed to main. The v1.0.0
+tag predates all fixes and must be re-cut (the release pipeline never
+produced artifacts).
 | `fix(webui)` | mount AuthProvider (D-1) |
 | `fix(docker)` | copy embed.go into the build stage (D-2) |
 | `fix(webui)` | modal stacking over backdrop (D-3) + brand link color (D-4), design-rules test fixes (T-1/T-2), verification report |
