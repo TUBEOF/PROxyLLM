@@ -251,11 +251,16 @@ func TestPerfBudgets(t *testing.T) {
 	// virtual-runner stalls (neighbor-VM load, GC pauses): the same code
 	// measured 5.97 ms on the release runner and 40+ ms in the benchmark
 	// job on the same day. Noise is strictly additive — a stall inflates a
-	// batch's p99, it never deflates it — so measuring a few batches and
+	// batch's p99, it never deflates it — so measuring several batches and
 	// taking the minimum p99 isolates the proxy's own overhead from the
 	// host's scheduling noise. A real regression inflates every batch.
+	// Five batches after an observed CI run where even the best of three
+	// sat at 12.16 ms while whole 200-sample windows measured 163 ms and
+	// 490 ms on a heavily loaded neighbor: the chance that five windows
+	// all catch a stall shrinks sharply, and the logged per-batch values
+	// keep the noise visible for trend reading.
 	const samples = 200
-	const batches = 3
+	const batches = 5
 	bench.nonStreamingScripts(t, samples*batches)
 	lat := make([]float64, 0, samples)
 	// Warmup: the budget asserts steady-state proxy overhead, but the first
