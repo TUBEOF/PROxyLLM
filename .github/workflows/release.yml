@@ -72,7 +72,12 @@ jobs:
       # go:embed reads webui/dist at compile time; GoReleaser's build step
       # must see the real assets. (The committed dist/index.html placeholder
       # is replaced in the working tree only — it stays committed for
-      # fresh-clone compiles.)
+      # fresh-clone compiles.) GoReleaser requires a clean git state and has
+      # no allowlist for dirty files, so tell git to ignore changes to
+      # exactly that placeholder: the working tree keeps the real bundle
+      # for go:embed, while any OTHER modified file still fails GoReleaser.
+      - name: ignore dist placeholder churn
+        run: git update-index --assume-unchanged webui/dist/index.html
       - name: run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
