@@ -185,6 +185,12 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
       - name: perf budgets (TestPerfBudgets, verbose)
+        # report mode: shared runners can be neighbor-loaded for a whole
+        # run (observed 31-140 ms batches for code measuring 2.6 ms on
+        # quiet runners) — on main the numbers matter, the hard gate is
+        # the release pipeline's perf-budgets job.
+        env:
+          PROXYLLM_PERF_BUDGETS: report
         run: go test ./internal/e2e -run TestPerfBudgets -v -count=1
       - name: benchmark baselines
         run: go test ./internal/e2e -bench . -benchtime=200x -run xxx -v
