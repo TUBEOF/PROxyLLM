@@ -55,10 +55,12 @@ jobs:
             echo "No baseline changes — snapshots already up to date."
             exit 0
           fi
-          git commit -m "webui: regenerate visual regression baselines (CI)
-
-Baseline refresh via update-visual-baselines workflow (research §7 V-5):
-captured in CI on ubuntu-latest against the fixture server, never locally.
-
-Co-Authored-By: Claude Code <noreply@anthropic.com>"
+          # Single-line -m paragraphs: a multi-line quoted string with
+          # unindented continuation lines ends the YAML block scalar and
+          # makes this workflow file unparseable (which fails every run
+          # in the same push — GitHub marks the whole push as a workflow
+          # file issue).
+          git commit -m "webui: regenerate visual regression baselines (CI)" \
+            -m "Baseline refresh via update-visual-baselines workflow (research §7 V-5): captured in CI on ubuntu-latest against the fixture server, never locally." \
+            -m "Co-Authored-By: Claude Code <noreply@anthropic.com>"
           git push
