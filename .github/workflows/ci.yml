@@ -122,11 +122,13 @@ jobs:
             echo "::error::bundle budget exceeded: ${total} > 204800 bytes gzip"
             exit 1
           fi
-      # V-4: chromium only (the two projects both run on chromium engines);
+      # V-4: the seeded suite runs two projects: desktop-chrome (chromium
+      # engine) and iphone-13 (the iPhone 13 device descriptor maps to the
+      # webkit engine — installing only chromium fails every mobile test);
       # baselines are captured in CI, never locally (V-3).
       - name: install Playwright browsers
         working-directory: webui
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install --with-deps chromium webkit
       - name: build fixture server
         run: |
           go build -o webui/e2e/fixturesrv-bin ./webui/e2e/fixturesrv

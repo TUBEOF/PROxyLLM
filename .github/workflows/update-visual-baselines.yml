@@ -37,7 +37,9 @@ jobs:
         run: npm run build
       - name: install Playwright browsers
         working-directory: webui
-        run: npx playwright install --with-deps chromium
+        # iphone-13 project runs on the webkit engine (chromium alone can't
+        # regenerate the mobile baselines)
+        run: npx playwright install --with-deps chromium webkit
       - name: build fixture server
         run: go build -o webui/e2e/fixturesrv-bin ./webui/e2e/fixturesrv
       - name: regenerate baselines (seeded)

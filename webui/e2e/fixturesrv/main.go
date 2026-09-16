@@ -30,7 +30,7 @@ import (
 // and the local dev loop.
 const (
 	seedAdminUser = "admin"
-	seedAdminPass = "proxyllm-e2e"
+	seedAdminPass = "proxyllm-e2e" //nolint:gosec // fixture seed for the disposable test store, not a real credential
 )
 
 func main() {
