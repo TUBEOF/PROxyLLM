@@ -1,3 +1,5 @@
+//go:build !race
+
 package e2e
 
 // Enabled reports whether the race detector is active in this test binary
