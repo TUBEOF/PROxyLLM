@@ -25,6 +25,10 @@ RUN go mod download
 
 COPY cmd/ cmd/
 COPY internal/ internal/
+# The embed package's single Go source must exist in the build context —
+# without it the github.com/proxyllm/proxyllm/webui import (server.go) has
+# no Go files and the build fails.
+COPY webui/embed.go webui/
 # The embedded SPA comes from the webui stage; the placeholder under
 # webui/dist (committed for fresh-clone compiles) is never shipped.
 COPY --from=webui /src/webui/dist/ webui/dist/
