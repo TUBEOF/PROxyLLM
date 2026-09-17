@@ -37,10 +37,10 @@ type Server struct {
 
 // serverOptions collects the New options.
 type serverOptions struct {
-	providers  []provider.Provider
-	emulator   routing.Emulator
-	masterKey  []byte
-	modelSync  bool
+	providers []provider.Provider
+	emulator  routing.Emulator
+	masterKey []byte
+	modelSync bool
 }
 
 // Option configures New.
