@@ -118,16 +118,39 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 
 	// Providers (storage rows; the visual suite only drives the admin API,
 	// so no live provider registration is needed). Type strings match the
-	// WebUI editor's canonical vocabulary (Providers.tsx PROVIDER_TYPES) —
-	// a save through the drawer must not rewrite the type.
+	// provider-type catalog (providertypes.go). ADR-009: multiple accounts
+	// per type — the accounts list and card counts render real state.
 	for _, p := range []storage.Provider{
-		{ID: "prv-codex", Type: "codex-oauth", Name: "ChatGPT / Codex"},
-		{ID: "prv-ollama", Type: "ollama-cloud", Name: "Ollama Cloud"},
+		{ID: "prv-codex", Type: "codex-oauth", Name: "Work account"},
+		{ID: "prv-codex-2", Type: "codex-oauth", Name: "Personal account"},
+		{ID: "prv-ollama", Type: "ollama-cloud", Name: "Ollama key 1"},
+		{ID: "prv-ollama-2", Type: "ollama-cloud", Name: "Ollama key 2"},
 		{ID: "prv-openai", Type: "custom-openai", Name: "Custom OpenAI-compatible"},
 	} {
 		if err := store.PutProvider(ctx, p); err != nil {
 			return fmt.Errorf("seed provider %s: %w", p.ID, err)
 		}
+	}
+	// Credentials: the connected accounts carry sealed token rows (the
+	// accounts table renders the badge from their presence); one codex
+	// draft stays credential-less to exercise "Sign-in required".
+	for _, id := range []string{"prv-codex", "prv-ollama", "prv-ollama-2"} {
+		if err := store.PutProviderTokens(ctx, storage.ProviderToken{
+			ProviderID: id, Kind: "access_token", Secret: []byte("fixture-token"),
+		}); err != nil {
+			return fmt.Errorf("seed token %s: %w", id, err)
+		}
+	}
+
+	// ADR-009: shared type settings (codex issuer) + the global routing
+	// strategy, both through the same KV surface the admin API writes.
+	if err := store.PutProviderTypeSettings(ctx, map[string]json.RawMessage{
+		"codex-oauth": json.RawMessage(`{"issuer":"https://auth.openai.com"}`),
+	}); err != nil {
+		return fmt.Errorf("seed type settings: %w", err)
+	}
+	if err := store.SetRoutingStrategy(ctx, "round_robin"); err != nil {
+		return fmt.Errorf("seed routing strategy: %w", err)
 	}
 
 	// Models with capability flags and per-model compat policies (§6.4).
@@ -165,7 +188,9 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 		}
 	}
 
-	// Routing rules (Analysis E): a simple match + a fallback chain.
+	// Routing rules (Analysis E + ADR-009): an exact-account chain, a
+	// type-entry rule (expands to all accounts of the type at request
+	// time), and one with an explicit per-rule strategy override.
 	rules := []storage.RoutingRule{
 		{
 			ID:         "rule-claude",
@@ -180,6 +205,7 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 			Chain:      []string{"prv-codex/gpt-5"},
 			Priority:   10,
 			Enabled:    true,
+			Strategy:   "fill_first",
 		},
 	}
 	for _, r := range rules {

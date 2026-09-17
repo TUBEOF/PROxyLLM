@@ -65,7 +65,7 @@ encrypted store.
 
 ## Database overrides (layer 4)
 
-The settings KV (WebUI-editable) is the highest layer. Two keys are
+The settings KV (WebUI-editable) is the highest layer. Three keys are
 live-routing overrides — a successful write reaches the runtime without
 restart:
 
@@ -73,6 +73,12 @@ restart:
 |---|---|---|
 | `model_aliases` | JSON object alias → model-id | Routing-side alias resolution (WebUI "Models & Compatibility"): the target model's rule chain routes the alias request; an invalid blob logs and routes without aliases until it is fixed |
 | `anthropic_surface_non_claude` | `allow` (default) / `warn` / `block` | Global switch on the Anthropic surface (plan §6.4): `warn` annotates route_trace with a compat_policy event; `block` refuses non-Claude model names with a 400 — Claude targets are always spared; a missing or invalid value is `allow` (never fails closed) |
+| `routing_strategy` | `round_robin` (default) / `fill_first` | Global default routing strategy (ADR-009): how requests spread across a chain's accounts. Rules without their own strategy inherit it; the WebUI Routing page edits it. A missing or invalid value is `round_robin` |
+
+The provider-type settings (`provider_type_settings`, ADR-009) ride the
+same KV: one JSON object keyed by provider type holding the type's shared
+fields (e.g. the codex issuer). Account-level config fields override them;
+the WebUI provider pages edit them through forms.
 
 Every applied policy (including `warn`) is recorded in the request's
 `route_trace` — policy application is never silent.

@@ -11,6 +11,44 @@ export interface Provider {
   config: unknown;
 }
 
+// ADR-009: one account is a providers row of a type; has_credential is a
+// presence probe of the encrypted token store (the secret never rides).
+export interface Account {
+  id: string;
+  type: string;
+  name: string;
+  has_credential: boolean;
+}
+
+// Provider-type catalog entry (admin GET /api/admin/provider-types): the
+// metadata the Providers cards and the per-type forms render from.
+export interface ProviderTypeField {
+  key: string;
+  label: string;
+  kind: 'text' | 'url';
+  required: boolean;
+  hint: string;
+}
+
+export interface ProviderType {
+  type: string;
+  label: string;
+  description: string;
+  auth: 'api_key' | 'oauth';
+  settings_fields: ProviderTypeField[];
+  account_fields: ProviderTypeField[];
+  default_capabilities: Record<string, boolean>;
+}
+
+export interface ProviderTypesResponse {
+  types: ProviderType[];
+}
+
+export interface ProviderTypeDetailResponse {
+  settings: unknown;
+  accounts: Account[];
+}
+
 export interface Model {
   id: string;
   provider_id: string;
@@ -26,6 +64,18 @@ export interface RoutingRule {
   chain: string[];
   priority: number;
   enabled: boolean;
+  // ADR-009: '' inherits the global default; otherwise 'round_robin' or
+  // 'fill_first'.
+  strategy: string;
+}
+
+// ADR-009 routing strategies: round_robin rotates the expanded candidate
+// list per request; fill_first keeps the chain order (sticky to the first
+// entry until the health gate opens or a 429 fails over).
+export type Strategy = 'round_robin' | 'fill_first';
+
+export interface RoutingStrategyResponse {
+  strategy: Strategy;
 }
 
 export interface ClientKey {

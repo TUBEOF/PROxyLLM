@@ -9,6 +9,7 @@ import Loading from './components/Loading';
 const Login = lazy(() => import('./routes/Login'));
 const Overview = lazy(() => import('./routes/Overview'));
 const Providers = lazy(() => import('./routes/Providers'));
+const ProviderType = lazy(() => import('./routes/ProviderType'));
 const Models = lazy(() => import('./routes/Models'));
 const Routing = lazy(() => import('./routes/Routing'));
 const Logs = lazy(() => import('./routes/Logs'));
@@ -30,6 +31,7 @@ export default function App() {
         >
           <Route index element={<Overview />} />
           <Route path="providers" element={<Providers />} />
+          <Route path="providers/:type" element={<ProviderType />} />
           <Route path="models" element={<Models />} />
           <Route path="routing" element={<Routing />} />
           <Route path="logs" element={<Logs />} />

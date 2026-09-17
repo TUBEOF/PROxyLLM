@@ -35,6 +35,15 @@ test.describe('signed in', () => {
     await expect(page).toHaveScreenshot('providers.png');
   });
 
+  // ADR-009: the per-type settings page — accounts list, credential
+  // badges, connection settings form. Captured for the oauth type (the
+  // codex card's destination) so both badge states render.
+  test('provider-type', async ({ page }) => {
+    await page.goto('/providers/codex-oauth');
+    await readyForCapture(page);
+    await expect(page).toHaveScreenshot('provider-type.png');
+  });
+
   test('models', async ({ page }) => {
     await page.goto('/models');
     await readyForCapture(page);

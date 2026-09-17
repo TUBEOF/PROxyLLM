@@ -1,16 +1,24 @@
 import { FormEvent, useCallback, useMemo, useState } from 'react';
 import { apiCall } from '../api';
-import type { ModelsResponse, RoutingRule, RulesResponse } from '../types';
+import type { ModelsResponse, RoutingRule, RoutingStrategyResponse, RulesResponse, Strategy } from '../types';
 import { EmptyState, ErrorNote, PageHead, useAdminData, useMutation } from '../hooks';
 import { Drawer } from '../components/Overlays';
 import { IconPlus } from '../icons';
 
-// Routing (plan §9): rules table + drawer editor. The admin API's rule
-// model is match_model → chain ([]string of provider/model ids) + priority
-// + enabled; the chain editor is an ordered list the operator can append
-// to and reorder, since the chain IS the fallback order (Analysis E).
-// The alias map and the global allow/warn/block switch ride the settings
-// surface (config KV) — they live on /settings, with the rule editor here.
+// Routing (plan §9 + ADR-009): the global strategy (Round Robin default /
+// Fill-First) and rules with per-rule strategy overrides. The admin API's
+// rule model is match_model → chain ([]string of provider types, provider
+// ids, or provider/model pairs) + priority + enabled + strategy; the chain
+// editor is an ordered list the operator can append to and reorder, since
+// the chain IS the fallback order (Analysis E). Type entries expand to all
+// accounts of that type at request time — new accounts join without rule
+// edits. The alias map and the global allow/warn/block switch ride the
+// settings surface (config KV) — they live on /settings.
+
+const STRATEGIES: { value: Strategy; label: string; desc: string }[] = [
+  { value: 'round_robin', label: 'Round Robin', desc: 'Requests rotate across all accounts of a type — even load distribution.' },
+  { value: 'fill_first', label: 'Fill-First', desc: 'Account 1 serves everything until it fails (rate limit / breaker) — then the next takes over.' },
+];
 
 export default function Routing() {
   const { data, loading, error, reload } = useAdminData<RulesResponse>(
@@ -19,20 +27,42 @@ export default function Routing() {
   const { data: modelsData } = useAdminData<ModelsResponse>(
     (signal) => apiCall<ModelsResponse>('GET', '/api/admin/models', undefined, signal),
   );
+  const { data: strategyData, reload: reloadStrategy } = useAdminData<RoutingStrategyResponse>(
+    (signal) => apiCall<RoutingStrategyResponse>('GET', '/api/admin/routing-strategy', undefined, signal),
+  );
   const rules = useMemo(() => data?.rules ?? [], [data]);
   const models = useMemo(() => modelsData?.models ?? [], [modelsData]);
   const modelIDs = useMemo(() => models.map((m) => m.id), [models]);
+  const globalStrategy = strategyData?.strategy ?? 'round_robin';
 
   const [editing, setEditing] = useState<RoutingRule | null>(null);
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [form, setForm] = useState({ id: '', match_model: '', chain: [] as string[], priority: '0', enabled: true });
+  const [form, setForm] = useState({
+    id: '',
+    match_model: '',
+    chain: [] as string[],
+    priority: '0',
+    enabled: true,
+    strategy: '',
+  });
 
   const save = useMutation();
   const del = useMutation();
+  const saveGlobal = useMutation();
+
+  const setGlobalStrategy = useCallback(
+    async (value: Strategy) => {
+      const ok = await saveGlobal.run(() =>
+        apiCall('PUT', '/api/admin/routing-strategy', { strategy: value }),
+      );
+      if (ok !== null) reloadStrategy();
+    },
+    [saveGlobal, reloadStrategy],
+  );
 
   const openCreate = useCallback(() => {
-    setForm({ id: '', match_model: '', chain: [], priority: '0', enabled: true });
+    setForm({ id: '', match_model: '', chain: [], priority: '0', enabled: true, strategy: '' });
     setCreating(true);
     setEditing(null);
     setFormError(null);
@@ -45,6 +75,7 @@ export default function Routing() {
       chain: [...rule.chain],
       priority: String(rule.priority),
       enabled: rule.enabled,
+      strategy: rule.strategy ?? '',
     });
     setEditing(rule);
     setCreating(false);
@@ -104,6 +135,7 @@ export default function Routing() {
           chain: form.chain,
           priority,
           enabled: form.enabled,
+          strategy: form.strategy,
         }),
       );
       if (ok) {
@@ -138,6 +170,42 @@ export default function Routing() {
         }
       />
       <div className="canvas">
+        {/* Global strategy (ADR-009): the default for every rule that does
+            not pin its own. Rules can override per drawer below. Visible
+            radios, not the .toggle switch kit (that hides its inputs). */}
+        <div className="w-full" style={{ marginBottom: 8 }}>
+          <fieldset className="fieldset">
+            <legend>Strategy</legend>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {STRATEGIES.map((s) => (
+              <label key={s.value} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
+                <input
+                  type="radio"
+                  name="global-strategy"
+                  checked={globalStrategy === s.value}
+                  onChange={() => void setGlobalStrategy(s.value)}
+                  disabled={saveGlobal.pending}
+                  style={{ marginTop: 3 }}
+                />
+                <span>
+                  <strong>{s.label}</strong>
+                  <br />
+                  <span className="hint">{s.desc}</span>
+                </span>
+              </label>
+            ))}
+            {saveGlobal.error !== null && (
+              <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+                {saveGlobal.error}
+              </p>
+            )}
+          </div>
+          <span className="hint" style={{ marginTop: 8, display: 'block' }}>
+            The global default applies to every rule without its own strategy. Per-rule
+            overrides are set in each rule.
+          </span>
+          </fieldset>
+        </div>
         {error !== null ? (
           <div className="w-full">
             <ErrorNote message={error} />
@@ -169,6 +237,7 @@ export default function Routing() {
                       <th>Match</th>
                       <th>Chain</th>
                       <th className="num">Priority</th>
+                      <th>Strategy</th>
                       <th>Status</th>
                       <th />
                     </tr>
@@ -189,6 +258,19 @@ export default function Routing() {
                           )}
                         </td>
                         <td className="num">{rule.priority}</td>
+                        <td>
+                          {rule.strategy === '' ? (
+                            <span className="badge info">
+                              <span className="b-dot" />
+                              inherits ({globalStrategy === 'round_robin' ? 'Round Robin' : 'Fill-First'})
+                            </span>
+                          ) : (
+                            <span className="badge info">
+                              <span className="b-dot" />
+                              {rule.strategy === 'round_robin' ? 'Round Robin' : 'Fill-First'}
+                            </span>
+                          )}
+                        </td>
                         <td>
                           {rule.enabled ? (
                             <span className="badge up">
@@ -296,6 +378,22 @@ export default function Routing() {
                 onChange={(e) => setForm((f) => ({ ...f, priority: e.target.value }))}
               />
               <span className="hint">Higher wins when several rules match.</span>
+            </div>
+            <div className="field has-select">
+              <label htmlFor="r-strategy">Strategy</label>
+              <select
+                id="r-strategy"
+                value={form.strategy}
+                onChange={(e) => setForm((f) => ({ ...f, strategy: e.target.value }))}
+              >
+                <option value="">Inherit global ({globalStrategy === 'round_robin' ? 'Round Robin' : 'Fill-First'})</option>
+                <option value="round_robin">Round Robin</option>
+                <option value="fill_first">Fill-First</option>
+              </select>
+              <span className="hint">
+                How requests spread across the chain{'&apos;'}s accounts. Inherit uses the global
+                default.
+              </span>
             </div>
             <label className="toggle" style={{ display: 'flex' }}>
               <input

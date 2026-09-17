@@ -60,16 +60,22 @@ admin account when none exists.
 | Group | Endpoints |
 |---|---|
 | Sessions | `POST /bootstrap`, `POST /login`, `POST /logout` |
+| Provider types (ADR-009) | `GET /provider-types` (catalog: labels, form field descriptors, auth kind), `GET /provider-types/{type}` (settings + accounts), `PUT /provider-types/{type}/settings`, `POST /provider-types/{type}/accounts` (server-minted id; api keys sealed in the token store; oauth drafts validate against the type settings' issuer) |
 | Providers | `GET /providers`, `PUT /providers/{id}`, `DELETE /providers/{id}`, `POST /providers/{id}/oauth/start`, `POST /providers/{id}/oauth/poll` |
 | Models | `GET /models`, `PUT /models/{id}`, `DELETE /models/{id}` (compat settings per model) |
-| Routing | `GET /routing`, `PUT /routing/{id}`, `DELETE /routing/{id}` |
+| Routing | `GET /routing`, `PUT /routing/{id}`, `DELETE /routing/{id}` — rules carry a per-rule `strategy` (empty = inherit); chain entries name provider types, provider ids, or `provider/model` pairs; `GET /routing-strategy`, `PUT /routing-strategy` (global default, live-swap) |
 | Client keys | `POST /keys` (secret shown once), `GET /keys`, `POST /keys/{id}/revoke` |
 | Observability | `GET /usage`, `GET /logs` (redacted; `route_trace` detail) |
 | Settings | `GET /settings`, `PUT /settings`, `DELETE /settings/{key}` (DB override layer) |
 
 Live-routing overrides via settings: `model_aliases`,
-`anthropic_surface_non_claude` — a successful write reaches the runtime
-without restart (see [configuration.md](configuration.md#database-overrides-layer-4)).
+`anthropic_surface_non_claude`, `routing_strategy` — a successful write
+reaches the runtime without restart (see
+[configuration.md](configuration.md#database-overrides-layer-4)).
+
+`route_trace` rows carry `"version":2` since ADR-009 (additive: the new
+`expand` and `rotation` event types; older rows have no version field and
+render unchanged).
 
 ## Health
 
