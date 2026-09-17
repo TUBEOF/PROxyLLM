@@ -38,6 +38,11 @@ type providerTypeDesc struct {
 	Label string `json:"label"`
 	// Description is the card's one-liner.
 	Description string `json:"description"`
+	// Kind is what the account serves (ADR-010): "llm" (routable chat
+	// models — chain entries) or "web_tool" (an emulator backend — the
+	// web_search/web_fetch fallback lists). web_tool accounts are never
+	// LLM-chain-routable and vice versa.
+	Kind string `json:"kind"`
 	// Auth is how accounts authenticate: "api_key" (form input) or "oauth"
 	// (device-flow sign-in button).
 	Auth string `json:"auth"`
@@ -48,9 +53,18 @@ type providerTypeDesc struct {
 	// account's own config blob; type settings fill the same keys first).
 	AccountFields []fieldDesc `json:"account_fields"`
 	// DefaultCapabilities are the type's baseline pins (server/providers.go
-	// defaultCaps) so the settings form can pre-check the boxes.
+	// defaultCaps) so the settings form can pre-check the boxes. nil for
+	// non-LLM kinds.
 	DefaultCapabilities map[string]bool `json:"default_capabilities"`
 }
+
+// Provider kinds (ADR-010).
+const (
+	// KindLLM marks routable chat-model providers (chain entries).
+	KindLLM = "llm"
+	// KindWebTool marks web-tool emulator providers (web fallback lists).
+	KindWebTool = "web_tool"
+)
 
 // providerTypes is the catalog — order is the card order on the Providers
 // page. The Type values match ProviderTypeCustomOpenAI/OllamaCloud/
@@ -60,6 +74,7 @@ var providerTypes = []providerTypeDesc{
 		Type:        ProviderTypeCustomOpenAI,
 		Label:       "Custom OpenAI-compatible",
 		Description: "Any OpenAI-compatible chat-completions endpoint: base URL plus API key.",
+		Kind:        KindLLM,
 		Auth:        "api_key",
 		SettingsFields: []fieldDesc{
 			{Key: "base_url", Label: "Base URL", Kind: fieldKindURL, Required: true,
@@ -72,6 +87,7 @@ var providerTypes = []providerTypeDesc{
 		Type:        ProviderTypeOllamaCloud,
 		Label:       "Ollama Cloud",
 		Description: "The hosted Ollama API at ollama.com (native /api/chat). Multiple API keys = multiple accounts.",
+		Kind:        KindLLM,
 		Auth:        "api_key",
 		SettingsFields: []fieldDesc{
 			{Key: "base_url", Label: "Base URL", Kind: fieldKindURL, Required: false,
@@ -84,6 +100,7 @@ var providerTypes = []providerTypeDesc{
 		Type:        ProviderTypeCodexOAuth,
 		Label:       "ChatGPT / Codex",
 		Description: "ChatGPT backend via device-flow sign-in (RFC 8628). Multiple sign-ins = multiple accounts.",
+		Kind:        KindLLM,
 		Auth:        "oauth",
 		SettingsFields: []fieldDesc{
 			{Key: "issuer", Label: "OAuth issuer", Kind: fieldKindURL, Required: true,
@@ -91,6 +108,19 @@ var providerTypes = []providerTypeDesc{
 		},
 		AccountFields:       nil, // tokens arrive via the device flow, not a form
 		DefaultCapabilities: map[string]bool{"streaming": true, "tools": true},
+	},
+	{
+		Type:        ProviderTypeFirecrawl,
+		Label:       "Firecrawl",
+		Description: "Web-tool backend powering emulated web_search / web_fetch (server-tool fallback). Not a chat model provider.",
+		Kind:        KindWebTool,
+		Auth:        "api_key",
+		SettingsFields: []fieldDesc{
+			{Key: "base_url", Label: "Base URL", Kind: fieldKindURL, Required: false,
+				Hint: "Optional override; defaults to https://api.firecrawl.dev (self-hosted instances set their root here)"},
+		},
+		AccountFields:       nil,
+		DefaultCapabilities: nil, // web-tool accounts carry no chat capabilities
 	},
 }
 

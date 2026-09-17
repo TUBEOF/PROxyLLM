@@ -49,8 +49,17 @@ type AdminParams struct {
 	// router after every successful routing-strategy write (ADR-009 →
 	// router.SetStrategy) — same live-swap contract as ReloadSettings.
 	ReloadStrategy func()
-	Now            func() int64
-	MasterKey      []byte
+	// ReloadFallbacks pushes the capability fallback lists into the live
+	// runtime after every successful fallback write (ADR-010:
+	// vision_fallback → router.SetVisionFallback; the web-tool lists are
+	// picked up by the provider reload's pool rebuild — same live-swap
+	// contract).
+	ReloadFallbacks func()
+	// SyncNow runs one model-sync pass synchronously (ADR-010 WebUI "Sync
+	// now" button). nil when the sync is not wired (no master key).
+	SyncNow   func(ctx context.Context) (storage.ModelSyncState, error)
+	Now       func() int64
+	MasterKey []byte
 }
 
 // AdminAPI serves the /api/admin/ surface. It holds no state of its own
@@ -63,6 +72,8 @@ type AdminAPI struct {
 	reloadProviders func()
 	reloadSettings  func()
 	reloadStrategy  func()
+	reloadFallbacks func()
+	syncNow         func(ctx context.Context) (storage.ModelSyncState, error)
 	sessions        *auth.SessionManager
 
 	oauthMu    sync.Mutex
@@ -82,6 +93,8 @@ func NewAdminAPI(p AdminParams) *AdminAPI {
 		reloadProviders: p.ReloadProviders,
 		reloadSettings:  p.ReloadSettings,
 		reloadStrategy:  p.ReloadStrategy,
+		reloadFallbacks: p.ReloadFallbacks,
+		syncNow:         p.SyncNow,
 		sessions:        auth.NewSessionManager(p.Store, p.MasterKey, now),
 		oauthFlows:      map[string]*codex.DeviceSession{},
 	}
@@ -125,6 +138,13 @@ func (a *AdminAPI) Handler() http.Handler {
 	mux.Handle("DELETE /api/admin/routing/{id}", a.sessions.RequireAdmin(http.HandlerFunc(a.deleteRoutingRule)))
 	mux.Handle("GET /api/admin/routing-strategy", a.sessions.RequireAdmin(http.HandlerFunc(a.getRoutingStrategy)))
 	mux.Handle("PUT /api/admin/routing-strategy", a.sessions.RequireAdmin(http.HandlerFunc(a.putRoutingStrategy)))
+
+	// ADR-010: capability fallback lists + model sync.
+	mux.Handle("GET /api/admin/capability-fallbacks", a.sessions.RequireAdmin(http.HandlerFunc(a.getCapabilityFallbacks)))
+	mux.Handle("PUT /api/admin/capability-fallbacks", a.sessions.RequireAdmin(http.HandlerFunc(a.putCapabilityFallbacks)))
+	mux.Handle("GET /api/admin/model-sync", a.sessions.RequireAdmin(http.HandlerFunc(a.getModelSync)))
+	mux.Handle("PUT /api/admin/model-sync", a.sessions.RequireAdmin(http.HandlerFunc(a.putModelSync)))
+	mux.Handle("POST /api/admin/model-sync/run", a.sessions.RequireAdmin(http.HandlerFunc(a.runModelSync)))
 
 	mux.Handle("POST /api/admin/keys", a.sessions.RequireAdmin(http.HandlerFunc(a.createKey)))
 	mux.Handle("GET /api/admin/keys", a.sessions.RequireAdmin(http.HandlerFunc(a.listKeys)))
@@ -711,7 +731,13 @@ func (a *AdminAPI) validateChain(ctx context.Context, chain []string) error {
 		if known[providerID] {
 			continue
 		}
-		if _, ok := providerTypeByID(entry); ok {
+		if desc, ok := providerTypeByID(entry); ok {
+			// ADR-010: web_tool types are emulator backends, not chat
+			// models — an LLM chain entry naming one can never route, so
+			// the save refuses it instead of persisting a guaranteed skip.
+			if desc.Kind == KindWebTool {
+				return fmt.Errorf("chain entry %q is a web-tool provider, not routable as an LLM chain entry", entry)
+			}
 			continue
 		}
 		return fmt.Errorf("chain entry %q is not a known provider type or provider id", entry)
@@ -738,6 +764,7 @@ func (a *AdminAPI) listModels(w http.ResponseWriter, r *http.Request) {
 			Capabilities: json.RawMessage(m.Capabilities),
 			Compat:       json.RawMessage(m.Compat),
 			Priority:     m.Priority,
+			Origin:       m.Origin,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"models": out})
@@ -773,6 +800,10 @@ func (a *AdminAPI) putModel(w http.ResponseWriter, r *http.Request) {
 		Capabilities: req.Capabilities,
 		Compat:       req.Compat,
 		Priority:     req.Priority,
+		// ADR-010: a WebUI save is operator authorship — a synced row edited
+		// here becomes manual (the sync stops tracking it), a new row is
+		// manual from birth. Empty origin = manual (storage default).
+		Origin: storage.ModelManualOrigin,
 	}); err != nil {
 		writeStoreError(w, err)
 		return
@@ -1096,7 +1127,8 @@ type oauthPollDTO struct {
 }
 
 // modelDTO carries the per-model compat blob (§6.4) verbatim — the
-// "Models & Compatibility" editor's persistence backend.
+// "Models & Compatibility" editor's persistence backend. Origin is the
+// ADR-010 provenance badge ("manual" | "synced").
 type modelDTO struct {
 	ID           string          `json:"id"`
 	ProviderID   string          `json:"provider_id"`
@@ -1104,6 +1136,7 @@ type modelDTO struct {
 	Capabilities json.RawMessage `json:"capabilities"`
 	Compat       json.RawMessage `json:"compat"`
 	Priority     int             `json:"priority"`
+	Origin       string          `json:"origin"`
 }
 
 type ruleDTO struct {

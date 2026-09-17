@@ -32,8 +32,10 @@ import (
 	"github.com/tubeof/proxyllm/internal/provider/codex"
 	"github.com/tubeof/proxyllm/internal/provider/custom"
 	"github.com/tubeof/proxyllm/internal/provider/ollamacloud"
+	"github.com/tubeof/proxyllm/internal/routing"
 	"github.com/tubeof/proxyllm/internal/server/webui"
 	"github.com/tubeof/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/tools/firecrawl"
 )
 
 // loadProviders builds live providers from the stored rows. Errors are
@@ -46,10 +48,14 @@ import (
 // per type on their write paths; the static parse below re-checks the
 // merged shape. A type-settings read failure logs and degrades to empty —
 // never a startup death on store noise.
-func loadProviders(ctx context.Context, store *storage.Store, logger *slog.Logger) ([]provider.Provider, error) {
+//
+// ADR-010: web_tool-kind rows (firecrawl) construct Emulators instead of
+// chat providers; they are returned separately so the executor's emulator
+// pool can pick them up. An LLM row and a web_tool row never cross.
+func loadProviders(ctx context.Context, store *storage.Store, logger *slog.Logger) ([]provider.Provider, []routing.Emulator, error) {
 	rows, err := store.ListProviders(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	typeSettings, err := store.GetProviderTypeSettings(ctx)
 	if err != nil {
@@ -58,44 +64,57 @@ func loadProviders(ctx context.Context, store *storage.Store, logger *slog.Logge
 		typeSettings = map[string]json.RawMessage{}
 	}
 	out := make([]provider.Provider, 0, len(rows))
+	var emus []routing.Emulator
 	for _, row := range rows {
-		p, err := buildProvider(ctx, store, row, typeSettings, logger)
+		p, emu, err := buildProvider(ctx, store, row, typeSettings, logger)
 		if err != nil {
 			logger.Error("provider row not constructable — skipping (fix it in the WebUI)",
 				"provider_id", row.ID, "type", row.Type, "error", err)
 			continue
 		}
+		if emu != nil {
+			emus = append(emus, emu)
+			continue
+		}
 		out = append(out, p)
 	}
-	return out, nil
+	return out, emus, nil
 }
 
-// buildProvider constructs one provider from its stored row. The config is
-// parsed with the STATIC variant of the write-path validator: full shape
-// checks, but no DNS resolution — rows were already SSRF-guarded when they
-// were written, and a transient DNS failure at reload must never drop a
-// live provider. The parse input is the ADR-009 merged config (type
-// settings ⊕ own fields, own wins).
+// buildProvider constructs one row into its live form (ADR-010): an LLM
+// provider, or — for web_tool kinds — an Emulator with a nil provider
+// return. The config is parsed with the STATIC variant of the write-path
+// validator: full shape checks, but no DNS resolution — rows were already
+// SSRF-guarded when they were written, and a transient DNS failure at
+// reload must never drop a live provider. The parse input is the ADR-009
+// merged config (type settings ⊕ own fields, own wins).
 func buildProvider(ctx context.Context, store *storage.Store, row storage.Provider,
-	typeSettings map[string]json.RawMessage, logger *slog.Logger) (provider.Provider, error) {
+	typeSettings map[string]json.RawMessage, logger *slog.Logger) (provider.Provider, routing.Emulator, error) {
 	merged, err := webui.MergeProviderConfig(typeSettings[row.Type], row.Config)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	cfg, err := webui.ParseProviderConfigStatic(row.Type, merged)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	caps := capsFromConfig(cfg, row.Type)
 
 	switch row.Type {
+	case webui.ProviderTypeFirecrawl:
+		// ADR-010 web_tool kind: the account IS an emulator backend. The
+		// key rides the encrypted token store; a keyless row constructs
+		// and fails at call time with the documented upstream error (the
+		// same honest-state contract as keyless custom accounts).
+		emu := firecrawl.NewEmulator(cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), nil)
+		return nil, emu, nil
+
 	case webui.ProviderTypeCustomOpenAI:
-		return custom.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), caps), nil
+		return custom.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type)), nil, nil
 
 	case webui.ProviderTypeOllamaCloud:
 		// Empty base_url is a legal save: the provider defaults to the
 		// hosted endpoint.
-		return ollamacloud.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), caps), nil
+		return ollamacloud.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type)), nil, nil
 
 	case webui.ProviderTypeCodexOAuth:
 		// The codex provider speaks the ChatGPT backend (X7/X19); the
@@ -111,17 +130,17 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 		return codex.New(codex.ProviderConfig{
 			ID:           row.ID,
 			BaseURL:      codexBaseURL,
-			Capabilities: caps,
+			Capabilities: capsFromConfig(cfg, row.Type),
 			Auth:         authc,
 			// Streaming transport with guarded redirects — the OAuth access
 			// token rides the Bearer header on every dispatch.
 			HTTP: httpguard.NewStreamingClient(),
-		}), nil
+		}), nil, nil
 
 	default:
 		// ParseProviderConfig rejects unknown types, so this is a
 		// construction-table drift, not operator input.
-		return nil, errors.New("no construction path for type " + row.Type)
+		return nil, nil, errors.New("no construction path for type " + row.Type)
 	}
 }
 

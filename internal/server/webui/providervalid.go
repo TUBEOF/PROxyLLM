@@ -25,6 +25,7 @@ const (
 	ProviderTypeCustomOpenAI = "custom-openai"
 	ProviderTypeOllamaCloud  = "ollama-cloud"
 	ProviderTypeCodexOAuth   = "codex-oauth"
+	ProviderTypeFirecrawl    = "firecrawl"
 )
 
 // OptOutEnv is the documented operator opt-out for the private-address
@@ -157,10 +158,22 @@ func parseProviderConfig(typ string, raw []byte, guardURLs bool) (ProviderConfig
 		if cfg.BaseURL != "" {
 			return cfg, fmt.Errorf("issuer is the only URL field for codex-oauth (the backend URL is pinned by the provider)")
 		}
+	case ProviderTypeFirecrawl:
+		// base_url is optional: empty selects the firecrawl client's
+		// documented default (https://api.firecrawl.dev) — self-hosted
+		// instances and proxies override it.
+		if cfg.BaseURL != "" {
+			if err := checkURL(cfg.BaseURL, "base_url", guardURLs); err != nil {
+				return cfg, err
+			}
+		}
+		if cfg.Issuer != "" {
+			return cfg, fmt.Errorf("base_url is the only URL field for firecrawl (issuer belongs to codex-oauth)")
+		}
 	case "":
-		return cfg, fmt.Errorf("type is required (custom-openai, ollama-cloud, codex-oauth)")
+		return cfg, fmt.Errorf("type is required (custom-openai, ollama-cloud, codex-oauth, firecrawl)")
 	default:
-		return cfg, fmt.Errorf("unknown provider type %q (custom-openai, ollama-cloud, codex-oauth)", typ)
+		return cfg, fmt.Errorf("unknown provider type %q (custom-openai, ollama-cloud, codex-oauth, firecrawl)", typ)
 	}
 
 	for name := range cfg.Capabilities {
