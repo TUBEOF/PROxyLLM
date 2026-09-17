@@ -206,11 +206,13 @@ export default function ProviderTypePage() {
             </fieldset>
           </form>
 
-          {/* Accounts — one row per provider row of this type. */}
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          {/* Accounts — one row per provider row of this type. minw-0 keeps
+              the flex column from being stretched past the viewport by the
+              table's min-width on mobile (the scroll container handles it). */}
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
               <h3 style={{ margin: 0 }}>Accounts</h3>
-              <span className="hint">Chain entries naming “{meta.type}” spread requests over all accounts.</span>
+              <span className="hint" style={{ minWidth: 0 }}>Chain entries naming “{meta.type}” spread requests over all accounts.</span>
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
@@ -283,7 +285,7 @@ export default function ProviderTypePage() {
             {/* Referenced-account hint: cheap client-side check against the
                 loaded rules; the server's chain validation is the gate. */}
             {accounts.some((a) => referencedIds.has(a.id)) && (
-              <p className="hint" style={{ marginTop: 10 }}>
+              <p className="hint" style={{ marginTop: 10, overflowWrap: 'anywhere' }}>
                 One or more accounts are referenced by routing rules (exact-ID entries).
                 Deleting them leaves those rule entries skipping with a traced reason.
               </p>
