@@ -13,6 +13,7 @@ import (
 
 	"github.com/tubeof/proxyllm/internal/auth"
 	"github.com/tubeof/proxyllm/internal/config"
+	"github.com/tubeof/proxyllm/internal/modelsync"
 	"github.com/tubeof/proxyllm/internal/provider"
 	"github.com/tubeof/proxyllm/internal/routing"
 	"github.com/tubeof/proxyllm/internal/server/httpapi"
@@ -27,6 +28,11 @@ type Server struct {
 	store  *storage.Store
 	logger *slog.Logger
 	mux    *http.ServeMux
+
+	// syncCancel stops the model-sync scheduler on server shutdown (ADR-010;
+	// nil when the sync never started — e.g. no master key, or tests opting
+	// out).
+	syncCancel context.CancelFunc
 }
 
 // serverOptions collects the New options.
@@ -83,12 +89,15 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 
 	// Provider registry: static providers join once; stored provider rows
 	// (WebUI-edited) are constructed here and re-registered on every
-	// admin-API provider write (Task 5 Gap #2) — no restart.
+	// admin-API provider write (Task 5 Gap #2) — no restart. Web-tool
+	// emulators (firecrawl accounts, ADR-010) come back separately for the
+	// executor pool.
 	reg := provider.NewLiveRegistry()
 	for _, p := range o.providers {
 		reg.Register(p)
 	}
-	if err := loadAndReplaceProviders(context.Background(), store, logger, reg); err != nil {
+	dbEmulators, err := loadAndReplaceProviders(context.Background(), store, logger, reg)
+	if err != nil {
 		return nil, err
 	}
 
@@ -119,10 +128,23 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		routing.WithRegistry(reg),
 		routing.WithHealth(health),
 	)
+	// ADR-010 vision fallback: the stored KV list swaps into the live
+	// router; a read failure logs and leaves it unset (never de-route).
+	if visionChain, err := store.GetVisionFallback(context.Background()); err != nil {
+		logger.Error("vision fallback read failed — routing without a vision fallback", "error", err)
+	} else if len(visionChain) > 0 {
+		router.SetVisionFallback(visionChain)
+	}
+
+	// ADR-010 web-tool emulator pool: the stored firecrawl accounts are the
+	// pool's base; the ENV emulator (o.emulator) rides as an additional
+	// member when no DB account provided an emulator (the legacy ENV
+	// configuration path stays functional). Pool order refinement via the
+	// web_search/web_fetch fallback KVs happens on the admin reload.
 	exec := routing.NewExecutor(routing.ExecutorConfig{
 		Registry: reg,
 		Health:   health,
-		Emulator: o.emulator,
+		Emulator: buildEmulatorPool(dbEmulators, o.emulator),
 	})
 
 	// Client-facing surfaces behind client-key auth (Analysis G control 1).
@@ -174,8 +196,13 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 				// swaps the live set; a transient store failure keeps the
 				// last known-good providers (providers.go). The error is
 				// already logged inside loadAndReplaceProviders — nothing
-				// further this hook can do with it.
-				_ = loadAndReplaceProviders(context.Background(), store, logger, reg)
+				// further this hook can do with it. ADR-010: the rebuild
+				// also refreshes the executor's emulator pool.
+				emus, err := loadAndReplaceProviders(context.Background(), store, logger, reg)
+				if err != nil {
+					return
+				}
+				exec.SetEmulator(buildEmulatorPool(emus, nil))
 			},
 			ReloadSettings: func() {
 				// Settings KV writes reach the live runtime without restart:
@@ -193,6 +220,25 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 					router.SetStrategy(routing.Strategy(stored))
 				}
 			},
+			ReloadFallbacks: func() {
+				// ADR-010: the vision fallback KV write swaps the live
+				// router chain (same last-known-good contract). The
+				// web-tool pool order rides ReloadProviders (the fallback
+				// write also triggers it — one write, both hooks).
+				if visionChain, err := store.GetVisionFallback(context.Background()); err != nil {
+					logger.Error("vision fallback reload failed; keeping last known-good chain", "error", err)
+				} else {
+					router.SetVisionFallback(visionChain)
+				}
+				emus, err := loadAndReplaceProviders(context.Background(), store, logger, reg)
+				if err != nil {
+					return
+				}
+				exec.SetEmulator(buildEmulatorPool(emus, nil))
+			},
+			SyncNow: func(ctx context.Context) (storage.ModelSyncState, error) {
+				return modelsync.New(store, reg, logger).Run(ctx)
+			},
 			MasterKey: o.masterKey,
 		})
 		s.mux.Handle("/api/admin/", admin.Handler())
@@ -208,21 +254,58 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
 
+	// ADR-010 model sync: the scheduler starts with the server (one startup
+	// run, then the configured cadence) and stops on context cancel. The
+	// Syncer walks the live registry, so provider reloads are picked up
+	// automatically. The enable switch is read per tick — the WebUI toggle
+	// takes effect at the next tick boundary.
+	//
+	// gosec G118: the cancel is stored on the server for Close/shutdown to
+	// invoke; the analyzer cannot see the cross-method call. A syncCancel
+	// that is never called would leak one goroutine per server instance —
+	// New always stores it, and tests calling New on many servers without
+	// Close is the existing pattern (test servers are process-local).
+	if o.masterKey != nil {
+		ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel stored on the server (syncCancel); called on shutdown
+		s.syncCancel = cancel
+		syncer := modelsync.New(store, reg, logger)
+		go modelsync.NewScheduler(syncer, store, logger).Run(ctx)
+	}
+
 	return s, nil
 }
 
+// buildEmulatorPool assembles the executor's web-tool emulator (ADR-010):
+//   - one DB account  → that account's emulator (the pool with one member
+//     behaves exactly like the pre-ADR-010 single emulator);
+//   - multiple accounts → the EmulatorPool (failover per tool family);
+//   - no DB accounts   → the ENV-wired emulator (o.emulator; the legacy
+//     PROXYLLM_FIRECRAWL_API_KEY path) or nil (the documented
+//     "unavailable" degrade state).
+func buildEmulatorPool(dbEmulators []routing.Emulator, envEmulator routing.Emulator) routing.Emulator {
+	switch {
+	case len(dbEmulators) == 1:
+		return dbEmulators[0]
+	case len(dbEmulators) > 1:
+		return routing.NewEmulatorPool(dbEmulators, dbEmulators)
+	default:
+		return envEmulator
+	}
+}
+
 // loadAndReplaceProviders builds the provider set from the store and swaps
-// it into the live registry's dynamic slot. On a store failure the live set
-// is kept (last known-good) and the error is logged — the contract mirrors
-// ReloadRouting.
-func loadAndReplaceProviders(ctx context.Context, store *storage.Store, logger *slog.Logger, reg *provider.LiveRegistry) error {
-	fresh, err := loadProviders(ctx, store, logger)
+// it into the live registry's dynamic slot; the constructed web-tool
+// emulators (firecrawl accounts, ADR-010) are returned for the executor's
+// emulator pool. On a store failure the live set is kept (last known-good)
+// and the error is logged — the contract mirrors ReloadRouting.
+func loadAndReplaceProviders(ctx context.Context, store *storage.Store, logger *slog.Logger, reg *provider.LiveRegistry) ([]routing.Emulator, error) {
+	fresh, emus, err := loadProviders(ctx, store, logger)
 	if err != nil {
 		logger.Error("provider reload failed; keeping last known-good providers", "error", err)
-		return err
+		return nil, err
 	}
 	reg.ReplaceDynamics(fresh)
-	return nil
+	return emus, nil
 }
 
 // loadModelAliases reads the SPA's `model_aliases` settings blob (JSON

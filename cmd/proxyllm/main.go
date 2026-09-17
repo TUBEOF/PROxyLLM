@@ -142,11 +142,14 @@ func run() error {
 	}
 	store.SetEnvelope(envelope)
 
-	// Web-tool emulation state (plan §6.2) is loud in both directions:
-	// active when a Firecrawl key is configured, degraded (documented
-	// "unavailable" error results) without one.
+	// Web-tool emulation state (plan §6.2 + ADR-010) is loud in both
+	// directions: the ENV key is the legacy configuration path (no
+	// firecrawl account in the DB wins), degraded (documented "unavailable"
+	// error results) without either. The server decides which source
+	// activates; this warning only covers the ENV-absent case — a DB
+	// account needs no ENV.
 	if _, ok := config.FirecrawlAPIKeyFromEnv(); !ok {
-		logger.Warn("PROxyLLM: web-tool emulation is inactive (PROXYLLM_FIRECRAWL_API_KEY not set); emulated web_search/web_fetch requests will receive the documented \"unavailable\" error results")
+		logger.Warn("PROxyLLM: web-tool emulation is inactive unless a firecrawl account exists in the WebUI (PROXYLLM_FIRECRAWL_API_KEY not set); emulated web_search/web_fetch requests without one will receive the documented \"unavailable\" error results")
 	}
 
 	srv, err := server.New(cfg, store, logger, serverOptions(cfg, masterKey)...)

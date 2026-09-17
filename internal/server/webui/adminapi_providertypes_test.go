@@ -40,15 +40,16 @@ func TestProviderTypes_Catalog(t *testing.T) {
 		} `json:"types"`
 	}
 	decodeJSON(t, w, &resp)
-	if len(resp.Types) != 3 {
-		t.Fatalf("catalog has %d types, want 3 (custom-openai, ollama-cloud, codex-oauth)", len(resp.Types))
+	// ADR-010: firecrawl joined the catalog as the first web_tool kind.
+	if len(resp.Types) != 4 {
+		t.Fatalf("catalog has %d types, want 4 (custom-openai, ollama-cloud, codex-oauth, firecrawl)", len(resp.Types))
 	}
 	kinds := map[string]string{}
 	for _, pt := range resp.Types {
 		kinds[pt.Type] = pt.Auth
 	}
-	if kinds["ollama-cloud"] != "api_key" || kinds["codex-oauth"] != "oauth" {
-		t.Errorf("auth kinds: %v (ollama-cloud=api_key, codex-oauth=oauth expected)", kinds)
+	if kinds["ollama-cloud"] != "api_key" || kinds["codex-oauth"] != "oauth" || kinds["firecrawl"] != "api_key" {
+		t.Errorf("auth kinds: %v (ollama-cloud=api_key, codex-oauth=oauth, firecrawl=api_key expected)", kinds)
 	}
 }
 
