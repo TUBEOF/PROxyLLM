@@ -152,7 +152,7 @@ func run() error {
 		logger.Warn("PROxyLLM: web-tool emulation is inactive unless a firecrawl account exists in the WebUI (PROXYLLM_FIRECRAWL_API_KEY not set); emulated web_search/web_fetch requests without one will receive the documented \"unavailable\" error results")
 	}
 
-	srv, err := server.New(cfg, store, logger, serverOptions(cfg, masterKey)...)
+	srv, err := server.New(cfg, store, logger, append(serverOptions(cfg, masterKey), server.WithModelSync())...)
 	if err != nil {
 		return err
 	}

@@ -37,9 +37,10 @@ type Server struct {
 
 // serverOptions collects the New options.
 type serverOptions struct {
-	providers []provider.Provider
-	emulator  routing.Emulator
-	masterKey []byte
+	providers  []provider.Provider
+	emulator   routing.Emulator
+	masterKey  []byte
+	modelSync  bool
 }
 
 // Option configures New.
@@ -66,6 +67,16 @@ func WithMasterKey(key []byte) Option {
 // documented "unavailable" error results — never silently absent.
 func WithEmulator(emu routing.Emulator) Option {
 	return func(o *serverOptions) { o.emulator = emu }
+}
+
+// WithModelSync enables the automatic model-import scheduler (ADR-010).
+// Default OFF: the sync makes live upstream calls per provider and persists
+// wall-clock-stamped state — exactly what a long-running proxy wants and
+// what deterministic environments (test harnesses, the visual-regression
+// fixture server) must not do. The manual "Sync now" admin endpoint works
+// regardless of this option.
+func WithModelSync() Option {
+	return func(o *serverOptions) { o.modelSync = true }
 }
 
 // New assembles the live server: registry, router (rules from the store),
@@ -258,14 +269,16 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 	// run, then the configured cadence) and stops on context cancel. The
 	// Syncer walks the live registry, so provider reloads are picked up
 	// automatically. The enable switch is read per tick — the WebUI toggle
-	// takes effect at the next tick boundary.
+	// takes effect at the next tick boundary. Opt-in via WithModelSync
+	// (default off — deterministic test/fixture assemblies must not make
+	// live upstream calls or persist wall-clock state).
 	//
 	// gosec G118: the cancel is stored on the server for Close/shutdown to
 	// invoke; the analyzer cannot see the cross-method call. A syncCancel
 	// that is never called would leak one goroutine per server instance —
 	// New always stores it, and tests calling New on many servers without
 	// Close is the existing pattern (test servers are process-local).
-	if o.masterKey != nil {
+	if o.masterKey != nil && o.modelSync {
 		ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel stored on the server (syncCancel); called on shutdown
 		s.syncCancel = cancel
 		syncer := modelsync.New(store, reg, logger)

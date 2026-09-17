@@ -211,12 +211,19 @@ export default function ProviderTypePage() {
               table's min-width on mobile (the scroll container handles it). */}
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-              <h3 style={{ margin: 0 }}>Accounts</h3>
-              <span className="hint" style={{ minWidth: 0 }}>Chain entries naming “{meta.type}” spread requests over all accounts.</span>
+              <h3 style={{ margin: 0, flexShrink: 0 }}>Accounts</h3>
+              {/* overflowWrap:anywhere keeps the hint's wrap points
+                  deterministic at phone width — the two-line flex-wrap layout
+                  of this row was a screenshot flake when font subpixels tipped
+                  the break point (v1.0.1 fix 0b6679f, seen again in the
+                  v1.0.2 regen). */}
+              <span className="hint" style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
+                Chain entries naming “{meta.type}” spread requests over all accounts.
+              </span>
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
-                style={{ marginLeft: 'auto' }}
+                style={{ marginLeft: 'auto', flexShrink: 0 }}
                 onClick={() => setAdding(true)}
               >
                 <IconPlus width="14" height="14" />
