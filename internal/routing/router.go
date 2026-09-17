@@ -320,7 +320,13 @@ func (r *Router) rotate(rule Rule, entries []string, trace *Trace) []string {
 	r.rrCounters[rule.ID] = offset + 1
 	r.mu.Unlock()
 
-	off := int(offset % uint64(len(entries)))
+	// Work in uint64 space: mod bounds the offset by the chain length, so
+	// the slice math below is always in range. The single uint64→int
+	// conversion is safe for any counter value because offset < n ≤ MaxInt;
+	// gosec cannot see the bound, hence the reasoned suppression (repo
+	// rule: never a bare nolint).
+	n := uint64(len(entries))
+	off := int(offset % n) //nolint:gosec // offset < n ≤ MaxInt by the mod bound
 	rotated := make([]string, len(entries))
 	copy(rotated, entries[off:])
 	copy(rotated[len(entries)-off:], entries[:off])
