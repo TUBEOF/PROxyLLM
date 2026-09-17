@@ -7,6 +7,8 @@ package ollamacloud
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 
 	"github.com/tubeof/proxyllm/internal/httpguard"
@@ -78,6 +80,39 @@ func (p *Provider) Complete(ctx context.Context, req ir.Request) (ir.Response, e
 // Stream starts one streaming /api/chat round trip (NDJSON lines).
 func (p *Provider) Stream(ctx context.Context, req ir.Request) (<-chan ir.StreamEvent, func(), error) {
 	return p.client.Stream(ctx, req, p.codec.EncodeRequest, p.decoder)
+}
+
+// ListModels fetches the upstream model list (ADR-010 model sync) —
+// GET /api/tags, the native model-list endpoint (fixture
+// testdata/golden/ollama/tags-response.json, docs.ollama.com, 2026-09-17).
+// The entry "name" field is the wire model identifier (the /api/chat
+// "model" value).
+func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
+	raw, err := p.client.Get(ctx, "/api/tags")
+	if err != nil {
+		return nil, err
+	}
+	var list struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, fmt.Errorf("ollamacloud: decode /api/tags response: %w", err)
+	}
+	out := make([]provider.ModelInfo, 0, len(list.Models))
+	seen := make(map[string]struct{}, len(list.Models))
+	for _, m := range list.Models {
+		if m.Name == "" {
+			continue
+		}
+		if _, dup := seen[m.Name]; dup {
+			continue
+		}
+		seen[m.Name] = struct{}{}
+		out = append(out, provider.ModelInfo{Name: m.Name})
+	}
+	return out, nil
 }
 
 // RefreshCredentials is a no-op: Ollama Cloud authenticates with a static

@@ -5,6 +5,8 @@ package codex
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -145,4 +147,39 @@ func decodeResponse(raw []byte) (ir.Response, error) {
 // consumed-token scenario can never hide behind the no-op.
 func (p *Provider) RefreshCredentials(ctx context.Context) error {
 	return p.auth.Refresh(ctx)
+}
+
+// ListModels fetches the backend model list (ADR-010 model sync) —
+// GET {BaseURL}/models with the codex header set. There is no pinned wire
+// contract for this backend endpoint (unlike X13–X24): the lister accepts
+// the OpenAI list shape {data:[{id}]} when the backend serves it and
+// surfaces every other outcome (404, auth failure, unexpected body) as a
+// typed error — the syncer skips the account and records the reason; it
+// never fails the whole run.
+func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
+	raw, err := p.client.Get(ctx, "/models")
+	if err != nil {
+		return nil, err
+	}
+	var list struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, fmt.Errorf("codex: backend /models body is not a model list: %w", err)
+	}
+	out := make([]provider.ModelInfo, 0, len(list.Data))
+	seen := make(map[string]struct{}, len(list.Data))
+	for _, m := range list.Data {
+		if m.ID == "" {
+			continue
+		}
+		if _, dup := seen[m.ID]; dup {
+			continue
+		}
+		seen[m.ID] = struct{}{}
+		out = append(out, provider.ModelInfo{Name: m.ID})
+	}
+	return out, nil
 }

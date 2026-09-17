@@ -197,6 +197,41 @@ func (c *Client) post(ctx context.Context, stream bool, raw []byte) ([]byte, err
 	return body, nil
 }
 
+// Get performs one authenticated GET round trip against a path relative to
+// BaseURL (ADR-010 model discovery): Bearer auth + the provider's error
+// shape for non-2xx, the 2xx body as raw bytes. Transport failures return
+// as-is.
+func (c *Client) Get(ctx context.Context, path string) ([]byte, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("httpx: build request: %w", err)
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
+	httpReq.Header.Set("Accept", "application/json")
+	if c.HeaderHook != nil {
+		extra, err := c.HeaderHook(ctx, false)
+		if err != nil {
+			return nil, fmt.Errorf("httpx: build provider headers: %w", err)
+		}
+		for name, vals := range extra {
+			httpReq.Header[name] = vals
+		}
+	}
+	resp, err := c.HTTP.Do(httpReq)
+	if err != nil {
+		return nil, err // transport failure: no UpstreamError (FO-2 tier 1)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, c.mapError(resp)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("httpx: read response body: %w", err)
+	}
+	return body, nil
+}
+
 // newRequest builds the POST request with Bearer auth (O1/L2). The
 // HeaderHook, when present, overlays per-request headers — used by
 // providers whose credentials rotate between dispatches (codex OAuth) and

@@ -155,6 +155,25 @@ type CredentialedProvider interface {
 	HasCredential() bool
 }
 
+// ModelInfo is one upstream model as the provider's discovery endpoint
+// reports it (ADR-010 model sync). Name is the wire model identifier — the
+// exact string a chat request must carry for that model.
+type ModelInfo struct {
+	// Name is the upstream model identifier (OpenAI "id", Ollama "name").
+	Name string
+}
+
+// ModelLister is the optional model-discovery surface a provider exposes
+// (ADR-010 model sync): providers implementing it participate in the
+// automatic model import. Providers without it are simply never synced —
+// existing implementations and test stubs do not change.
+type ModelLister interface {
+	// ListModels fetches the upstream model list. Errors are per-provider
+	// (transport, auth, unsupported endpoint) — the syncer skips the
+	// provider and records the reason; it never fails the whole run.
+	ListModels(ctx context.Context) ([]ModelInfo, error)
+}
+
 // NewRegistry returns the default registry with no providers registered.
 func NewRegistry() Registry {
 	return &registry{providers: make(map[string]Provider)}

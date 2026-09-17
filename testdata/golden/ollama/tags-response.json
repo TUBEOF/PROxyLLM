@@ -1,0 +1,34 @@
+{
+  "models": [
+    {
+      "name": "gpt-oss:120b",
+      "model": "gpt-oss:120b",
+      "modified_at": "2026-08-04T12:00:00.000000000Z",
+      "size": 65000000000,
+      "digest": "ea35dfe1810f6f1f1f36f8b8e1864603ffc9f99f396f319c22a97e9f7f30906f",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "gptoss",
+        "families": ["gptoss"],
+        "parameter_size": "116.83B",
+        "quantization_level": "Q4_K_M"
+      }
+    },
+    {
+      "name": "qwen3-coder:480b-cloud",
+      "model": "qwen3-coder:480b-cloud",
+      "modified_at": "2026-08-01T09:30:00.000000000Z",
+      "size": 290000000000,
+      "digest": "6f4d1a8b0f0a7f2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "qwen3",
+        "families": ["qwen3"],
+        "parameter_size": "480B",
+        "quantization_level": "Q4_K_M"
+      }
+    }
+  ]
+}

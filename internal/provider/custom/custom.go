@@ -6,6 +6,8 @@ package custom
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 
 	"github.com/tubeof/proxyllm/internal/httpguard"
@@ -80,3 +82,35 @@ func (p *Provider) Stream(ctx context.Context, req ir.Request) (<-chan ir.Stream
 // RefreshCredentials is a no-op: custom providers authenticate with a
 // static operator-supplied key.
 func (p *Provider) RefreshCredentials(_ context.Context) error { return nil }
+
+// ListModels fetches the upstream model list (ADR-010 model sync) —
+// GET {baseURL}/models, the OpenAI list shape (O9 wire shape; fixture
+// testdata/golden/openai/models.json, developers.openai.com, 2026-09-10).
+// The entry "id" field is the wire model identifier.
+func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
+	raw, err := p.client.Get(ctx, "/models")
+	if err != nil {
+		return nil, err
+	}
+	var list struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, fmt.Errorf("custom: decode /models response: %w", err)
+	}
+	out := make([]provider.ModelInfo, 0, len(list.Data))
+	seen := make(map[string]struct{}, len(list.Data))
+	for _, m := range list.Data {
+		if m.ID == "" {
+			continue
+		}
+		if _, dup := seen[m.ID]; dup {
+			continue
+		}
+		seen[m.ID] = struct{}{}
+		out = append(out, provider.ModelInfo{Name: m.ID})
+	}
+	return out, nil
+}
