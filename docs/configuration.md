@@ -74,6 +74,12 @@ restart:
 | `model_aliases` | JSON object alias → model-id | Routing-side alias resolution (WebUI "Models & Compatibility"): the target model's rule chain routes the alias request; an invalid blob logs and routes without aliases until it is fixed |
 | `anthropic_surface_non_claude` | `allow` (default) / `warn` / `block` | Global switch on the Anthropic surface (plan §6.4): `warn` annotates route_trace with a compat_policy event; `block` refuses non-Claude model names with a 400 — Claude targets are always spared; a missing or invalid value is `allow` (never fails closed) |
 | `routing_strategy` | `round_robin` (default) / `fill_first` | Global default routing strategy (ADR-009): how requests spread across a chain's accounts. Rules without their own strategy inherit it; the WebUI Routing page edits it. A missing or invalid value is `round_robin` |
+| `vision_fallback` | JSON array of provider IDs / LLM types | Vision fallback chain (ADR-010): appended to the resolved chain when a request needs vision and the rule chain filtered to nothing; edited on the Routing page. Empty/absent = no fallback (documented `ErrNoRoute`) |
+| `web_search_fallback` | JSON array of web-tool account IDs | Emulator pool order for emulated `web_search` (ADR-010): accounts are tried in order, a failing account fails over to the next. Empty = single-emulator behavior |
+| `web_fetch_fallback` | JSON array of web-tool account IDs | Same as `web_search_fallback`, for `web_fetch` |
+| `model_sync_enabled` | `1` (default) / `0` | Automatic model import (ADR-010): when on, every provider exposing model discovery mirrors its upstream list at startup and on the configured cadence |
+| `model_sync_interval_hours` | integer ≥ 1 (default 24) | Sync cadence; effective at the next tick without restart |
+| `model_sync_state` | JSON (read-only — written by the sync) | Last-run summary: per-provider added/updated/removed counts and skip reasons; rendered on the Models page |
 
 The provider-type settings (`provider_type_settings`, ADR-009) ride the
 same KV: one JSON object keyed by provider type holding the type's shared

@@ -62,20 +62,24 @@ admin account when none exists.
 | Sessions | `POST /bootstrap`, `POST /login`, `POST /logout` |
 | Provider types (ADR-009) | `GET /provider-types` (catalog: labels, form field descriptors, auth kind), `GET /provider-types/{type}` (settings + accounts), `PUT /provider-types/{type}/settings`, `POST /provider-types/{type}/accounts` (server-minted id; api keys sealed in the token store; oauth drafts validate against the type settings' issuer) |
 | Providers | `GET /providers`, `PUT /providers/{id}`, `DELETE /providers/{id}`, `POST /providers/{id}/oauth/start`, `POST /providers/{id}/oauth/poll` |
-| Models | `GET /models`, `PUT /models/{id}`, `DELETE /models/{id}` (compat settings per model) |
+| Models | `GET /models`, `PUT /models/{id}`, `DELETE /models/{id}` (compat settings per model; rows carry the ADR-010 `origin` provenance) |
 | Routing | `GET /routing`, `PUT /routing/{id}`, `DELETE /routing/{id}` — rules carry a per-rule `strategy` (empty = inherit); chain entries name provider types, provider ids, or `provider/model` pairs; `GET /routing-strategy`, `PUT /routing-strategy` (global default, live-swap) |
+| Capability fallbacks (ADR-010) | `GET /capability-fallbacks`, `PUT /capability-fallbacks` — one write for all three lists (`vision`, `web_search`, `web_fetch`; vision entries = provider IDs/LLM types, web entries = web-tool account IDs, validated at the boundary) |
+| Model sync (ADR-010) | `GET /model-sync` (config + last-run state), `PUT /model-sync` (`enabled`, `interval_hours`), `POST /model-sync/run` (synchronous pass, returns the run summary) |
 | Client keys | `POST /keys` (secret shown once), `GET /keys`, `POST /keys/{id}/revoke` |
 | Observability | `GET /usage`, `GET /logs` (redacted; `route_trace` detail) |
 | Settings | `GET /settings`, `PUT /settings`, `DELETE /settings/{key}` (DB override layer) |
 
 Live-routing overrides via settings: `model_aliases`,
-`anthropic_surface_non_claude`, `routing_strategy` — a successful write
-reaches the runtime without restart (see
+`anthropic_surface_non_claude`, `routing_strategy`, plus the ADR-010
+`vision_fallback` / `web_search_fallback` / `web_fetch_fallback` lists —
+a successful write reaches the runtime without restart (see
 [configuration.md](configuration.md#database-overrides-layer-4)).
 
-`route_trace` rows carry `"version":2` since ADR-009 (additive: the new
-`expand` and `rotation` event types; older rows have no version field and
-render unchanged).
+`route_trace` rows carry `"version":3` since ADR-010 (additive: the new
+`capability_fallback` event type; ADR-009 added `expand`/`rotation`,
+ADR-009's `"version":2` rows render unchanged, as do unversioned older
+rows).
 
 ## Health
 

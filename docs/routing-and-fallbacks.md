@@ -31,6 +31,12 @@ substitution, chain expansion, and strategy rotation lands in the request's
 6. **Health gate** — circuit breaker (consecutive failures), exponential
    backoff, probe recovery; cooled-down providers are skipped or
    deprioritized.
+7. **Capability fallbacks** (ADR-010) — when a request needs **vision**
+   and the chain filtered to nothing, the global `vision_fallback` list
+   (Routing page) is consulted: its entries resolve through the same
+   expansion + capability/health gates as rule chains, and the
+   consultation is a traced `capability_fallback` event. An empty list
+   keeps the documented no-route error.
 
 Config lives in the DB and is editable in the WebUI (**Routing**); rule
 writes reach the live router without restart — only a successfully read
@@ -38,6 +44,23 @@ rule set swaps in (a failed store write keeps the last known-good rules).
 The executor's attempt cap (2–3 providers per request) still applies to
 the expanded chain — a very long account pool is not walked in one
 request.
+
+## Capability fallback lists (ADR-010)
+
+The Routing page holds three global priority lists (drag-drop ordered,
+saved in one write):
+
+| List | Entries | Semantics |
+|---|---|---|
+| **Vision fallback** | Provider IDs or LLM provider types | Appended to a vision-less resolved chain; candidates pass the same capability/health gates; every use traced as `capability_fallback` |
+| **Web search fallback** | Web-tool account IDs (firecrawl today) | The emulator pool tries accounts in order on emulated `web_search`; a failing account fails over to the next |
+| **Web fetch fallback** | Web-tool account IDs | Same as above for `web_fetch` |
+
+The web lists refine the executor's emulator pool: with exactly one
+account the behavior is identical to the pre-ADR-010 single emulator; with
+several, a dead backend fails over (the executor's emulation loop is
+unchanged — the pool is just what it calls). Web-tool accounts are never
+LLM-chain-routable; the rule editor refuses them.
 
 ## Failover semantics
 
@@ -69,6 +92,30 @@ When a request needs `web_search`/`web_fetch` and the routed provider
 lacks native support, the Firecrawl emulation layer substitutes
 (protocol-conform result blocks) when the model's `server_tool_emulation`
 is `emulate-firecrawl` — the substitution is recorded in route_trace and
-the response metadata. Without a Firecrawl key, emulation returns the
-documented "unavailable" error results. Vision cannot be emulated: an
-all-chain vision gap is a protocol-conform capability-gap error.
+the response metadata. Firecrawl accounts are connected in the WebUI
+(Providers → Firecrawl, ADR-010); the `PROXYLLM_FIRECRAWL_API_KEY` ENV
+remains the fallback when no account exists, and with neither, emulation
+returns the documented "unavailable" error results. Multiple accounts +
+the web fallback lists give the emulation real failover. Vision cannot be
+emulated: an all-chain vision gap is a protocol-conform capability-gap
+error (or the vision fallback list routes to a capable provider first —
+see above).
+
+## Model sync (ADR-010)
+
+Providers exposing model discovery (custom OpenAI-compatible `GET
+/v1/models`, Ollama Cloud `GET /api/tags`, codex backend best-effort)
+mirror their upstream list automatically: at startup and every
+`model_sync_interval_hours` (default 24). Policy:
+
+- New upstream models appear as **synced** rows (badged in the WebUI).
+- Operator edits (capabilities, compat, priority) on existing rows
+  survive every sync — only names refresh.
+- Synced rows the upstream dropped are deleted; **manual rows are never
+  touched** by the sync.
+- Sync saves from the WebUI convert a row to manual (the sync stops
+  tracking it).
+
+Per-run outcomes (added/updated/removed/skipped per provider) land in the
+`model_sync_state` setting and on the Models page; a dead upstream skips
+loudly and never fails the run.
