@@ -18,11 +18,28 @@ type Model struct {
 	Capabilities json.RawMessage
 	Compat       json.RawMessage
 	Priority     int
+	// Origin is where the row came from (ADR-010): "manual" (operator-
+	// created; the sync never touches or deletes it) or "synced"
+	// (imported/updated by the model-sync run). The empty value reads as
+	// "manual" — pre-v4 rows predate the sync.
+	Origin string
 }
+
+// model origins (models.origin column values).
+const (
+	// ModelOriginManual is the operator-curated origin; the model-sync
+	// never updates or deletes these rows.
+	ModelManualOrigin = "manual"
+	// ModelSyncedOrigin marks rows the model-sync imported; the sync
+	// updates their names and deletes them when the upstream drops them.
+	ModelSyncedOrigin = "synced"
+)
 
 // PutModel upserts one model. The provider must exist — the FK is the
 // referential guarantee that model rows never dangle behind a deleted
-// provider.
+// provider. The origin persists as given: the operator's WebUI save keeps
+// "manual" (the default), the sync writes "synced" — one upsert path, the
+// caller owns the lifecycle semantics.
 func (s *Store) PutModel(ctx context.Context, m Model) error {
 	if m.ID == "" {
 		return fmt.Errorf("model without id: %w", ErrInvalid)
@@ -36,16 +53,20 @@ func (s *Store) PutModel(ctx context.Context, m Model) error {
 	if len(m.Compat) == 0 {
 		m.Compat = json.RawMessage("{}")
 	}
+	if m.Origin == "" {
+		m.Origin = ModelManualOrigin
+	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO models (id, provider_id, name, capabilities, compat, priority)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO models (id, provider_id, name, capabilities, compat, priority, origin)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			provider_id   = excluded.provider_id,
 			name          = excluded.name,
 			capabilities  = excluded.capabilities,
 			compat        = excluded.compat,
-			priority      = excluded.priority`,
-		m.ID, m.ProviderID, m.Name, string(m.Capabilities), string(m.Compat), m.Priority)
+			priority      = excluded.priority,
+			origin        = excluded.origin`,
+		m.ID, m.ProviderID, m.Name, string(m.Capabilities), string(m.Compat), m.Priority, m.Origin)
 	return err
 }
 
@@ -54,9 +75,9 @@ func (s *Store) GetModel(ctx context.Context, id string) (Model, error) {
 	var m Model
 	var caps, compat string
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, provider_id, name, capabilities, compat, priority
+		SELECT id, provider_id, name, capabilities, compat, priority, origin
 		FROM models WHERE id = ?`, id).
-		Scan(&m.ID, &m.ProviderID, &m.Name, &caps, &compat, &m.Priority)
+		Scan(&m.ID, &m.ProviderID, &m.Name, &caps, &compat, &m.Priority, &m.Origin)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Model{}, fmt.Errorf("storage: model %s: %w", id, ErrNotFound)
 	}
@@ -70,14 +91,14 @@ func (s *Store) GetModel(ctx context.Context, id string) (Model, error) {
 
 // ListModels returns every model (WebUI "Models & Compatibility" list).
 func (s *Store) ListModels(ctx context.Context) ([]Model, error) {
-	return s.queryModels(ctx, `SELECT id, provider_id, name, capabilities, compat, priority
+	return s.queryModels(ctx, `SELECT id, provider_id, name, capabilities, compat, priority, origin
 		FROM models ORDER BY id ASC`)
 }
 
 // ListModelsByProvider returns the models of one provider (provider detail
 // drawer). Empty result is valid — a provider may have no models yet.
 func (s *Store) ListModelsByProvider(ctx context.Context, providerID string) ([]Model, error) {
-	return s.queryModels(ctx, `SELECT id, provider_id, name, capabilities, compat, priority
+	return s.queryModels(ctx, `SELECT id, provider_id, name, capabilities, compat, priority, origin
 		FROM models WHERE provider_id = ? ORDER BY id ASC`, providerID)
 }
 
@@ -93,7 +114,7 @@ func (s *Store) queryModels(ctx context.Context, query string, args ...any) ([]M
 	for rows.Next() {
 		var m Model
 		var caps, compat string
-		if err := rows.Scan(&m.ID, &m.ProviderID, &m.Name, &caps, &compat, &m.Priority); err != nil {
+		if err := rows.Scan(&m.ID, &m.ProviderID, &m.Name, &caps, &compat, &m.Priority, &m.Origin); err != nil {
 			return nil, err
 		}
 		m.Capabilities = json.RawMessage(caps)
@@ -101,6 +122,31 @@ func (s *Store) queryModels(ctx context.Context, query string, args ...any) ([]M
 		out = append(out, m)
 	}
 	return out, rows.Err()
+}
+
+// DeleteModelsNotIn removes the provider's synced model rows that are not in
+// keepIDs (ADR-010 sync policy: upstream-dropped models disappear, operator
+// rows and the just-synced set survive). origin must be ModelSyncedOrigin —
+// manual rows are never bulk-deleted here; any other value is refused at
+// this write boundary so a sync bug cannot wipe the operator's models.
+func (s *Store) DeleteModelsNotIn(ctx context.Context, providerID string, keepIDs []string, origin string) error {
+	if origin != ModelSyncedOrigin {
+		return fmt.Errorf("storage: bulk model delete restricted to %q origin (got %q): %w",
+			ModelSyncedOrigin, origin, ErrInvalid)
+	}
+	if keepIDs == nil {
+		keepIDs = []string{}
+	}
+	keep, err := json.Marshal(keepIDs)
+	if err != nil {
+		return fmt.Errorf("storage: encode keep set: %w", err)
+	}
+	_, err = s.db.ExecContext(ctx, `
+		DELETE FROM models
+		WHERE provider_id = ? AND origin = ?
+		  AND id NOT IN (SELECT value FROM json_each(?))`,
+		providerID, origin, string(keep))
+	return err
 }
 
 // DeleteModel removes one model. Missing rows are ErrNotFound.

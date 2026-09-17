@@ -99,6 +99,12 @@ var migrations = []string{
 	// values are round_robin and fill_first. Append-only: v1/v2 statements
 	// are never edited; existing rules read as "" = inherit.
 	`ALTER TABLE routing_rules ADD COLUMN strategy TEXT NOT NULL DEFAULT '';`,
+	// v4: ADR-010 model sync — every model row records where it came from:
+	// "manual" (operator-created, sync never touches it) or "synced"
+	// (imported/updated by the model-sync run, deletable when the upstream
+	// drops it). Existing rows read as "manual" — pre-sync models were all
+	// operator-curated, and the sync must never delete them.
+	`ALTER TABLE models ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual';`,
 }
 
 func (s *Store) migrate() error {
