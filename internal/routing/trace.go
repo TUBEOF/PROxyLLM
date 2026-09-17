@@ -64,6 +64,12 @@ const (
 	// EventRejected: the request ended without an upstream attempt (no
 	// route, key scope, or empty chain after filtering).
 	EventRejected EventType = "rejected"
+
+	// EventCapabilityFallback: the rule chain had no provider for a
+	// required capability, so the configured capability fallback chain
+	// (ADR-010) was consulted — Capability names the family (e.g.
+	// "vision"). Consultations are never silent.
+	EventCapabilityFallback EventType = "capability_fallback"
 )
 
 // Event is one observable routing transition.
@@ -90,6 +96,10 @@ type Event struct {
 
 	// FailurePosition is pre_stream/mid_stream (FO-4).
 	FailurePosition FailurePosition `json:"failure_position,omitempty"`
+
+	// Capability names the capability family of a capability_fallback
+	// event (ADR-010).
+	Capability string `json:"capability,omitempty"`
 
 	// LatencyMS is the attempt duration (per-attempt latency, FO-4).
 	LatencyMS int64 `json:"latency_ms,omitempty"`

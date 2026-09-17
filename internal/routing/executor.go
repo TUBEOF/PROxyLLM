@@ -3,6 +3,7 @@ package routing
 import (
 	"context"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/provider"
@@ -27,6 +28,12 @@ import (
 // attempt outcome is reported to the HealthTracker.
 type Executor struct {
 	cfg ExecutorConfig
+
+	// emuMu guards cfg.Emulator for the live-swap (SetEmulator): the
+	// provider reload rebuilds the emulator pool without restart while
+	// in-flight emulation rounds read the field. Callers already hold no
+	// executor mutex — the swap is a single pointer write under a lock.
+	emuMu sync.RWMutex
 }
 
 // ExecutorConfig configures the failover loop.
@@ -193,6 +200,23 @@ func (e *Executor) executeOnce(ctx context.Context, chain []ChainEntry, req ir.R
 		}
 	}
 	return ir.Response{}, &exhaustedError{last: lastErr}
+}
+
+// SetEmulator atomically replaces the live web-tool emulator (ADR-010:
+// the provider reload rebuilds the emulator pool from the stored
+// firecrawl accounts without restart). Same last-known-good live-swap
+// contract as the router's Set* hooks.
+func (e *Executor) SetEmulator(emu Emulator) {
+	e.emuMu.Lock()
+	defer e.emuMu.Unlock()
+	e.cfg.Emulator = emu
+}
+
+// currentEmulator reads the live emulator under the swap lock.
+func (e *Executor) currentEmulator() Emulator {
+	e.emuMu.RLock()
+	defer e.emuMu.RUnlock()
+	return e.cfg.Emulator
 }
 
 // ReportStreamOutcome records the final outcome of a stream that was

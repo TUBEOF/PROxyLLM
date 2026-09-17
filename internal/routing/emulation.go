@@ -158,7 +158,8 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 	// Degrade contract (CLAUDE.md): no emulator configured (no Firecrawl
 	// key) → emulated tool calls get the documented "unavailable" error
 	// result, never a nil-pointer pass-through to the client.
-	if e.cfg.Emulator == nil {
+	emu := e.currentEmulator()
+	if emu == nil {
 		return fail(errCodeEmulatorUnavailable, "web-tool emulation unavailable: no emulator configured")
 	}
 
@@ -179,7 +180,7 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 		if strings.TrimSpace(in.Query) == "" {
 			return fail(errCodeInvalidToolInput, "missing query")
 		}
-		items, err := e.cfg.Emulator.Search(ctx, in.Query, st)
+		items, err := emu.Search(ctx, in.Query, st)
 		if err != nil {
 			return fail(errCodeEmulatorUnavailable, "emulator search failed: "+err.Error())
 		}
@@ -201,7 +202,7 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 		if !allowed {
 			return fail(code, "url rejected by domain filters")
 		}
-		fc, err := e.cfg.Emulator.Fetch(ctx, in.URL, st)
+		fc, err := emu.Fetch(ctx, in.URL, st)
 		if err != nil {
 			return fail(errCodeEmulatorUnavailable, "emulator fetch failed: "+err.Error())
 		}
