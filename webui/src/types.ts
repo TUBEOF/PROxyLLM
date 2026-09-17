@@ -34,10 +34,13 @@ export interface ProviderType {
   type: string;
   label: string;
   description: string;
+  // ADR-010: "llm" (routable chat models) or "web_tool" (emulator backend
+  // for web_search/web_fetch fallback lists).
+  kind: 'llm' | 'web_tool';
   auth: 'api_key' | 'oauth';
   settings_fields: ProviderTypeField[];
   account_fields: ProviderTypeField[];
-  default_capabilities: Record<string, boolean>;
+  default_capabilities: Record<string, boolean> | null;
 }
 
 export interface ProviderTypesResponse {
@@ -56,6 +59,9 @@ export interface Model {
   capabilities: unknown;
   compat: unknown;
   priority: number;
+  // ADR-010 provenance: "manual" (operator row, sync never touches it) or
+  // "synced" (imported/updated by the model-sync run).
+  origin: 'manual' | 'synced';
 }
 
 export interface RoutingRule {
@@ -155,4 +161,37 @@ export interface LogsResponse {
 }
 export interface SettingsResponse {
   entries: SettingsEntry[];
+}
+
+// ADR-010 capability fallback lists (GET/PUT /api/admin/capability-fallbacks).
+export interface CapabilityFallbacks {
+  vision: string[];
+  web_search: string[];
+  web_fetch: string[];
+}
+
+// ADR-010 model-sync config + last-run summary
+// (GET /api/admin/model-sync, POST /api/admin/model-sync/run).
+export interface ModelSyncProviderState {
+  provider_id: string;
+  added: number;
+  updated: number;
+  removed: number;
+  skipped: number;
+  skipped_reason?: string;
+}
+
+export interface ModelSyncState {
+  ran_at: number;
+  providers?: ModelSyncProviderState[];
+}
+
+export interface ModelSyncConfig {
+  enabled: boolean;
+  interval_hours: number;
+  last_run: ModelSyncState;
+}
+
+export interface ModelSyncRunResponse {
+  last_run: ModelSyncState;
 }

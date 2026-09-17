@@ -1,24 +1,174 @@
-import { FormEvent, useCallback, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { apiCall } from '../api';
-import type { ModelsResponse, RoutingRule, RoutingStrategyResponse, RulesResponse, Strategy } from '../types';
+import type {
+  CapabilityFallbacks,
+  ModelsResponse,
+  ProviderTypesResponse,
+  RoutingRule,
+  RoutingStrategyResponse,
+  RulesResponse,
+  Strategy,
+} from '../types';
 import { EmptyState, ErrorNote, PageHead, useAdminData, useMutation } from '../hooks';
 import { Drawer } from '../components/Overlays';
+import PrioList from '../components/PrioList';
 import { IconPlus } from '../icons';
 
-// Routing (plan §9 + ADR-009): the global strategy (Round Robin default /
-// Fill-First) and rules with per-rule strategy overrides. The admin API's
-// rule model is match_model → chain ([]string of provider types, provider
-// ids, or provider/model pairs) + priority + enabled + strategy; the chain
-// editor is an ordered list the operator can append to and reorder, since
-// the chain IS the fallback order (Analysis E). Type entries expand to all
-// accounts of that type at request time — new accounts join without rule
-// edits. The alias map and the global allow/warn/block switch ride the
+// Routing (plan §9 + ADR-009 + ADR-010): the global strategy (Round Robin
+// default / Fill-First), rules with per-rule strategy overrides, and the
+// capability fallback lists. The admin API's rule model is match_model →
+// chain ([]string of provider types, provider ids, or provider/model pairs)
+// + priority + enabled + strategy; the chain editor is an ordered list the
+// operator can append to and reorder (PrioList drag-drop), since the chain
+// IS the fallback order (Analysis E). Type entries expand to all accounts
+// of that type at request time — new accounts join without rule edits.
+// The ADR-010 fallback lists (vision / web_search / web_fetch) are global
+// PrioLists: vision entries are provider IDs/types appended to vision-less
+// chains, web entries are web_tool accounts tried in order by the emulator
+// pool. The alias map and the global allow/warn/block switch ride the
 // settings surface (config KV) — they live on /settings.
 
 const STRATEGIES: { value: Strategy; label: string; desc: string }[] = [
   { value: 'round_robin', label: 'Round Robin', desc: 'Requests rotate across all accounts of a type — even load distribution.' },
   { value: 'fill_first', label: 'Fill-First', desc: 'Account 1 serves everything until it fails (rate limit / breaker) — then the next takes over.' },
 ];
+
+// CapabilityFallbacksCard (ADR-010): the three global fallback lists, each
+// a drag-drop PrioList. Vision lists provider IDs/types appended to
+// vision-less chains; web_search/web_fetch list web-tool accounts (today:
+// firecrawl) the emulator pool tries in order. One save writes all three.
+function CapabilityFallbacksCard() {
+  const { data, loading, error, reload } = useAdminData<CapabilityFallbacks>(
+    (signal) => apiCall<CapabilityFallbacks>('GET', '/api/admin/capability-fallbacks', undefined, signal),
+  );
+  // LLM provider types (for the vision picker) and web-tool accounts (for
+  // the web pickers).
+  const { data: catalog } = useAdminData<ProviderTypesResponse>(
+    (signal) => apiCall<ProviderTypesResponse>('GET', '/api/admin/provider-types', undefined, signal),
+  );
+  const { data: providersData } = useAdminData<ProvidersResponseLike>(
+    (signal) => apiCall<ProvidersResponseLike>('GET', '/api/admin/providers', undefined, signal),
+  );
+
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<CapabilityFallbacks | null>(null);
+  const [seeded, setSeeded] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (seeded || data === null) return;
+    setForm({ vision: data.vision, web_search: data.web_search, web_fetch: data.web_fetch });
+    setSeeded(true);
+  }, [seeded, data]);
+
+  const providerOptions = useMemo(() => {
+    const opts: { id: string; label: string }[] = [];
+    // Type entries (ADR-009: expand to all accounts of the type).
+    for (const t of catalog?.types ?? []) {
+      if (t.kind === 'llm') opts.push({ id: t.type, label: `${t.label} (type)` });
+    }
+    // Exact accounts.
+    for (const p of providersData?.providers ?? []) {
+      opts.push({ id: p.id, label: `${p.name} (${p.id.slice(0, 12)}…)` });
+    }
+    return opts;
+  }, [catalog, providersData]);
+
+  const webToolOptions = useMemo(() => {
+    const webTypes = new Set((catalog?.types ?? []).filter((t) => t.kind === 'web_tool').map((t) => t.type));
+    return (providersData?.providers ?? [])
+      .filter((p) => webTypes.has(p.type))
+      .map((p) => ({ id: p.id, label: `${p.name} (${p.type})` }));
+  }, [catalog, providersData]);
+
+  const submit = useCallback(async () => {
+    if (form === null) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await apiCall('PUT', '/api/admin/capability-fallbacks', {
+        vision: form.vision,
+        web_search: form.web_search,
+        web_fetch: form.web_fetch,
+      });
+    } catch (err) {
+      setSaving(false);
+      setSaveError(err instanceof Error ? err.message : 'Request failed');
+      return;
+    }
+    setSaving(false);
+    reload();
+  }, [form, reload]);
+
+  return (
+    <div className="w-full" style={{ marginBottom: 8 }}>
+      <fieldset className="fieldset">
+        <legend>Capability fallbacks</legend>
+        <p className="hint" style={{ marginTop: 0 }}>
+          Priority lists consulted when the routed chain cannot serve a request
+          (ADR-010). Vision: providers tried when the rule chain has no
+          vision-capable model. Web search / fetch: web-tool accounts (e.g.
+          Firecrawl) the proxy tries in order. Every use is traced in the logs.
+        </p>
+        {(error ?? saveError) !== null && (
+          <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+            {error ?? saveError}
+          </p>
+        )}
+        {loading || form === null ? (
+          <p className="hint">Loading fallback lists…</p>
+        ) : (
+          <div style={{ display: 'grid', gap: 20, gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+            <div>
+              <h4 style={{ margin: '0 0 6px' }}>Vision fallback</h4>
+              <PrioList
+                label="Vision fallback priority list"
+                items={form.vision}
+                onChange={(vision) => setForm((f) => (f === null ? f : { ...f, vision }))}
+                options={providerOptions}
+                addLabel="Add provider to vision fallback"
+                emptyHint="No vision fallback — vision requests with no capable chain entry fail."
+              />
+            </div>
+            <div>
+              <h4 style={{ margin: '0 0 6px' }}>Web search fallback</h4>
+              <PrioList
+                label="Web search fallback priority list"
+                items={form.web_search}
+                onChange={(web_search) => setForm((f) => (f === null ? f : { ...f, web_search }))}
+                options={webToolOptions}
+                addLabel="Add web-tool account to search fallback"
+                emptyHint="No web search fallback — emulated search uses the single configured emulator."
+              />
+            </div>
+            <div>
+              <h4 style={{ margin: '0 0 6px' }}>Web fetch fallback</h4>
+              <PrioList
+                label="Web fetch fallback priority list"
+                items={form.web_fetch}
+                onChange={(web_fetch) => setForm((f) => (f === null ? f : { ...f, web_fetch }))}
+                options={webToolOptions}
+                addLabel="Add web-tool account to fetch fallback"
+                emptyHint="No web fetch fallback — emulated fetch uses the single configured emulator."
+              />
+            </div>
+          </div>
+        )}
+        <div style={{ marginTop: 12 }}>
+          <button type="button" className="btn btn-primary btn-sm" disabled={saving || form === null} onClick={() => void submit()}>
+            Save fallbacks
+          </button>
+        </div>
+      </fieldset>
+    </div>
+  );
+}
+
+// ProvidersResponseLike mirrors the /api/admin/providers list shape (the
+// Providers page owns the canonical type; here only id/type/name matter).
+interface ProvidersResponseLike {
+  providers: { id: string; type: string; name: string }[];
+}
 
 export default function Routing() {
   const { data, loading, error, reload } = useAdminData<RulesResponse>(
@@ -88,28 +238,6 @@ export default function Routing() {
     setFormError(null);
     save.clearError();
   }, [save]);
-
-  const appendChain = useCallback(
-    (modelID: string) => {
-      if (modelID === '') return;
-      setForm((f) => (f.chain.includes(modelID) ? f : { ...f, chain: [...f.chain, modelID] }));
-    },
-    [],
-  );
-
-  const move = useCallback((index: number, dir: -1 | 1) => {
-    setForm((f) => {
-      const next = [...f.chain];
-      const target = index + dir;
-      if (target < 0 || target >= next.length) return f;
-      const a = next[index];
-      const b = next[target];
-      if (a === undefined || b === undefined) return f;
-      next[index] = b;
-      next[target] = a;
-      return { ...f, chain: next };
-    });
-  }, []);
 
   const submit = useCallback(
     async (e: FormEvent) => {
@@ -206,6 +334,8 @@ export default function Routing() {
           </span>
           </fieldset>
         </div>
+        {/* ADR-010: the three global capability fallback lists. */}
+        <CapabilityFallbacksCard />
         {error !== null ? (
           <div className="w-full">
             <ErrorNote message={error} />
@@ -407,62 +537,14 @@ export default function Routing() {
 
             <fieldset className="fieldset">
               <legend>Fallback chain (order matters)</legend>
-              {form.chain.length === 0 ? (
-                <p className="hint">Empty chain — no request can be routed under this rule.</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {form.chain.map((modelID, i) => (
-                    <div
-                      key={`${modelID}-${i}`}
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--fs-sm)' }}
-                    >
-                      <span className="mono">{`${i + 1}. ${modelID}`}</span>
-                      <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4 }}>
-                        <button type="button" className="btn btn-icon btn-sm" onClick={() => move(i, -1)} disabled={i === 0} aria-label="Move up">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                            <path d="m6 14 6-6 6 6" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-icon btn-sm"
-                          onClick={() => move(i, 1)}
-                          disabled={i === form.chain.length - 1}
-                          aria-label="Move down"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                            <path d="m6 10 6 6 6-6" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-icon btn-sm"
-                          onClick={() => setForm((f) => ({ ...f, chain: f.chain.filter((_, j) => j !== i) }))}
-                          aria-label="Remove from chain"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
-                            <path d="m6 6 12 12M18 6 6 18" />
-                          </svg>
-                        </button>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="field has-select" style={{ marginTop: 12 }}>
-                <label htmlFor="r-append">Append model to chain</label>
-                <select id="r-append" value="" onChange={(e) => appendChain(e.target.value)}>
-                  <option value="">Pick a registered model…</option>
-                  {modelIDs.map((id) => (
-                    <option key={id} value={id}>
-                      {id}
-                    </option>
-                  ))}
-                </select>
-                {modelIDs.length === 0 && (
-                  <span className="hint">No models registered yet — register models first (Models &amp; Compatibility).</span>
-                )}
-              </div>
+              <PrioList
+                label="Fallback chain priority list"
+                items={form.chain}
+                onChange={(chain) => setForm((f) => ({ ...f, chain }))}
+                options={modelIDs.map((id) => ({ id, label: id }))}
+                addLabel="Append model to chain"
+                emptyHint="Empty chain — no request can be routed under this rule."
+              />
             </fieldset>
           </form>
         </Drawer>

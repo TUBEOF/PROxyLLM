@@ -1,6 +1,13 @@
 import { FormEvent, useCallback, useMemo, useState } from 'react';
 import { apiCall } from '../api';
-import type { Model, ModelsResponse, Provider, ProvidersResponse } from '../types';
+import type {
+  Model,
+  ModelSyncConfig,
+  ModelSyncRunResponse,
+  ModelsResponse,
+  Provider,
+  ProvidersResponse,
+} from '../types';
 import { EmptyState, ErrorNote, PageHead, useAdminData, useMutation } from '../hooks';
 import { Drawer } from '../components/Overlays';
 import { IconPlus } from '../icons';
@@ -204,6 +211,37 @@ export default function Models() {
     [del, reload],
   );
 
+  // ADR-010 model sync: config load + manual run. The sync status card
+  // sits above the table; "Sync now" runs a pass synchronously and
+  // refreshes the list (the run summary lands in the card).
+  const { data: syncData, reload: reloadSync } = useAdminData<ModelSyncConfig>(
+    (signal) => apiCall<ModelSyncConfig>('GET', '/api/admin/model-sync', undefined, signal),
+  );
+  const syncRun = useMutation();
+
+  const runSync = useCallback(async () => {
+    const ok = await syncRun.run(() =>
+      apiCall<ModelSyncRunResponse>('POST', '/api/admin/model-sync/run', {}),
+    );
+    if (ok !== null) {
+      reloadSync();
+      reload();
+    }
+  }, [syncRun, reloadSync, reload]);
+
+  const toggleSync = useCallback(
+    async (enabled: boolean) => {
+      const ok = await syncRun.run(() => apiCall('PUT', '/api/admin/model-sync', { enabled }));
+      if (ok !== null) reloadSync();
+    },
+    [syncRun, reloadSync],
+  );
+
+  const lastRun = syncData?.last_run ?? null;
+  const lastRunText = lastRun === null || lastRun.ran_at === 0
+    ? 'never run'
+    : new Date(lastRun.ran_at * 1000).toLocaleString();
+
   const drawerError = formError ?? save.error ?? del.error;
   const drawerPending = save.pending || del.pending;
 
@@ -213,19 +251,59 @@ export default function Models() {
         title="Models & Compatibility"
         sub="Every model's routing identity, capabilities and compatibility policy — the single place non-Claude routing on the Anthropic surface is configured."
         actions={
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={openCreate}
-            disabled={providers.length === 0}
-            title={providers.length === 0 ? 'Add a provider first — models belong to one.' : undefined}
-          >
-            <IconPlus width="16" height="16" />
-            Add model
-          </button>
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => void runSync()}
+              disabled={syncRun.pending}
+              title="Import the model lists of every provider that offers discovery (ADR-010)"
+            >
+              {syncRun.pending ? 'Syncing…' : 'Sync now'}
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={openCreate}
+              disabled={providers.length === 0}
+              title={providers.length === 0 ? 'Add a provider first — models belong to one.' : undefined}
+            >
+              <IconPlus width="16" height="16" />
+              Add model
+            </button>
+          </>
         }
       />
       <div className="canvas">
+        {/* ADR-010 model-sync status card. */}
+        <div className="w-full" style={{ marginBottom: 8 }}>
+          <div className="fieldset" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '10px 14px' }}>
+            <h4 style={{ margin: 0 }}>Auto-sync</h4>
+            <label className="toggle" style={{ display: 'flex', gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={syncData?.enabled ?? true}
+                onChange={(e) => void toggleSync(e.target.checked)}
+                disabled={syncRun.pending}
+              />
+              <span className="tswitch" />
+              enabled
+            </label>
+            <span className="hint" style={{ margin: 0 }}>
+              every {syncData?.interval_hours ?? 24}h · last run {lastRunText}
+            </span>
+            {lastRun !== null && lastRun.providers !== undefined && (
+              <span className="hint" style={{ margin: 0 }}>
+                {lastRun.providers.map((p) => `${p.provider_id.slice(0, 12)}: +${p.added} ~${p.updated} −${p.removed}`).join(' · ')}
+              </span>
+            )}
+            {syncRun.error !== null && (
+              <span role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)' }}>
+                {syncRun.error}
+              </span>
+            )}
+          </div>
+        </div>
         {error !== null ? (
           <div className="w-full">
             <ErrorNote message={error} />
@@ -274,7 +352,17 @@ export default function Models() {
                             <br />
                             <span className="mono">{m.id}</span>
                           </td>
-                          <td>{providerName(m.provider_id)}</td>
+                          <td>
+                            {providerName(m.provider_id)}
+                            <br />
+                            {/* ADR-010 provenance: synced rows are the
+                                auto-import's; editing one converts it to
+                                manual. */}
+                            <span className={m.origin === 'synced' ? 'badge info' : 'badge paused'}>
+                              <span className="b-dot" />
+                              {m.origin === 'synced' ? 'synced' : 'manual'}
+                            </span>
+                          </td>
                           <td>
                             <span className="badge info">{compat.thinking_handling}</span>
                           </td>
