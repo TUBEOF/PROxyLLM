@@ -210,16 +210,15 @@ export default function ProviderTypePage() {
               the flex column from being stretched past the viewport by the
               table's min-width on mobile (the scroll container handles it). */}
           <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-              <h3 style={{ margin: 0, flexShrink: 0 }}>Accounts</h3>
-              {/* overflowWrap:anywhere keeps the hint's wrap points
-                  deterministic at phone width — the two-line flex-wrap layout
-                  of this row was a screenshot flake when font subpixels tipped
-                  the break point (v1.0.1 fix 0b6679f, seen again in the
-                  v1.0.2 regen). */}
-              <span className="hint" style={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-                Chain entries naming “{meta.type}” spread requests over all accounts.
-              </span>
+            {/* Header row keeps ONLY fixed-width content (heading + button);
+                the hint is a separate block below. A wrap-sensitive flex line
+                here was the recurring mobile screenshot flake: font-metric
+                drift between ubuntu-latest image rollouts tips the hint's
+                break point and shifts everything below by one line (v1.0.1
+                0b6679f, v1.0.2 regen) — block layout has no break point to
+                tip. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 4 }}>
+              <h3 style={{ margin: 0 }}>Accounts</h3>
               <button
                 type="button"
                 className="btn btn-primary btn-sm"
@@ -230,6 +229,9 @@ export default function ProviderTypePage() {
                 Add account
               </button>
             </div>
+            <p className="hint" style={{ margin: '0 0 12px', overflowWrap: 'anywhere' }}>
+              Chain entries naming “{meta.type}” spread requests over all accounts.
+            </p>
             {detail.error !== null ? (
               <ErrorNote message={detail.error} />
             ) : accounts.length === 0 ? (
