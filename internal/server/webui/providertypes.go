@@ -79,6 +79,8 @@ var providerTypes = []providerTypeDesc{
 		SettingsFields: []fieldDesc{
 			{Key: "base_url", Label: "Base URL", Kind: fieldKindURL, Required: true,
 				Hint: "The API root including the version prefix, e.g. https://api.example.com/v1"},
+			{Key: "model_prefix", Label: "Model prefix", Kind: fieldKindText, Required: false,
+				Hint: "Model identity prefix for this type, e.g. \"myhost\" → \"myhost/glm-5.3\". Empty = the type string (\"custom-openai\")."},
 		},
 		AccountFields:       nil, // the account is its key; settings carry the URL
 		DefaultCapabilities: map[string]bool{"streaming": true, "tools": true},
@@ -92,6 +94,8 @@ var providerTypes = []providerTypeDesc{
 		SettingsFields: []fieldDesc{
 			{Key: "base_url", Label: "Base URL", Kind: fieldKindURL, Required: false,
 				Hint: "Optional override; defaults to https://ollama.com"},
+			{Key: "model_prefix", Label: "Model prefix", Kind: fieldKindText, Required: false,
+				Hint: "Model identity prefix for this type, e.g. \"ollamacloud\" → \"ollamacloud/glm-5.3\". Empty = the type string (\"ollama-cloud\")."},
 		},
 		AccountFields:       nil,
 		DefaultCapabilities: map[string]bool{"streaming": true, "tools": true},
@@ -105,6 +109,8 @@ var providerTypes = []providerTypeDesc{
 		SettingsFields: []fieldDesc{
 			{Key: "issuer", Label: "OAuth issuer", Kind: fieldKindURL, Required: true,
 				Hint: "e.g. https://auth.openai.com — the issuer all accounts of this type sign in against"},
+			{Key: "model_prefix", Label: "Model prefix", Kind: fieldKindText, Required: false,
+				Hint: "Model identity prefix for this type. Empty = the type string (\"codex-oauth\")."},
 		},
 		AccountFields:       nil, // tokens arrive via the device flow, not a form
 		DefaultCapabilities: map[string]bool{"streaming": true, "tools": true},

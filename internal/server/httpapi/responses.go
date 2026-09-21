@@ -49,8 +49,13 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Model identity (2026-09-21): resolve the chain entries' routing ID to
+	// the wire name; req.Model stays the client-facing ID (OP-2 echo + log).
+	resolveTrace := &routing.Trace{}
+	chain = a.resolveChainWireModels(ctx, chain, resolveTrace)
+
 	if req.Stream {
-		a.streamResponses(w, r, keyID, req, chain, compatTrace, routerTrace)
+		a.streamResponses(w, r, keyID, req, chain, compatTrace, routerTrace, resolveTrace)
 		return
 	}
 
@@ -61,7 +66,7 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 		_, msg := a.writeRouteError(w, openAIErrorWriter(), err)
 		a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
 			mapRouteErrorStatus(err), latency, nil,
-			routeTrace(compatTrace, routerTrace, execTrace), msg)
+			routeTrace(compatTrace, routerTrace, resolveTrace, execTrace), msg)
 		return
 	}
 
@@ -72,7 +77,7 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 		_, msg := a.writeRouteError(w, openAIErrorWriter(), err)
 		a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
 			http.StatusInternalServerError, latency, nil,
-			routeTrace(compatTrace, routerTrace, execTrace), msg)
+			routeTrace(compatTrace, routerTrace, resolveTrace, execTrace), msg)
 		return
 	}
 
@@ -83,7 +88,7 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 	usage := resp.Usage
 	a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
 		http.StatusOK, latency, &usage,
-		routeTrace(compatTrace, routerTrace, execTrace), "")
+		routeTrace(compatTrace, routerTrace, resolveTrace, execTrace), "")
 }
 
 // streamResponses relays an upstream stream as Responses semantic events

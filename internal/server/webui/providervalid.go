@@ -53,6 +53,16 @@ type ProviderConfig struct {
 	// Per-provider capability pins. Optional; only the seven known keys
 	// are accepted.
 	Capabilities map[string]bool `json:"capabilities"`
+	// ModelPrefix is the type's model-identity prefix (2026-09-21): synced
+	// model IDs are "<model_prefix>/<upstream-name>" (default: the type
+	// string). Optional; empty selects the default. Only meaningful for
+	// llm kinds — refused for web_tool types at the admin write boundary.
+	ModelPrefix string `json:"model_prefix"`
+	// Aliases are the type's client-facing model aliases (2026-09-21):
+	// alias → registered model ID. The server merges every type's map into
+	// the router's live alias map (KV model_aliases still wins on
+	// collision — it stays the operator's escape hatch). Optional.
+	Aliases map[string]string `json:"aliases"`
 }
 
 // knownCapabilities are the provider-level capability pins (snake_case,
@@ -181,7 +191,37 @@ func parseProviderConfig(typ string, raw []byte, guardURLs bool) (ProviderConfig
 			return cfg, fmt.Errorf("unknown capability %q (streaming, tools, vision, web_search, web_fetch, code_execution, thinking)", name)
 		}
 	}
+
+	// Model prefix (llm kinds only): lowercase letters, digits, hyphens —
+	// the shape the prefixed model IDs are built from. The empty value is
+	// the documented default (the type string).
+	if cfg.ModelPrefix != "" {
+		if cfg.ModelPrefix != strings.ToLower(cfg.ModelPrefix) {
+			return cfg, fmt.Errorf("model_prefix must be lowercase (got %q)", cfg.ModelPrefix)
+		}
+		for _, r := range cfg.ModelPrefix {
+			if !validPrefixRune(r) {
+				return cfg, fmt.Errorf("model_prefix %q must contain only lowercase letters, digits, and hyphens", cfg.ModelPrefix)
+			}
+		}
+		if len(cfg.ModelPrefix) > 64 {
+			return cfg, fmt.Errorf("model_prefix is too long (max 64 characters)")
+		}
+	}
+
+	// Aliases: non-empty keys and targets — an alias pointing at nothing can
+	// never route and must fail the save, not the request.
+	for alias, target := range cfg.Aliases {
+		if alias == "" || target == "" {
+			return cfg, fmt.Errorf("aliases must map a non-empty alias to a non-empty model id (got %q → %q)", alias, target)
+		}
+	}
 	return cfg, nil
+}
+
+// validPrefixRune reports whether r is allowed in a model prefix.
+func validPrefixRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-'
 }
 
 // checkURL validates an operator-supplied URL field. Shape checks (absolute

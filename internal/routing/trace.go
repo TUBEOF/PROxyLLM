@@ -70,6 +70,12 @@ const (
 	// (ADR-010) was consulted — Capability names the family (e.g.
 	// "vision"). Consultations are never silent.
 	EventCapabilityFallback EventType = "capability_fallback"
+
+	// EventModelResolved: the requested model ID (a prefixed routing
+	// identity, e.g. "ollamacloud/glm-5.3") resolved to the upstream wire
+	// name for dispatch (e.g. "glm-5.3") — From/To carry routing ID → wire
+	// name (2026-09-21 model identity). Never silent.
+	EventModelResolved EventType = "model_resolved"
 )
 
 // Event is one observable routing transition.
@@ -120,6 +126,13 @@ func (t *Trace) add(ev Event) {
 // Alias records an alias resolution.
 func (t *Trace) Alias(from, to string) {
 	t.add(Event{Type: EventAlias, From: from, To: to})
+}
+
+// ModelResolved records the routing-ID → wire-name resolution (2026-09-21
+// model identity): the chain dispatches the wire name, the client-facing
+// surfaces echo the routing ID.
+func (t *Trace) ModelResolved(routingID, wireName string) {
+	t.add(Event{Type: EventModelResolved, From: routingID, To: wireName})
 }
 
 // Skip records a skipped chain entry.

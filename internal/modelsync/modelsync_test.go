@@ -5,6 +5,10 @@ package modelsync
 // operator edits (capabilities/compat) of existing rows survive, upstream-
 // dropped synced rows are deleted, and ID collisions with another
 // provider's row are skipped — one dead upstream never fails the run.
+//
+// Identity spec (2026-09-21): row IDs are prefixed with the provider type
+// ("custom-openai/model-x"); the Name column carries the bare wire name.
+// The tests below assert the prefixed IDs accordingly.
 
 import (
 	"context"
@@ -27,6 +31,7 @@ type stubProvider struct {
 }
 
 func (s *stubProvider) ID() string                          { return s.id }
+func (s *stubProvider) Type() string                        { return "custom-openai" }
 func (s *stubProvider) Capabilities() provider.Capabilities { return provider.Capabilities{} }
 func (s *stubProvider) Complete(_ context.Context, _ ir.Request) (ir.Response, error) {
 	return ir.Response{}, nil
@@ -119,7 +124,7 @@ func TestSync_ImportsNewModelsAsSynced(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	m := mustGet(t, s, "model-x")
+	m := mustGet(t, s, "custom-openai/model-x")
 	if m.ProviderID != "acc-a" || m.Origin != storage.ModelSyncedOrigin || m.Name != "model-x" {
 		t.Errorf("imported model mismatch: %+v", m)
 	}
@@ -132,7 +137,7 @@ func TestSync_PreservesOperatorEdits(t *testing.T) {
 	s := openStore(t, "acc-a")
 	// Operator-curated row: custom priority + compat.
 	if err := s.PutModel(context.Background(), storage.Model{
-		ID: "model-x", ProviderID: "acc-a", Name: "model-x",
+		ID: "custom-openai/model-x", ProviderID: "acc-a", Name: "model-x",
 		Capabilities: []byte(`{"vision":true}`), Compat: []byte(`{"thinking_handling":"block"}`),
 		Priority: 9, Origin: storage.ModelSyncedOrigin,
 	}); err != nil {
@@ -145,7 +150,7 @@ func TestSync_PreservesOperatorEdits(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	m := mustGet(t, s, "model-x")
+	m := mustGet(t, s, "custom-openai/model-x")
 	if string(m.Capabilities) != `{"vision":true}` || string(m.Compat) != `{"thinking_handling":"block"}` || m.Priority != 9 {
 		t.Errorf("operator edits were clobbered: %+v (caps=%s compat=%s)", m, m.Capabilities, m.Compat)
 	}
@@ -185,7 +190,7 @@ func TestSync_SkipsIDCollisionWithOtherProvider(t *testing.T) {
 	s := openStore(t, "acc-a", "acc-b")
 	// acc-b owns "shared-name" (operator row); acc-a's upstream also lists it.
 	if err := s.PutModel(context.Background(), storage.Model{
-		ID: "shared-name", ProviderID: "acc-b", Name: "shared-name",
+		ID: "custom-openai/shared-name", ProviderID: "acc-b", Name: "shared-name",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +203,7 @@ func TestSync_SkipsIDCollisionWithOtherProvider(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	m := mustGet(t, s, "shared-name")
+	m := mustGet(t, s, "custom-openai/shared-name")
 	if m.ProviderID != "acc-b" {
 		t.Errorf("collision row was overwritten: provider=%s, want acc-b", m.ProviderID)
 	}
@@ -223,7 +228,7 @@ func TestSync_UpstreamErrorSkipsProvider(t *testing.T) {
 	if state.Providers[0].Skipped != 1 || state.Providers[0].SkippedReason == "" {
 		t.Errorf("dead provider not recorded as skipped: %+v", state.Providers[0])
 	}
-	if _, err := s.GetModel(context.Background(), "model-z"); err != nil {
+	if _, err := s.GetModel(context.Background(), "custom-openai/model-z"); err != nil {
 		t.Errorf("the healthy provider's sync must still run: %v", err)
 	}
 }

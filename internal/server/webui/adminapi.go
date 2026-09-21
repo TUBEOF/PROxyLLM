@@ -513,8 +513,11 @@ func (a *AdminAPI) getProviderType(w http.ResponseWriter, r *http.Request) {
 // putProviderTypeSettings validates and persists one type's shared
 // settings. The per-type parse runs the write-path validation (URL shape +
 // private-address SSRF guard) — type settings are provider config like any
-// other. A successful save reloads the live provider set: construction
-// overlays type settings with account config (server/providers.go).
+// other. A model prefix must be unique across types: two types sharing a
+// prefix would collide their model identities. A successful save reloads
+// the live provider set (construction overlays type settings with account
+// config, server/providers.go) and the live alias map (type aliases merge
+// into the router — see server.loadModelAliases).
 func (a *AdminAPI) putProviderTypeSettings(w http.ResponseWriter, r *http.Request) {
 	typ := r.PathValue("type")
 	if _, ok := providerTypeByID(typ); !ok {
@@ -531,7 +534,12 @@ func (a *AdminAPI) putProviderTypeSettings(w http.ResponseWriter, r *http.Reques
 	if len(req.Settings) == 0 {
 		req.Settings = json.RawMessage("{}")
 	}
-	if _, err := ParseProviderConfig(typ, req.Settings); err != nil {
+	parsed, err := ParseProviderConfig(typ, req.Settings)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := a.validateModelPrefix(r.Context(), typ, parsed.ModelPrefix); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -548,7 +556,52 @@ func (a *AdminAPI) putProviderTypeSettings(w http.ResponseWriter, r *http.Reques
 	if a.reloadProviders != nil {
 		a.reloadProviders()
 	}
+	// Type settings now carry aliases — the live alias map must fold them
+	// in (same last-known-good reload contract as the KV alias write).
+	if a.reloadSettings != nil {
+		a.reloadSettings()
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// validateModelPrefix enforces prefix uniqueness across types: a prefix is
+// a model-identity namespace, and two types claiming the same one would
+// collide their synced model IDs at the next sync. The type's own current
+// value is exempt (an unchanged prefix must not trip its own check).
+func (a *AdminAPI) validateModelPrefix(ctx context.Context, typ, prefix string) error {
+	if prefix == "" {
+		return nil
+	}
+	settings, err := a.store.GetProviderTypeSettings(ctx)
+	if err != nil {
+		return err
+	}
+	// The type string itself is reserved per type by construction — the
+	// default. A custom prefix colliding with another type's STRING is a
+	// future ID collision too (that type's default-prefixed models).
+	for _, other := range providerTypes {
+		if other.Type == typ || other.Kind != KindLLM {
+			continue
+		}
+		if prefix == other.Type {
+			return errors.New("model_prefix " + prefix + " collides with the type string of " + other.Type)
+		}
+	}
+	for otherTyp, blob := range settings {
+		if otherTyp == typ {
+			continue
+		}
+		var otherCfg struct {
+			ModelPrefix string `json:"model_prefix"`
+		}
+		if len(blob) == 0 || json.Unmarshal(blob, &otherCfg) != nil {
+			continue
+		}
+		if otherCfg.ModelPrefix != "" && otherCfg.ModelPrefix == prefix {
+			return errors.New("model_prefix " + prefix + " is already used by type " + otherTyp)
+		}
+	}
+	return nil
 }
 
 // postProviderTypeAccount creates one account (providers row) of a type —

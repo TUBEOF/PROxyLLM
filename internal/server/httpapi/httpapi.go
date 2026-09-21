@@ -181,22 +181,24 @@ func requiredCapabilities(req ir.Request) provider.Capabilities {
 }
 
 // chainTrace is the JSON object stored in request_logs.route_trace:
-// {"version":3,"events":[...]} with the compat, router, and executor
+// {"version":4,"events":[...]} with the compat, router, and executor
 // events concatenated in order (plan §4.3 observability — an object, so
 // the row can grow metadata without a breaking change). Version 2 adds
 // the version field itself plus the ADR-009 expand/rotation events; the
 // previous unversioned shape is v1 retroactively (absence of the field =
 // v1), so old rows still render in the WebUI. Version 3 adds the ADR-010
 // capability_fallback event (capability-named fallback consultation).
+// Version 4 adds the model_resolved event (2026-09-21 model identity:
+// routing ID → wire-name resolution).
 type chainTrace struct {
 	Version int               `json:"version"`
 	Events  []json.RawMessage `json:"events"`
 }
 
-// routeTraceVersion is the current route_trace schema version (ADR-010;
-// previously 2 / ADR-009). The WebUI renders route_trace as raw JSON, so
-// bumps are additive.
-const routeTraceVersion = 3
+// routeTraceVersion is the current route_trace schema version (model
+// identity 2026-09-21; previously 3 / ADR-010). The WebUI renders
+// route_trace as raw JSON, so bumps are additive.
+const routeTraceVersion = 4
 
 // routeTrace marshals the trace object from collected traces. Trace
 // embeds a mutex, so events are appended from the Events() copies — the
@@ -216,7 +218,7 @@ func routeTrace(traces ...*routing.Trace) json.RawMessage {
 	}
 	out, err := json.Marshal(t)
 	if err != nil {
-		return json.RawMessage(`{"version":3,"events":[]}`)
+		return json.RawMessage(`{"version":4,"events":[]}`)
 	}
 	return out
 }

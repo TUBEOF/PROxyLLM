@@ -65,8 +65,14 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Model identity (2026-09-21): the chain entries' routing ID resolves
+	// to the upstream wire name for dispatch; req.Model (the client-facing
+	// ID) is unchanged for the OP-2 echo and the log row.
+	resolveTrace := &routing.Trace{}
+	chain = a.resolveChainWireModels(ctx, chain, resolveTrace)
+
 	if req.Stream {
-		a.streamMessages(w, r, keyID, req, chain, compatTrace, applyTrace, routerTrace)
+		a.streamMessages(w, r, keyID, req, chain, compatTrace, applyTrace, routerTrace, resolveTrace)
 		return
 	}
 
@@ -77,7 +83,7 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 		_, msg := a.writeRouteError(w, anthropicErrorWriter(), err)
 		a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
 			mapRouteErrorStatus(err), latency, nil,
-			routeTrace(compatTrace, applyTrace, routerTrace, execTrace), msg)
+			routeTrace(compatTrace, applyTrace, routerTrace, resolveTrace, execTrace), msg)
 		return
 	}
 
@@ -90,7 +96,7 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 		_, msg := a.writeRouteError(w, anthropicErrorWriter(), err)
 		a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
 			http.StatusInternalServerError, latency, nil,
-			routeTrace(compatTrace, applyTrace, routerTrace, execTrace), msg)
+			routeTrace(compatTrace, applyTrace, routerTrace, resolveTrace, execTrace), msg)
 		return
 	}
 
@@ -101,7 +107,7 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 	usage := resp.Usage
 	a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
 		http.StatusOK, latency, &usage,
-		routeTrace(compatTrace, applyTrace, routerTrace, execTrace), "")
+		routeTrace(compatTrace, applyTrace, routerTrace, resolveTrace, execTrace), "")
 }
 
 // streamMessages relays an upstream stream as named Anthropic events

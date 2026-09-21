@@ -322,32 +322,61 @@ func loadAndReplaceProviders(ctx context.Context, store *storage.Store, logger *
 }
 
 // loadModelAliases reads the SPA's `model_aliases` settings blob (JSON
-// object alias→model-id) from the settings KV. An absent key is the
-// normal state (empty map, nil error). An invalid blob never fails the
-// server: it logs and yields an empty map — the KV also holds unrelated
-// operator settings, and defaults never silently route (the map stays
-// empty until a valid blob is written).
+// object alias→model-id) from the settings KV, then folds in every
+// provider TYPE's aliases from the shared type settings (2026-09-21: type
+// settings may carry an "aliases" map — the per-type editor writes it).
+// The KV entry wins on collision: it stays the operator's global escape
+// hatch over the per-type UI. An absent key is the normal state (empty
+// map, nil error). An invalid blob never fails the server: it logs and
+// contributes nothing — the KV also holds unrelated operator settings,
+// and defaults never silently route (the map stays empty until a valid
+// blob is written).
 func loadModelAliases(ctx context.Context, store *storage.Store, logger *slog.Logger) map[string]string {
+	clean := map[string]string{}
+
+	// Layer 1: the per-type aliases (shared type settings). Read errors and
+	// malformed blobs degrade to contribution-less — never a startup death.
+	typeSettings, err := store.GetProviderTypeSettings(ctx)
+	if err != nil {
+		logger.Error("provider type settings unreadable; routing without type aliases", "error", err)
+	} else {
+		for typ, blob := range typeSettings {
+			var cfg struct {
+				Aliases map[string]string `json:"aliases"`
+			}
+			if len(blob) == 0 || json.Unmarshal(blob, &cfg) != nil {
+				continue
+			}
+			for alias, target := range cfg.Aliases {
+				if strings.TrimSpace(alias) == "" || strings.TrimSpace(target) == "" {
+					logger.Error("type alias entry invalid; entry skipped (fix it in the WebUI)",
+						"type", typ, "alias", alias, "target", target)
+					continue
+				}
+				clean[alias] = target
+			}
+		}
+	}
+
+	// Layer 2: the KV map overlays — the operator's global escape hatch.
 	raw, ok, err := store.GetConfigValue(ctx, "model_aliases")
 	if err != nil {
-		logger.Error("model_aliases read failed; routing without aliases", "error", err)
-		return map[string]string{}
+		logger.Error("model_aliases read failed; routing without KV aliases", "error", err)
+		return clean
 	}
-	if !ok || strings.TrimSpace(raw) == "" {
-		return map[string]string{}
-	}
-	var parsed map[string]string
-	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
-		logger.Error("model_aliases blob invalid; routing without aliases (fix it in the WebUI)", "error", err)
-		return map[string]string{}
-	}
-	clean := make(map[string]string, len(parsed))
-	for alias, target := range parsed {
-		if strings.TrimSpace(alias) == "" || strings.TrimSpace(target) == "" {
-			logger.Error("model_aliases entry invalid; entry skipped (fix it in the WebUI)", "alias", alias, "target", target)
-			continue
+	if ok && strings.TrimSpace(raw) != "" {
+		var parsed map[string]string
+		if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+			logger.Error("model_aliases blob invalid; KV aliases skipped (fix it in the WebUI)", "error", err)
+		} else {
+			for alias, target := range parsed {
+				if strings.TrimSpace(alias) == "" || strings.TrimSpace(target) == "" {
+					logger.Error("model_aliases entry invalid; entry skipped (fix it in the WebUI)", "alias", alias, "target", target)
+					continue
+				}
+				clean[alias] = target
+			}
 		}
-		clean[alias] = target
 	}
 	return clean
 }

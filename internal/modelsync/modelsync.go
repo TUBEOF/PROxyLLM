@@ -4,12 +4,22 @@
 // ADR-010): upstream-added models land as origin="synced" rows, operator
 // edits to existing rows (capabilities/compat) are preserved, and synced
 // rows the upstream dropped are deleted — manual rows are never touched.
+//
+// Model identity (2026-09-21 extension): a synced row's ID is
+// "<prefix>/<upstream-name>" where the prefix is the provider TYPE's
+// model_prefix from the shared type settings (default: the type string,
+// e.g. "ollama-cloud/glm-5.3"). The Name column carries the bare upstream
+// wire name — what the upstream request body's model field must contain.
+// Unprefixed legacy rows keep working (no migration): their wire name
+// equals their ID.
 package modelsync
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/provider"
@@ -19,6 +29,9 @@ import (
 // Per-provider upstream call timeout: a hung endpoint delays the sync, not
 // the proxy — each account gets its own bounded window.
 const perProviderTimeout = 30 * time.Second
+
+// maxPrefixLen bounds the operator-set model prefix (sanity, not security).
+const maxPrefixLen = 64
 
 // Syncer mirrors upstream model lists into the store (ADR-010).
 type Syncer struct {
@@ -47,9 +60,13 @@ func (s *Syncer) SetNow(now func() time.Time) { s.now = now }
 // which the caller (scheduler / admin API) logs.
 //
 // Policy details:
-//   - a synced row's ID is the upstream model name; a name colliding with
-//     an existing row of a DIFFERENT provider is skipped (logged) — the
-//     operator's row keeps its identity.
+//   - a synced row's ID is "<prefix>/<upstream-name>" (prefix = the type's
+//     model_prefix, default the type string); the Name column is the bare
+//     upstream wire name. An ID colliding with an existing row of a
+//     DIFFERENT provider type is skipped (logged) — the operator's row
+//     keeps its identity. A collision within the same type (another
+//     account of the type already synced it) is harmless: the row is
+//     refreshed in place.
 //   - an existing row of the same provider keeps its capabilities/compat/
 //     priority (operator edits) and only refreshes its name.
 //   - synced rows absent from the upstream list are deleted; manual rows
@@ -58,12 +75,32 @@ func (s *Syncer) SetNow(now func() time.Time) { s.now = now }
 func (s *Syncer) Run(ctx context.Context) (storage.ModelSyncState, error) {
 	state := storage.ModelSyncState{RanAt: s.now().Unix()}
 
+	// One type-settings read for the whole run: every account of a type
+	// shares the prefix, and the per-run snapshot keeps one run consistent
+	// even if a WebUI write lands mid-run (the next run picks it up).
+	prefixes := map[string]string{}
+	for _, p := range s.reg.List() {
+		tp, ok := p.(provider.TypedProvider)
+		if !ok {
+			continue
+		}
+		typ := tp.Type()
+		if _, seen := prefixes[typ]; seen {
+			continue
+		}
+		prefixes[typ] = s.typePrefix(ctx, typ)
+	}
+
 	for _, p := range s.reg.List() {
 		lister, ok := p.(provider.ModelLister)
 		if !ok {
 			continue
 		}
-		ps := s.syncProvider(ctx, p.ID(), lister)
+		typ := ""
+		if tp, ok := p.(provider.TypedProvider); ok {
+			typ = tp.Type()
+		}
+		ps := s.syncProvider(ctx, p.ID(), typ, prefixes[typ], lister)
 		state.Providers = append(state.Providers, ps)
 	}
 
@@ -73,10 +110,40 @@ func (s *Syncer) Run(ctx context.Context) (storage.ModelSyncState, error) {
 	return state, nil
 }
 
+// typePrefix resolves the type's model prefix from the shared type settings
+// (key "model_prefix"); the default is the type string itself. Read errors
+// and malformed blobs degrade to the default — the sync must not fail on
+// store noise (the write boundary enforces the shape).
+func (s *Syncer) typePrefix(ctx context.Context, typ string) string {
+	if typ == "" {
+		return ""
+	}
+	settings, err := s.store.GetProviderTypeSettings(ctx)
+	if err != nil {
+		return typ
+	}
+	raw := settings[typ]
+	if len(raw) == 0 {
+		return typ
+	}
+	var cfg struct {
+		ModelPrefix string `json:"model_prefix"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return typ
+	}
+	prefix := strings.TrimSpace(cfg.ModelPrefix)
+	if prefix == "" || len(prefix) > maxPrefixLen {
+		return typ
+	}
+	return prefix
+}
+
 // syncProvider mirrors one provider's upstream list. Failures are encoded
 // into the returned state (skipped=1 + reason), never returned as errors —
-// one dead account must not block the others.
-func (s *Syncer) syncProvider(ctx context.Context, providerID string, lister provider.ModelLister) storage.ModelSyncProviderState {
+// one dead account must not block the others. prefix is the type's model
+// prefix; empty means unprefixed legacy behavior (row ID = wire name).
+func (s *Syncer) syncProvider(ctx context.Context, providerID, typ, prefix string, lister provider.ModelLister) storage.ModelSyncProviderState {
 	ps := storage.ModelSyncProviderState{ProviderID: providerID}
 
 	pctx, cancel := context.WithTimeout(ctx, perProviderTimeout)
@@ -106,16 +173,26 @@ func (s *Syncer) syncProvider(ctx context.Context, providerID string, lister pro
 
 	upstreamIDs := make([]string, 0, len(upstream))
 	for _, info := range upstream {
-		upstreamIDs = append(upstreamIDs, info.Name)
-		row, ok := byID[info.Name]
+		// Identity: prefixed ID for the store, bare wire name upstream.
+		rowID := info.Name
+		if prefix != "" {
+			rowID = prefix + "/" + info.Name
+		}
+		upstreamIDs = append(upstreamIDs, rowID)
+		row, ok := byID[rowID]
 		if !ok {
 			// New upstream model — but its ID may collide with another
-			// provider's row (model IDs are the global primary key). Skip:
-			// the operator's row keeps its identity.
-			if _, err := s.store.GetModel(ctx, info.Name); err == nil {
-				s.logger.Warn("model sync: model id already owned by another provider — skipping",
-					"provider_id", providerID, "model_id", info.Name)
-				continue
+			// provider's row (model IDs are the global primary key). A
+			// collision within the same type is harmless (the row belongs
+			// to a sibling account and is refreshed below); a collision
+			// with a different type is skipped: the operator's row keeps
+			// its identity.
+			if other, err := s.store.GetModel(ctx, rowID); err == nil {
+				if other.ProviderID != providerID {
+					s.logger.Warn("model sync: model id already owned by another provider — skipping",
+						"provider_id", providerID, "model_id", rowID, "owner", other.ProviderID)
+					continue
+				}
 			} else if !isNotFound(err) {
 				ps.Skipped = 1
 				ps.SkippedReason = err.Error()
@@ -124,13 +201,13 @@ func (s *Syncer) syncProvider(ctx context.Context, providerID string, lister pro
 				return ps
 			}
 			if err := s.store.PutModel(ctx, storage.Model{
-				ID: info.Name, ProviderID: providerID, Name: info.Name,
+				ID: rowID, ProviderID: providerID, Name: info.Name,
 				Origin: storage.ModelSyncedOrigin,
 			}); err != nil {
 				ps.Skipped = 1
 				ps.SkippedReason = err.Error()
 				s.logger.Error("model sync: model insert failed — skipping provider",
-					"provider_id", providerID, "model_id", info.Name, "error", err)
+					"provider_id", providerID, "model_id", rowID, "error", err)
 				return ps
 			}
 			ps.Added++
@@ -148,7 +225,7 @@ func (s *Syncer) syncProvider(ctx context.Context, providerID string, lister pro
 				ps.Skipped = 1
 				ps.SkippedReason = err.Error()
 				s.logger.Error("model sync: model update failed — skipping provider",
-					"provider_id", providerID, "model_id", info.Name, "error", err)
+					"provider_id", providerID, "model_id", rowID, "error", err)
 				return ps
 			}
 			ps.Updated++
