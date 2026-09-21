@@ -25,6 +25,11 @@ go test ./internal/routing -run TestRouterChainResolution -v
 # Streaming-related changes: -race must pass (CI gate; needs CGO+gcc locally)
 make test-race
 
+# Deterministic assemblies: the visual-regression fixture server
+# (webui/e2e/fixturesrv) must never make live upstream calls or persist
+# wall-clock state — background jobs in server.New are opt-in options
+# (pattern: WithModelSync); never gate them on the master key alone.
+
 # Live smoke tests — never in default CI
 PROXYLLM_SMOKE=1 go test ./internal/smoke/...
 
@@ -67,6 +72,10 @@ CI (`.github/workflows/ci.yml`) gates: gofmt/vet/golangci-lint, `go test -race` 
 
 React 18 + Vite + react-router, TypeScript strict, embedded into the binary via `webui/embed.go`. Bundle budget 200 KB gzip initial load (CI-enforced). Visual regression via Playwright with baselines captured in CI (V-3/V-4 in ADR-006) — never regenerate baselines locally.
 
+- Never put variable-length text in a flex-wrap line above other content — font-metric drift between CI runner image rollouts tips the wrap point and shifts everything below by one line (broke v1.0.1 AND v1.0.2); use block layout.
+- Reading `useMutation().error` right after `run()` sees the PREVIOUS mutation's error (stale state) — branch on the thrown error or `run()`'s null return instead.
+- Changing rendered UI requires a CI baseline regen before tagging a release: dispatch `update-visual-baselines.yml`, push an empty commit (GitHub loop protection), wait for CI green, then tag.
+
 ## Test doctrine (binding — ADR-006, CONTRIBUTING.md)
 
 1. **Tests derive from specifications, not from code.** Wire shapes come from `testdata/golden/` fixtures annotated with source URL + access date. A test that only reproduces implementation behavior is a defect; snapshot tests of proxy output as spec source are rejected (circular).
@@ -79,3 +88,8 @@ React 18 + Vite + react-router, TypeScript strict, embedded into the binary via 
 - English everywhere (code, docs, commits). Conventional commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`, `refactor:`), subject ≤ 72 chars, imperative.
 - Mapping tables for vendor-specific wire facts (e.g. server-tool capability strings) live in configuration, not hardcoded constants — vendors rotate them.
 - Docs under `docs/` (getting-started, configuration, api-reference, routing-and-fallbacks, security, deployment) are part of the deliverable; keep them consistent when changing behavior. ADRs under `docs/adr/` record the binding architectural decisions.
+
+## Change discipline (binding, user-set 2026-09-21)
+
+1. **Impact analysis before every change**: before editing a function, state which other files are affected (callers, wire contracts, tests, WebUI renderers, route_trace schema). Cross-file regressions from blind edits have burned past sessions. Use codegraph blast radius or an equivalent call-path check first.
+2. **Security review before every push**: a thorough security review (diff review with the review crew / security-review skill) gates every push. Local commits are always allowed and encouraged per change; only pushing waits for the green review. Checklist: redactor coverage at every new log site, secrets never in config blobs, SSRF guards on any new outbound URL path, session/CSRF gating on new admin endpoints, no live calls or wall-clock state in fixturesrv.
