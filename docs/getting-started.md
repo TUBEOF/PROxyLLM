@@ -54,9 +54,11 @@ once. Use it as:
 ## Providers
 
 Add providers in the WebUI (**Providers**): ChatGPT/Codex (OAuth flow in
-the UI), Ollama Cloud (API key), or any custom OpenAI-compatible endpoint.
-Credentials are AES-256-GCM encrypted at rest. The web-tool emulation
-(web_search/web_fetch via Firecrawl) activates when
+the UI), Ollama Cloud (API key; rides Ollama's OpenAI-compatible `/v1`
+endpoint — interleaved thinking models stream as one text block plus one
+thinking block, so Claude Code renders fluently), or any custom
+OpenAI-compatible endpoint. Credentials are AES-256-GCM encrypted at rest.
+The web-tool emulation (web_search/web_fetch via Firecrawl) activates when
 `PROXYLLM_FIRECRAWL_API_KEY` is set — without it, emulated tool requests
 receive the documented "unavailable" error results (loud, never silent).
 

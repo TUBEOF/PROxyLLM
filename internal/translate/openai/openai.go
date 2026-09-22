@@ -143,6 +143,12 @@ func (Codec) DecodeResponse(raw []byte) (ir.Response, error) {
 		resp.StopReason = stopReasonFromWire(w.Choices[0].FinishReason)
 		msg := w.Choices[0].Message
 		if msg != nil {
+			// Reasoning trace first (reasoning models serve the trace
+			// before the answer; a reasoning field on a message with no
+			// trace must not fabricate an empty block).
+			if r := msg.reasoningText(); r != "" {
+				resp.Content = append(resp.Content, ir.ThinkingPart{Thinking: r})
+			}
 			if msg.Content.Str != nil && *msg.Content.Str != "" {
 				resp.Content = append(resp.Content, ir.TextPart{Text: *msg.Content.Str})
 			}
@@ -254,10 +260,27 @@ type wireFunction struct {
 }
 
 type wireMessage struct {
-	Role       string         `json:"role"`
-	Content    wireContent    `json:"content"`
-	ToolCallID string         `json:"tool_call_id,omitempty"`
-	ToolCalls  []wireToolCall `json:"tool_calls,omitempty"`
+	Role    string      `json:"role"`
+	Content wireContent `json:"content"`
+	// Reasoning carries the reasoning trace from OpenAI-compat providers
+	// that serve thinking on the chat surface. Field names vary: Ollama
+	// streams `reasoning` and returns `reasoning_content` non-streaming
+	// (issue ollama/ollama#17911 documents the asymmetry), DeepSeek-style
+	// providers use `reasoning_content` in both. Both decode into these
+	// fields; callers merge via reasoningText().
+	Reasoning        string         `json:"reasoning,omitempty"`
+	ReasoningContent string         `json:"reasoning_content,omitempty"`
+	ToolCallID       string         `json:"tool_call_id,omitempty"`
+	ToolCalls        []wireToolCall `json:"tool_calls,omitempty"`
+}
+
+// reasoningText returns the message's reasoning trace regardless of which
+// wire field carried it (never both in practice; reasoning wins).
+func (m wireMessage) reasoningText() string {
+	if m.Reasoning != "" {
+		return m.Reasoning
+	}
+	return m.ReasoningContent
 }
 
 func (m wireMessage) contentText() string {

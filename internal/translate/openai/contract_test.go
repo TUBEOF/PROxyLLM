@@ -220,6 +220,79 @@ func TestStreamDecode_ParallelToolCalls(t *testing.T) {
 	}
 }
 
+// OpenAI-compat thinking providers (ollama.com/v1 with glm/gpt-oss/qwen3,
+// DeepSeek-style endpoints) interleave reasoning fragments with content
+// deltas — delta.reasoning (Ollama, ollama/ollama#17911) or
+// delta.reasoning_content (DeepSeek shape). The IR cannot re-open a closed
+// block, so the decoder buffers the fragments and flushes ONE thinking
+// block after the content completes: a single text block, never the
+// fragmented multi-block shape that broke Claude Code rendering.
+func TestStreamDecode_ReasoningInterleaved(t *testing.T) {
+	wire := testutil.LoadGolden(t, "openai/chat-stream-reasoning.sse")
+	want := testutil.LoadExpectedEvents(t, "openai/chat-stream-reasoning.expected.json")
+
+	got := testutil.DrainStreamDecoder(t, oa.NewStreamDecoder(bytes.NewReader(wire)))
+	testutil.AssertEventsEqual(t, "openai/chat-stream-reasoning.sse", want, got)
+
+	// Guard the exact failure shape of the bug this fixture pins: exactly
+	// one text block, exactly one thinking block, thinking after the text.
+	textStarts, thinkStarts, thinkIdx := 0, 0, -1
+	for _, ev := range got {
+		if ev.Type != ir.BlockStart {
+			continue
+		}
+		switch ev.Part.(type) {
+		case ir.TextPart:
+			textStarts++
+		case ir.ThinkingPart:
+			thinkStarts++
+			thinkIdx = ev.Index
+		}
+	}
+	if textStarts != 1 || thinkStarts != 1 {
+		t.Errorf("block starts: %d text / %d thinking, want 1/1 (interleaved reasoning must not fragment the text)", textStarts, thinkStarts)
+	}
+	lastTextStop, firstThinkStart := -1, -1
+	for i, ev := range got {
+		if ev.Type == ir.BlockStop && ev.Index == 0 {
+			lastTextStop = i
+		}
+		if ev.Type == ir.BlockStart && ev.Index == thinkIdx {
+			firstThinkStart = i
+		}
+	}
+	if lastTextStop == -1 || firstThinkStart == -1 || firstThinkStart < lastTextStop {
+		t.Errorf("thinking block must open after the text block closes (text stop at %d, thinking start at %d)", lastTextStop, firstThinkStart)
+	}
+}
+
+// Non-streaming reasoning response (fixture chat-response-reasoning.json,
+// message.reasoning_content — the Ollama asymmetry note in
+// ollama/ollama#17911): the trace decodes as a ThinkingPart BEFORE the
+// text part. delta.reasoning-content providers that use message.reasoning
+// decode identically.
+func TestDecodeResponse_ReasoningContent(t *testing.T) {
+	raw := testutil.LoadGolden(t, "openai/chat-response-reasoning.json")
+	resp, err := oa.Codec{}.DecodeResponse(raw)
+	if err != nil {
+		t.Fatalf("DecodeResponse: %v", err)
+	}
+	if len(resp.Content) != 2 {
+		t.Fatalf("content = %d parts, want 2 (thinking, text)", len(resp.Content))
+	}
+	th, ok := resp.Content[0].(ir.ThinkingPart)
+	if !ok {
+		t.Fatalf("content[0] type = %T, want ir.ThinkingPart", resp.Content[0])
+	}
+	if th.Thinking == "" {
+		t.Error("content[0].thinking must carry the reasoning trace")
+	}
+	txt, ok := resp.Content[1].(ir.TextPart)
+	if !ok || txt.Text != "The answer is 4." {
+		t.Errorf("content[1] = %+v", resp.Content[1])
+	}
+}
+
 func TestEncodeResponse_FromIR(t *testing.T) {
 	resp := ir.Response{
 		ID:    "chatcmpl_test",

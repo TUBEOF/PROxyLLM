@@ -88,12 +88,12 @@ var providerTypes = []providerTypeDesc{
 	{
 		Type:        ProviderTypeOllamaCloud,
 		Label:       "Ollama Cloud",
-		Description: "The hosted Ollama API at ollama.com (native /api/chat). Multiple API keys = multiple accounts.",
+		Description: "The hosted Ollama API at ollama.com via its OpenAI-compatible /v1 endpoint. Multiple API keys = multiple accounts.",
 		Kind:        KindLLM,
 		Auth:        "api_key",
 		SettingsFields: []fieldDesc{
 			{Key: "base_url", Label: "Base URL", Kind: fieldKindURL, Required: false,
-				Hint: "Optional override; defaults to https://ollama.com"},
+				Hint: "Optional override; defaults to https://ollama.com (the /v1 version prefix rides the endpoint paths)"},
 			{Key: "model_prefix", Label: "Model prefix", Kind: fieldKindText, Required: false,
 				Hint: "Model identity prefix for this type, e.g. \"ollamacloud\" → \"ollamacloud/glm-5.3\". Empty = the type string (\"ollama-cloud\")."},
 		},

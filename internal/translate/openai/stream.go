@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	"github.com/tubeof/proxyllm/internal/translate"
 	"github.com/tubeof/proxyllm/internal/translate/ir"
@@ -21,6 +22,15 @@ import (
 //   - the first chunk (role assistant, typically empty content) → Start
 //     (usage stays zero until the final usage chunk) + BlockStart(text)
 //   - content deltas → Delta(text); empty content deltas skipped
+//   - reasoning deltas (`delta.reasoning` / `delta.reasoning_content`,
+//     OpenAI-compat thinking providers — Ollama emits `reasoning`, see
+//     ollama/ollama#17911) BUFFER: fragments accumulate in arrival order
+//     and flush as ONE thinking block (BlockStart/Delta/BlockStop) right
+//     before the stream's terminal events. The Anthropic/IR wire cannot
+//     re-open a closed content block, and reasoning fragments can arrive
+//     interleaved with content (rapid-mlx L-06 class of upstreams), so a
+//     fragment-position replay would fragment the text — the buffered
+//     single-block shape is lossless and wire-conform.
 //   - tool_calls entries assemble by index (O4): a new index closes the
 //     open block and opens a tool_use block (ID/name on the first entry);
 //     argument fragments → Delta(tool_input)
@@ -35,13 +45,14 @@ type streamDecoder struct {
 	// queue holds canonical events decoded but not yet returned.
 	queue []ir.StreamEvent
 
-	started    bool          // Start + initial text BlockStart emitted
-	openBlock  int           // IR index of the open TEXT block; -1 = none
-	blockCnt   int           // blocks opened so far (next index)
-	toolBlocks map[int]int   // wire tool_calls index → IR index (open tool blocks)
-	finish     ir.StopReason // recorded finish_reason ("" until seen)
-	pendingMD  bool          // finish seen but MessageDelta not yet emitted
-	done       bool          // [DONE] or terminal error decoded
+	started    bool            // Start + initial text BlockStart emitted
+	openBlock  int             // IR index of the open TEXT block; -1 = none
+	blockCnt   int             // blocks opened so far (next index)
+	toolBlocks map[int]int     // wire tool_calls index → IR index (open tool blocks)
+	reasoning  strings.Builder // buffered reasoning fragments (see Read doc)
+	finish     ir.StopReason   // recorded finish_reason ("" until seen)
+	pendingMD  bool            // finish seen but MessageDelta not yet emitted
+	done       bool            // [DONE] or terminal error decoded
 }
 
 func newStreamDecoder(r io.Reader) translate.StreamDecoder {
@@ -74,6 +85,7 @@ func (d *streamDecoder) Read(_ context.Context) (ir.StreamEvent, error) {
 			return ir.StreamEvent{Type: ir.Comment}, nil
 		}
 		if ev.Data == "[DONE]" {
+			d.flushReasoning()
 			if d.pendingMD {
 				// No usage chunk arrived: emit the terminal MessageDelta
 				// with zero usage, still before Done.
@@ -141,6 +153,14 @@ func (d *streamDecoder) mapChunk(w *wireChunk) {
 		return
 	}
 	ch := w.Choices[0]
+	if ch.Delta != nil && ch.Delta.Reasoning != "" {
+		// Buffered: flushed as one thinking block before the terminal
+		// events (see the type doc — the IR cannot re-open a closed
+		// block, and interleaving must not fragment the text).
+		d.reasoning.WriteString(ch.Delta.Reasoning)
+	} else if ch.Delta != nil && ch.Delta.ReasoningContent != "" {
+		d.reasoning.WriteString(ch.Delta.ReasoningContent)
+	}
 	if ch.Delta != nil && ch.Delta.Content.Str != nil && *ch.Delta.Content.Str != "" {
 		// Content delta; only while a text block is open (a tool block
 		// having been opened means the text block was closed).
@@ -199,10 +219,33 @@ func (d *streamDecoder) mapChunk(w *wireChunk) {
 			d.queue = append(d.queue, ir.StreamEvent{Type: ir.BlockStop, Index: block})
 		}
 		d.toolBlocks = nil
+		// Reasoning flushes after the content blocks close: the trace
+		// block must not interrupt a text block mid-word.
+		d.flushReasoning()
 	}
 	// A chunk may carry usage alongside or without choices (stream_options
 	// include_usage, O4); it closes out the MessageDelta.
 	d.emitUsage(w.Usage)
+}
+
+// flushReasoning emits the buffered reasoning trace as ONE thinking block
+// after any open text/tool blocks' content is complete. No-op without
+// buffered fragments. Reasoning arrives before the terminal MessageDelta —
+// the model's trace precedes its answer.
+func (d *streamDecoder) flushReasoning() {
+	if d.reasoning.Len() == 0 {
+		return
+	}
+	text := d.reasoning.String()
+	d.reasoning.Reset()
+	idx := d.blockCnt
+	d.blockCnt++
+	d.queue = append(d.queue,
+		ir.StreamEvent{Type: ir.BlockStart, Index: idx, Part: ir.ThinkingPart{}},
+		ir.StreamEvent{Type: ir.Delta, Index: idx,
+			Delta: ir.DeltaPayload{Kind: ir.DeltaThinking, Text: text}},
+		ir.StreamEvent{Type: ir.BlockStop, Index: idx},
+	)
 }
 
 func (d *streamDecoder) emitUsage(u *wireUsage) {

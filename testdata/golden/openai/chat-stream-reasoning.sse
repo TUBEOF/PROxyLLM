@@ -1,0 +1,16 @@
+data: {"id":"chatcmpl-ollama1","object":"chat.completion.chunk","created":1758600000,"model":"glm-5.3","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-ollama1","object":"chat.completion.chunk","created":1758600000,"model":"glm-5.3","choices":[{"index":0,"delta":{"content":"The word star"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-ollama1","object":"chat.completion.chunk","created":1758600000,"model":"glm-5.3","choices":[{"index":0,"delta":{"reasoning":"Let me check the spelling first. "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-ollama1","object":"chat.completion.chunk","created":1758600000,"model":"glm-5.3","choices":[{"index":0,"delta":{"reasoning":"S-t-a-r. Now the rest."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-ollama1","object":"chat.completion.chunk","created":1758600000,"model":"glm-5.3","choices":[{"index":0,"delta":{"content":"ting with S continues here."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-ollama1","object":"chat.completion.chunk","created":1758600000,"model":"glm-5.3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: {"id":"chatcmpl-ollama1","object":"chat.completion.chunk","created":1758600000,"model":"glm-5.3","choices":[{"index":0,"delta":{},"finish_reason":null}],"usage":{"prompt_tokens":26,"completion_tokens":283,"total_tokens":309}}
+
+data: [DONE]
+

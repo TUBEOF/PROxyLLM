@@ -1,8 +1,13 @@
 // Package ollamacloud implements the Ollama Cloud provider (plan §4.1):
-// the hosted native API at https://ollama.com. It speaks the native
-// /api/chat wire protocol (L1–L11) through the Ollama codec and the
-// shared HTTP transport foundation — Ollama's OpenAI-compat surface is
-// local-only, so cloud requests ride the native endpoint (L4).
+// the hosted OpenAI-compatible API at https://ollama.com/v1. It speaks the
+// OpenAI chat-completions wire (O1–O4) through the OpenAI codec and the
+// shared HTTP transport foundation. The OpenAI-compat surface is the
+// cloud API's primary chat transport (docs.ollama.com/api/
+// openai-compatibility — cloud access is base_url https://ollama.com/v1
+// with an OLLAMA_API_KEY bearer); the native /api/chat wire fragmented
+// interleaved thinking traces into separate content blocks (the
+// 2026-09-22 Claude Code rendering bug), which the OpenAI surface avoids.
+// Local Ollama servers attach via the custom-openai provider type.
 package ollamacloud
 
 import (
@@ -16,20 +21,21 @@ import (
 	"github.com/tubeof/proxyllm/internal/provider/internal/httpx"
 	"github.com/tubeof/proxyllm/internal/translate"
 	"github.com/tubeof/proxyllm/internal/translate/ir"
-	"github.com/tubeof/proxyllm/internal/translate/ollama"
+	"github.com/tubeof/proxyllm/internal/translate/openai"
 )
 
-// DefaultBaseURL is the hosted Ollama Cloud API root (L1).
+// DefaultBaseURL is the hosted Ollama Cloud API root (L1). The /v1
+// version prefix rides the endpoint paths (custom-openai convention).
 const DefaultBaseURL = "https://ollama.com"
 
-// Provider is the Ollama Cloud provider: native /api/chat over HTTPS with
-// Bearer auth (L2), NDJSON streaming, and the always-explicit stream field
-// (L8).
+// Provider is the Ollama Cloud provider: the OpenAI-compatible
+// /v1/chat/completions over HTTPS with Bearer auth (L2), data-only SSE
+// streaming (O4).
 type Provider struct {
 	client  httpx.Client
 	id      string
 	caps    provider.Capabilities
-	codec   ollama.Codec
+	codec   openai.Codec
 	decoder func(r io.Reader) translate.StreamDecoder
 }
 
@@ -42,9 +48,9 @@ func New(id, baseURL, apiKey string, caps provider.Capabilities) *Provider {
 	return &Provider{
 		client: httpx.Client{
 			BaseURL:    baseURL,
-			ChatPath:   "/api/chat", // native endpoint (L1/L4)
-			APIKey:     apiKey,      // Bearer $OLLAMA_API_KEY (L2)
-			ErrorShape: httpx.ErrorOllama,
+			ChatPath:   "/v1/chat/completions", // OpenAI-compat endpoint
+			APIKey:     apiKey,                 // Bearer $OLLAMA_API_KEY (L2)
+			ErrorShape: httpx.ErrorOpenAI,
 			// Streaming transport: no total-body budget (long generations
 			// must not be cut off), but redirects re-validated against the
 			// private-address SSRF guard — the Bearer header would ride a
@@ -53,9 +59,9 @@ func New(id, baseURL, apiKey string, caps provider.Capabilities) *Provider {
 		},
 		id:    id,
 		caps:  caps,
-		codec: ollama.Codec{},
+		codec: openai.Codec{},
 		decoder: func(r io.Reader) translate.StreamDecoder {
-			return ollama.NewStreamDecoder(r)
+			return openai.NewStreamDecoder(r)
 		},
 	}
 }
@@ -83,34 +89,34 @@ func (p *Provider) Stream(ctx context.Context, req ir.Request) (<-chan ir.Stream
 }
 
 // ListModels fetches the upstream model list (ADR-010 model sync) —
-// GET /api/tags, the native model-list endpoint (fixture
-// testdata/golden/ollama/tags-response.json, docs.ollama.com, 2026-09-17).
-// The entry "name" field is the wire model identifier (the /api/chat
-// "model" value).
+// GET /v1/models, the OpenAI list shape. The entry "id" field is the wire
+// model identifier (the /v1/chat/completions "model" value). NOTE: cloud
+// IDs may differ from the native /api/tags "name" values — model rows and
+// routing rules reference these IDs.
 func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
-	raw, err := p.client.Get(ctx, "/api/tags")
+	raw, err := p.client.Get(ctx, "/v1/models")
 	if err != nil {
 		return nil, err
 	}
 	var list struct {
-		Models []struct {
-			Name string `json:"name"`
-		} `json:"models"`
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &list); err != nil {
-		return nil, fmt.Errorf("ollamacloud: decode /api/tags response: %w", err)
+		return nil, fmt.Errorf("ollamacloud: decode /v1/models response: %w", err)
 	}
-	out := make([]provider.ModelInfo, 0, len(list.Models))
-	seen := make(map[string]struct{}, len(list.Models))
-	for _, m := range list.Models {
-		if m.Name == "" {
+	out := make([]provider.ModelInfo, 0, len(list.Data))
+	seen := make(map[string]struct{}, len(list.Data))
+	for _, m := range list.Data {
+		if m.ID == "" {
 			continue
 		}
-		if _, dup := seen[m.Name]; dup {
+		if _, dup := seen[m.ID]; dup {
 			continue
 		}
-		seen[m.Name] = struct{}{}
-		out = append(out, provider.ModelInfo{Name: m.Name})
+		seen[m.ID] = struct{}{}
+		out = append(out, provider.ModelInfo{Name: m.ID})
 	}
 	return out, nil
 }

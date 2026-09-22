@@ -45,6 +45,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/storage"
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 	"github.com/tubeof/proxyllm/internal/translate/ollama"
+	"github.com/tubeof/proxyllm/internal/translate/openai"
 )
 
 // smokeEnabled reports whether the operator opted in (§8: never default).
@@ -322,4 +323,85 @@ func firstOllamaTag(t *testing.T, base string) string {
 		t.Skip("no models hosted at the smoke instance — pull one or set PROXYLLM_SMOKE_OLLAMA_MODEL")
 	}
 	return tags.Models[0].Name
+}
+
+// TestSmoke_OllamaCloudOpenAIStream pins the production ollama-cloud path
+// (since 2026-09-22 the OpenAI-compat /v1/chat/completions surface, the
+// 2026-09-22 rendering-bug fix) against the live cloud endpoint. Requires
+// PROXYLLM_SMOKE_OLLAMA_CLOUD_KEY. Records the terminal usage and whether
+// the live model interleaved reasoning, so the wire facts stay pinned by
+// observation, not assumption.
+func TestSmoke_OllamaCloudOpenAIStream(t *testing.T) {
+	if !smokeEnabled(t) {
+		return
+	}
+	key := smokeEnv(t, "PROXYLLM_SMOKE_OLLAMA_CLOUD_KEY", "")
+	model := os.Getenv("PROXYLLM_SMOKE_OLLAMA_CLOUD_MODEL")
+	if model == "" {
+		model = "gpt-oss:20b"
+	}
+
+	reqBody, err := openai.Codec{}.EncodeRequest(ir.Request{
+		Model:     model,
+		MaxTokens: 64,
+		Messages: []ir.Message{
+			{Role: ir.RoleUser, Parts: []ir.Part{ir.TextPart{Text: "Reply with exactly: hello"}}},
+		},
+		Stream: true,
+	})
+	if err != nil {
+		t.Fatalf("encode /v1/chat/completions request: %v", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost,
+		"https://ollama.com/v1/chat/completions", strings.NewReader(string(reqBody)))
+	if err != nil {
+		t.Fatalf("build /v1/chat/completions request: %v", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+key)
+
+	resp, err := smokeHTTPClient().Do(httpReq)
+	if err != nil {
+		t.Fatalf("live ollama.com/v1 POST: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("live ollama.com/v1 status %d — expected 200 (model %q available? key valid?)", resp.StatusCode, model)
+	}
+
+	// Decode through the production OpenAI stream machine.
+	dec := openai.NewStreamDecoder(resp.Body)
+	var sawTerminal bool
+	var finalUsage ir.Usage
+	textBlocks, thinkBlocks := 0, 0
+	for {
+		ev, err := dec.Read(context.Background())
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("SSE stream decode: %v — the pinned wire assumptions (O4, reasoning buffering) do not match the live stream; escalate per plan §2.9", err)
+		}
+		if ev.Type == ir.BlockStart {
+			switch ev.Part.(type) {
+			case ir.TextPart:
+				textBlocks++
+			case ir.ThinkingPart:
+				thinkBlocks++
+			}
+		}
+		if ev.Type == ir.MessageDelta && ev.MessageDelta != nil {
+			sawTerminal = true
+			finalUsage = ev.MessageDelta.Usage
+		}
+	}
+	if !sawTerminal {
+		t.Fatal("stream ended without a terminal message_delta")
+	}
+	if textBlocks > 1 {
+		t.Errorf("live stream opened %d text blocks — interleaved reasoning fragmented the text (the rendering bug shape)", textBlocks)
+	}
+	t.Logf("ollama-cloud /v1 pinned: text_blocks=%d thinking_blocks=%d usage in/out=%d/%d",
+		textBlocks, thinkBlocks, finalUsage.InputTokens, finalUsage.OutputTokens)
 }

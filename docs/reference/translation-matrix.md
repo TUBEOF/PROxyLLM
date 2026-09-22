@@ -55,10 +55,23 @@ Anthropic surface:
 
 ## Known degradations (v1)
 
-- **Ollama native**: no server tools, no cache markers; thinking only via
-  `reasoning_effort` mapping. Server-tool requests on an Ollama-routed
-  model fall to Firecrawl emulation (§6.2) when `server_tool_emulation`
-  is `emulate-firecrawl`, else capability-gap error.
+- **Ollama Cloud** (since 2026-09-22): rides the OpenAI-compatible
+  `/v1/chat/completions` surface (`https://ollama.com/v1`, docs
+  accessed 2026-09-22), not the native `/api/chat` wire — the native wire
+  interleaves thinking and content fragments, which fragmented the proxy's
+  text output (the Claude Code rendering bug). Reasoning rides
+  `delta.reasoning` (Ollama) / `delta.reasoning_content` (DeepSeek-style)
+  on the stream and `message.reasoning_content` non-streaming (the field
+  asymmetry is documented upstream, ollama/ollama#17911); the proxy
+  buffers interleaved reasoning fragments and emits ONE thinking block
+  after the content — the text never fragments. Model IDs come from
+  `GET /v1/models` (OpenAI list shape) and may differ from the native
+  `/api/tags` names. Server tools fall to Firecrawl emulation (§6.2) as
+  for any other OpenAI-compat target.
+- **Ollama native wire** (`/api/chat`): still decoded/encoded for local
+  servers via custom-openai or the codec tests, but no provider ships on
+  it since 2026-09-22. Its known limitation stands: interleaved
+  thinking/content fragments decode as separate content blocks.
 - **Cache markers** (`cache_control`) only survive Anthropic→Anthropic;
   every other crossing drops them with a debug log naming the field path.
 - **Token counting** on non-Anthropic-shaped upstream is heuristic

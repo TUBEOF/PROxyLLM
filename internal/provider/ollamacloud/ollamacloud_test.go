@@ -7,31 +7,30 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"testing"
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/provider"
 	"github.com/tubeof/proxyllm/internal/provider/ollamacloud"
 	"github.com/tubeof/proxyllm/internal/translate/ir"
-	"github.com/tubeof/proxyllm/internal/translate/ollama"
+	"github.com/tubeof/proxyllm/internal/translate/openai"
 	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
 // Ollama Cloud provider contract tests, RED-GREEN (plan §4.1, Analysis F).
-// Expectations derive from the researched wire facts (accessed 2026-09-10)
-// and the golden fixtures pinned from the Ollama native /api/chat wire
-// format — never from provider code behavior.
+// Since 2026-09-22 the cloud provider rides the OpenAI-compatible surface
+// (base https://ollama.com + /v1 paths, docs.ollama.com/api/
+// openai-compatibility, accessed 2026-09-22) — the native /api/chat wire
+// fragmented interleaved thinking into separate content blocks (the Claude
+// Code rendering bug). Expectations derive from the OpenAI-compat wire
+// facts and the openai golden fixtures — never from provider code.
 //
 // Wire facts pinned here:
-//   - L1: hosted native API is POST {base}/api/chat with {model, messages,
+//   - O2: chat is POST {base}/v1/chat/completions with {model, messages,
 //     stream}.
 //   - L2: auth is `Authorization: Bearer $OLLAMA_API_KEY`.
-//   - L8: stream is ALWAYS explicit in the request body — `"stream":false`
-//     must appear on non-streaming requests (Ollama defaults to true when
-//     absent).
-//   - L11: usage maps prompt_eval_count / eval_count /
-//     prompt_eval_cached_count.
+//   - O4: streaming is data-only SSE with the [DONE] sentinel.
+//   - O10: non-2xx bodies decode in the OpenAI error shape.
 //   - FO-2/C2/FO-1: same error mapping and cancellation contracts as every
 //     HTTP provider.
 
@@ -46,7 +45,7 @@ func mustWrite(t *testing.T, w io.Writer, data []byte) {
 	}
 }
 
-// mustWriteString is mustWrite for string payloads (NDJSON lines).
+// mustWriteString is mustWrite for string payloads (SSE lines).
 func mustWriteString(t *testing.T, w io.Writer, s string) {
 	t.Helper()
 	if _, err := io.WriteString(w, s); err != nil {
@@ -66,7 +65,7 @@ func newProvider(t *testing.T, handler http.HandlerFunc) *ollamacloud.Provider {
 
 func chatRequest() ir.Request {
 	return ir.Request{
-		Model: "llama3.3",
+		Model: "gemma4:31b",
 		Messages: []ir.Message{{
 			Role:  ir.RoleUser,
 			Parts: []ir.Part{ir.TextPart{Text: "Say hello"}},
@@ -103,29 +102,34 @@ func drainEvents(t *testing.T, events <-chan ir.StreamEvent) []ir.StreamEvent {
 	}
 }
 
-// TestComplete_RoundTrip: a 2xx /api/chat body decodes to the IR via the
-// Ollama codec; auth is Bearer (L2); the body carries an explicit
-// `"stream":false` (L8).
+// TestComplete_RoundTrip: a 2xx /v1/chat/completions body decodes to the
+// IR via the OpenAI codec; auth is Bearer (L2); the body carries
+// "stream":false (the OpenAI-compat endpoint defaults to false, but the
+// explicit field keeps the contract visible).
 func TestComplete_RoundTrip(t *testing.T) {
 	pr := newProvider(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
-		if r.URL.Path != "/api/chat" {
-			t.Errorf("path = %s, want /api/chat (L1)", r.URL.Path)
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("path = %s, want /v1/chat/completions", r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer "+testAPIKey {
 			t.Errorf("Authorization = %q, want Bearer %q (L2)", got, testAPIKey)
 		}
 		body := decodeSentBody(t, r)
-		if body["stream"] != false {
-			t.Errorf("request stream = %v, want explicit false (L8)", body["stream"])
+		// The OpenAI-compat endpoint defaults stream to false; the codec
+		// omits the field for non-streaming requests (custom-openai
+		// convention) — absence IS false here, unlike the native wire's
+		// always-true default (L8).
+		if v, ok := body["stream"]; ok && v != false {
+			t.Errorf("request stream = %v, want false (or omitted)", v)
 		}
-		if body["model"] != "llama3.3" {
-			t.Errorf("request model = %v, want llama3.3", body["model"])
+		if body["model"] != "gemma4:31b" {
+			t.Errorf("request model = %v, want gemma4:31b", body["model"])
 		}
 		w.Header().Set("Content-Type", "application/json")
-		mustWrite(t, w, testutil.LoadGolden(t, "ollama/chat-response.json"))
+		mustWrite(t, w, testutil.LoadGolden(t, "openai/chat-response.json"))
 	})
 
 	resp, err := pr.Complete(context.Background(), chatRequest())
@@ -133,24 +137,80 @@ func TestComplete_RoundTrip(t *testing.T) {
 		t.Fatalf("Complete: %v", err)
 	}
 
-	want, err := ollama.Codec{}.DecodeResponse(testutil.LoadGolden(t, "ollama/chat-response.json"))
+	want, err := openai.Codec{}.DecodeResponse(testutil.LoadGolden(t, "openai/chat-response.json"))
 	if err != nil {
 		t.Fatalf("decode golden response: %v", err)
 	}
-	if !reflect.DeepEqual(resp, want) {
+	// Compare content-by-content: the provider's Complete path is codec
+	// identity, so a DeepEqual against the codec's own decode is the pin.
+	if resp.ID != want.ID || resp.Model != want.Model || resp.StopReason != want.StopReason {
 		t.Errorf("Complete response = %+v, want golden decode %+v", resp, want)
+	}
+	if len(resp.Content) != len(want.Content) {
+		t.Fatalf("content parts = %d, want %d", len(resp.Content), len(want.Content))
+	}
+	for i := range resp.Content {
+		if !partEqual(resp.Content[i], want.Content[i]) {
+			t.Errorf("content[%d] = %+v, want %+v", i, resp.Content[i], want.Content[i])
+		}
+	}
+	if resp.Usage != want.Usage {
+		t.Errorf("usage = %+v, want %+v", resp.Usage, want.Usage)
+	}
+}
+
+// partEqual compares two IR parts (a switch instead of ==: ToolCallPart
+// carries json.RawMessage and would panic on a == compare).
+func partEqual(a, b ir.Part) bool {
+	switch pa := a.(type) {
+	case ir.TextPart:
+		pb, ok := b.(ir.TextPart)
+		return ok && pa == pb
+	case ir.ThinkingPart:
+		pb, ok := b.(ir.ThinkingPart)
+		return ok && pa == pb
+	case ir.ToolCallPart:
+		pb, ok := b.(ir.ToolCallPart)
+		return ok && pa.ID == pb.ID && pa.Name == pb.Name && string(pa.Input) == string(pb.Input)
+	default:
+		return false
+	}
+}
+
+// TestComplete_ReasoningResponse: a thinking-model body decodes with the
+// trace as a ThinkingPart before the text (the reasoning_content fixture;
+// the OpenAI-codec contract is exercised in detail there — this pins the
+// provider plumbing).
+func TestComplete_ReasoningResponse(t *testing.T) {
+	pr := newProvider(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		mustWrite(t, w, testutil.LoadGolden(t, "openai/chat-response-reasoning.json"))
+	})
+
+	resp, err := pr.Complete(context.Background(), chatRequest())
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if len(resp.Content) != 2 {
+		t.Fatalf("content = %d parts, want 2 (thinking, text)", len(resp.Content))
+	}
+	if _, ok := resp.Content[0].(ir.ThinkingPart); !ok {
+		t.Errorf("content[0] = %T, want ir.ThinkingPart", resp.Content[0])
+	}
+	if _, ok := resp.Content[1].(ir.TextPart); !ok {
+		t.Errorf("content[1] = %T, want ir.TextPart", resp.Content[1])
 	}
 }
 
 // TestComplete_UpstreamError: a non-2xx maps to *provider.UpstreamError
-// with HTTP status + body error fields + Retry-After (FO-2, O10). Ollama
-// error bodies are `{"error":"..."}` — Code/Type stay empty, Message
-// carries the text.
+// with HTTP status + body error fields + Retry-After (FO-2, O10). The
+// OpenAI-compat surface answers `{"error":{"message":...}}` — Code/Type
+// stay empty, Message carries the text.
 func TestComplete_UpstreamError(t *testing.T) {
 	pr := newProvider(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "3")
 		w.WriteHeader(http.StatusTooManyRequests)
-		mustWriteString(t, w, `{"error":"rate limited"}`)
+		mustWriteString(t, w, `{"error":{"message":"rate limited","type":"rate_limit_error"}}`)
 	})
 
 	_, err := pr.Complete(context.Background(), chatRequest())
@@ -162,14 +222,14 @@ func TestComplete_UpstreamError(t *testing.T) {
 		t.Errorf("HTTPStatus = %d, want %d", up.HTTPStatus, http.StatusTooManyRequests)
 	}
 	if up.Message != "rate limited" {
-		t.Errorf("Message = %q, want the Ollama error text", up.Message)
+		t.Errorf("Message = %q, want the OpenAI-compat error text", up.Message)
 	}
 	if up.RetryAfter != 3*time.Second {
 		t.Errorf("RetryAfter = %v, want 3s", up.RetryAfter)
 	}
 }
 
-// TestStream_Events: the NDJSON fixture replays to the canonical event
+// TestStream_Events: the SSE fixture replays to the canonical event
 // sequence from the .expected.json fixture; the body carries stream:true.
 func TestStream_Events(t *testing.T) {
 	pr := newProvider(t, func(w http.ResponseWriter, r *http.Request) {
@@ -177,8 +237,8 @@ func TestStream_Events(t *testing.T) {
 		if body["stream"] != true {
 			t.Errorf("request stream = %v, want true", body["stream"])
 		}
-		w.Header().Set("Content-Type", "application/x-ndjson")
-		mustWrite(t, w, testutil.LoadGolden(t, "ollama/chat-stream.ndjson"))
+		w.Header().Set("Content-Type", "text/event-stream")
+		mustWrite(t, w, testutil.LoadGolden(t, "openai/chat-stream.sse"))
 	})
 
 	req := chatRequest()
@@ -190,15 +250,57 @@ func TestStream_Events(t *testing.T) {
 	defer cancel()
 
 	got := drainEvents(t, events)
-	want := testutil.LoadExpectedEvents(t, "ollama/chat-stream.ndjson.expected.json")
-	testutil.AssertEventsEqual(t, "ollama/chat-stream.ndjson", want, got)
+	want := testutil.LoadExpectedEvents(t, "openai/chat-stream.expected.json")
+	testutil.AssertEventsEqual(t, "openai/chat-stream.sse", want, got)
+}
+
+// TestStream_ReasoningInterleaved: the provider-level pin of the
+// 2026-09-22 rendering bug — an interleaved reasoning stream must decode
+// to one text block + one thinking block (the OpenAI-codec fixture pins
+// the full event sequence; here the reasoning field must not be dropped
+// on the provider path).
+func TestStream_ReasoningInterleaved(t *testing.T) {
+	pr := newProvider(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		mustWrite(t, w, testutil.LoadGolden(t, "openai/chat-stream-reasoning.sse"))
+	})
+
+	req := chatRequest()
+	req.Stream = true
+	events, cancel, err := pr.Stream(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	defer cancel()
+
+	got := drainEvents(t, events)
+	sawThinking := false
+	textBlocks, thinkBlocks := 0, 0
+	for _, ev := range got {
+		if ev.Type != ir.BlockStart {
+			continue
+		}
+		switch ev.Part.(type) {
+		case ir.TextPart:
+			textBlocks++
+		case ir.ThinkingPart:
+			thinkBlocks++
+			sawThinking = true
+		}
+	}
+	if !sawThinking {
+		t.Fatal("reasoning trace lost on the provider path")
+	}
+	if textBlocks != 1 || thinkBlocks != 1 {
+		t.Errorf("blocks: %d text / %d thinking, want 1/1 (interleaved reasoning must not fragment the text)", textBlocks, thinkBlocks)
+	}
 }
 
 // TestStream_Cancel: cancel aborts the upstream request and closes the
 // channel (C2).
 func TestStream_Cancel(t *testing.T) {
 	pr := newProvider(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
 		for i := 0; i < 1000; i++ {
 			select {
@@ -206,7 +308,7 @@ func TestStream_Cancel(t *testing.T) {
 				return
 			default:
 			}
-			mustWriteString(t, w, `{"model":"llama3.3","message":{"role":"assistant","content":"a"},"done":false}`+"\n")
+			mustWriteString(t, w, "data: {\"id\":\"c1\",\"model\":\"gemma4:31b\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"a\"},\"finish_reason\":null}]}\n\n")
 			flusher.Flush()
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -239,6 +341,39 @@ func TestStream_Cancel(t *testing.T) {
 		case <-deadline:
 			t.Fatal("cancel must close the event channel promptly (C2)")
 		}
+	}
+}
+
+// TestListModels_OpenAIShape: /v1/models decodes the OpenAI list shape
+// ("data":[{"id":...}]); empty and duplicate IDs are skipped.
+func TestListModels_OpenAIShape(t *testing.T) {
+	pr := newProvider(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %s, want GET", r.Method)
+		}
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("path = %s, want /v1/models", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+testAPIKey {
+			t.Errorf("Authorization = %q, want Bearer %q", got, testAPIKey)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		mustWriteString(t, w, `{"object":"list","data":[`+
+			`{"id":"gemma4:31b","object":"model","owned_by":"library"},`+
+			`{"id":"gpt-oss:20b","object":"model","owned_by":"library"},`+
+			`{"id":"gemma4:31b","object":"model","owned_by":"dup"},`+
+			`{"id":"","object":"model","owned_by":"empty"}]}`)
+	})
+
+	models, err := pr.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 2 {
+		t.Fatalf("models = %+v, want 2 entries (deduped, empties skipped)", models)
+	}
+	if models[0].Name != "gemma4:31b" || models[1].Name != "gpt-oss:20b" {
+		t.Errorf("model names = %q/%q, want gemma4:31b/gpt-oss:20b", models[0].Name, models[1].Name)
 	}
 }
 

@@ -1,0 +1,23 @@
+{
+  "id": "chatcmpl-ollama2",
+  "object": "chat.completion",
+  "created": 1758600100,
+  "model": "glm-5.3",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The answer is 4.",
+        "reasoning_content": "17 times 23: 17*20=340, 17*3=51, 340+51=391. The user asked something else, but the point is the reasoning trace."
+      },
+      "finish_reason": "stop",
+      "logprobs": null
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 14,
+    "completion_tokens": 58,
+    "total_tokens": 72
+  }
+}
