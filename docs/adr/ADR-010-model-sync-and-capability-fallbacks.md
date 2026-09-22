@@ -64,14 +64,27 @@ Three gaps surfaced operating the WebUI:
 3. **Capability fallbacks are global per capability.** Config-KV lists
    (`vision_fallback`, `web_search_fallback`, `web_fetch_fallback`),
    edited on the Routing page via a dependency-free drag-drop PrioList
-   (native HTML5 DnD + button fallbacks). Vision entries (provider IDs or
-   LLM types) are appended to a resolved chain when the request requires
-   vision and the rule chain filtered to nothing — same expansion and
-   capability/health gates as rule chains, every consultation traced as
-   `capability_fallback`. The web lists order the executor's
-   `EmulatorPool`, which walks an ordered emulator list per tool family
-   and fails over on error (trace stays `emulated_tool`; all-failed
-   surfaces the last error as the documented "unavailable" result).
+   (native HTML5 DnD + button fallbacks). The web lists order the
+   executor's `EmulatorPool`, which walks an ordered emulator list per
+   tool family and fails over on error (trace stays `emulated_tool`;
+   all-failed surfaces the last error as the documented "unavailable"
+   result).
+
+   **Amendment (2026-09-21, automatic capabilities — supersedes the
+   original router-side vision mechanism):** static provider flags cannot
+   know which MODEL accepts images, so the pre-stream vision gate was
+   removed. Vision fallback entries are now MODEL IDs (routing
+   identities, validated against the models table; v1.0.2 provider-ID/
+   type entries no longer resolve and are skipped until re-saved). The
+   fallback fires EXECUTOR-side, only after the routed chain really
+   failed with `capability_gap` rejections (HTTP 400 naming the input
+   modality — new FO-2 class, failover action): the fallback models get
+   one walk of their own (complete and stream dispatch alike; pre-first-
+   byte, FO-1 conform), no recursion. Every consultation stays a traced
+   `capability_fallback` event. Rejections LEARN: `vision:false` is
+   written into the model row's capabilities blob asynchronously, unless
+   the operator pinned the flag (manual selection in the Models editor);
+   the row's sync origin is preserved.
 
 ## Consequences
 

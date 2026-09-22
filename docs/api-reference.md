@@ -74,12 +74,20 @@ Live-routing overrides via settings: `model_aliases`,
 `anthropic_surface_non_claude`, `routing_strategy`, plus the ADR-010
 `vision_fallback` / `web_search_fallback` / `web_fetch_fallback` lists —
 a successful write reaches the runtime without restart (see
-[configuration.md](configuration.md#database-overrides-layer-4)).
+[configuration.md](configuration.md#database-overrides-layer-4)). Since
+2026-09-21 the `vision_fallback` entries are MODEL IDs validated against
+the models table.
 
-`route_trace` rows carry `"version":3` since ADR-010 (additive: the new
-`capability_fallback` event type; ADR-009 added `expand`/`rotation`,
-ADR-009's `"version":2` rows render unchanged, as do unversioned older
-rows).
+`route_trace` rows carry `"version":4` since the model identity work
+(additive: the `model_resolved` event; version 3 added ADR-010's
+`capability_fallback` event, version 2 the ADR-009 `expand`/`rotation`
+events — older rows render unchanged, as do unversioned ones).
+
+### Model test (2026-09-22)
+
+| Endpoint | Notes |
+|---|---|
+| `POST /api/admin/models/test/{id}` | One minimal "Sag OK" round trip against the model's provider: 16-token budget, no thinking, no stream, 15 s timeout. Response `{ok, latency_ms, reply, error}` — failures carry a plain-language, redacted cause; `ok:false` is still HTTP 200 (the round trip happened). Unwired (no master key) answers 404. |
 
 ## Health
 

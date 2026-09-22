@@ -5,6 +5,21 @@ skip, retry, failover, compat-policy application, tool-emulation
 substitution, chain expansion, and strategy rotation lands in the request's
 `route_trace` — **fallbacks are never silent**.
 
+## Model identity (2026-09-21)
+
+A model's routing identity is `<prefix>/<wire-name>` (e.g.
+`ollamacloud/glm-5.3`): the prefix is a per-provider-type setting
+(editable on the provider type's page, default = the type string), the
+wire name is what the upstream expects. The models table stores both
+(`ID` = routing identity, `Name` = wire name); the model sync creates
+prefixed rows, and legacy unprefixed rows keep working (wire name = ID).
+Before dispatch, the resolved chain's routing ID maps to the wire name
+(row wins; a missing row falls back to the tail after the last slash) —
+traced as `model_resolved` (route_trace v4). The client-facing response
+echoes the routing identity, never the wire name. Aliases
+(`model_aliases`) map client-facing names to routing identities and match
+in the rule step below.
+
 ## Rule model (evaluation order)
 
 1. **Key scope** — the client key's allowed model patterns.
@@ -24,19 +39,22 @@ substitution, chain expansion, and strategy rotation lands in the request's
    - **Fill-First** — the chain order is kept: the first entry serves
      everything until the health gate opens (breaker cooldown) or a 429
      exhausts its retry budget, then the next entry takes over.
-5. **Capability filter** — capabilities derived from the request content
-   (vision, web_search, web_fetch, code_execution, streaming, context
-   size vs. window); providers failing the filter are skipped **with a
-   logged reason**.
+5. **Capability filter** — deterministic surface/emulation capabilities
+   derived from the request content (web_search, web_fetch,
+   code_execution, streaming, context size vs. window); providers failing
+   the filter are skipped **with a logged reason**. Vision is deliberately
+   NOT gated here (2026-09-21 automatic capabilities): static provider
+   flags cannot know which MODEL accepts images — the request goes out,
+   and a real upstream rejection fails over.
 6. **Health gate** — circuit breaker (consecutive failures), exponential
    backoff, probe recovery; cooled-down providers are skipped or
    deprioritized.
-7. **Capability fallbacks** (ADR-010) — when a request needs **vision**
-   and the chain filtered to nothing, the global `vision_fallback` list
-   (Routing page) is consulted: its entries resolve through the same
-   expansion + capability/health gates as rule chains, and the
-   consultation is a traced `capability_fallback` event. An empty list
-   keeps the documented no-route error.
+7. **Capability fallbacks** (ADR-010, amended 2026-09-21) — when the whole
+   chain failed with `capability_gap` rejections (a 400 naming the input
+   modality, e.g. "image input is not supported"), the global
+   `vision_fallback` MODEL list (Routing page) gets one walk of its own in
+   the executor — every consultation is a traced `capability_fallback`
+   event. An empty list keeps the documented upstream error.
 
 Config lives in the DB and is editable in the WebUI (**Routing**); rule
 writes reach the live router without restart — only a successfully read
@@ -45,16 +63,32 @@ The executor's attempt cap (2–3 providers per request) still applies to
 the expanded chain — a very long account pool is not walked in one
 request.
 
-## Capability fallback lists (ADR-010)
+## Capability fallback lists (ADR-010, amended 2026-09-21)
 
 The Routing page holds three global priority lists (drag-drop ordered,
 saved in one write):
 
 | List | Entries | Semantics |
 |---|---|---|
-| **Vision fallback** | Provider IDs or LLM provider types | Appended to a vision-less resolved chain; candidates pass the same capability/health gates; every use traced as `capability_fallback` |
+| **Vision fallback** | MODEL IDs (routing identities, e.g. `ollamacloud/glm-5.3`) | After a chain exhausted on `capability_gap` rejections, the executor walks these models (each its provider's wire name); every use traced as `capability_fallback` |
 | **Web search fallback** | Web-tool account IDs (firecrawl today) | The emulator pool tries accounts in order on emulated `web_search`; a failing account fails over to the next |
 | **Web fetch fallback** | Web-tool account IDs | Same as above for `web_fetch` |
+
+**Spec change 2026-09-21** (breaking for the vision list): entries are
+MODEL IDs validated against the models table at save time — provider
+IDs/types from v1.0.2 configurations no longer resolve and are skipped
+with a log line until re-saved. The fallback moved from the router's
+pre-stream gate to the executor: it fires only after the routed models
+REALLY rejected the request at the upstream (HTTP 400 naming the input
+modality — image, multimodal, unsupported content), never to rescue an
+unresolvable chain (that stays the no-route error).
+
+**Automatic capability learning**: every `capability_gap` rejection
+persists the observed gap into the model row's capabilities (e.g.
+`"vision": false`) — asynchronously, never on the request path. A pinned
+flag (the operator's manual selection in the Models editor, written as
+`"pinned": {"vision": true}`) stops the learning for exactly that
+capability; the row's sync origin is preserved.
 
 The web lists refine the executor's emulator pool: with exactly one
 account the behavior is identical to the pre-ADR-010 single emulator; with
@@ -97,9 +131,9 @@ the response metadata. Firecrawl accounts are connected in the WebUI
 remains the fallback when no account exists, and with neither, emulation
 returns the documented "unavailable" error results. Multiple accounts +
 the web fallback lists give the emulation real failover. Vision cannot be
-emulated: an all-chain vision gap is a protocol-conform capability-gap
-error (or the vision fallback list routes to a capable provider first —
-see above).
+emulated: a model that really rejects image input at the upstream fails
+over within the chain, then to the configured vision fallback MODELS —
+see above.
 
 ## Model sync (ADR-010)
 
