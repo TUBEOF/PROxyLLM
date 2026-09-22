@@ -7,6 +7,7 @@ package routing
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/tubeof/proxyllm/internal/provider"
 )
@@ -76,6 +77,14 @@ const (
 	// failed over: the request (or its credentials) is invalid at any
 	// provider (FO-2).
 	ClassClientError Class = "client_error"
+
+	// ClassCapabilityGap: a 400 whose body code or message names an
+	// unsupported input modality ("image", "multimodal",
+	// "unsupported_content") — the request is valid, the model lacks a
+	// capability. Fail over pre-stream (2026-09-21 automatic capabilities);
+	// the executor additionally consults the capability fallback models
+	// when the whole chain failed this way.
+	ClassCapabilityGap Class = "capability_gap"
 
 	// ClassTransport: no HTTP response at all (connection refused, TLS
 	// reset, timeout) — retryable/failover pre-stream (FO-1).
@@ -148,6 +157,13 @@ func classifyPreStream(err error) Classification {
 		case "insufficient_quota":
 			return Classification{Class: ClassInsufficientQuota, Action: ActionFailOver}
 		}
+		// Capability-gap tier (2026-09-21 automatic capabilities): a body
+		// code naming the modality or a 400 message describing one. Only
+		// 400s qualify — a 404 mentioning "image" is a routing problem,
+		// not a capability statement.
+		if status == 400 && capabilityGapSignal(code, err) {
+			return Classification{Class: ClassCapabilityGap, Action: ActionFailOver}
+		}
 		// No known body code (or none at all): fall through to tier 1.
 		return classifyByStatus(status)
 	}
@@ -188,4 +204,61 @@ func AsUpstreamError(err error) (status int, bodyCode string, ok bool) {
 		return ue.HTTPStatus, ue.Code, true
 	}
 	return 0, "", false
+}
+
+// capabilityGapSignal reports whether the body code or the message text
+// names an unsupported input modality — the heuristic tier of the
+// capability-gap class. Vendors word these rejections differently, so both
+// sources are consulted, case-insensitively. Known body codes:
+// unsupported_content / image_not_supported. Message markers: "image" or
+// "images" (word-bounded), "multimodal", "unsupported content type".
+func capabilityGapSignal(bodyCode string, err error) bool {
+	switch bodyCode {
+	case "unsupported_content", "image_not_supported":
+		return true
+	}
+	var ue *provider.UpstreamError
+	if !errors.As(err, &ue) {
+		return false
+	}
+	msg := strings.ToLower(ue.Message)
+	if strings.Contains(msg, "unsupported content type") {
+		return true
+	}
+	// "image(s)" as a word: bounded start, optional plural, bounded end
+	// ("image input", "images are not supported"; not "imagesque").
+	for _, stem := range []string{"image", "images", "multimodal"} {
+		if wordBounded(msg, stem) {
+			return true
+		}
+	}
+	return false
+}
+
+// wordBounded reports whether needle appears in hay as a whole word
+// ("image" matches "image input", not "imagesque").
+func wordBounded(hay, needle string) bool {
+	for i := 0; ; i++ {
+		idx := strings.Index(hay[i:], needle)
+		if idx < 0 {
+			return false
+		}
+		start := i + idx
+		end := start + len(needle)
+		if start > 0 && isWordRune(hay[start-1]) {
+			i = start + 1
+			continue
+		}
+		if end < len(hay) && isWordRune(hay[end]) {
+			i = start + 1
+			continue
+		}
+		return true
+	}
+}
+
+// isWordRune reports whether r continues a word (letters/digits/underscore)
+// — the boundary complement for wordBounded.
+func isWordRune(r byte) bool {
+	return r == '_' || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
 }

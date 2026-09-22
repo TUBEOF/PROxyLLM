@@ -168,6 +168,13 @@ func (t *Trace) CompatPolicy(setting, value, reason string) {
 		From: setting, To: value})
 }
 
+// CapabilityFallback records a capability-fallback consultation (ADR-010 /
+// 2026-09-21 model fallback): the chain could not serve the capability
+// named by capability, and the configured fallback models were tried.
+func (t *Trace) CapabilityFallback(capability, reason string) {
+	t.add(Event{Type: EventCapabilityFallback, Capability: capability, Reason: reason})
+}
+
 // EmulatedTool records a server-tool substitution by the §6.2 emulation
 // layer (never silent). detail carries the invocation summary (tool,
 // query/url, outcome).

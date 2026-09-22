@@ -33,16 +33,20 @@ const STRATEGIES: { value: Strategy; label: string; desc: string }[] = [
   { value: 'fill_first', label: 'Fill-First', desc: 'Account 1 serves everything until it fails (rate limit / breaker) — then the next takes over.' },
 ];
 
-// CapabilityFallbacksCard (ADR-010): the three global fallback lists, each
-// a drag-drop PrioList. Vision lists provider IDs/types appended to
-// vision-less chains; web_search/web_fetch list web-tool accounts (today:
-// firecrawl) the emulator pool tries in order. One save writes all three.
+// CapabilityFallbacksCard (ADR-010 + 2026-09-21 automatic capabilities):
+// the three global fallback lists, each a drag-drop PrioList. Vision lists
+// MODELS (routing IDs) tried by the executor after the routed chain hit a
+// real upstream capability gap; web_search/web_fetch list web-tool
+// accounts (today: firecrawl) the emulator pool tries in order. One save
+// writes all three.
 function CapabilityFallbacksCard() {
   const { data, loading, error, reload } = useAdminData<CapabilityFallbacks>(
     (signal) => apiCall<CapabilityFallbacks>('GET', '/api/admin/capability-fallbacks', undefined, signal),
   );
-  // LLM provider types (for the vision picker) and web-tool accounts (for
-  // the web pickers).
+  // Models (for the vision picker) + web-tool accounts (for the web pickers).
+  const { data: modelsData } = useAdminData<ModelsResponse>(
+    (signal) => apiCall<ModelsResponse>('GET', '/api/admin/models', undefined, signal),
+  );
   const { data: catalog } = useAdminData<ProviderTypesResponse>(
     (signal) => apiCall<ProviderTypesResponse>('GET', '/api/admin/provider-types', undefined, signal),
   );
@@ -61,18 +65,15 @@ function CapabilityFallbacksCard() {
     setSeeded(true);
   }, [seeded, data]);
 
-  const providerOptions = useMemo(() => {
-    const opts: { id: string; label: string }[] = [];
-    // Type entries (ADR-009: expand to all accounts of the type).
-    for (const t of catalog?.types ?? []) {
-      if (t.kind === 'llm') opts.push({ id: t.type, label: `${t.label} (type)` });
-    }
-    // Exact accounts.
-    for (const p of providersData?.providers ?? []) {
-      opts.push({ id: p.id, label: `${p.name} (${p.id.slice(0, 12)}…)` });
-    }
-    return opts;
-  }, [catalog, providersData]);
+  // Vision fallback options are MODELS (2026-09-21): the fallback names
+  // which model serves the capability when the routed model rejected it.
+  const modelOptions = useMemo(() => {
+    const providerLabel = new Map((providersData?.providers ?? []).map((p) => [p.id, p.name]));
+    return (modelsData?.models ?? []).map((m) => ({
+      id: m.id,
+      label: `${m.id}${m.name !== m.id ? ` (${m.name})` : ''}${providerLabel.get(m.provider_id) ? ` — ${providerLabel.get(m.provider_id)}` : ''}`,
+    }));
+  }, [modelsData, providersData]);
 
   const webToolOptions = useMemo(() => {
     const webTypes = new Set((catalog?.types ?? []).filter((t) => t.kind === 'web_tool').map((t) => t.type));
@@ -105,10 +106,11 @@ function CapabilityFallbacksCard() {
       <fieldset className="fieldset">
         <legend>Capability fallbacks</legend>
         <p className="hint" style={{ marginTop: 0 }}>
-          Priority lists consulted when the routed chain cannot serve a request
-          (ADR-010). Vision: providers tried when the rule chain has no
-          vision-capable model. Web search / fetch: web-tool accounts (e.g.
-          Firecrawl) the proxy tries in order. Every use is traced in the logs.
+          Priority lists consulted when the routed chain cannot serve a
+          request. Vision: models tried when the routed model rejected the
+          request at the upstream (e.g. image input). Web search / fetch:
+          web-tool accounts (e.g. Firecrawl) the proxy tries in order.
+          Every use is traced in the logs.
         </p>
         {(error ?? saveError) !== null && (
           <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
@@ -125,9 +127,9 @@ function CapabilityFallbacksCard() {
                 label="Vision fallback priority list"
                 items={form.vision}
                 onChange={(vision) => setForm((f) => (f === null ? f : { ...f, vision }))}
-                options={providerOptions}
-                addLabel="Add provider to vision fallback"
-                emptyHint="No vision fallback — vision requests with no capable chain entry fail."
+                options={modelOptions}
+                addLabel="Add model to vision fallback"
+                emptyHint="No vision fallback — requests the routed model cannot serve fail with the upstream error."
               />
             </div>
             <div>

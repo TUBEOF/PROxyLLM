@@ -13,8 +13,10 @@ import (
 )
 
 // capabilityFallbacksDTO is the wire shape of the three fallback lists
-// (Routing page): vision = provider IDs/types appended to vision-less
-// chains; web_search / web_fetch = web_tool account IDs in pool order.
+// (Routing page): vision = MODEL IDs (routing identities, 2026-09-21
+// automatic capabilities) tried by the executor after a real upstream
+// capability gap; web_search / web_fetch = web_tool account IDs in pool
+// order.
 type capabilityFallbacksDTO struct {
 	Vision    []string `json:"vision"`
 	WebSearch []string `json:"web_search"`
@@ -44,8 +46,9 @@ func (a *AdminAPI) getCapabilityFallbacks(w http.ResponseWriter, r *http.Request
 // putCapabilityFallbacks validates and persists all three lists in one
 // write. The web-tool lists are validated at the write boundary against
 // web_tool-kind accounts (the storage layer is deliberately schema-blind);
-// vision entries resolve against provider IDs/types exactly like LLM chain
-// entries — a typo must fail the save, never silently skip at route time.
+// vision entries must be existing MODEL rows (2026-09-21 automatic
+// capabilities — the executor resolves each ID to provider + wire name at
+// reload) — a typo must fail the save, never silently skip at route time.
 func (a *AdminAPI) putCapabilityFallbacks(w http.ResponseWriter, r *http.Request) {
 	var req capabilityFallbacksDTO
 	if err := decodeBody(w, r, &req); err != nil {
@@ -83,31 +86,28 @@ func (a *AdminAPI) putCapabilityFallbacks(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// validateVisionFallback checks every entry like a chain entry (provider
-// id, provider/model pair, or LLM-kind type) — web_tool types are refused.
+// validateVisionFallback checks every entry against the models table
+// (2026-09-21 automatic capabilities): a vision fallback entry is a MODEL
+// ID (routing identity), not a provider account or type — the fallback
+// names which MODEL serves images when the chain's model rejected them.
+// Web-tool accounts cannot own model rows, so the old kind refusal is
+// implied; a defensive type check keeps a hand-seeded odd row out.
 func (a *AdminAPI) validateVisionFallback(ctx context.Context, list []string) error {
 	if len(list) == 0 {
 		return nil
 	}
-	providers, err := a.store.ListProviders(ctx)
-	if err != nil {
-		return err
-	}
-	known := make(map[string]string, len(providers)) // id → type
-	for _, p := range providers {
-		known[p.ID] = p.Type
-	}
 	for _, entry := range list {
-		if id, _, ok := splitProviderModel(entry); ok && known[id] != "" {
-			continue
+		row, err := a.store.GetModel(ctx, entry)
+		if err != nil {
+			return errors.New("vision fallback entry " + entry + " is not a known model")
 		}
-		if desc, isType := providerTypeByID(entry); isType {
-			if desc.Kind == KindWebTool {
-				return errors.New("vision fallback entry " + entry + " is a web-tool provider, not a chat model")
+		// Defensive: a model row on a web-tool account would route an
+		// emulator backend into a chat fallback — refuse loudly.
+		if p, err := a.store.GetProvider(ctx, row.ProviderID); err == nil {
+			if desc, isType := providerTypeByID(p.Type); isType && desc.Kind == KindWebTool {
+				return errors.New("vision fallback entry " + entry + " belongs to a web-tool provider, not a chat model")
 			}
-			continue
 		}
-		return errors.New("vision fallback entry " + entry + " is not a known provider type or provider id")
 	}
 	return nil
 }
@@ -138,16 +138,6 @@ func (a *AdminAPI) validateWebToolList(ctx context.Context, list []string) error
 		}
 	}
 	return nil
-}
-
-// splitProviderModel cuts a legacy "provider-id/model-id" chain entry.
-func splitProviderModel(entry string) (providerID, modelID string, ok bool) {
-	for i := 0; i < len(entry); i++ {
-		if entry[i] == '/' {
-			return entry[:i], entry[i+1:], true
-		}
-	}
-	return entry, "", false
 }
 
 // nonNil maps a nil slice to an empty one (wire shape: [] not null).

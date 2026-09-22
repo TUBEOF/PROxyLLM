@@ -75,6 +75,24 @@ type ExecutorConfig struct {
 	// documented unavailable errors), then re-dispatched.
 	Emulator Emulator
 
+	// CapabilityFallbacks are the model-level fallback chain entries
+	// (2026-09-21 automatic capabilities): consulted when the rule chain
+	// exhausted with capability_gap failures only. Each entry is a fully
+	// resolved (provider, wire-model) pair — the httpapi layer resolves
+	// the stored model IDs before Execute. Nil/empty disables the model
+	// fallback (the request terminates with the last gap error). Swappable
+	// at runtime via SetCapabilityFallbacks.
+	CapabilityFallbacks []ChainEntry
+
+	// OnCapabilityGap is invoked once per chain entry whose attempt failed
+	// with the capability_gap class (2026-09-21 learning): the wiring layer
+	// persists the gap into the model row's capabilities (vision=false
+	// learning). It receives the full chain entry — provider ID plus the
+	// upstream wire model, the pair the storage layer needs to find the
+	// model row. Optional; nil disables learning. The callback must not
+	// block — it is called inline on the failover path.
+	OnCapabilityGap func(entry ChainEntry)
+
 	// now stamps attempt latencies; injectable for tests.
 	now func() time.Time
 }
@@ -142,13 +160,29 @@ func (e *Executor) Execute(ctx context.Context, chain []ChainEntry, req ir.Reque
 }
 
 // executeOnce walks the chain once with the full retry/failover
-// discipline — one upstream answer (or the terminal error).
+// discipline — one upstream answer (or the terminal error). When the walk
+// ends with ONLY capability_gap failures (2026-09-21 automatic
+// capabilities), the configured capability fallback models get one walk
+// of their own, appended after the regular chain — the request itself is
+// valid, another model can serve it.
 func (e *Executor) executeOnce(ctx context.Context, chain []ChainEntry, req ir.Request, trace *Trace) (ir.Response, error) {
+	return e.walkChain(ctx, chain, req, trace, true)
+}
+
+// walkChain is executeOnce's core with the fallback gate: allowFallback
+// is false on the fallback models' own walk (no recursive fallback).
+func (e *Executor) walkChain(ctx context.Context, chain []ChainEntry, req ir.Request, trace *Trace, allowFallback bool) (ir.Response, error) {
 	var lastErr error
 
 	// pendingBackoff is the delay before the next same-provider retry,
 	// computed from the failed attempt's Retry-After when present (O10).
 	var pendingBackoff time.Duration
+
+	// Gap bookkeeping (2026-09-21): a chain is gap-exhausted when every
+	// attempt failed with the capability_gap class — the model cannot
+	// serve the request, but another (fallback) model may.
+	gapOnly := true
+	attempted := 0
 
 	for ci, entry := range chain {
 		if ci >= e.cfg.MaxProviders {
@@ -166,6 +200,7 @@ func (e *Executor) executeOnce(ctx context.Context, chain []ChainEntry, req ir.R
 				e.cfg.RetrySleeper(pendingBackoff)
 			}
 			trace.Attempt(entry.ProviderID, entry.Model)
+			attempted++
 
 			started := e.cfg.now()
 			resp, err := p.Complete(ctx, withModel(req, entry.Model))
@@ -179,6 +214,12 @@ func (e *Executor) executeOnce(ctx context.Context, chain []ChainEntry, req ir.R
 			status, code, _ := AsUpstreamError(err)
 			trace.Failed(entry.ProviderID, c, status, code, latency)
 			e.reportFailure(entry.ProviderID)
+			if c.Class != ClassCapabilityGap {
+				gapOnly = false
+			}
+			if c.Class == ClassCapabilityGap && e.cfg.OnCapabilityGap != nil {
+				e.cfg.OnCapabilityGap(entry)
+			}
 
 			switch c.Action {
 			case ActionTerminal:
@@ -199,7 +240,53 @@ func (e *Executor) executeOnce(ctx context.Context, chain []ChainEntry, req ir.R
 			break
 		}
 	}
+
+	// Capability fallback (2026-09-21): only a gap-exhausted chain (every
+	// attempt a capability_gap, at least one attempt made) consults the
+	// fallback models — a 401 or content_filter must not be "rescued" by
+	// another model. The fallback walk is a fresh walk over the fallback
+	// entries with the fallback itself disabled (no recursion: fallback
+	// models that reject the modality too terminate the request), so it
+	// inherits the full retry/failover discipline.
+	if gapOnly && attempted > 0 && allowFallback {
+		fallbacks := e.currentCapabilityFallbacks()
+		if len(fallbacks) > 0 {
+			trace.CapabilityFallback("vision",
+				"chain exhausted on capability gaps; trying the capability fallback models")
+			for _, fb := range fallbacks {
+				trace.Failover(lastProviderOf(chain), fb.ProviderID, "capability fallback model")
+			}
+			return e.walkChain(ctx, fallbacks, req, trace, false)
+		}
+	}
 	return ir.Response{}, &exhaustedError{last: lastErr}
+}
+
+// lastProviderOf returns the last chain entry's provider ID for the
+// failover event (empty chain → "" — the trace omits empty From fields).
+func lastProviderOf(chain []ChainEntry) string {
+	if len(chain) == 0 {
+		return ""
+	}
+	return chain[len(chain)-1].ProviderID
+}
+
+// SetCapabilityFallbacks atomically replaces the live capability fallback
+// entries (2026-09-21: the admin API's fallback write pushes the freshly
+// stored model list into the executor without restart — same last-known-
+// good live-swap contract as SetEmulator).
+func (e *Executor) SetCapabilityFallbacks(entries []ChainEntry) {
+	e.emuMu.Lock()
+	defer e.emuMu.Unlock()
+	e.cfg.CapabilityFallbacks = entries
+}
+
+// currentCapabilityFallbacks reads the live fallback entries under the
+// swap lock.
+func (e *Executor) currentCapabilityFallbacks() []ChainEntry {
+	e.emuMu.RLock()
+	defer e.emuMu.RUnlock()
+	return e.cfg.CapabilityFallbacks
 }
 
 // SetEmulator atomically replaces the live web-tool emulator (ADR-010:
@@ -245,6 +332,12 @@ func (e *Executor) ReportStreamOutcome(providerID string, streamErr *ir.Upstream
 // the first event) fail over; anything after the first event is terminal
 // and surfaces as an Error event on the returned channel.
 //
+// The capability fallback (2026-09-21 automatic capabilities) applies here
+// as on the complete path: a chain whose every DISPATCH failed with a
+// capability_gap (a 400 modality rejection happens before the first byte,
+// so FO-1 permits the swap) gets one walk over the fallback models via
+// p.Stream — no recursion, fallback dispatch gaps terminate.
+//
 // The returned cancel must be called when the caller is done with the
 // channel to release upstream resources. Dispatch-time success is
 // reported to the HealthTracker immediately; once the caller has fully
@@ -252,7 +345,22 @@ func (e *Executor) ReportStreamOutcome(providerID string, streamErr *ir.Upstream
 // failure still counts (ReportStreamOutcome).
 func (e *Executor) ExecuteStream(ctx context.Context, chain []ChainEntry, req ir.Request) (<-chan ir.StreamEvent, func(), *Trace, error) {
 	trace := &Trace{}
+	ch, cancel, err := e.walkChainStream(ctx, chain, req, trace, true)
+	if ch == nil && err != nil {
+		return nil, cancel, trace, err
+	}
+	return ch, cancel, trace, err
+}
+
+// walkChainStream is ExecuteStream's core with the fallback gate:
+// allowFallback is false on the fallback models' own walk (no recursion).
+func (e *Executor) walkChainStream(ctx context.Context, chain []ChainEntry, req ir.Request, trace *Trace, allowFallback bool) (<-chan ir.StreamEvent, func(), error) {
 	var lastErr error
+
+	// Gap bookkeeping (2026-09-21): same contract as the complete path —
+	// only an ALL-gap dispatch history consults the fallback models.
+	gapOnly := true
+	attempted := 0
 
 	for ci, entry := range chain {
 		if ci >= e.cfg.MaxProviders {
@@ -265,6 +373,7 @@ func (e *Executor) ExecuteStream(ctx context.Context, chain []ChainEntry, req ir
 		}
 
 		trace.Attempt(entry.ProviderID, entry.Model)
+		attempted++
 		started := e.cfg.now()
 		ch, cancel, err := p.Stream(ctx, withModel(req, entry.Model))
 		latency := e.cfg.now().Sub(started).Milliseconds()
@@ -274,20 +383,26 @@ func (e *Executor) ExecuteStream(ctx context.Context, chain []ChainEntry, req ir
 			// a dispatch success with a later mid-stream failure still
 			// counts as one failure.
 			e.reportSuccess(entry.ProviderID)
-			return ch, cancel, trace, nil
+			return ch, cancel, nil
 		}
 		lastErr = err
 		c := ClassifyError(err, PreStream)
 		status, code, _ := AsUpstreamError(err)
 		trace.Failed(entry.ProviderID, c, status, code, latency)
 		e.reportFailure(entry.ProviderID)
+		if c.Class != ClassCapabilityGap {
+			gapOnly = false
+		}
+		if c.Class == ClassCapabilityGap && e.cfg.OnCapabilityGap != nil {
+			e.cfg.OnCapabilityGap(entry)
+		}
 
 		switch c.Action {
 		case ActionTerminal:
 			if cancel != nil {
 				cancel()
 			}
-			return nil, func() {}, trace, err
+			return nil, func() {}, err
 		case ActionFailOver:
 			// Release the failed attempt's upstream resources before
 			// moving on (4c: a dispatch error may still have opened a
@@ -313,7 +428,21 @@ func (e *Executor) ExecuteStream(ctx context.Context, chain []ChainEntry, req ir
 			}
 		}
 	}
-	return nil, func() {}, trace, &exhaustedError{last: lastErr}
+
+	// Capability fallback (2026-09-21): identical gate to the complete
+	// path — only a gap-exhausted chain consults the fallback models.
+	if gapOnly && attempted > 0 && allowFallback {
+		fallbacks := e.currentCapabilityFallbacks()
+		if len(fallbacks) > 0 {
+			trace.CapabilityFallback("vision",
+				"chain exhausted on capability gaps; trying the capability fallback models")
+			for _, fb := range fallbacks {
+				trace.Failover(lastProviderOf(chain), fb.ProviderID, "capability fallback model")
+			}
+			return e.walkChainStream(ctx, fallbacks, req, trace, false)
+		}
+	}
+	return nil, func() {}, &exhaustedError{last: lastErr}
 }
 
 // retryDelay computes the delay before the next same-provider retry: the

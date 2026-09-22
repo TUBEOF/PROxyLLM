@@ -1,12 +1,16 @@
 package routing_test
 
-// ADR-010 fallback contract tests, derived from the ADR (not implementation
-// behavior):
+// Capability-fallback contract tests, derived from the specification (not
+// implementation behavior). Spec change 2026-09-21/22 (automatic
+// capabilities, documented in ADR-010's amendment note): the vision
+// fallback is NO LONGER a router-side pre-stream gate — static provider
+// caps cannot know which MODEL accepts images. The new contract:
 //
-//   - Vision fallback: a vision-needing request whose rule chain filters to
-//     nothing consults the configured fallback chain; the consultation and
-//     every appended entry are traced; an empty configured chain keeps the
-//     documented ErrNoRoute.
+//   - Router: a vision-needing request resolves the rule chain without any
+//     vision gate (the upstream decides); an empty chain is ErrNoRoute
+//     uniformly, with or without vision. The executor-side fallback (the
+//     real-upstream capability_gap rescue) is pinned in
+//     capabilityfallback_test.go.
 //   - EmulatorPool: a failing emulator fails over to the next in the family
 //     list; the first success answers; all-failed surfaces the last error.
 
@@ -38,86 +42,50 @@ func (p *capProvider) Stream(_ context.Context, _ ir.Request) (<-chan ir.StreamE
 }
 func (p *capProvider) RefreshCredentials(_ context.Context) error { return nil }
 
-func TestVisionFallback_AppendsFallbackChain(t *testing.T) {
+// TestVisionResolution_NoPreStreamGate: a vision-needing request resolves
+// the chain regardless of static vision caps — the model gap surfaces at
+// the upstream (capability_gap class) and the executor's fallback models
+// take over (their contract: capabilityfallback_test.go).
+func TestVisionResolution_NoPreStreamGate(t *testing.T) {
 	reg := provider.NewRegistry()
 	reg.Register(&capProvider{id: "chat-only", caps: provider.Capabilities{Streaming: true, Tools: true}})
-	reg.Register(&capProvider{id: "vision-pro", caps: provider.Capabilities{Vision: true}})
 
 	r := routing.NewRouter(routing.Config{
 		Rules: []routing.Rule{{MatchModel: "gpt-5", Chain: []string{"chat-only"}, Enabled: true}},
 	}, routing.WithRegistry(reg))
-	r.SetVisionFallback([]string{"vision-pro"})
 
 	chain, trace, err := r.ResolveChainFor("gpt-5", provider.Capabilities{Vision: true})
 	if err != nil {
 		t.Fatalf("ResolveChainFor: %v", err)
 	}
-	if len(chain) != 1 || chain[0].ProviderID != "vision-pro" {
-		t.Errorf("chain = %+v, want the vision fallback entry", chain)
+	if len(chain) != 1 || chain[0].ProviderID != "chat-only" {
+		t.Errorf("chain = %+v, want the chat-only entry (vision not gated)", chain)
 	}
-	// Never silent: the consultation event must be in the trace.
-	sawFallback := false
 	for _, ev := range trace.Events() {
 		if ev.Type == routing.EventCapabilityFallback {
-			sawFallback = true
+			t.Errorf("router must not consult capability fallbacks: %+v", ev)
 		}
 	}
-	if !sawFallback {
-		t.Errorf("trace lacks the capability_fallback event: %+v", trace.Events())
-	}
 }
 
-func TestVisionFallback_TypeEntryExpandsToAccounts(t *testing.T) {
-	reg := provider.NewRegistry()
-	reg.Register(&capProvider{id: "acc-1", caps: provider.Capabilities{Vision: true}})
-	reg.Register(&capProvider{id: "acc-2", caps: provider.Capabilities{Vision: true}})
-
-	r := routing.NewRouter(routing.Config{
-		Rules: []routing.Rule{{MatchModel: "*", Chain: []string{"nonexistent"}, Enabled: true}},
-	}, routing.WithRegistry(reg))
-	r.SetVisionFallback([]string{"custom-openai"})
-
-	// The rule chain names an unregistered provider (filtered out); the
-	// fallback type entry expands to both accounts.
-	chain, _, err := r.ResolveChainFor("any-model", provider.Capabilities{Vision: true})
-	if err != nil {
-		t.Fatalf("ResolveChainFor: %v", err)
-	}
-	if len(chain) != 2 || chain[0].ProviderID != "acc-1" || chain[1].ProviderID != "acc-2" {
-		t.Errorf("type expansion order = %+v, want [acc-1 acc-2]", chain)
-	}
-}
-
-func TestVisionFallback_EmptyConfiguredChainIsErrNoRoute(t *testing.T) {
+// TestVisionResolution_EmptyChainIsErrNoRoute: with the router-side gate
+// gone, a dead chain (nothing resolves) is ErrNoRoute uniformly — with and
+// without a vision requirement (the executor fallback only fires after real
+// upstream rejections, never to rescue an unresolvable chain).
+func TestVisionResolution_EmptyChainIsErrNoRoute(t *testing.T) {
 	reg := provider.NewRegistry()
 	reg.Register(&capProvider{id: "chat-only", caps: provider.Capabilities{Streaming: true}})
 
+	// The rule chain names an unregistered provider: expansion is dead.
 	r := routing.NewRouter(routing.Config{
-		Rules: []routing.Rule{{MatchModel: "gpt-5", Chain: []string{"chat-only"}, Enabled: true}},
+		Rules: []routing.Rule{{MatchModel: "gpt-5", Chain: []string{"nonexistent"}, Enabled: true}},
 	}, routing.WithRegistry(reg))
-	// No SetVisionFallback: the documented ErrNoRoute behavior, unchanged.
 
 	if _, _, err := r.ResolveChainFor("gpt-5", provider.Capabilities{Vision: true}); !errors.Is(err, routing.ErrNoRoute) {
-		t.Errorf("no fallback configured: err = %v, want ErrNoRoute", err)
+		t.Errorf("vision request against dead chain: err = %v, want ErrNoRoute", err)
 	}
-}
-
-func TestVisionFallback_FallbackEntryLackingVisionIsSkipped(t *testing.T) {
-	reg := provider.NewRegistry()
-	reg.Register(&capProvider{id: "vision-pro", caps: provider.Capabilities{Vision: true}})
-	reg.Register(&capProvider{id: "no-vision", caps: provider.Capabilities{}})
-
-	r := routing.NewRouter(routing.Config{
-		Rules: []routing.Rule{{MatchModel: "*", Chain: []string{"chat-only"}, Enabled: true}},
-	}, routing.WithRegistry(reg))
-	r.SetVisionFallback([]string{"no-vision", "vision-pro"})
-
-	chain, _, err := r.ResolveChainFor("m", provider.Capabilities{Vision: true})
-	if err != nil {
-		t.Fatalf("ResolveChainFor: %v", err)
-	}
-	if len(chain) != 1 || chain[0].ProviderID != "vision-pro" {
-		t.Errorf("chain = %+v, want only the vision-capable fallback entry", chain)
+	if _, _, err := r.ResolveChainFor("gpt-5", provider.Capabilities{}); !errors.Is(err, routing.ErrNoRoute) {
+		t.Errorf("plain request against dead chain: err = %v, want ErrNoRoute", err)
 	}
 }
 

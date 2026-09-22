@@ -176,22 +176,27 @@ func TestRoutingDeterminism_Pipeline(t *testing.T) {
 
 	cases := []pipelineCase{
 		{
-			name: "capability fallback: vision request skips text-only provider and lands on the vision provider",
+			// Spec change 2026-09-21 (automatic capabilities): vision is
+			// no longer gated at resolve time — the request dispatches to
+			// the chain's first entry and the upstream decides. A real
+			// capability_gap rejection would fail over to the executor's
+			// fallback models (pinned in capabilityfallback_test.go); here
+			// the text-only provider succeeds, so no fallback fires.
+			name: "vision request: no pre-stream vision gate, the first chain entry serves",
 			rules: []routing.Rule{
 				{MatchModel: "claude-*", Chain: []string{"text-p", "vision-p"}, Enabled: true},
 			},
 			providers: []provider.Provider{
-				&stubProvider{id: "text-p", caps: textCaps},
+				&scriptedProvider{id: "text-p", caps: textCaps},
 				&scriptedProvider{id: "vision-p", caps: visionCaps},
 			},
 			request:  ir.Request{Model: "claude-opus-5"},
 			required: provider.Capabilities{Vision: true},
-			// resolve: skip text-p (vision gap) → executor: attempt vision-p → success.
+			// resolve: no skip (no vision gate) → executor: attempt text-p → success.
 			wantEventTypes: []routing.EventType{
-				routing.EventSkipped,
 				routing.EventAttempt,
 			},
-			wantAttempted: []string{"vision-p"},
+			wantAttempted: []string{"text-p"},
 		},
 		{
 			name: "health cooldown: cooled-down provider is skipped, the fallback serves",

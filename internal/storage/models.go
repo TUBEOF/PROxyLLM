@@ -35,6 +35,9 @@ const (
 	ModelSyncedOrigin = "synced"
 )
 
+// pinned capabilities: the capabilities blob's "pinned" object marks
+// operator overrides; learning (MergeLearnedCapability) never touches them.
+
 // PutModel upserts one model. The provider must exist — the FK is the
 // referential guarantee that model rows never dangle behind a deleted
 // provider. The origin persists as given: the operator's WebUI save keeps
@@ -163,4 +166,75 @@ func (s *Store) DeleteModel(ctx context.Context, id string) error {
 		return fmt.Errorf("storage: model %s: %w", id, ErrNotFound)
 	}
 	return nil
+}
+
+// GetModelByProviderAndName loads one model by its upstream pair (provider
+// + wire name). The learning path needs this lookup: a capability_gap fires
+// with the chain entry's wire model, while the row is keyed by the prefixed
+// routing ID. Legacy rows (name == id) match here as well. Missing rows are
+// ErrNotFound.
+func (s *Store) GetModelByProviderAndName(ctx context.Context, providerID, name string) (Model, error) {
+	var m Model
+	var caps, compat string
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, provider_id, name, capabilities, compat, priority, origin
+		FROM models WHERE provider_id = ? AND name = ?`, providerID, name).
+		Scan(&m.ID, &m.ProviderID, &m.Name, &caps, &compat, &m.Priority, &m.Origin)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Model{}, fmt.Errorf("storage: model %s/%s: %w", providerID, name, ErrNotFound)
+	}
+	if err != nil {
+		return Model{}, err
+	}
+	m.Capabilities = json.RawMessage(caps)
+	m.Compat = json.RawMessage(compat)
+	return m, nil
+}
+
+// MergeLearnedCapability writes one learned capability value into the model
+// row's capabilities blob (2026-09-21 automatic capabilities). The row is
+// located by the upstream pair (provider + wire name) — what a real
+// upstream rejection knows. A pinned capability (operator override in the
+// capabilities blob's "pinned" object) is never overwritten: manual
+// selection stops the learning for exactly that flag. The row's origin is
+// preserved as loaded — learning must not flip a synced row to manual
+// (the sync would otherwise stop deleting it when upstream drops it).
+// Unknown rows are a no-op (models can route without a row; learning is
+// opportunistic), any other store error is returned.
+func (s *Store) MergeLearnedCapability(ctx context.Context, providerID, wireName, capability string, value bool) error {
+	m, err := s.GetModelByProviderAndName(ctx, providerID, wireName)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil // no row to learn into — nothing to do
+		}
+		return err
+	}
+
+	// Parse the blob defensively: unknown shapes degrade to a fresh object
+	// (the write boundary below re-serializes only the keys we know).
+	blob := map[string]any{}
+	if len(m.Capabilities) > 0 {
+		if err := json.Unmarshal(m.Capabilities, &blob); err != nil {
+			blob = map[string]any{}
+		}
+	}
+
+	pinned, _ := blob["pinned"].(map[string]any)
+	if pinned == nil {
+		pinned = map[string]any{}
+	}
+	if pinned[capability] == true {
+		return nil // operator override wins — learning stops for this flag
+	}
+	blob[capability] = value
+	blob["pinned"] = pinned
+
+	raw, err := json.Marshal(blob)
+	if err != nil {
+		return fmt.Errorf("storage: encode learned capabilities: %w", err)
+	}
+	m.Capabilities = json.RawMessage(raw)
+
+	// PutModel upserts origin from the loaded row — synced stays synced.
+	return s.PutModel(ctx, m)
 }

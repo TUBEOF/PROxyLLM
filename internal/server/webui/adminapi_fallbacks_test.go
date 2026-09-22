@@ -1,13 +1,15 @@
 package webui
 
-// ADR-010 admin surface contract tests, derived from the ADR (not
-// implementation behavior):
+// ADR-010 admin surface contract tests, derived from the ADR + its
+// 2026-09-21 amendment (automatic capabilities), not implementation
+// behavior:
 //
 //   - GET/PUT /api/admin/capability-fallbacks: three lists (vision,
-//     web_search, web_fetch); vision entries validate like chain entries
-//     (web_tool types refused), web lists only accept web_tool-kind
-//     accounts; a save pushes ReloadFallbacks; wire shape never carries
-//     nulls.
+//     web_search, web_fetch). Spec change 2026-09-21: vision entries are
+//     MODEL IDs (routing identities) validated against the models table —
+//     provider accounts/types are refused; web lists only accept
+//     web_tool-kind accounts; a save pushes ReloadFallbacks; wire shape
+//     never carries nulls.
 //   - GET/PUT /api/admin/model-sync: config round-trip (enabled +
 //     interval), non-positive interval is a 400.
 //   - POST /api/admin/model-sync/run: unwired sync answers 404, wired sync
@@ -21,12 +23,29 @@ import (
 	"github.com/tubeof/proxyllm/internal/storage"
 )
 
+// seedFallbackModel stores one model row on the custom-openai account (the
+// account row goes directly into the store: a local base_url would trip
+// the SSRF guard, and the validation under test reads store rows).
+func seedFallbackModel(t *testing.T, e *adminEnv, id string) {
+	t.Helper()
+	if err := e.st.PutProvider(context.Background(), storage.Provider{
+		ID: "acc-llm", Type: "custom-openai", Name: "llm", Config: []byte(`{}`),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.PutModel(context.Background(), storage.Model{
+		ID: id, ProviderID: "acc-llm", Name: "wire-" + id,
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCapabilityFallbacks_RoundTrip(t *testing.T) {
 	e := newAdminEnv(t)
 	s := e.bootstrap(t, "admin")
 
-	// A firecrawl account for the web lists; the vision list uses the
-	// custom-openai type entry (always known).
+	// A firecrawl account for the web lists; the vision list names a MODEL.
+	seedFallbackModel(t, e, "ollamacloud/vision-model")
 	w := e.authedCall(t, http.MethodPost, "/api/admin/provider-types/firecrawl/accounts",
 		`{"name":"fc","api_key":"fc-key-1"}`, s)
 	assertStatus(t, w, http.StatusOK, "create firecrawl account")
@@ -37,7 +56,7 @@ func TestCapabilityFallbacks_RoundTrip(t *testing.T) {
 	}
 	decodeJSON(t, w, &created)
 
-	body := `{"vision":["custom-openai"],"web_search":["` + created.Account.ID + `"],"web_fetch":["` + created.Account.ID + `"]}`
+	body := `{"vision":["ollamacloud/vision-model"],"web_search":["` + created.Account.ID + `"],"web_fetch":["` + created.Account.ID + `"]}`
 	w = e.authedCall(t, http.MethodPut, "/api/admin/capability-fallbacks", body, s)
 	assertStatus(t, w, http.StatusOK, "save fallbacks")
 
@@ -49,7 +68,7 @@ func TestCapabilityFallbacks_RoundTrip(t *testing.T) {
 		WebFetch  []string `json:"web_fetch"`
 	}
 	decodeJSON(t, w, &got)
-	if len(got.Vision) != 1 || got.Vision[0] != "custom-openai" {
+	if len(got.Vision) != 1 || got.Vision[0] != "ollamacloud/vision-model" {
 		t.Errorf("vision list = %v", got.Vision)
 	}
 	if len(got.WebSearch) != 1 || got.WebSearch[0] != created.Account.ID {
@@ -74,13 +93,15 @@ func TestCapabilityFallbacks_UnsetReadsEmptyArrays(t *testing.T) {
 	}
 }
 
-func TestCapabilityFallbacks_RefusesWebToolTypeAsVision(t *testing.T) {
+// Spec change 2026-09-21: a provider TYPE entry (the v1.0.2 shape) is no
+// longer a valid vision fallback — entries are model IDs.
+func TestCapabilityFallbacks_RefusesProviderTypeAsVision(t *testing.T) {
 	e := newAdminEnv(t)
 	s := e.bootstrap(t, "admin")
 
 	w := e.authedCall(t, http.MethodPut, "/api/admin/capability-fallbacks",
 		`{"vision":["firecrawl"],"web_search":[],"web_fetch":[]}`, s)
-	assertStatus(t, w, http.StatusBadRequest, "web_tool type as vision entry")
+	assertStatus(t, w, http.StatusBadRequest, "provider type as vision entry")
 }
 
 func TestCapabilityFallbacks_RefusesLLMAccountInWebList(t *testing.T) {
@@ -106,7 +127,7 @@ func TestCapabilityFallbacks_UnknownVisionEntryIs400(t *testing.T) {
 	s := e.bootstrap(t, "admin")
 
 	w := e.authedCall(t, http.MethodPut, "/api/admin/capability-fallbacks",
-		`{"vision":["no-such-provider"],"web_search":[],"web_fetch":[]}`, s)
+		`{"vision":["no-such-model"],"web_search":[],"web_fetch":[]}`, s)
 	assertStatus(t, w, http.StatusBadRequest, "unknown vision entry")
 }
 

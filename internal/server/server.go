@@ -139,12 +139,17 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		routing.WithRegistry(reg),
 		routing.WithHealth(health),
 	)
-	// ADR-010 vision fallback: the stored KV list swaps into the live
-	// router; a read failure logs and leaves it unset (never de-route).
-	if visionChain, err := store.GetVisionFallback(context.Background()); err != nil {
-		logger.Error("vision fallback read failed — routing without a vision fallback", "error", err)
-	} else if len(visionChain) > 0 {
-		router.SetVisionFallback(visionChain)
+
+	// Capability fallback models (2026-09-21 automatic capabilities): the
+	// stored vision_fallback KV holds MODEL IDs resolved to chain entries
+	// here (provider + wire name); a read failure logs and leaves the
+	// fallback unset (never de-route on store noise — the model_aliases
+	// precedent). Learning writes observed gaps back into the model rows.
+	var capabilityFallbacks []routing.ChainEntry
+	if entries, err := resolveCapabilityFallbacks(context.Background(), store, logger); err != nil {
+		logger.Error("capability fallback read failed — routing without capability fallback models", "error", err)
+	} else {
+		capabilityFallbacks = entries
 	}
 
 	// ADR-010 web-tool emulator pool: the stored firecrawl accounts are the
@@ -153,9 +158,11 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 	// configuration path stays functional). Pool order refinement via the
 	// web_search/web_fetch fallback KVs happens on the admin reload.
 	exec := routing.NewExecutor(routing.ExecutorConfig{
-		Registry: reg,
-		Health:   health,
-		Emulator: buildEmulatorPool(dbEmulators, o.emulator),
+		Registry:            reg,
+		Health:              health,
+		Emulator:            buildEmulatorPool(dbEmulators, o.emulator),
+		CapabilityFallbacks: capabilityFallbacks,
+		OnCapabilityGap:     s.learnCapabilityGap,
 	})
 
 	// Client-facing surfaces behind client-key auth (Analysis G control 1).
@@ -232,14 +239,16 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 				}
 			},
 			ReloadFallbacks: func() {
-				// ADR-010: the vision fallback KV write swaps the live
-				// router chain (same last-known-good contract). The
-				// web-tool pool order rides ReloadProviders (the fallback
-				// write also triggers it — one write, both hooks).
-				if visionChain, err := store.GetVisionFallback(context.Background()); err != nil {
-					logger.Error("vision fallback reload failed; keeping last known-good chain", "error", err)
+				// 2026-09-21 automatic capabilities: the vision_fallback KV
+				// write pushes the freshly resolved MODEL entries into the
+				// live executor (same last-known-good contract — a failed
+				// read keeps the live fallback). The web-tool pool order
+				// rides ReloadProviders (the fallback write also triggers it
+				// — one write, both hooks).
+				if entries, err := resolveCapabilityFallbacks(context.Background(), store, logger); err != nil {
+					logger.Error("capability fallback reload failed; keeping last known-good models", "error", err)
 				} else {
-					router.SetVisionFallback(visionChain)
+					exec.SetCapabilityFallbacks(entries)
 				}
 				emus, err := loadAndReplaceProviders(context.Background(), store, logger, reg)
 				if err != nil {

@@ -160,9 +160,12 @@ func TestResolveChain_Deterministic(t *testing.T) {
 	}
 }
 
-// Capability filter (Analysis E step 3): chain entries whose provider
-// lacks a required capability are skipped — with the skip recorded
-// (fallbacks are never silent).
+// Capability filter (Analysis E step 3; spec change 2026-09-21): chain
+// entries whose provider lacks a required capability are skipped — with
+// the skip recorded (fallbacks are never silent). Vision is deliberately
+// NOT gated here anymore: static provider caps cannot know which MODEL
+// accepts images — the request goes out and a real upstream rejection
+// (capability_gap) fails over to the executor's fallback models.
 func TestResolveChain_CapabilityFilter(t *testing.T) {
 	// Registry: provider "vision-p" has vision, "text-p" does not.
 	reg := provider.NewRegistry()
@@ -177,14 +180,14 @@ func TestResolveChain_CapabilityFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveChainFor: %v", err)
 	}
-	if len(got) != 1 || got[0].ProviderID != "vision-p" {
-		t.Fatalf("chain = %v, want [vision-p] (text-p skipped for missing vision)", got)
+	// No pre-stream vision gate: both entries survive resolution; the
+	// upstream decides, and the executor's capability fallback (pinned in
+	// capabilityfallback_test.go) handles real rejections.
+	if len(got) != 2 || got[0].ProviderID != "text-p" || got[1].ProviderID != "vision-p" {
+		t.Fatalf("chain = %v, want [text-p vision-p] (vision is not gated pre-stream)", got)
 	}
-	// The skip is recorded — fallbacks are never silent.
-	events := trace.Events()
-	if len(events) != 1 || events[0].Type != routing.EventSkipped ||
-		events[0].ProviderID != "text-p" || !strings.Contains(events[0].Reason, "vision") {
-		t.Errorf("trace = %+v, want one skip event for text-p naming vision", events)
+	if len(trace.Events()) != 0 {
+		t.Errorf("trace = %+v, want no skip events (no vision gate)", trace.Events())
 	}
 }
 

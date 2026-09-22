@@ -83,14 +83,6 @@ type Config struct {
 	// StrategyInherit (ADR-009; config-KV routing_strategy, storage
 	// default round_robin). Swappable at runtime via SetStrategy.
 	GlobalStrategy Strategy
-
-	// VisionFallback is the ordered chain (provider IDs or provider types)
-	// appended to a resolved chain when the request requires vision and
-	// the rule chain filtered to nothing (ADR-010). Empty = no vision
-	// fallback: a vision request with no capable chain entry stays
-	// ErrNoRoute — the documented behavior is unchanged without config.
-	// Swappable at runtime via SetVisionFallback.
-	VisionFallback []string
 }
 
 // Option configures a Router.
@@ -142,15 +134,6 @@ func (r *Router) SetStrategy(s Strategy) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.cfg.GlobalStrategy = s
-}
-
-// SetVisionFallback atomically replaces the live vision fallback chain
-// (ADR-010; the admin API's reload hook for the vision_fallback KV write —
-// same last-known-good live-swap contract as SetRules/SetAliases).
-func (r *Router) SetVisionFallback(chain []string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.cfg.VisionFallback = chain
 }
 
 // ResolveOptions carries per-request resolution modifiers.
@@ -218,11 +201,9 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 	// provider ID first (legacy rows whose id equals a type string keep
 	// their behavior); otherwise a known provider type expands to all its
 	// credentialed accounts in stable registry order. Every expansion and
-	// every dead entry is traced — never silent. A fully dead chain does
-	// not abort yet: the vision fallback (step 6b) may still offer capable
-	// candidates, and the terminal rejection fires there instead.
+	// every dead entry is traced — never silent.
 	entries, expansionErr := r.expandChain(rule.Chain, trace, model)
-	if expansionErr != nil && !required.Vision {
+	if expansionErr != nil {
 		trace.add(Event{Type: EventRejected, Reason: "chain empty after expansion", Model: model})
 		return nil, trace, expansionErr
 	}
@@ -234,11 +215,13 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 	if strategy == StrategyRoundRobin && len(entries) > 1 {
 		entries = r.rotate(rule, entries, trace)
 	}
-	_ = expansionErr // consumed by the vision-fallback decision in step 6b
 
 	// Step 6: capability + health filter, recording every skip (never
 	// silent). The filter loop is unchanged — it walks whatever order the
-	// strategy produced.
+	// strategy produced. Vision is not gated here (2026-09-21 automatic
+	// capabilities): a vision request goes out, and a real upstream
+	// rejection (capability_gap) fails over to the executor's capability
+	// fallback models.
 	out := make([]ChainEntry, 0, len(entries))
 	for _, entry := range entries {
 		p, ok := r.lookup(entry)
@@ -255,39 +238,6 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 			continue
 		}
 		out = append(out, ChainEntry{ProviderID: entry, Model: model})
-	}
-	if len(out) == 0 && required.Vision {
-		// ADR-010 vision fallback: the rule chain offered nothing vision-
-		// capable, so the configured fallback chain gets the chance. Its
-		// candidates resolve through the same expansion (types → accounts)
-		// and capability/health gates — and every extension is traced.
-		// Empty configured chain = the documented ErrNoRoute, unchanged.
-		r.mu.RLock()
-		visionChain := r.cfg.VisionFallback
-		r.mu.RUnlock()
-		if len(visionChain) > 0 {
-			trace.add(Event{Type: EventCapabilityFallback, Capability: "vision",
-				Reason: "rule chain has no vision-capable provider; trying the vision fallback chain"})
-			fbEntries, fbErr := r.expandChain(visionChain, trace, model)
-			if fbErr == nil {
-				for _, entry := range fbEntries {
-					p, ok := r.lookup(entry)
-					if !ok {
-						trace.add(Event{Type: EventSkipped, ProviderID: entry, Reason: "provider not registered"})
-						continue
-					}
-					if missing := missingCapabilities(p.Capabilities(), required); missing != "" {
-						trace.add(Event{Type: EventSkipped, ProviderID: entry, Reason: "capability gap: " + missing})
-						continue
-					}
-					if r.health != nil && r.health.Cooldown(entry) {
-						trace.add(Event{Type: EventSkipped, ProviderID: entry, Reason: "health cooldown"})
-						continue
-					}
-					out = append(out, ChainEntry{ProviderID: entry, Model: model})
-				}
-			}
-		}
 	}
 	if len(out) == 0 {
 		trace.add(Event{Type: EventRejected, Reason: "chain empty after capability/health filtering", Model: model})
@@ -454,7 +404,12 @@ func matchAny(model string, patterns []string) bool {
 }
 
 // missingCapabilities names the first required capability the provider
-// lacks ("" when all are present).
+// lacks ("" when all are present). Vision is deliberately NOT here
+// (2026-09-21 automatic capabilities): static provider caps cannot know
+// which MODEL accepts images — a vision request goes out, and a real
+// upstream rejection (capability_gap class) fails over to the configured
+// fallback models in the executor. The remaining capabilities are
+// deterministic surface/emulation facts the gate can decide up front.
 func missingCapabilities(have, want provider.Capabilities) string {
 	type pair struct {
 		want bool
@@ -464,7 +419,6 @@ func missingCapabilities(have, want provider.Capabilities) string {
 	for _, p := range []pair{
 		{want.Streaming, have.Streaming, "streaming"},
 		{want.Tools, have.Tools, "tools"},
-		{want.Vision, have.Vision, "vision"},
 		{want.WebSearch, have.WebSearch, "web_search"},
 		{want.WebFetch, have.WebFetch, "web_fetch"},
 		{want.CodeExecution, have.CodeExecution, "code_execution"},

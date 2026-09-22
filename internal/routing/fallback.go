@@ -13,10 +13,11 @@ import (
 //     priority list per tool family. A failing emulator fails over to the
 //     next in the list — multiple firecrawl accounts (or future providers)
 //     give web_search/web_fetch the same retry discipline chat chains have.
-//   - VisionFallback on the Router: when a request needs vision and the
-//     rule chain filters to nothing, the configured fallback chain is
-//     appended to the resolved chain (chat models only, resolved through
-//     the same expansion + capability/health gates as the rule chain).
+//   - CapabilityFallbacks on the Executor (2026-09-21 automatic
+//     capabilities): when the whole chain failed with capability_gap
+//     rejections (the model cannot serve an input modality, e.g. images),
+//     the configured fallback MODELS are tried as additional chain entries
+//     — see Executor.SetCapabilityFallbacks and walkChain.
 
 // EmulatorPool fans one tool family out over an ordered emulator list
 // (ADR-010). It implements Emulator: the first successful emulator answers;
