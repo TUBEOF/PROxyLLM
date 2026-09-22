@@ -136,7 +136,27 @@ func (s *Syncer) typePrefix(ctx context.Context, typ string) string {
 	if prefix == "" || len(prefix) > maxPrefixLen {
 		return typ
 	}
+	// Defense in depth: re-validate the shape the write boundary
+	// (providervalid.go) enforces — a hand-edited or bypassed blob must not
+	// corrupt the model identity (a "/" in the prefix would build row IDs
+	// with extra slashes). An invalid prefix degrades to the default type
+	// string, exactly like store noise.
+	if prefix != strings.ToLower(prefix) {
+		return typ
+	}
+	for _, r := range prefix {
+		if !validPrefixRune(r) {
+			return typ
+		}
+	}
 	return prefix
+}
+
+// validPrefixRune reports whether r is allowed in a model prefix (the same
+// rune set the admin write boundary enforces: lowercase letters, digits,
+// hyphens).
+func validPrefixRune(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-'
 }
 
 // syncProvider mirrors one provider's upstream list. Failures are encoded

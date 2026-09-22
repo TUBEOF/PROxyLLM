@@ -11,9 +11,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
+	"github.com/tubeof/proxyllm/internal/observability"
 	"github.com/tubeof/proxyllm/internal/provider"
 	"github.com/tubeof/proxyllm/internal/server/webui"
 	"github.com/tubeof/proxyllm/internal/storage"
@@ -64,9 +64,18 @@ func (s *Server) testModel(reg provider.Registry) func(context.Context, string) 
 		if err != nil {
 			return webui.TestModelResult{OK: false, LatencyMS: latency, Error: plainUpstreamCause(err)}, nil
 		}
-		return webui.TestModelResult{OK: true, LatencyMS: latency, Reply: firstText(resp)}, nil
+		// The reply travels to the browser too — the full redactor applies
+		// (a misbehaving upstream could echo secret-shaped text in even a
+		// 16-token reply).
+		return webui.TestModelResult{OK: true, LatencyMS: latency, Reply: redactor.Redact(firstText(resp))}, nil
 	}
 }
+
+// redactor is the single redaction gate for everything that leaves the
+// test endpoint toward the browser — the same engine the log handler uses
+// (URL query secrets, JWTs, JSON-shaped credentials, oversized blobs), not
+// a hand-rolled prefix list.
+var redactor = observability.NewRedactor()
 
 // firstText extracts the first textual part of the response — the minimal
 // acknowledgment the operator expects to see.
@@ -80,8 +89,9 @@ func firstText(resp ir.Response) string {
 }
 
 // plainUpstreamCause renders a failure cause the operator can act on,
-// masking credential-shaped substrings (defense in depth: the log handler
-// redacts too, but this string travels to the browser, not just logs).
+// fully redacted (this string travels to the browser, not just logs — the
+// full redactor covers URL query-param secrets, JWTs, and JSON-shaped
+// credentials the prefix list would miss).
 func plainUpstreamCause(err error) string {
 	var up *provider.UpstreamError
 	if errors.As(err, &up) {
@@ -89,21 +99,7 @@ func plainUpstreamCause(err error) string {
 		if up.HTTPStatus > 0 {
 			status = fmt.Sprintf(" (HTTP %d)", up.HTTPStatus)
 		}
-		return "upstream rejected the test request" + status + ": " + maskKeyPrefixes(up.Message)
+		return "upstream rejected the test request" + status + ": " + redactor.Redact(up.Message)
 	}
-	return "request failed before the upstream answered: " + maskKeyPrefixes(err.Error())
-}
-
-// maskKeyPrefixes masks sk-/fc-/pk_-prefixed and Bearer-borne tokens — the
-// credential shapes a leaked upstream message could carry.
-func maskKeyPrefixes(msg string) string {
-	for _, prefix := range []string{"sk-", "fc-", "pk_"} {
-		if i := strings.Index(msg, prefix); i >= 0 {
-			msg = msg[:i] + prefix + "[REDACTED]"
-		}
-	}
-	if i := strings.Index(msg, "Bearer "); i >= 0 {
-		msg = msg[:i] + "Bearer [REDACTED]"
-	}
-	return msg
+	return "request failed before the upstream answered: " + redactor.Redact(err.Error())
 }

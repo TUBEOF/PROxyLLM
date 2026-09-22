@@ -196,25 +196,42 @@ func (s *Store) GetModelByProviderAndName(ctx context.Context, providerID, name 
 // located by the upstream pair (provider + wire name) — what a real
 // upstream rejection knows. A pinned capability (operator override in the
 // capabilities blob's "pinned" object) is never overwritten: manual
-// selection stops the learning for exactly that flag. The row's origin is
-// preserved as loaded — learning must not flip a synced row to manual
-// (the sync would otherwise stop deleting it when upstream drops it).
-// Unknown rows are a no-op (models can route without a row; learning is
-// opportunistic), any other store error is returned.
+// selection stops the learning for exactly that flag. The row's origin and
+// all other columns are untouched — learning must not flip a synced row to
+// manual (the sync would otherwise stop deleting it when upstream drops
+// it) and must not race the operator's model save (the read-modify-write
+// runs in ONE transaction, so a concurrent PUT /api/admin/models cannot be
+// silently reverted by a stale write). Unknown rows are a no-op (models
+// can route without a row; learning is opportunistic), any other store
+// error is returned.
 func (s *Store) MergeLearnedCapability(ctx context.Context, providerID, wireName, capability string, value bool) error {
-	m, err := s.GetModelByProviderAndName(ctx, providerID, wireName)
+	// One transaction covers lookup + write: the operator's model editor
+	// writes the same row concurrently (PUT /api/admin/models), and a
+	// learning goroutine that loaded the row before that write must not
+	// overwrite the operator's just-saved capabilities/pinned with stale
+	// values.
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return nil // no row to learn into — nothing to do
-		}
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var caps string
+	err = tx.QueryRowContext(ctx, `
+		SELECT capabilities FROM models WHERE provider_id = ? AND name = ?`,
+		providerID, wireName).Scan(&caps)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil // no row to learn into — nothing to do
+	}
+	if err != nil {
 		return err
 	}
 
 	// Parse the blob defensively: unknown shapes degrade to a fresh object
-	// (the write boundary below re-serializes only the keys we know).
+	// (the write below re-serializes only the keys we know).
 	blob := map[string]any{}
-	if len(m.Capabilities) > 0 {
-		if err := json.Unmarshal(m.Capabilities, &blob); err != nil {
+	if len(caps) > 0 {
+		if err := json.Unmarshal([]byte(caps), &blob); err != nil {
 			blob = map[string]any{}
 		}
 	}
@@ -233,8 +250,9 @@ func (s *Store) MergeLearnedCapability(ctx context.Context, providerID, wireName
 	if err != nil {
 		return fmt.Errorf("storage: encode learned capabilities: %w", err)
 	}
-	m.Capabilities = json.RawMessage(raw)
-
-	// PutModel upserts origin from the loaded row — synced stays synced.
-	return s.PutModel(ctx, m)
+	if _, err := tx.ExecContext(ctx, `UPDATE models SET capabilities = ? WHERE provider_id = ? AND name = ?`,
+		string(raw), providerID, wireName); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

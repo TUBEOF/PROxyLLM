@@ -50,13 +50,31 @@ func resolveCapabilityFallbacks(ctx context.Context, store *storage.Store, logge
 // goroutines behind the failover path.
 const learnTimeout = 5 * time.Second
 
+// learnConcurrency caps the in-flight learning writes: a sustained flood
+// of capability-gap requests must not grow goroutines (each holds a store
+// connection for up to learnTimeout) without bound. The cap is generous —
+// 8 covers a chain storm; excess observations are DROPPED, not queued:
+// learning is opportunistic (the next gap observation re-writes the same
+// fact), so skipping is always safe.
+const learnConcurrency = 8
+
+// learnSlots is the bounded semaphore for learnCapabilityGap.
+var learnSlots = make(chan struct{}, learnConcurrency)
+
 // learnCapabilityGap persists one upstream capability-gap observation into
 // the model row (vision=false learning). It is the executor's
 // OnCapabilityGap callback: it runs on its own goroutine with a bounded
-// context so the failover path never blocks on the store, and failures are
-// logged, never surfaced into the request.
+// context so the failover path never blocks on the store; in-flight writes
+// are capped (excess gaps are dropped — the fact re-observes itself on the
+// next gap), and failures are logged, never surfaced into the request.
 func (s *Server) learnCapabilityGap(entry routing.ChainEntry) {
+	select {
+	case learnSlots <- struct{}{}:
+	default:
+		return // write slot busy — drop this observation (opportunistic learning)
+	}
 	go func() {
+		defer func() { <-learnSlots }()
 		ctx, cancel := context.WithTimeout(context.Background(), learnTimeout)
 		defer cancel()
 		if err := s.store.MergeLearnedCapability(ctx, entry.ProviderID, entry.Model, "vision", false); err != nil {
