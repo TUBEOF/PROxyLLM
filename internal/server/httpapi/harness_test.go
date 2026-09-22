@@ -108,7 +108,16 @@ func newEnvWithAuthOpts(t *testing.T, authOpts []auth.Option, rules ...routing.R
 	// failover bugs (review M1).
 	health := routing.NewHealthTracker()
 	router := routing.NewRouter(routing.Config{Rules: rules},
-		routing.WithRegistry(reg), routing.WithHealth(health))
+		routing.WithRegistry(reg), routing.WithHealth(health),
+		// ADR-011 implicit model routes: the models-table row names the
+		// provider — same wiring as server.New.
+		routing.WithModelLookup(func(modelID string) (string, bool) {
+			row, err := st.GetModel(context.Background(), modelID)
+			if err != nil || row.ProviderID == "" {
+				return "", false
+			}
+			return row.ProviderID, true
+		}))
 	exec := routing.NewExecutor(routing.ExecutorConfig{
 		Registry: reg,
 		Health:   health,

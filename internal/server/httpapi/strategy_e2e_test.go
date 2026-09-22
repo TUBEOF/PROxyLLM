@@ -133,8 +133,8 @@ func TestTypeStrategy_RoundRobinRotatesWithTraces(t *testing.T) {
 		if err := json.Unmarshal([]byte(l.RouteTrace), &trace); err != nil {
 			t.Fatalf("route_trace not JSON: %v (%s)", err, l.RouteTrace)
 		}
-		if trace.Version != 4 {
-			t.Errorf("route_trace version = %d, want 4", trace.Version)
+		if trace.Version != 5 {
+			t.Errorf("route_trace version = %d, want 5", trace.Version)
 		}
 		for _, ev := range trace.Events {
 			if ev.Type == "rotation" {

@@ -189,16 +189,18 @@ func requiredCapabilities(req ir.Request) provider.Capabilities {
 // v1), so old rows still render in the WebUI. Version 3 adds the ADR-010
 // capability_fallback event (capability-named fallback consultation).
 // Version 4 adds the model_resolved event (2026-09-21 model identity:
-// routing ID → wire-name resolution).
+// routing ID → wire-name resolution). Version 5 adds the implicit_route
+// event (ADR-011: no rule matched, the models-table row named the
+// provider).
 type chainTrace struct {
 	Version int               `json:"version"`
 	Events  []json.RawMessage `json:"events"`
 }
 
-// routeTraceVersion is the current route_trace schema version (model
-// identity 2026-09-21; previously 3 / ADR-010). The WebUI renders
-// route_trace as raw JSON, so bumps are additive.
-const routeTraceVersion = 4
+// routeTraceVersion is the current route_trace schema version (implicit
+// model routes / ADR-011; previously 4 / model identity). The WebUI
+// renders route_trace as raw JSON, so bumps are additive.
+const routeTraceVersion = 5
 
 // routeTrace marshals the trace object from collected traces. Trace
 // embeds a mutex, so events are appended from the Events() copies — the
@@ -218,7 +220,7 @@ func routeTrace(traces ...*routing.Trace) json.RawMessage {
 	}
 	out, err := json.Marshal(t)
 	if err != nil {
-		return json.RawMessage(`{"version":4,"events":[]}`)
+		return json.RawMessage(`{"version":5,"events":[]}`)
 	}
 	return out
 }
