@@ -22,6 +22,11 @@ make run
 go test ./internal/translate/...
 go test ./internal/routing -run TestRouterChainResolution -v
 
+# Local Windows toolchain (no make/gcc on this machine): run the underlying
+# commands directly — gofmt/vet/go test directly, npm scripts in webui/,
+# golangci-lint at $USERPROFILE/go/bin/golangci-lint.exe. `go test -race`
+# cannot run locally (no gcc for CGO); the CI gate covers it.
+
 # Streaming-related changes: -race must pass (CI gate; needs CGO+gcc locally)
 make test-race
 
@@ -44,7 +49,7 @@ cd webui && npx playwright test -c playwright.empty.config.ts   # empty states
 
 The binary also serves as its own container healthcheck: `proxyllm -healthcheck` (distroless image has no curl).
 
-CI (`.github/workflows/ci.yml`) gates: gofmt/vet/golangci-lint, `go test -race` + govulncheck, gitleaks/CodeQL, WebUI build + bundle budget (≤ 200 KB gzip initial load) + Playwright visual regression, Docker build + smoke. Perf budgets (`internal/e2e` `TestPerfBudgets`) run on main but only block release, not PRs.
+CI (`.github/workflows/ci.yml`) gates: gofmt/vet/golangci-lint, `go test -race` + govulncheck, gitleaks/CodeQL, WebUI build + bundle budget (≤ 200 KB gzip initial load) + Playwright visual regression, Docker build + smoke. Perf budgets (`internal/e2e` `TestPerfBudgets`) run on main but only block release, not PRs. Expected CI order after a rendered-UI change: the push BEFORE the baseline regen fails visual regression (old baselines) — that red run is expected; green comes from the loop-protection commit after pulling the regen commit.
 
 ## Architecture
 
@@ -54,7 +59,7 @@ CI (`.github/workflows/ci.yml`) gates: gofmt/vet/golangci-lint, `go test -race` 
 
 ### Routing: deterministic ordered rule model (ADR-005)
 
-`internal/routing` resolves, per request: client-key scope → model match (exact/wildcard/alias map for Claude Code aliases) → capability filter (web_search, web_fetch, code_execution, streaming, max_context — derived from request content; vision is NOT gated — 2026-09-21 automatic capabilities: a real upstream rejection classifies as `capability_gap`, fails over, and when the whole chain failed that way the executor walks the configured fallback MODELS, learning `vision:false` into the model row unless pinned) → ordered fallback chain → health gate (circuit breaker, backoff, probe recovery). **Failover only before the first streamed byte** — no mid-stream provider swap; an upstream failure during streaming terminates with a protocol-conform error event. Every transition (skip, retry, failover, emulated-tool substitution, compat-policy application) is recorded in `route_trace` in request logs and rendered in the WebUI — fallbacks are never silent. The route_trace schema is versioned because the WebUI renders it.
+`internal/routing` resolves, per request: client-key scope → model match (exact/wildcard/alias map for Claude Code aliases) → capability filter (web_search, web_fetch, code_execution, streaming, max_context — derived from request content; vision is NOT gated — 2026-09-21 automatic capabilities: a real upstream rejection classifies as `capability_gap`, fails over, and when the whole chain failed that way the executor walks the configured fallback MODELS, learning `vision:false` into the model row unless pinned) → ordered fallback chain → health gate (circuit breaker, backoff, probe recovery). **Failover only before the first streamed byte** — no mid-stream provider swap; an upstream failure during streaming terminates with a protocol-conform error event. Every transition (skip, retry, failover, emulated-tool substitution, compat-policy application) is recorded in `route_trace` in request logs and rendered in the WebUI — fallbacks are never silent. The route_trace schema is versioned because the WebUI renders it. Route-trace version bumps (`routeTraceVersion` in httpapi.go) are additive-only and touch the two version-pinning tests (`strategy_e2e_test.go`, `wiremodel_test.go`) plus the comment block above `chainTrace`.
 
 ### Server wiring
 
