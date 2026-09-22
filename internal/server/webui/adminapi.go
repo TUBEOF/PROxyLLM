@@ -50,14 +50,18 @@ type AdminParams struct {
 	// router.SetStrategy) — same live-swap contract as ReloadSettings.
 	ReloadStrategy func()
 	// ReloadFallbacks pushes the capability fallback lists into the live
-	// runtime after every successful fallback write (ADR-010:
-	// vision_fallback → router.SetVisionFallback; the web-tool lists are
-	// picked up by the provider reload's pool rebuild — same live-swap
-	// contract).
+	// runtime after every successful fallback write (2026-09-21 automatic
+	// capabilities: vision_fallback model IDs → executor.SetCapabilityFall-
+	// backs; the web-tool lists are picked up by the provider reload's pool
+	// rebuild — same live-swap contract).
 	ReloadFallbacks func()
 	// SyncNow runs one model-sync pass synchronously (ADR-010 WebUI "Sync
 	// now" button). nil when the sync is not wired (no master key).
-	SyncNow   func(ctx context.Context) (storage.ModelSyncState, error)
+	SyncNow func(ctx context.Context) (storage.ModelSyncState, error)
+	// TestModel answers one minimal "Sag OK" round trip against the model
+	// row's provider (2026-09-22 Models page test button). nil when not
+	// wired (no master key) — the endpoint answers the uniform 404.
+	TestModel func(ctx context.Context, modelID string) (TestModelResult, error)
 	Now       func() int64
 	MasterKey []byte
 }
@@ -74,6 +78,7 @@ type AdminAPI struct {
 	reloadStrategy  func()
 	reloadFallbacks func()
 	syncNow         func(ctx context.Context) (storage.ModelSyncState, error)
+	testModel       func(ctx context.Context, modelID string) (TestModelResult, error)
 	sessions        *auth.SessionManager
 
 	oauthMu    sync.Mutex
@@ -95,6 +100,7 @@ func NewAdminAPI(p AdminParams) *AdminAPI {
 		reloadStrategy:  p.ReloadStrategy,
 		reloadFallbacks: p.ReloadFallbacks,
 		syncNow:         p.SyncNow,
+		testModel:       p.TestModel,
 		sessions:        auth.NewSessionManager(p.Store, p.MasterKey, now),
 		oauthFlows:      map[string]*codex.DeviceSession{},
 	}
@@ -129,9 +135,16 @@ func (a *AdminAPI) Handler() http.Handler {
 	mux.Handle("POST /api/admin/providers/{id}/oauth/start", a.sessions.RequireAdmin(http.HandlerFunc(a.oauthStart)))
 	mux.Handle("POST /api/admin/providers/{id}/oauth/poll", a.sessions.RequireAdmin(http.HandlerFunc(a.oauthPoll)))
 
+	// Model IDs are prefixed routing identities (2026-09-21 model
+	// identity, "ollamacloud/glm-5.3") — the {id...} wildcard captures the
+	// full multi-segment ID (legacy unprefixed IDs match it too). The test
+	// route puts the ID last ({...} wildcards must end the pattern).
 	mux.Handle("GET /api/admin/models", a.sessions.RequireAdmin(http.HandlerFunc(a.listModels)))
-	mux.Handle("PUT /api/admin/models/{id}", a.sessions.RequireAdmin(http.HandlerFunc(a.putModel)))
-	mux.Handle("DELETE /api/admin/models/{id}", a.sessions.RequireAdmin(http.HandlerFunc(a.deleteModel)))
+	mux.Handle("PUT /api/admin/models/{id...}", a.sessions.RequireAdmin(http.HandlerFunc(a.putModel)))
+	mux.Handle("DELETE /api/admin/models/{id...}", a.sessions.RequireAdmin(http.HandlerFunc(a.deleteModel)))
+	// Model test (2026-09-22): one minimal "Sag OK" round trip per model
+	// row — the Models page's test button.
+	mux.Handle("POST /api/admin/models/test/{id...}", a.sessions.RequireAdmin(http.HandlerFunc(a.testModelHandler)))
 
 	mux.Handle("GET /api/admin/routing", a.sessions.RequireAdmin(http.HandlerFunc(a.listRouting)))
 	mux.Handle("PUT /api/admin/routing/{id}", a.sessions.RequireAdmin(http.HandlerFunc(a.putRoutingRule)))

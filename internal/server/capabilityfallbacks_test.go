@@ -161,6 +161,118 @@ func TestServer_CapabilityFallbackServesModelIDs(t *testing.T) {
 	}
 }
 
+// TestServer_ModelTestEndpoint: the wired TestModel answers one minimal
+// "Sag OK" round trip against the model's provider through the admin API —
+// success carries reply + latency, an upstream failure carries the
+// redacted cause, both as ok:true/false.
+func TestServer_ModelTestEndpoint(t *testing.T) {
+	ctx := context.Background()
+	cfg := newConfig(t)
+
+	st, err := storage.Open(cfg.Storage)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+
+	if err := st.EnsureProvider(ctx, "mock-main", "custom", "Mock Main"); err != nil {
+		t.Fatalf("ensure provider: %v", err)
+	}
+	if err := st.PutModel(ctx, storage.Model{
+		ID: "ollamacloud/chat", ProviderID: "mock-main", Name: "chat",
+	}); err != nil {
+		t.Fatalf("put model: %v", err)
+	}
+
+	mock := mockprovider.New(t)
+	srv, err := New(&cfg, st, nil,
+		WithProvider(mock.Provider("mock-main", providerAllCaps())),
+		WithMasterKey(wiringMasterKey(t)),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+	login := bootstrapAdmin(t, ts)
+
+	// Success: the scripted reply comes back with the wire model.
+	mock.Enqueue(mockprovider.NewScript().JSONResponse(http.StatusOK,
+		`{"id":"c","object":"chat.completion","model":"chat","choices":[{"index":0,"message":{"role":"assistant","content":"OK"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`, nil))
+	resp := adminCall(t, ts, http.MethodPost, "/api/admin/models/test/ollamacloud/chat", "", login)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("model test: status %d, body %s", resp.StatusCode, ensureBodyClosed(t, resp))
+	}
+	var result struct {
+		OK        bool   `json:"ok"`
+		LatencyMS int64  `json:"latency_ms"`
+		Reply     string `json:"reply"`
+		Error     string `json:"error"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	_ = resp.Body.Close()
+	if !result.OK || result.Reply != "OK" {
+		t.Errorf("result = %+v, want ok + reply OK", result)
+	}
+
+	// The upstream request carried the row's WIRE name and the minimal ask.
+	rec := mock.Requests()[0]
+	var upstream struct {
+		Model    string `json:"model"`
+		MaxTok   int    `json:"max_completion_tokens"`
+		Stream   bool   `json:"stream"`
+		Messages []struct {
+			Role    string `json:"role"`
+			Content string `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(rec.Body), &upstream); err != nil {
+		t.Fatalf("upstream body: %v", err)
+	}
+	if upstream.Model != "chat" {
+		t.Errorf("upstream model = %q, want the wire name", upstream.Model)
+	}
+	if upstream.MaxTok != 16 || upstream.Stream {
+		t.Errorf("upstream budget = %d stream=%v, want max_completion_tokens 16 non-streaming", upstream.MaxTok, upstream.Stream)
+	}
+	if len(upstream.Messages) != 1 || upstream.Messages[0].Content != "Sag OK" {
+		t.Errorf("upstream messages = %+v, want the single minimal ask", upstream.Messages)
+	}
+
+	// Failure: the cause is plain-language, ok:false.
+	mock.Enqueue(mockprovider.NewScript().JSONResponse(http.StatusBadRequest,
+		`{"error":{"message":"model overloaded"}}`, nil))
+	resp = adminCall(t, ts, http.MethodPost, "/api/admin/models/test/ollamacloud/chat", "", login)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("failed model test: status %d", resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	_ = resp.Body.Close()
+	if result.OK || result.Error == "" {
+		t.Errorf("failed result = %+v, want ok:false + cause", result)
+	}
+
+	// Unknown model: ok:false with a clear cause (not a 500).
+	resp = adminCall(t, ts, http.MethodPost, "/api/admin/models/test/no-such", "", login)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("unknown model test: status %d", resp.StatusCode)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	_ = resp.Body.Close()
+	if result.OK || result.Error != "unknown model" {
+		t.Errorf("unknown result = %+v, want ok:false + unknown model", result)
+	}
+}
+
+// admin API swaps the live executor entries without restart — the NEW
+// model serves the next gap-rescued request.
 // TestServer_FallbackWriteLiveSwapsModels: a fallback write through the
 // admin API swaps the live executor entries without restart — the NEW
 // model serves the next gap-rescued request.

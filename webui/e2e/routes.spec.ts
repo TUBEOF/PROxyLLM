@@ -50,6 +50,20 @@ test.describe('signed in', () => {
     await expect(page).toHaveScreenshot('models.png');
   });
 
+  // 2026-09-22: the per-model Test button against the scripted prv-test
+  // account — a deterministic "OK" answer (fixtureTestProvider), no live
+  // upstream. Latency is not rendered, so the badge is stable across runs.
+  test('models test button', async ({ page }) => {
+    await page.goto('/models');
+    await readyForCapture(page);
+    const card = page.locator('details', { hasText: 'Test target' });
+    await card.locator('button', { hasText: 'Test' }).first().click();
+    await expect(
+      page.locator('p[role="status"]', { hasText: 'OK' }),
+    ).toBeVisible();
+    await expect(page).toHaveScreenshot('models-test.png');
+  });
+
   test('routing', async ({ page }) => {
     await page.goto('/routing');
     await readyForCapture(page);

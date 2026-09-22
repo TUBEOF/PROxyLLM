@@ -259,6 +259,7 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 			SyncNow: func(ctx context.Context) (storage.ModelSyncState, error) {
 				return modelsync.New(store, reg, logger).Run(ctx)
 			},
+			TestModel: s.testModel(reg),
 			MasterKey: o.masterKey,
 		})
 		s.mux.Handle("/api/admin/", admin.Handler())

@@ -5,6 +5,7 @@ import type {
   ModelSyncConfig,
   ModelSyncRunResponse,
   ModelsResponse,
+  ModelTestResponse,
   Provider,
   ProvidersResponse,
 } from '../types';
@@ -18,6 +19,14 @@ import { IconPlus } from '../icons';
 // compat blob is structured here (not raw JSON): the four §6.4 settings
 // have fixed value sets, so the editor renders real controls instead of a
 // JSON textarea — validation errors are impossible by construction.
+//
+// Layout (2026-09-22): provider-grouped collapsible sections with model
+// CARDS (not a flat table) — the per-model test button needs a card-level
+// footer, and the grouping matches how operators think (per account). Each
+// card carries a Test button: one minimal "Sag OK" round trip against the
+// model's provider, minimal output (status + reply or plain-language
+// cause). Block layout throughout — no variable-length text in flex-wrap
+// lines above other content (the v1.0.1/v1.0.2 screenshot lesson).
 
 interface CompatForm {
   thinking_handling: 'strip' | 'map-to-reasoning-effort' | 'block';
@@ -94,10 +103,6 @@ export default function Models() {
   );
   const models = useMemo(() => data?.models ?? [], [data]);
   const providers = useMemo(() => providersData?.providers ?? [], [providersData]);
-  const providerName = useCallback(
-    (id: string) => providers.find((p: Provider) => p.id === id)?.name ?? id,
-    [providers],
-  );
 
   const [editing, setEditing] = useState<Model | null>(null);
   const [creating, setCreating] = useState(false);
@@ -174,9 +179,16 @@ export default function Models() {
       }
       setFormError(null);
       const caps: Record<string, unknown> = { tools: Object.keys(form.capabilities).filter((k) => form.capabilities[k]) };
+      // Operator save = manual selection: every flag written here is
+      // pinned so the automatic capability learning (2026-09-21) stops
+      // overwriting it. Unchecking removes the pin (learning resumes).
+      const pinned: Record<string, boolean> = {};
       for (const flag of CAPABILITY_FLAGS) {
-        caps[flag] = form.capabilities[flag] === true;
+        const on = form.capabilities[flag] === true;
+        caps[flag] = on;
+        pinned[flag] = on;
       }
+      caps.pinned = pinned;
       const ok = await save.run(() =>
         apiCall('PUT', `/api/admin/models/${encodeURIComponent(id)}`, {
           provider_id: form.provider_id,
@@ -241,6 +253,61 @@ export default function Models() {
   const lastRunText = lastRun === null || lastRun.ran_at === 0
     ? 'never run'
     : new Date(lastRun.ran_at * 1000).toLocaleString();
+
+  // Model test (2026-09-22): one minimal round trip per model card. State
+  // is per-model: pending + the last result. Latency is NOT rendered in
+  // the result badge (wall-clock noise in screenshots); the status text
+  // alone carries the outcome.
+  const [testing, setTesting] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, ModelTestResponse>>({});
+
+  const runTest = useCallback(
+    async (m: Model) => {
+      setTesting(m.id);
+      try {
+        const res = await apiCall<ModelTestResponse>(
+          'POST',
+          `/api/admin/models/test/${encodeURIComponent(m.id)}`,
+          {},
+        );
+        setTestResults((prev) => ({ ...prev, [m.id]: res }));
+      } catch (err) {
+        // Thrown errors are the truth (useMutation().error is stale by one
+        // run — the v1.0.2 lesson).
+        setTestResults((prev) => ({
+          ...prev,
+          [m.id]: { ok: false, latency_ms: 0, error: err instanceof Error ? err.message : 'Request failed' },
+        }));
+      }
+      setTesting(null);
+    },
+    [],
+  );
+
+  // Provider grouping (2026-09-22): models bucket by their provider, in
+  // provider-listing order; providers without models appear with an empty
+  // hint so the grouping never hides an account.
+  const groups = useMemo(() => {
+    const byProvider = new Map<string, Model[]>();
+    for (const m of models) {
+      const list = byProvider.get(m.provider_id) ?? [];
+      list.push(m);
+      byProvider.set(m.provider_id, list);
+    }
+    const out: { provider: Provider; models: Model[] }[] = [];
+    for (const p of providers) {
+      out.push({ provider: p, models: byProvider.get(p.id) ?? [] });
+    }
+    // Models of deleted providers (dangling rows should not exist — the FK
+    // guarantees it — but the UI never hides data it was given).
+    const known = new Set(providers.map((p) => p.id));
+    for (const [pid, list] of byProvider) {
+      if (!known.has(pid)) {
+        out.push({ provider: { id: pid, type: '', name: pid, config: null }, models: list });
+      }
+    }
+    return out;
+  }, [models, providers]);
 
   const drawerError = formError ?? save.error ?? del.error;
   const drawerPending = save.pending || del.pending;
@@ -329,68 +396,93 @@ export default function Models() {
           </div>
         ) : (
           <div className="w-full">
-            <div className="table-wrap">
-              <div className="table-scroll">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Model</th>
-                      <th>Provider</th>
-                      <th>Thinking</th>
-                      <th>Tool emulation</th>
-                      <th>Priority</th>
-                      <th />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {models.map((m) => {
-                      const compat = compatFromRaw(m.compat);
-                      return (
-                        <tr key={m.id} onClick={() => openEdit(m)}>
-                          <td>
-                            <span className="primary">{m.name}</span>
-                            <br />
-                            <span className="mono">{m.id}</span>
-                          </td>
-                          <td>
-                            {providerName(m.provider_id)}
-                            <br />
-                            {/* ADR-010 provenance: synced rows are the
-                                auto-import's; editing one converts it to
-                                manual. */}
-                            <span className={m.origin === 'synced' ? 'badge info' : 'badge paused'}>
-                              <span className="b-dot" />
-                              {m.origin === 'synced' ? 'synced' : 'manual'}
+            {/* Provider-grouped collapsible sections (2026-09-22): each
+                provider is one <details> (native, no JS state — the
+                v1.0.x screenshot lesson favors structural primitives),
+                its models render as cards in a grid. Block layout only. */}
+            {groups.map((g) => (
+              <details key={g.provider.id} className="fieldset" style={{ marginBottom: 8 }} open={groups.length === 1}>
+                <summary style={{ cursor: 'pointer', fontWeight: 600, padding: '4px 0' }}>
+                  {g.provider.name} ({g.models.length} {g.models.length === 1 ? 'model' : 'models'})
+                </summary>
+                <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', marginTop: 8 }}>
+                  {g.models.length === 0 && (
+                    <p className="hint" style={{ margin: 0 }}>
+                      No models yet — run a sync or add one.
+                    </p>
+                  )}
+                  {g.models.map((m) => {
+                    const compat = compatFromRaw(m.compat);
+                    const caps = capsFromRaw(m.capabilities);
+                    const result = testResults[m.id];
+                    return (
+                      <div key={m.id} className="fieldset" style={{ display: 'flex', flexDirection: 'column', gap: 6, margin: 0, padding: '10px 12px' }}>
+                        <div>
+                          <span className="primary">{m.name}</span>
+                        </div>
+                        <div>
+                          <span className="mono" style={{ fontSize: 'var(--fs-sm)' }}>{m.id}</span>
+                        </div>
+                        <div>
+                          <span className={m.origin === 'synced' ? 'badge info' : 'badge paused'}>
+                            <span className="b-dot" />
+                            {m.origin === 'synced' ? 'synced' : 'manual'}
+                          </span>{' '}
+                          <span className="badge info">{compat.thinking_handling}</span>{' '}
+                          <span className="badge info">{compat.server_tool_emulation}</span>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          {CAPABILITY_FLAGS.map((flag) => (
+                            <span key={flag} className="hint" style={{ margin: 0 }}>
+                              {caps[flag] === true ? '✓' : '·'} {flag}
                             </span>
-                          </td>
-                          <td>
-                            <span className="badge info">{compat.thinking_handling}</span>
-                          </td>
-                          <td>
-                            <span className="badge info">{compat.server_tool_emulation}</span>
-                          </td>
-                          <td className="num">{m.priority}</td>
-                          <td>
-                            <span className="row-actions">
-                              <button
-                                type="button"
-                                className="btn btn-danger btn-sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void remove(m);
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+                          ))}
+                        </div>
+                        {/* Test result badge: status-only (no wall-clock
+                            numbers in screenshots). Block layout. */}
+                        {result !== undefined && (
+                          <p
+                            role="status"
+                            style={{
+                              margin: 0,
+                              fontSize: 'var(--fs-sm)',
+                              color: result.ok ? 'var(--status-up)' : 'var(--status-down)',
+                              overflowWrap: 'anywhere',
+                            }}
+                          >
+                            {result.ok
+                              ? `OK${result.reply !== undefined && result.reply !== '' ? ` — ${result.reply}` : ''}`
+                              : result.error ?? 'Test failed'}
+                          </p>
+                        )}
+                        <div style={{ display: 'flex', gap: 6, marginTop: 'auto' }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => void runTest(m)}
+                            disabled={testing !== null}
+                            title="One minimal 'Sag OK' round trip against this model's provider"
+                          >
+                            {testing === m.id ? 'Testing…' : 'Test'}
+                          </button>
+                          <button type="button" className="btn btn-primary btn-sm" onClick={() => openEdit(m)}>
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-danger btn-sm"
+                            onClick={() => void remove(m)}
+                            disabled={drawerPending}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
+            ))}
           </div>
         )}
       </div>
@@ -486,6 +578,10 @@ export default function Models() {
 
             <fieldset className="fieldset">
               <legend>Capabilities</legend>
+              <span className="hint" style={{ display: 'block' }}>
+                Manual selection pins each flag — the automatic learning (a real upstream
+                rejection writes the observed gap) never overwrites a pinned flag.
+              </span>
               {CAPABILITY_FLAGS.map((flag) => (
                 <label key={flag} className="check" style={{ display: 'flex', marginBottom: 8 }}>
                   <input

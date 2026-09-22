@@ -81,7 +81,14 @@ func run(addr, dbPath string, seedData bool) error {
 		return err
 	}
 
-	srv, err := server.New(cfg, store, slog.Default(), server.WithMasterKey(masterKey))
+	srv, err := server.New(cfg, store, slog.Default(),
+		server.WithMasterKey(masterKey),
+		// The scripted test-model provider (2026-09-22): the Models page's
+		// Test button hits it with a "Sag OK" complete — deterministic
+		// "OK" answer, no live upstream, no wall-clock state (latency is
+		// measured but not rendered in the badge).
+		server.WithProvider(&fixtureTestProvider{}),
+	)
 	if err != nil {
 		return err
 	}
@@ -126,6 +133,7 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 		{ID: "prv-ollama", Type: "ollama-cloud", Name: "Ollama key 1"},
 		{ID: "prv-ollama-2", Type: "ollama-cloud", Name: "Ollama key 2"},
 		{ID: "prv-openai", Type: "custom-openai", Name: "Custom OpenAI-compatible"},
+		{ID: "prv-test", Type: "custom-openai", Name: "Test target"},
 	} {
 		if err := store.PutProvider(ctx, p); err != nil {
 			return fmt.Errorf("seed provider %s: %w", p.ID, err)
@@ -180,6 +188,18 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 			Capabilities: json.RawMessage(`{"streaming":true,"tools":true}`),
 			Compat:       json.RawMessage(`{"thinking_handling":"map-to-reasoning-effort"}`),
 			Priority:     50,
+		},
+		// The test-button target (2026-09-22): the Playwright spec clicks
+		// THIS model's Test button — the scripted provider below answers
+		// deterministically ("OK", fixed reply, no wall-clock data in the
+		// badge — latency is not rendered).
+		{
+			ID:           "mdl-test",
+			ProviderID:   "prv-test",
+			Name:         "ok-model",
+			Capabilities: json.RawMessage(`{"streaming":true,"tools":true,"vision":true}`),
+			Compat:       json.RawMessage(`{"thinking_handling":"strip"}`),
+			Priority:     10,
 		},
 	}
 	for _, m := range models {

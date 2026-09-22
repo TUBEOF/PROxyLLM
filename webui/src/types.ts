@@ -195,3 +195,12 @@ export interface ModelSyncConfig {
 export interface ModelSyncRunResponse {
   last_run: ModelSyncState;
 }
+// Model test round trip (POST /api/admin/models/test/{id}): one minimal
+// "Sag OK" completion against the model's provider — the Models page's
+// test button.
+export interface ModelTestResponse {
+  ok: boolean;
+  latency_ms: number;
+  reply?: string;
+  error?: string;
+}
