@@ -57,6 +57,12 @@ type Router struct {
 	reg    provider.Registry
 	health *HealthTracker
 
+	// modelLookup is the implicit-route source (ADR-011): maps a model ID
+	// to the provider ID of its models-table row. Immutable after
+	// construction (option-injected, never swapped) — no lock needed.
+	// Nil disables the implicit route entirely (pre-ADR-011 behavior).
+	modelLookup func(modelID string) (providerID string, ok bool)
+
 	// mu guards rules and the round-robin counters — the live rule set is
 	// replaceable at runtime (WebUI routing writes reload it). Readers take
 	// RLock; the reload path takes Lock for one whole-set swap. Aliases and
@@ -97,6 +103,15 @@ func WithRegistry(reg provider.Registry) Option {
 // WithHealth sets the health tracker the health gate consults.
 func WithHealth(h *HealthTracker) Option {
 	return func(r *Router) { r.health = h }
+}
+
+// WithModelLookup sets the implicit-route source (ADR-011): a lookup of
+// model ID → owning provider ID from the models table. When no rule
+// matches, a row routes the request to its provider as a one-entry chain
+// (traced implicit_route — never silent). A nil lookup, a missing row, or
+// a lookup failure keeps the pre-ADR-011 behavior: no rule → no route.
+func WithModelLookup(lookup func(modelID string) (providerID string, ok bool)) Option {
+	return func(r *Router) { r.modelLookup = lookup }
 }
 
 // NewRouter returns a Router for cfg.
@@ -190,12 +205,31 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 
 	// Step 3: rule matching. Exact matches beat wildcards; within a tier,
 	// higher priority wins; registration order breaks remaining ties.
+	var rule Rule
 	rules, err := r.matchingRules(model)
 	if err != nil {
-		trace.add(Event{Type: EventRejected, Reason: "no matching routing rule", Model: model})
-		return nil, trace, err
+		// No rule matched. ADR-011: a models-table row for the model
+		// routes it to that row's provider as a one-entry chain — traced
+		// (implicit_route, never silent) and subject to the unchanged
+		// pipeline below (credential gate, capability filter, health
+		// gate). Rules always win; this fires only when the rule tiers
+		// were empty. A nil lookup, a missing row, or a lookup failure
+		// keeps the no-route rejection.
+		implicit := Rule{}
+		if r.modelLookup != nil {
+			if pid, ok := r.modelLookup(model); ok && pid != "" {
+				implicit = Rule{Chain: []string{pid}}
+				trace.ImplicitRoute(model, pid)
+			}
+		}
+		if len(implicit.Chain) == 0 {
+			trace.add(Event{Type: EventRejected, Reason: "no matching routing rule", Model: model})
+			return nil, trace, err
+		}
+		rule = implicit
+	} else {
+		rule = rules[0]
 	}
-	rule := rules[0]
 
 	// Step 4 (ADR-009): chain expansion. Each entry resolves as an exact
 	// provider ID first (legacy rows whose id equals a type string keep

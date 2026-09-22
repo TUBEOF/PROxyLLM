@@ -76,6 +76,12 @@ const (
 	// name for dispatch (e.g. "glm-5.3") — From/To carry routing ID → wire
 	// name (2026-09-21 model identity). Never silent.
 	EventModelResolved EventType = "model_resolved"
+
+	// EventImplicitRoute: no rule matched, but the models-table row for
+	// the model named a provider — the request routes there as a
+	// one-entry chain (ADR-011). From carries the model ID, To the
+	// provider. Implicit routes are never silent.
+	EventImplicitRoute EventType = "implicit_route"
 )
 
 // Event is one observable routing transition.
@@ -133,6 +139,12 @@ func (t *Trace) Alias(from, to string) {
 // surfaces echo the routing ID.
 func (t *Trace) ModelResolved(routingID, wireName string) {
 	t.add(Event{Type: EventModelResolved, From: routingID, To: wireName})
+}
+
+// ImplicitRoute records an implicit model route (ADR-011): no rule
+// matched, the models-table row named the provider.
+func (t *Trace) ImplicitRoute(modelID, providerID string) {
+	t.add(Event{Type: EventImplicitRoute, From: modelID, To: providerID})
 }
 
 // Skip records a skipped chain entry.
