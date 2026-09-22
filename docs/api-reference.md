@@ -51,6 +51,10 @@ Protocol-conform per surface:
   protocol-conform error event (no mid-stream provider swap). The terminal
   chain error plus the full `route_trace` land in the request log —
   fallbacks are never silent.
+- **Unknown model (404)**: a request 404s when no enabled routing rule
+  matches the model AND no models-table row exists (ADR-011). A listed
+  model with no rule routes implicitly to its row's provider — traced as
+  `implicit_route`.
 
 ## Admin API (WebUI backend, session-authenticated)
 

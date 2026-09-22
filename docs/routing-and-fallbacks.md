@@ -25,6 +25,15 @@ in the rule step below.
 1. **Key scope** — the client key's allowed model patterns.
 2. **Model match** — exact model id, wildcard, or alias (the
    `model_aliases` setting maps Claude Code naming to your models).
+   **Implicit routes (ADR-011):** when no enabled rule matches, the
+   models table is consulted — a row for the requested model ID routes
+   to that row's provider as a one-entry chain, traced as
+   `implicit_route`. Rules always win (any matching rule suppresses the
+   implicit route); key scopes and aliases resolve first as above. A
+   dead, uncredentialed, or cooled-down provider still yields the honest
+   `chain empty …` rejection with skip events — same behavior as an
+   explicit rule. To take a model out of service without a rule, delete
+   or disable its model row (or use key scopes).
 3. **Chain resolution** — the ordered fallback chain for the matched
    rule. An entry names a provider ID, a `provider-id/model-id` pair, or
    a provider TYPE (ADR-009): a type entry expands to all accounts of
