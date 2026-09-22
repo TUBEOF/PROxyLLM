@@ -60,6 +60,11 @@ export default function ProviderTypePage() {
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const saveSettings = useMutation();
 
+  // Type aliases (object field in the settings blob, not a catalog text
+  // field): seeded once per loaded detail alongside the string fields.
+  const [aliasRows, setAliasRows] = useState<{ alias: string; target: string }[]>([]);
+  const [aliasesSeeded, setAliasesSeeded] = useState(false);
+
   useEffect(() => {
     if (settingsSeeded || meta === null) return;
     const seed: Record<string, string> = {};
@@ -68,15 +73,43 @@ export default function ProviderTypePage() {
     setSettingsSeeded(true);
   }, [settingsSeeded, meta, savedSettings]);
 
+  useEffect(() => {
+    if (aliasesSeeded || detail.data === null) return;
+    const raw = (detail.data.settings as Record<string, unknown> | null)?.aliases;
+    const rows: { alias: string; target: string }[] = [];
+    if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+      for (const [alias, target] of Object.entries(raw as Record<string, unknown>)) {
+        if (typeof target === 'string') rows.push({ alias, target });
+      }
+    }
+    setAliasRows(rows);
+    setAliasesSeeded(true);
+  }, [aliasesSeeded, detail.data]);
+
   const submitSettings = useCallback(
     async (e: FormEvent) => {
       e.preventDefault();
       if (meta === null) return;
-      const settings: Record<string, string> = {};
+      const settings: Record<string, unknown> = {};
       for (const f of meta.settings_fields) {
         const value = settingsForm[f.key] ?? '';
         if (value !== '') settings[f.key] = value;
       }
+      // Aliases: only complete rows ride (an empty alias or target row is a
+      // not-yet-typed draft, not an invalid entry — the server 400s
+      // half-typed pairs so the client filters them here).
+      const aliases: Record<string, string> = {};
+      for (const row of aliasRows) {
+        const alias = row.alias.trim();
+        const target = row.target.trim();
+        if (alias === '' || target === '') continue;
+        if (aliases[alias] !== undefined) {
+          setSettingsError(`Duplicate alias "${alias}"`);
+          return;
+        }
+        aliases[alias] = target;
+      }
+      if (Object.keys(aliases).length > 0) settings.aliases = aliases;
       // Required-field client check mirrors the server's 400 — instant
       // feedback, the server remains the authority.
       for (const f of meta.settings_fields) {
@@ -91,7 +124,7 @@ export default function ProviderTypePage() {
       );
       if (ok !== null) detail.reload();
     },
-    [meta, settingsForm, saveSettings, type, detail],
+    [meta, settingsForm, aliasRows, saveSettings, type, detail],
   );
 
   // Add-account flow state.
@@ -200,6 +233,59 @@ export default function ProviderTypePage() {
                   </div>
                 ))}
               </div>
+              {meta.kind === 'llm' && (
+                <div className="field">
+                  <label>Model aliases</label>
+                  <span className="hint">
+                    Client-facing names routed to this type&apos;s models — clients may send the alias instead of the prefixed ID.
+                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {aliasRows.map((row, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <input
+                          className="input mono"
+                          style={{ flex: 1 }}
+                          placeholder="alias"
+                          value={row.alias}
+                          aria-label={`Alias ${i + 1}`}
+                          onChange={(e) =>
+                            setAliasRows((rows) => rows.map((r, j) => (j === i ? { ...r, alias: e.target.value } : r)))
+                          }
+                        />
+                        <span aria-hidden>→</span>
+                        <input
+                          className="input mono"
+                          style={{ flex: 1 }}
+                          placeholder="model id"
+                          value={row.target}
+                          aria-label={`Target ${i + 1}`}
+                          onChange={(e) =>
+                            setAliasRows((rows) => rows.map((r, j) => (j === i ? { ...r, target: e.target.value } : r)))
+                          }
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-danger btn-sm"
+                          aria-label={`Remove alias ${i + 1}`}
+                          onClick={() => setAliasRows((rows) => rows.filter((_, j) => j !== i))}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                    <div>
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => setAliasRows((rows) => [...rows, { alias: '', target: '' }])}
+                      >
+                        <IconPlus width="14" height="14" />
+                        Add alias
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
               <button type="submit" className="btn btn-primary btn-sm" disabled={saveSettings.pending}>
                 Save settings
               </button>
