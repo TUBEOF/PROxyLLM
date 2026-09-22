@@ -18,6 +18,7 @@ package routing_test
 // Spec source: docs/adr/ADR-011-implicit-model-routes.md.
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -29,7 +30,7 @@ import (
 // owning provider ID.
 type fakeModelLookup map[string]string
 
-func (f fakeModelLookup) lookup(modelID string) (string, bool) {
+func (f fakeModelLookup) lookup(_ context.Context, modelID string) (string, bool) {
 	pid, ok := f[modelID]
 	return pid, ok
 }

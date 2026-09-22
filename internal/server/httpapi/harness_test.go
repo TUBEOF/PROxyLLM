@@ -111,8 +111,8 @@ func newEnvWithAuthOpts(t *testing.T, authOpts []auth.Option, rules ...routing.R
 		routing.WithRegistry(reg), routing.WithHealth(health),
 		// ADR-011 implicit model routes: the models-table row names the
 		// provider — same wiring as server.New.
-		routing.WithModelLookup(func(modelID string) (string, bool) {
-			row, err := st.GetModel(context.Background(), modelID)
+		routing.WithModelLookup(func(ctx context.Context, modelID string) (string, bool) {
+			row, err := st.GetModel(ctx, modelID)
 			if err != nil || row.ProviderID == "" {
 				return "", false
 			}

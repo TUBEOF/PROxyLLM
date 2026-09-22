@@ -139,12 +139,14 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		routing.WithRegistry(reg),
 		routing.WithHealth(health),
 		// ADR-011 implicit model routes: a models-table row routes its
-		// model to the row's provider when no rule matched. A read
-		// failure degrades to no-row (ok=false) — the last-known-good
-		// read contract; the request then gets the honest no-route
-		// rejection, never a misrouted chain.
-		routing.WithModelLookup(func(modelID string) (string, bool) {
-			row, err := store.GetModel(context.Background(), modelID)
+		// model to the row's provider when no rule matched. The request
+		// context rides WithRequestContext — a client disconnect cancels
+		// the read (cancellation propagates end-to-end). A read failure
+		// degrades to no-row (ok=false) — the last-known-good read
+		// contract; the request then gets the honest no-route rejection,
+		// never a misrouted chain.
+		routing.WithModelLookup(func(ctx context.Context, modelID string) (string, bool) {
+			row, err := store.GetModel(ctx, modelID)
 			if err != nil || row.ProviderID == "" {
 				return "", false
 			}

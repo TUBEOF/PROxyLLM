@@ -41,7 +41,7 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 	}
 
 	chain, routerTrace, err := a.router.ResolveChainFor(req.Model,
-		requiredCapabilities(req), routing.WithKeyID(keyID))
+		requiredCapabilities(req), routing.WithKeyID(keyID), routing.WithRequestContext(ctx))
 	if err != nil {
 		_, _ = a.writeRouteError(w, openAIErrorWriter(), err)
 		a.writeRequestLog(ctx, keyID, req.Model, "", mapRouteErrorStatus(err), 0,

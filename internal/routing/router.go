@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"context"
 	"errors"
 	"sort"
 	"strings"
@@ -58,10 +59,11 @@ type Router struct {
 	health *HealthTracker
 
 	// modelLookup is the implicit-route source (ADR-011): maps a model ID
-	// to the provider ID of its models-table row. Immutable after
+	// to the provider ID of its models-table row, honoring the request
+	// context (client disconnects cancel the read). Immutable after
 	// construction (option-injected, never swapped) — no lock needed.
 	// Nil disables the implicit route entirely (pre-ADR-011 behavior).
-	modelLookup func(modelID string) (providerID string, ok bool)
+	modelLookup func(ctx context.Context, modelID string) (providerID string, ok bool)
 
 	// mu guards rules and the round-robin counters — the live rule set is
 	// replaceable at runtime (WebUI routing writes reload it). Readers take
@@ -106,11 +108,13 @@ func WithHealth(h *HealthTracker) Option {
 }
 
 // WithModelLookup sets the implicit-route source (ADR-011): a lookup of
-// model ID → owning provider ID from the models table. When no rule
-// matches, a row routes the request to its provider as a one-entry chain
-// (traced implicit_route — never silent). A nil lookup, a missing row, or
-// a lookup failure keeps the pre-ADR-011 behavior: no rule → no route.
-func WithModelLookup(lookup func(modelID string) (providerID string, ok bool)) Option {
+// model ID → owning provider ID from the models table, honoring the
+// request context (WithRequestContext — a client disconnect cancels the
+// read). When no rule matches, a row routes the request to its provider as
+// a one-entry chain (traced implicit_route — never silent). A nil lookup,
+// a missing row, or a lookup failure keeps the pre-ADR-011 behavior:
+// no rule → no route.
+func WithModelLookup(lookup func(ctx context.Context, modelID string) (providerID string, ok bool)) Option {
 	return func(r *Router) { r.modelLookup = lookup }
 }
 
@@ -155,11 +159,23 @@ func (r *Router) SetStrategy(s Strategy) {
 type ResolveOptions struct {
 	// KeyID is the client key; its scope gates the request (step 1).
 	KeyID string
+
+	// Ctx is the request context, handed to the implicit-route lookup
+	// (ADR-011) so a client disconnect cancels the models-table read
+	// instead of leaving it running against the single SQLite connection.
+	// Nil resolves to context.Background().
+	Ctx context.Context
 }
 
 // WithKeyID resolves for a specific client key.
 func WithKeyID(keyID string) ResolveOptions {
 	return ResolveOptions{KeyID: keyID}
+}
+
+// WithRequestContext carries the request context into the resolver (the
+// implicit-route lookup honors it — cancellation propagates end-to-end).
+func WithRequestContext(ctx context.Context) ResolveOptions {
+	return ResolveOptions{Ctx: ctx}
 }
 
 // ResolveChainFor resolves model to its fallback chain filtered by the
@@ -174,7 +190,10 @@ func (r *Router) ResolveChainFor(model string, required provider.Capabilities, o
 	for _, opt := range opts {
 		o = opt
 	}
-	return r.resolveWithTrace(model, required, o.KeyID)
+	if o.Ctx == nil {
+		o.Ctx = context.Background()
+	}
+	return r.resolveWithTrace(model, required, o.KeyID, o.Ctx)
 }
 
 // resolveWithTrace runs the deterministic pipeline:
@@ -184,7 +203,7 @@ func (r *Router) ResolveChainFor(model string, required provider.Capabilities, o
 //  3. rule match — exact before wildcard, priority before order
 //  4. capability — skip chain entries lacking a required capability
 //  5. health     — skip providers in cooldown
-func (r *Router) resolveWithTrace(model string, required provider.Capabilities, keyID string) ([]ChainEntry, *Trace, error) {
+func (r *Router) resolveWithTrace(model string, required provider.Capabilities, keyID string, ctx context.Context) ([]ChainEntry, *Trace, error) {
 	trace := &Trace{}
 
 	// Step 1: key scope. A key with patterns must match; a key with no
@@ -217,7 +236,7 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 		// keeps the no-route rejection.
 		implicit := Rule{}
 		if r.modelLookup != nil {
-			if pid, ok := r.modelLookup(model); ok && pid != "" {
+			if pid, ok := r.modelLookup(ctx, model); ok && pid != "" {
 				implicit = Rule{Chain: []string{pid}}
 				trace.ImplicitRoute(model, pid)
 			}
