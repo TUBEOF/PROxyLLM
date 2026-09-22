@@ -383,7 +383,7 @@ export default function Models() {
           <div className="w-full">
             <EmptyState
               title="No models registered"
-              body="Register a model so routing rules can target it. Every model carries its capability flags and compatibility policy here — including thinking handling for non-Claude targets."
+              body="Register a model (or run the model sync) so clients can request it — models without a matching routing rule route implicitly to their provider. Every model carries its capability flags and compatibility policy here — including thinking handling for non-Claude targets."
               action={
                 providers.length === 0 ? undefined : (
                   <button type="button" className="btn btn-primary btn-sm" onClick={openCreate}>

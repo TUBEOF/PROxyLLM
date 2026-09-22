@@ -350,7 +350,7 @@ export default function Routing() {
           <div className="w-full">
             <EmptyState
               title="No routing rules"
-              body="A rule matches a model pattern and holds the ordered fallback chain. Without rules, no request can be routed — add one pointing at a registered model."
+              body="A rule matches a model pattern and holds the ordered fallback chain. Rules are optional: models without a matching rule route implicitly to their registered provider (traced in every request log) — rules add fallback chains, priorities, and rotation."
               action={
                 <button type="button" className="btn btn-primary btn-sm" onClick={openCreate}>
                   <IconPlus width="14" height="14" />
