@@ -156,10 +156,19 @@ func (d *streamDecoder) mapChunk(w *wireChunk) {
 	if ch.Delta != nil && ch.Delta.Reasoning != "" {
 		// Buffered: flushed as one thinking block before the terminal
 		// events (see the type doc — the IR cannot re-open a closed
-		// block, and interleaving must not fragment the text).
-		d.reasoning.WriteString(ch.Delta.Reasoning)
+		// block, and interleaving must not fragment the text). A
+		// pathological trace beyond maxReasoningBuffer is truncated:
+		// a mid-stream flush would violate block sequencing (the text
+		// block is still open — Anthropic SSE forbids a new
+		// content_block_start before the open block's stop), and memory
+		// must stay bounded.
+		if d.reasoning.Len() < maxReasoningBuffer {
+			d.reasoning.WriteString(ch.Delta.Reasoning)
+		}
 	} else if ch.Delta != nil && ch.Delta.ReasoningContent != "" {
-		d.reasoning.WriteString(ch.Delta.ReasoningContent)
+		if d.reasoning.Len() < maxReasoningBuffer {
+			d.reasoning.WriteString(ch.Delta.ReasoningContent)
+		}
 	}
 	if ch.Delta != nil && ch.Delta.Content.Str != nil && *ch.Delta.Content.Str != "" {
 		// Content delta; only while a text block is open (a tool block
@@ -227,6 +236,16 @@ func (d *streamDecoder) mapChunk(w *wireChunk) {
 	// include_usage, O4); it closes out the MessageDelta.
 	d.emitUsage(w.Usage)
 }
+
+// maxReasoningBuffer bounds the buffered reasoning trace (security review
+// 2026-09-22): a runaway upstream pumping delta.reasoning fragments
+// indefinitely must not grow decoder memory without limit. A trace beyond
+// the cap is TRUNCATED (dropped fragments, not flushed mid-stream — a
+// mid-stream flush would violate block sequencing: the text block is still
+// open, and a new content_block_start before its stop is a wire
+// violation). 8 MiB is far beyond any real thinking trace (Anthropic
+// budgets cap at ~128k tokens ≈ 0.5 MB of text).
+const maxReasoningBuffer = 8 << 20
 
 // flushReasoning emits the buffered reasoning trace as ONE thinking block
 // after any open text/tool blocks' content is complete. No-op without

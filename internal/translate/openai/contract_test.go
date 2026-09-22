@@ -293,6 +293,42 @@ func TestDecodeResponse_ReasoningContent(t *testing.T) {
 	}
 }
 
+// Runaway-trace guard (security review 2026-09-22): a pathological
+// upstream pumping reasoning fragments beyond maxReasoningBuffer must not
+// grow decoder memory unboundedly — the trace truncates, and the stream
+// still terminates conformly (text block, one thinking block ≤ cap,
+// message_delta, done).
+func TestStreamDecode_ReasoningBufferCapped(t *testing.T) {
+	frag := strings.Repeat("r", 1<<20) // 1 MiB per chunk
+	var b bytes.Buffer
+	b.WriteString("data: {\"id\":\"c1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\n")
+	for i := 0; i < 16; i++ { // 16 MiB total, 8 MiB cap
+		b.WriteString(`data: {"id":"c1","model":"m","choices":[{"index":0,"delta":{"reasoning":"` + frag + `"},"finish_reason":null}]}` + "\n\n")
+	}
+	b.WriteString("data: {\"id\":\"c1\",\"model\":\"m\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+
+	got := testutil.DrainStreamDecoder(t, oa.NewStreamDecoder(bytes.NewReader(b.Bytes())))
+	types := make([]string, len(got))
+	for i, ev := range got {
+		types[i] = string(ev.Type)
+	}
+	if strings.Join(types, ",") != "start,block_start,block_stop,block_start,delta,block_stop,message_delta,done" {
+		t.Errorf("event types = %v", types)
+	}
+	var thinkLen int
+	for _, ev := range got {
+		if ev.Type == ir.Delta && ev.Delta.Kind == ir.DeltaThinking {
+			thinkLen = len(ev.Delta.Text)
+		}
+	}
+	if thinkLen > 8<<20 {
+		t.Errorf("thinking delta = %d bytes, want <= 8 MiB cap", thinkLen)
+	}
+	if thinkLen == 0 {
+		t.Error("capped trace must still flush the buffered prefix")
+	}
+}
+
 func TestEncodeResponse_FromIR(t *testing.T) {
 	resp := ir.Response{
 		ID:    "chatcmpl_test",
