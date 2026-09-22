@@ -433,8 +433,17 @@ export default function Models() {
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                           {CAPABILITY_FLAGS.map((flag) => (
-                            <span key={flag} className="hint" style={{ margin: 0 }}>
-                              {caps[flag] === true ? '✓' : '·'} {flag}
+                            <span key={flag} className="hint" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                              {caps[flag] === true ? (
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" aria-hidden="true">
+                                  <path d="m5 13 4 4 10-10" />
+                                </svg>
+                              ) : (
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true" style={{ opacity: 0.4 }}>
+                                  <path d="M6 12h12" />
+                                </svg>
+                              )}
+                              {flag}
                             </span>
                           ))}
                         </div>
