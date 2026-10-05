@@ -531,3 +531,84 @@ func TestMessages_AuthDisabledNoKeyPath(t *testing.T) {
 		t.Errorf("auth-on keyless status = %d, want 401 (control)", status3)
 	}
 }
+
+// Health-cooldown terminal mapping: a chain whose every provider is in
+// circuit-breaker cooldown answers with the RETRYABLE overload signal,
+// not the non-retryable 404 "model may not exist" that makes Claude
+// Code demand a /model switch. Spec: docs/api-reference.md error model —
+// "upstream overload maps to 529 semantics (overloaded_error)" on the
+// Anthropic surface, 503 on the OpenAI surfaces; the golden
+// anthropic/stream-error fixture correlates overloaded_error with 529.
+func TestMessages_HealthCooldownAnswersOverloadedNot404(t *testing.T) {
+	e := newClaudeEnv(t)
+
+	// Open the breaker: 3 consecutive failures is the configured
+	// threshold (HealthTracker defaults, rules_test.go pins the circuit
+	// behavior — this test pins only the terminal mapping).
+	e.health.ReportFailure("mock-main")
+	e.health.ReportFailure("mock-main")
+	e.health.ReportFailure("mock-main")
+	if !e.health.Cooldown("mock-main") {
+		t.Fatal("precondition: breaker must be open after 3 failures")
+	}
+
+	// Anthropic surface: 529 overloaded_error (A13 envelope).
+	status, body := e.postAnthropic(t, "/v1/messages", string(golden(t, "anthropic/message-request.json")))
+	if status != 529 {
+		t.Fatalf("status = %d, want 529 (body %s)", status, body)
+	}
+	var a13 struct {
+		Type  string `json:"type"`
+		Error struct {
+			Type    string `json:"type"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(body), &a13); err != nil {
+		t.Fatalf("body not A13 JSON: %v (%s)", err, body)
+	}
+	if a13.Type != "error" || a13.Error.Type != "overloaded_error" || a13.Error.Message == "" {
+		t.Errorf("envelope = %+v, want type=error, error.type=overloaded_error, message set", a13)
+	}
+
+	// The request-log row carries the status actually written — the
+	// WebUI must show the retryable failure, not a misleading 404.
+	logs := e.requestLogs(t)
+	if len(logs) != 1 || logs[0].Status != 529 {
+		t.Errorf("request log = %+v, want exactly one row with status 529", logs)
+	}
+}
+
+// Same terminal condition on the OpenAI surfaces: 503 (the documented
+// OpenAI-family status for service unavailability), never 404.
+func TestChat_HealthCooldownAnswers503Not404(t *testing.T) {
+	e := newEnv(t)
+	e.health.ReportFailure("mock-main")
+	e.health.ReportFailure("mock-main")
+	e.health.ReportFailure("mock-main")
+	if !e.health.Cooldown("mock-main") {
+		t.Fatal("precondition: breaker must be open after 3 failures")
+	}
+
+	status, body := e.post(t, "/v1/chat/completions", string(golden(t, "openai/chat-request.json")))
+	if status != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 (body %s)", status, body)
+	}
+	var o10 struct {
+		Error struct {
+			Message string `json:"message"`
+			Type    string `json:"type"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(body), &o10); err != nil {
+		t.Fatalf("body not O10 JSON: %v (%s)", err, body)
+	}
+	if o10.Error.Type == "" || o10.Error.Message == "" {
+		t.Errorf("error = %+v, want type and message set", o10.Error)
+	}
+
+	logs := e.requestLogs(t)
+	if len(logs) != 1 || logs[0].Status != http.StatusServiceUnavailable {
+		t.Errorf("request log = %+v, want exactly one row with status 503", logs)
+	}
+}

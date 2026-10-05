@@ -21,6 +21,8 @@ import (
 // The ServeMux pattern matches the path only, so ?beta=true rides along
 // naturally (C1).
 func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
+	ew := anthropicErrorWriter()
+
 	raw, ok := readBody(w, r)
 	if !ok {
 		return
@@ -40,7 +42,7 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// the compat application builds — one route_trace, never silent.
 	compatTrace := &routing.Trace{}
 	if err := a.applyNonClaudeGate(ctx, req.Model, compatTrace); err != nil {
-		_, _ = a.writeRouteError(w, anthropicErrorWriter(), err)
+		_, _ = a.writeRouteError(w, ew, err)
 		a.writeRequestLog(ctx, keyID, req.Model, "", http.StatusBadRequest, 0,
 			nil, routeTrace(compatTrace), redactedMessage(err))
 		return
@@ -50,7 +52,7 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 	req, applyTrace, err := routing.ApplyCompat(compat, req)
 	if err != nil {
 		// ErrThinkingBlocked → 400 A13 envelope + log row.
-		_, _ = a.writeRouteError(w, anthropicErrorWriter(), err)
+		_, _ = a.writeRouteError(w, ew, err)
 		a.writeRequestLog(ctx, keyID, req.Model, "", http.StatusBadRequest, 0,
 			nil, routeTrace(compatTrace, applyTrace), redactedMessage(err))
 		return
@@ -59,8 +61,8 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 	chain, routerTrace, err := a.router.ResolveChainFor(req.Model,
 		requiredCapabilities(req), routing.WithKeyID(keyID), routing.WithRequestContext(ctx))
 	if err != nil {
-		_, _ = a.writeRouteError(w, anthropicErrorWriter(), err)
-		a.writeRequestLog(ctx, keyID, req.Model, "", mapRouteErrorStatus(err), 0,
+		_, _ = a.writeRouteError(w, ew, err)
+		a.writeRequestLog(ctx, keyID, req.Model, "", ew.errorStatus(err), 0,
 			nil, routeTrace(compatTrace, applyTrace, routerTrace), redactedMessage(err))
 		return
 	}
@@ -80,9 +82,9 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 	resp, execTrace, err := a.executor.Execute(ctx, chain, req)
 	latency := time.Since(start).Milliseconds()
 	if err != nil {
-		_, msg := a.writeRouteError(w, anthropicErrorWriter(), err)
+		_, msg := a.writeRouteError(w, ew, err)
 		a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
-			mapRouteErrorStatus(err), latency, nil,
+			ew.errorStatus(err), latency, nil,
 			routeTrace(compatTrace, applyTrace, routerTrace, resolveTrace, execTrace), msg)
 		return
 	}
@@ -93,7 +95,7 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 	resp.Model = req.Model
 	out, err := anthropic.Codec{}.EncodeResponse(resp)
 	if err != nil {
-		_, msg := a.writeRouteError(w, anthropicErrorWriter(), err)
+		_, msg := a.writeRouteError(w, ew, err)
 		a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
 			http.StatusInternalServerError, latency, nil,
 			routeTrace(compatTrace, applyTrace, routerTrace, resolveTrace, execTrace), msg)
@@ -115,14 +117,16 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 // keep HTTP 200 (the SSE stream already started) and surface as
 // `event: error` with a normalized error type (A13).
 func (a *api) streamMessages(w http.ResponseWriter, r *http.Request, keyID string, req ir.Request, chain []routing.ChainEntry, traces ...*routing.Trace) {
+	ew := anthropicErrorWriter()
+
 	ctx := r.Context()
 
 	start := time.Now()
 	ch, cancel, execTrace, err := a.executor.ExecuteStream(ctx, chain, req)
 	if err != nil {
-		_, msg := a.writeRouteError(w, anthropicErrorWriter(), err)
+		_, msg := a.writeRouteError(w, ew, err)
 		a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
-			mapRouteErrorStatus(err), time.Since(start).Milliseconds(), nil,
+			ew.errorStatus(err), time.Since(start).Milliseconds(), nil,
 			routeTrace(append(traces, execTrace)...), msg)
 		return
 	}
@@ -154,6 +158,8 @@ func (a *api) streamMessages(w http.ResponseWriter, r *http.Request, keyID strin
 // heuristic runs locally with no upstream dispatch, but the request is
 // still observable: a log row with the estimate records it (Analysis E).
 func (a *api) handleCountTokens(w http.ResponseWriter, r *http.Request) {
+	ew := anthropicErrorWriter()
+
 	raw, ok := readBody(w, r)
 	if !ok {
 		return
@@ -161,7 +167,7 @@ func (a *api) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 
 	req, err := anthropic.Codec{}.DecodeRequest(raw)
 	if err != nil {
-		_, msg := a.writeRouteError(w, anthropicErrorWriter(), err)
+		_, msg := a.writeRouteError(w, ew, err)
 		a.writeRequestLog(r.Context(), auth.ClientKeyIDFromContext(r.Context()),
 			"", "", http.StatusBadRequest, 0, nil, nil, msg)
 		return

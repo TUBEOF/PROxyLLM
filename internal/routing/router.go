@@ -276,23 +276,40 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 	// rejection (capability_gap) fails over to the executor's capability
 	// fallback models.
 	out := make([]ChainEntry, 0, len(entries))
+	// healthSkipped tracks whether every filter rejection was a health
+	// cooldown — a chain that is merely cooled down is temporarily
+	// unavailable (retryable, ErrChainOverloaded), unlike a configurational
+	// gap (ErrNoRoute → the surfaces answer the non-retryable 404).
+	healthSkipped := false
+	nonHealthSkipped := false
 	for _, entry := range entries {
 		p, ok := r.lookup(entry)
 		if !ok {
 			trace.add(Event{Type: EventSkipped, ProviderID: entry, Reason: "provider not registered"})
+			nonHealthSkipped = true
 			continue
 		}
 		if missing := missingCapabilities(p.Capabilities(), required); missing != "" {
 			trace.add(Event{Type: EventSkipped, ProviderID: entry, Reason: "capability gap: " + missing})
+			nonHealthSkipped = true
 			continue
 		}
 		if r.health != nil && r.health.Cooldown(entry) {
 			trace.add(Event{Type: EventSkipped, ProviderID: entry, Reason: "health cooldown"})
+			healthSkipped = true
 			continue
 		}
 		out = append(out, ChainEntry{ProviderID: entry, Model: model})
 	}
 	if len(out) == 0 {
+		if healthSkipped && !nonHealthSkipped {
+			// Every candidate was reachable-in-principle but cooled down:
+			// the model exists and is routed, the providers are merely
+			// pausing (circuit breaker). Surfaces answer 529/503 so
+			// clients retry instead of switching models.
+			trace.add(Event{Type: EventRejected, Reason: "all providers in health cooldown", Model: model})
+			return nil, trace, ErrChainOverloaded
+		}
 		trace.add(Event{Type: EventRejected, Reason: "chain empty after capability/health filtering", Model: model})
 		return nil, trace, ErrNoRoute
 	}
@@ -487,3 +504,10 @@ func missingCapabilities(have, want provider.Capabilities) string {
 // ErrNoRoute is the terminal no-route error: no rule matched (or the chain
 // filtered to empty). Never a silent default model.
 var ErrNoRoute = errors.New("routing: no route for model")
+
+// ErrChainOverloaded is the terminal temporarily-unavailable error: the
+// model routed, but every chain provider is in health cooldown (circuit
+// breaker open). Unlike ErrNoRoute this is retryable — surfaces answer
+// 529 (Anthropic) / 503 (OpenAI) so clients back off and retry instead
+// of treating the model as nonexistent.
+var ErrChainOverloaded = errors.New("routing: all chain providers in health cooldown")

@@ -67,22 +67,41 @@ func jsonString(s string) string {
 // errorWriter is the surface-specific error emitter pair.
 type errorWriter struct {
 	write func(w http.ResponseWriter, status int, errType, message string)
+
+	// overloadStatus is the surface's retryable-unavailability mapping
+	// for routing.ErrChainOverloaded (every chain provider in health
+	// cooldown): 529/overloaded_error per A13 on the Anthropic surface,
+	// 503 on the OpenAI surfaces (docs/api-reference.md error model —
+	// "upstream overload maps to 529 semantics (overloaded_error)").
+	// Zero means the surface has no overload mapping (unused).
+	overloadStatus int
+	overloadType   string
 }
 
 // openAIErrorWriter answers O10-shaped bodies.
 func openAIErrorWriter() errorWriter {
-	return errorWriter{write: writeOpenAIError}
+	return errorWriter{
+		write:          writeOpenAIError,
+		overloadStatus: http.StatusServiceUnavailable,
+		overloadType:   "server_error",
+	}
 }
 
 // anthropicErrorWriter answers A13-shaped envelopes.
 func anthropicErrorWriter() errorWriter {
-	return errorWriter{write: writeAnthropicError}
+	return errorWriter{
+		write:          writeAnthropicError,
+		overloadStatus: 529, // Anthropic overload semantics, not a net/http constant
+		overloadType:   "overloaded_error",
+	}
 }
 
 // writeRouteError maps a pipeline error to the wire per §5.3:
 //
 //   - routing.ErrThinkingBlocked → 400, protocol-conform rejection
 //   - routing.ErrNoRoute → 404, the model has no route
+//   - routing.ErrChainOverloaded → the surface's retryable overload
+//     mapping (529 overloaded_error on Anthropic, 503 on OpenAI)
 //   - upstream errors keep their status (429 stays 429 O10); transport
 //     failures (status 0) become 502 bad gateway; exhausted chains fall
 //     back to the last upstream classification, else 500
@@ -90,9 +109,25 @@ func anthropicErrorWriter() errorWriter {
 // It returns the status written (for the request-log row) and the
 // redacted message.
 func (a *api) writeRouteError(w http.ResponseWriter, ew errorWriter, err error) (int, string) {
+	if errors.Is(err, routing.ErrChainOverloaded) && ew.overloadStatus > 0 {
+		const msg = "All providers for this model are in health cooldown (circuit breaker open). Retry shortly."
+		ew.write(w, ew.overloadStatus, ew.overloadType, msg)
+		return ew.overloadStatus, msg
+	}
 	status, errType, message := mapRouteError(err)
 	ew.write(w, status, errType, message)
 	return status, message
+}
+
+// errorStatus maps a pipeline error to its HTTP status without writing
+// the body (the request-log row needs the status even when the response
+// was already served). Mirrors writeRouteError, surface-aware for the
+// overload mapping so the log row never disagrees with the wire status.
+func (ew errorWriter) errorStatus(err error) int {
+	if errors.Is(err, routing.ErrChainOverloaded) && ew.overloadStatus > 0 {
+		return ew.overloadStatus
+	}
+	return mapRouteErrorStatus(err)
 }
 
 // mapRouteErrorStatus maps a pipeline error to its HTTP status without

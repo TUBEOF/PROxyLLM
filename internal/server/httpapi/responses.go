@@ -17,6 +17,8 @@ import (
 
 // handleResponses serves POST /v1/responses (streaming + non-streaming).
 func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
+	ew := openAIErrorWriter()
+
 	raw, ok := readBody(w, r)
 	if !ok {
 		return
@@ -34,7 +36,7 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 	compat := a.compatFor(ctx, req.Model)
 	req, compatTrace, err := routing.ApplyCompat(compat, req)
 	if err != nil {
-		_, _ = a.writeRouteError(w, openAIErrorWriter(), err)
+		_, _ = a.writeRouteError(w, ew, err)
 		a.writeRequestLog(ctx, keyID, req.Model, "", http.StatusBadRequest, 0,
 			nil, routeTrace(compatTrace), redactedMessage(err))
 		return
@@ -43,8 +45,8 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 	chain, routerTrace, err := a.router.ResolveChainFor(req.Model,
 		requiredCapabilities(req), routing.WithKeyID(keyID), routing.WithRequestContext(ctx))
 	if err != nil {
-		_, _ = a.writeRouteError(w, openAIErrorWriter(), err)
-		a.writeRequestLog(ctx, keyID, req.Model, "", mapRouteErrorStatus(err), 0,
+		_, _ = a.writeRouteError(w, ew, err)
+		a.writeRequestLog(ctx, keyID, req.Model, "", ew.errorStatus(err), 0,
 			nil, routeTrace(compatTrace, routerTrace), redactedMessage(err))
 		return
 	}
@@ -63,9 +65,9 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 	resp, execTrace, err := a.executor.Execute(ctx, chain, req)
 	latency := time.Since(start).Milliseconds()
 	if err != nil {
-		_, msg := a.writeRouteError(w, openAIErrorWriter(), err)
+		_, msg := a.writeRouteError(w, ew, err)
 		a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
-			mapRouteErrorStatus(err), latency, nil,
+			ew.errorStatus(err), latency, nil,
 			routeTrace(compatTrace, routerTrace, resolveTrace, execTrace), msg)
 		return
 	}
@@ -74,7 +76,7 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 	resp.Model = req.Model
 	out, err := openai.ResponsesCodec{}.EncodeResponse(resp)
 	if err != nil {
-		_, msg := a.writeRouteError(w, openAIErrorWriter(), err)
+		_, msg := a.writeRouteError(w, ew, err)
 		a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
 			http.StatusInternalServerError, latency, nil,
 			routeTrace(compatTrace, routerTrace, resolveTrace, execTrace), msg)
@@ -95,14 +97,16 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 // (O7: response.created → output_text.delta / function_call_arguments
 // deltas → response.completed carrying the terminal usage).
 func (a *api) streamResponses(w http.ResponseWriter, r *http.Request, keyID string, req ir.Request, chain []routing.ChainEntry, traces ...*routing.Trace) {
+	ew := openAIErrorWriter()
+
 	ctx := r.Context()
 
 	start := time.Now()
 	ch, cancel, execTrace, err := a.executor.ExecuteStream(ctx, chain, req)
 	if err != nil {
-		_, msg := a.writeRouteError(w, openAIErrorWriter(), err)
+		_, msg := a.writeRouteError(w, ew, err)
 		a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
-			mapRouteErrorStatus(err), time.Since(start).Milliseconds(), nil,
+			ew.errorStatus(err), time.Since(start).Milliseconds(), nil,
 			routeTrace(append(traces, execTrace)...), msg)
 		return
 	}

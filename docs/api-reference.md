@@ -55,6 +55,12 @@ Protocol-conform per surface:
   matches the model AND no models-table row exists (ADR-011). A listed
   model with no rule routes implicitly to its row's provider — traced as
   `implicit_route`.
+- **All providers in health cooldown (529/503)**: when the model routed
+  but every chain provider is in circuit-breaker cooldown, the Anthropic
+  surface answers `529` `overloaded_error` and the OpenAI surfaces answer
+  `503` — both retryable, unlike the 404 above. The route_trace records
+  the per-provider `skipped` (health cooldown) events and a terminal
+  `rejected` event naming the cooldown as the cause.
 
 ## Admin API (WebUI backend, session-authenticated)
 
