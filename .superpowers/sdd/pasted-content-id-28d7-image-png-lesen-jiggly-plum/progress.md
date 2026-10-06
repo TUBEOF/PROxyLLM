@@ -33,3 +33,4 @@ Final: minor (deferred): M1 between-round ctx check (fail-fast preserved), M2 do
 Final: Ruling (reviewer declined): ollama.com live stream:true behavior unverified — needs PROXYLLM_SMOKE run; Anthropic encoder anchor+delta doubling for synthesized ServerToolUse — flagged for a follow-up fixture
 Post-fix suite: 21 pkgs green + -race + vet + lint (7 pre-existing main findings, 0 new) + webui typecheck/lint/build
 All 9 tasks complete. Fix-pass commit: 55f1e49
+PR #1 CI: 4 red jobs on 6aa1ad6 — visual regression EXPECTED per doctrine (baselines regenerate in CI after merge to main); gofmt fixed (2 EOF newlines); gitleaks 403 was a permissions bug (pull-requests: read granted) — commit f45529c pushed 2026-10-06.
