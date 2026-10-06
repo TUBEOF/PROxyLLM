@@ -214,6 +214,7 @@ func (e *Executor) walkChain(ctx context.Context, chain []ChainEntry, req ir.Req
 			status, code, _ := AsUpstreamError(err)
 			trace.Failed(entry.ProviderID, c, status, code, latency)
 			e.reportFailure(entry.ProviderID)
+			e.reportQuota(entry.ProviderID, err, c)
 			if c.Class != ClassCapabilityGap {
 				gapOnly = false
 			}
@@ -480,6 +481,7 @@ func (e *Executor) walkChainStream(ctx context.Context, chain []ChainEntry, req 
 		status, code, _ := AsUpstreamError(err)
 		trace.Failed(entry.ProviderID, c, status, code, latency)
 		e.reportFailure(entry.ProviderID)
+		e.reportQuota(entry.ProviderID, err, c)
 		if c.Class != ClassCapabilityGap {
 			gapOnly = false
 		}
@@ -571,6 +573,22 @@ func (e *Executor) reportFailure(pid string) {
 	if e.cfg.Health != nil {
 		e.cfg.Health.ReportFailure(pid)
 	}
+}
+
+// reportQuota marks a class-insufficient_quota rejection as a dedicated
+// account cooldown (2026-10-06): the next request must not re-pay the
+// exhaustion; the account re-probes at the announced reset window (the
+// upstream Retry-After when carried) or hourly.
+func (e *Executor) reportQuota(pid string, err error, c Classification) {
+	if e.cfg.Health == nil || c.Class != ClassInsufficientQuota {
+		return
+	}
+	var until time.Time
+	var ue *provider.UpstreamError
+	if errors.As(err, &ue) && ue.RetryAfter > 0 {
+		until = e.cfg.now().Add(ue.RetryAfter)
+	}
+	e.cfg.Health.ReportQuotaExhausted(pid, until)
 }
 
 // withModel stamps the chain entry's target model onto the request (the
