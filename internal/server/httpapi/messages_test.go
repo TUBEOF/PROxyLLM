@@ -612,3 +612,46 @@ func TestChat_HealthCooldownAnswers503Not404(t *testing.T) {
 		t.Errorf("request log = %+v, want exactly one row with status 503", logs)
 	}
 }
+
+// Cross-surface regression for the Ollama "invalid message content
+// type: <nil>" 400: an Anthropic-surface conversation history carrying
+// a tool_use-only assistant turn (the standard agent-loop shape Claude
+// Code sends back) must reach the upstream OpenAI-wire body with
+// "content": "" — never "content": null, which Ollama's
+// OpenAI-compatibility endpoint rejects with HTTP 400 (ollama
+// openai/openai.go, "invalid message content type: %T" on nil;
+// mnfst/manifest#2721 reproduces it on ollama-cloud).
+func TestMessages_ToolOnlyHistoryEncodesEmptyStringContent(t *testing.T) {
+	e := newClaudeEnv(t)
+	e.mock.Enqueue(mockJSON(t, http.StatusOK, string(golden(t, "openai/chat-response.json"))))
+
+	// Anthropic history: user asks, assistant answers with a tool_use
+	// block ONLY (no text block) — exactly the shape Claude Code replays
+	// in every agent loop after a tool call.
+	body := `{
+		"model": "claude-sonnet-5",
+		"max_tokens": 1024,
+		"messages": [
+			{"role": "user", "content": "Weather in SF?"},
+			{"role": "assistant", "content": [
+				{"type": "tool_use", "id": "toolu_1", "name": "get_weather", "input": {"location": "SF"}}
+			]}
+		],
+		"tools": [{"name": "get_weather", "description": "Get weather", "input_schema": {"type": "object"}}]
+	}`
+	if _, respBody := e.postAnthropic(t, "/v1/messages", body); respBody == "" {
+		t.Fatal("empty client response")
+	}
+
+	reqs := e.mock.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("upstream saw %d requests, want 1", len(reqs))
+	}
+	up := reqs[0].Body
+	if strings.Contains(up, `"content":null`) {
+		t.Errorf("upstream body carries \"content\":null — Ollama's compat endpoint answers 400 invalid message content type: <nil>: %s", up)
+	}
+	if !strings.Contains(up, `"content":""`) {
+		t.Errorf("upstream body must carry empty-string content for the tool-only assistant turn: %s", up)
+	}
+}

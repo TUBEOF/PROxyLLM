@@ -438,7 +438,19 @@ func contentFromParts(parts []ir.Part) wireContent {
 	}
 	if hasText {
 		c.Str = &text
+		return c
 	}
+	// No encodable content (e.g. an assistant turn carrying only tool
+	// calls — the standard agent-loop history shape): emit the empty
+	// string, never null. Ollama's OpenAI-compatibility endpoint rejects
+	// null content with HTTP 400 "invalid message content type: <nil>"
+	// (ollama openai/openai.go: "invalid message content type: %T" on
+	// the nil interface; mnfst/manifest#2721 reproduces it on
+	// ollama-cloud, magnitudedev/magnitude#42 locally). Genuine OpenAI
+	// accepts both, and partsFromContent decodes "" and null to the
+	// same zero parts, so the round trip is invariant.
+	empty := ""
+	c.Str = &empty
 	return c
 }
 

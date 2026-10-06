@@ -398,3 +398,53 @@ func TestEncodeRequest_FromIR(t *testing.T) {
 		t.Errorf("round trip tools = %+v", got.Tools)
 	}
 }
+
+// TestEncodeRequest_ToolCallOnlyAssistantEncodesEmptyStringContent: an
+// assistant turn carrying only a tool call is the standard shape of
+// every agent loop (Claude Code sends tool_use-only assistant turns
+// back as history). The encoded wire body MUST carry "content": "" —
+// never "content": null: Ollama's OpenAI-compatible endpoint rejects
+// null content with HTTP 400 "invalid message content type: <nil>"
+// (ollama/openai/openai.go, fmt "invalid message content type: %T" on
+// the nil interface; repro: magnitudedev/magnitude#42 table row
+// {"role":"assistant","content":null} → 400, and mnfst/manifest#2721
+// on ollama-cloud). Empty string decodes to zero parts exactly like
+// null, so the round trip is invariant (partsFromContent skips "").
+func TestEncodeRequest_ToolCallOnlyAssistantEncodesEmptyStringContent(t *testing.T) {
+	req := ir.Request{
+		Model: "glm-5.3",
+		Messages: []ir.Message{
+			{Role: ir.RoleUser, Parts: []ir.Part{ir.TextPart{Text: "Weather in SF?"}}},
+			{Role: ir.RoleAssistant, Parts: []ir.Part{
+				ir.ToolCallPart{ID: "toolu_1", Name: "get_weather", Input: []byte(`{"location":"SF"}`)},
+			}},
+		},
+	}
+	raw, err := oa.Codec{}.EncodeRequest(req)
+	if err != nil {
+		t.Fatalf("EncodeRequest: %v", err)
+	}
+	body := string(raw)
+	if strings.Contains(body, `"content":null`) {
+		t.Errorf("encoded body contains \"content\":null — Ollama's OpenAI-compat endpoint answers 400 invalid message content type: <nil>: %s", body)
+	}
+	if !strings.Contains(body, `"content":""`) {
+		t.Errorf("encoded body must carry empty-string content for the tool-call-only assistant turn: %s", body)
+	}
+
+	// Round trip invariance: "" and null both decode to zero parts.
+	got, err := oa.Codec{}.DecodeRequest(raw)
+	if err != nil {
+		t.Fatalf("DecodeRequest(round trip): %v", err)
+	}
+	if len(got.Messages) != 2 {
+		t.Fatalf("round trip messages = %d, want 2", len(got.Messages))
+	}
+	assistant := got.Messages[1]
+	if assistant.Role != ir.RoleAssistant || len(assistant.Parts) != 1 {
+		t.Errorf("round trip assistant = %+v, want role assistant with the 1 tool call part", assistant)
+	}
+	if tc, ok := assistant.Parts[0].(ir.ToolCallPart); !ok || tc.Name != "get_weather" || tc.ID != "toolu_1" {
+		t.Errorf("round trip tool call = %+v", assistant.Parts[0])
+	}
+}

@@ -21,6 +21,7 @@ application is never silent.
 | Image | `image_url` part (URL or data: URI) | `input_image` item | `image` block (URL or base64) | base64 images |
 | Tool definitions | `tools[].function` | function items | `tools[]` | `tools` |
 | Tool call | `tool_calls[]` (index-assembled deltas) | function-call items | `tool_use` blocks | `tool_calls` |
+| Empty content (tool-call-only assistant turn) | `content: ""` — never `null` (Ollama's OpenAI-compat endpoint rejects null with 400 `invalid message content type: <nil>`; both decode to zero parts) | field omitted | blocks (never null) | string content (never null) |
 | Tool result | role `tool` message | `function_call_output` item | `tool_result` block | tool response role |
 | Extended thinking | — | `reasoning` + `encrypted_content` | `thinking` param + thinking blocks (signature opaque) | `reasoning_effort` |
 | Cache markers | n/a | n/a | `cache_control` (forwarded verbatim on Anthropic→Anthropic only) | n/a |
