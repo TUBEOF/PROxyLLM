@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { apiCall } from '../api';
 import type { LogsResponse, RequestLog } from '../types';
-import { EmptyState, ErrorNote, PageHead, useAdminData } from '../hooks';
+import { EmptyState, ErrorNote, PageHead, useLiveData } from '../hooks';
 import { Drawer } from '../components/Overlays';
 import { IconChevronLeft, IconChevronRight } from '../icons';
 
@@ -11,6 +11,11 @@ import { IconChevronLeft, IconChevronRight } from '../icons';
 // limit/offset contract; `total` from the envelope drives the pager.
 
 const PAGE_SIZE = 50;
+
+// POLL_MS is the live-update poll interval (2026-10-06): the page refreshes
+// itself while mounted — no manual reload button anymore (a manual Refresh
+// stays as an escape hatch).
+const POLL_MS = 4000;
 
 function fmtTime(ts: number): string {
   const d = new Date(ts * 1000);
@@ -27,9 +32,10 @@ export default function Logs() {
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<RequestLog | null>(null);
 
-  const { data, loading, error, reload } = useAdminData<LogsResponse>(
+  const { data, loading, error, reload, updatedAt } = useLiveData<LogsResponse>(
     (signal) =>
       apiCall<LogsResponse>('GET', `/api/admin/logs?limit=${PAGE_SIZE}&offset=${offset}`, undefined, signal),
+    POLL_MS,
     [offset],
   );
 
@@ -49,9 +55,12 @@ export default function Logs() {
         title="Logs"
         sub="Every request with its routing trace — fallback transitions and compatibility degradations are always visible here."
         actions={
-          <button type="button" className="btn btn-ghost btn-sm" onClick={reload}>
-            Refresh
-          </button>
+          <>
+            {updatedAt !== null && <span className="badge info">live</span>}
+            <button type="button" className="btn btn-ghost btn-sm" onClick={reload}>
+              Refresh
+            </button>
+          </>
         }
       />
       <div className="canvas">

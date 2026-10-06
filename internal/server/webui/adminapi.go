@@ -188,6 +188,10 @@ func (a *AdminAPI) Handler() http.Handler {
 	mux.Handle("GET /api/admin/accounts/usage", a.sessions.RequireAdmin(http.HandlerFunc(a.getAccountUsage)))
 	mux.Handle("POST /api/admin/accounts/usage/refresh/{id...}", a.sessions.RequireAdmin(http.HandlerFunc(a.accountsUsageRefresh)))
 
+	// Live updates (2026-10-06): the Dashboard's assembled snapshot —
+	// one GET per poll instead of the page's multi-request mount.
+	mux.Handle("GET /api/admin/overview", a.sessions.RequireAdmin(http.HandlerFunc(a.getOverview)))
+
 	mux.Handle("GET /api/admin/settings", a.sessions.RequireAdmin(http.HandlerFunc(a.listSettings)))
 	mux.Handle("PUT /api/admin/settings", a.sessions.RequireAdmin(http.HandlerFunc(a.putSetting)))
 	mux.Handle("DELETE /api/admin/settings/{key}", a.sessions.RequireAdmin(http.HandlerFunc(a.deleteSetting)))
@@ -1132,17 +1136,41 @@ func (a *AdminAPI) getLogs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid until")
 		return
 	}
-	logs, total, err := a.store.ListRequestLogsPage(r.Context(), storage.RequestLogFilter{
+	filter := storage.RequestLogFilter{
 		Model:      q.Get("model"),
 		ProviderID: q.Get("provider_id"),
 		Status:     status,
 		Since:      int64(since),
 		Until:      int64(until),
-	}, limit, offset)
+	}
+	// Live-feed cursor (2026-10-06): after=<rowid> returns rows newer than
+	// that id (newest-first, limit-capped) — the incremental poll the Logs
+	// page uses; total is meaningless then and omitted. Additive field:
+	// offset paging and the cursor can coexist.
+	if afterStr := q.Get("after"); afterStr != "" {
+		after, err := strconv.ParseInt(afterStr, 10, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid after (row id)")
+			return
+		}
+		logs, err := a.store.ListRequestLogsAfter(r.Context(), filter, limit, after)
+		if err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"logs": logsToDTO(logs)})
+		return
+	}
+	logs, total, err := a.store.ListRequestLogsPage(r.Context(), filter, limit, offset)
 	if err != nil {
 		writeStoreError(w, err)
 		return
 	}
+	writeJSON(w, http.StatusOK, map[string]any{"logs": logsToDTO(logs), "total": total})
+}
+
+// logsToDTO projects request-log rows (the shared shape of both reads).
+func logsToDTO(logs []storage.RequestLog) []logDTO {
 	out := make([]logDTO, 0, len(logs))
 	for _, l := range logs {
 		out = append(out, logDTO{
@@ -1157,7 +1185,7 @@ func (a *AdminAPI) getLogs(w http.ResponseWriter, r *http.Request) {
 			RouteTrace:  json.RawMessage(l.RouteTrace),
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"logs": out, "total": total})
+	return out
 }
 
 // ---------------------------------------------------------------------------

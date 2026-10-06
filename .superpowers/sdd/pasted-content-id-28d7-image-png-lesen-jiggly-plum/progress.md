@@ -17,3 +17,4 @@ Task 2 (Step 2 web-tool fallback KVs consumed): complete (commit 92073cf, tests:
 Task 3 (Step 3 stream emulation): complete (commit e897420, tests: go test ./internal/routing/ + -race routing/translate/server/provider -> all pass; TestExecuteStream_StreamEmulatesWebTools + StreamEmulationRespectsCancel RED->GREEN)
 Task 4 (Step 4 quota cooldown): complete (commit 9428633, tests: go test ./internal/routing/ + -race → pass; TestHealthTracker_Quota* + TestExecutor_QuotaMarksAccount RED→GREEN)
 Task 5 (Step 5 usage backend): complete (commit 464d47c, tests: storage+server+webui+observability all pass; parser fixture RED→GREEN, KV round-trip, admin endpoints, redactor cookie shapes)
+Task 5 (Step 5 usage backend): complete (commit 8812f40, tests: storage+server+webui+observability pass; parser fixture + KV round-trip + admin endpoints + redactor)

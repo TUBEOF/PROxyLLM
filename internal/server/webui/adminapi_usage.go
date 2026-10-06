@@ -159,3 +159,64 @@ func (a *AdminAPI) accountsUsageRefresh(w http.ResponseWriter, r *http.Request) 
 func (a *AdminAPI) refreshAccountUsage(ctx context.Context, accountID string) RefreshOutcome {
 	return a.prober(ctx, accountID, a.store)
 }
+
+// overviewDTO is the Dashboard's single-poll snapshot (2026-10-06 live
+// updates): the trailing 14 UTC days of usage plus today's aggregate —
+// one GET replaces the Overview page's multi-request mount and makes the
+// poll trivial.
+type overviewDTO struct {
+	GeneratedAt int64            `json:"generated_at"`
+	Usage       []usageDTO       `json:"usage"`
+	Today       overviewTodayDTO `json:"today"`
+}
+
+type overviewTodayDTO struct {
+	Requests  int64 `json:"requests"`
+	Failures  int64 `json:"failures"`
+	InputTok  int64 `json:"input_tokens"`
+	OutputTok int64 `json:"output_tokens"`
+}
+
+// overviewWindowDays is the snapshot's trailing window.
+const overviewWindowDays = 14
+
+// getOverview serves GET /api/admin/overview — the assembled dashboard
+// snapshot on the injected clock (window anchoring is deterministic for
+// the fixturesrv).
+func (a *AdminAPI) getOverview(w http.ResponseWriter, r *http.Request) {
+	today := time.Unix(a.now(), 0).UTC()
+	to := today.Format("2006-01-02")
+	from := today.AddDate(0, 0, -(overviewWindowDays - 1)).Format("2006-01-02")
+	rows, err := a.store.QueryUsageDaily(r.Context(), from, to)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	usage := make([]usageDTO, 0, len(rows))
+	var td overviewTodayDTO
+	todayStr := to
+	for _, u := range rows {
+		usage = append(usage, usageDTO{
+			Day:             u.Day,
+			ClientKeyID:     u.ClientKeyID,
+			ProviderID:      u.ProviderID,
+			Model:           u.Model,
+			InputTokens:     u.InputTokens,
+			OutputTokens:    u.OutputTokens,
+			CacheReadTokens: u.CacheReadTokens,
+			Requests:        u.Requests,
+			Failures:        u.Failures,
+		})
+		if u.Day == todayStr {
+			td.Requests += u.Requests
+			td.Failures += u.Failures
+			td.InputTok += u.InputTokens
+			td.OutputTok += u.OutputTokens
+		}
+	}
+	writeJSON(w, http.StatusOK, overviewDTO{
+		GeneratedAt: a.now(),
+		Usage:       usage,
+		Today:       td,
+	})
+}

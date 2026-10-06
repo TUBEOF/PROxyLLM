@@ -138,4 +138,112 @@ export function fmtDay(ts: number): string {
   return new Date(ts * 1000).toISOString().slice(0, 10);
 }
 
+// useLiveData polls a GET endpoint while the page is mounted (2026-10-06
+// live updates): a fixed interval, paused while the tab is hidden (the
+// poll resumes on visibility), in-flight aborted on unmount. Same 401 →
+// session-loss path as useAdminData, same DataState contract — live pages
+// use this instead of useAdminData. Transient poll errors surface in the
+// error state but never stop the loop. `updatedAt` feeds the page's live
+// badge. Deterministic in e2e: the poll interval is the caller's constant
+// and the fetcher the fixturesrv's fixed snapshot — no wall clock in the
+// rendering.
+export function useLiveData<T>(fetcher: Refetch<T>, intervalMs: number, deps: unknown[] = []): DataState<T> & { updatedAt: number | null } {
+  const { onSessionLost } = useAuth();
+  const [data, setData] = useState<T | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<number | null>(null);
+  const [tick, setTick] = useState(0);
+  const fetcherRef = useRef(fetcher);
+  fetcherRef.current = fetcher;
+  const sessionLostRef = useRef(onSessionLost);
+  sessionLostRef.current = onSessionLost;
+
+  const apply = useCallback((result: T) => {
+    setData(result);
+    setLoading(false);
+    setError(null);
+    setUpdatedAt(Date.now());
+  }, []);
+
+  // Manual (deps/tick) load — the same effect useAdminData runs.
+  useEffect(() => {
+    const controller = new AbortController();
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetcherRef.current(controller.signal)
+      .then((result) => {
+        if (!cancelled) apply(result);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        if (err instanceof ApiError && err.status === 401) {
+          sessionLostRef.current();
+          return;
+        }
+        setError(err instanceof Error ? err.message : 'Request failed');
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deps are the caller's reload triggers + tick
+  }, [tick, ...deps]);
+
+  // The poll loop: a fixed interval while mounted; a hidden tab pauses,
+  // a visible one resumes immediately; failures never stop the loop
+  // (transient log contention etc.); the 401 path is the session-loss one.
+  useEffect(() => {
+    if (intervalMs <= 0) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let inFlight: AbortController | null = null;
+    const poll = () => {
+      if (stopped || document.hidden) return;
+      inFlight = new AbortController();
+      fetcherRef.current(inFlight.signal)
+        .then((result) => {
+          if (!stopped) apply(result);
+        })
+        .catch((err: unknown) => {
+          if (stopped) return;
+          if (err instanceof ApiError && err.status === 401) {
+            sessionLostRef.current();
+            return;
+          }
+          if (err instanceof Error && err.name !== 'AbortError') {
+            setError(err.message);
+          }
+        })
+        .finally(() => {
+          inFlight = null;
+        });
+    };
+    const schedule = () => {
+      if (stopped) return;
+      timer = setTimeout(() => {
+        poll();
+        schedule();
+      }, intervalMs);
+    };
+    const onVisible = () => {
+      if (!document.hidden) poll();
+    };
+    schedule();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      stopped = true;
+      if (timer !== null) clearTimeout(timer);
+      if (inFlight !== null) inFlight.abort();
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intervalMs, apply, ...deps, tick]);
+
+  const reload = useCallback(() => setTick((t) => t + 1), []);
+  return { data, loading, error, reload, updatedAt };
+}
+
 export { apiCall };
