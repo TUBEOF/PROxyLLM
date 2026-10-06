@@ -22,12 +22,11 @@ make run
 go test ./internal/translate/...
 go test ./internal/routing -run TestRouterChainResolution -v
 
-# Local Windows toolchain (no make/gcc on this machine): run the underlying
-# commands directly — gofmt/vet/go test directly, npm scripts in webui/,
-# golangci-lint at $USERPROFILE/go/bin/golangci-lint.exe. `go test -race`
-# cannot run locally (no gcc for CGO); the CI gate covers it.
+# Local Linux toolchain (Ubuntu 26.04): make/gcc are available, so the
+# targets above run as-is; golangci-lint is at $(go env GOPATH)/bin/golangci-lint.
+# `go test -race` works locally; the CI gate additionally enforces it.
 
-# Streaming-related changes: -race must pass (CI gate; needs CGO+gcc locally)
+# Streaming-related changes: -race must pass (locally and as the CI gate)
 make test-race
 
 # Deterministic assemblies: the visual-regression fixture server
@@ -42,7 +41,17 @@ PROXYLLM_SMOKE=1 go test ./internal/smoke/...
 make webui-install webui-build   # npm ci && npm run build, then `make build` to embed
 make webui-lint webui-typecheck
 
-# Visual regression (Playwright) — baselines captured in CI only, never locally
+# Visual regression (Playwright) — baselines captured in CI only, never locally.
+# Local one-time setup (Ubuntu 26.04 is newer than Playwright 1.55 supports):
+#   PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install chromium webkit
+#   # if the download stalls during extraction, unzip manually:
+#   unzip /tmp/playwright-download-<browser>-ubuntu24.04-x64-1187.zip \
+#     -d ~/.cache/ms-playwright/<browser>-1187
+# Build the fixture server first (the webServer config expects it):
+#   go build -o webui/e2e/fixturesrv-bin ./webui/e2e/fixturesrv
+# Locally green by design: the assertion-only suite (no baselines involved):
+cd webui && npx playwright test -c playwright.config.ts --project=desktop-chrome e2e/design-rules.spec.ts
+# Full screenshot suites (fail locally by design — baselines are CI-rendered):
 cd webui && npx playwright test -c playwright.config.ts         # seeded
 cd webui && npx playwright test -c playwright.empty.config.ts   # empty states
 ```
