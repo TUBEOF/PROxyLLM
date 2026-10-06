@@ -81,6 +81,33 @@ restart:
 | `model_sync_interval_hours` | integer ≥ 1 (default 24) | Sync cadence; effective at the next tick without restart |
 | `model_sync_state` | JSON (read-only — written by the sync) | Last-run summary: per-provider added/updated/removed counts and skip reasons; rendered on the Models page |
 
+### Context & capability auto-detection (2026-10-06)
+
+For Ollama Cloud accounts, the model sync enriches each imported model
+by querying the registry's per-model facts endpoint (`POST /api/show`,
+verified live 2026-10-06). Detection populates:
+
+- **`context_window`** in the model's compat blob — from the endpoint's
+  `model_info` `<arch>.context_length` (e.g. `glm5_next.context_length:
+  1048576` for `glm-5.3-flash`; the arch prefix varies per model family).
+  Routing's context-window capability filtering uses the detected value
+  instead of assuming the default window.
+- **Capabilities** (`tools`, `vision`, `thinking`) in the model's
+  capabilities blob, from the endpoint's `capabilities` list.
+
+The detection is per-model best-effort: a failed or unknown-model probe
+imports the model with zero detected facts and never fails the sync
+run. Operator settings always win — the merge only fills EMPTY
+capabilities blobs and compat blobs without a non-zero `context_window`
+pin, and manual-origin rows are never touched (ADR-010 operator-edit
+survival).
+
+Claude Code appends the context-window marker `[1m]`/`[1M]` to model
+names to declare its 1M-context override (`glm-5.3-flash[1M]`). The
+marker is a client-side hint, never part of the model identity: routing
+strips it and dispatches the base model — recorded in the request's
+`route_trace` as a `context_override` event (schema version 6).
+
 The provider-type settings (`provider_type_settings`, ADR-009) ride the
 same KV: one JSON object keyed by provider type holding the type's shared
 fields (e.g. the codex issuer). Account-level config fields override them;

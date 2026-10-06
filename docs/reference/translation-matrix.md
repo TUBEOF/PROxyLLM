@@ -23,6 +23,7 @@ application is never silent.
 | Tool call | `tool_calls[]` (index-assembled deltas) | function-call items | `tool_use` blocks | `tool_calls` |
 | Empty content (tool-call-only assistant turn) | `content: ""` — never `null` (Ollama's OpenAI-compat endpoint rejects null with 400 `invalid message content type: <nil>`; both decode to zero parts) | field omitted | blocks (never null) | string content (never null) |
 | role `system` message inside `messages` | encoded as a system-role message carrying its text — never falls through the role switch leaving `content: null` (same Ollama 400; Claude Code appends one for hook output / injected reminders) | system-role input item | kept verbatim | system role |
+| Context-window marker `[1m]`/`[1M]` on the model name (Claude Code's 1M override, e.g. `glm-5.3-flash[1M]`) | stripped at routing (`context_override` trace event, route_trace schema v6) — the base model routes and dispatches; the marker is never part of the model identity, so operators express matchers with the base name | input item carries the base model | base model | base model |
 | Tool result | role `tool` message | `function_call_output` item | `tool_result` block | tool response role |
 | Extended thinking | — | `reasoning` + `encrypted_content` | `thinking` param + thinking blocks (signature opaque) | `reasoning_effort` |
 | Cache markers | n/a | n/a | `cache_control` (forwarded verbatim on Anthropic→Anthropic only) | n/a |
