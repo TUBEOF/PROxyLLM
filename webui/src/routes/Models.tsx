@@ -44,7 +44,7 @@ const DEFAULT_COMPAT: CompatForm = {
   cache_control: 'drop',
 };
 
-const CAPABILITY_FLAGS = ['streaming', 'vision', 'web_search', 'web_fetch', 'code_execution'] as const;
+const CAPABILITY_FLAGS = ['streaming', 'tools', 'vision', 'thinking', 'web_search', 'web_fetch', 'code_execution'] as const;
 
 // Read the raw compat blob defensively: unknown/missing fields fall back
 // to defaults instead of crashing the editor (the blob round-trips through
