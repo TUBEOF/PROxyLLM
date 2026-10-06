@@ -11,10 +11,15 @@
 package ollamacloud
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
+	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/tubeof/proxyllm/internal/httpguard"
 	"github.com/tubeof/proxyllm/internal/provider"
@@ -116,9 +121,83 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error)
 			continue
 		}
 		seen[m.ID] = struct{}{}
-		out = append(out, provider.ModelInfo{Name: m.ID})
+		info := provider.ModelInfo{Name: m.ID}
+		// Per-model enrichment, best-effort: a failed /api/show probe
+		// leaves the zero-value facts — the model still imports (never a
+		// sync-run failure).
+		if shown, err := p.showModel(ctx, m.ID); err == nil {
+			info.ContextLength = shown.contextLength()
+			info.Thinking = shown.hasCapability("thinking")
+			info.Tools = shown.hasCapability("tools")
+			info.Vision = shown.hasCapability("vision")
+		}
+		out = append(out, info)
 	}
 	return out, nil
+}
+
+// showModel POSTs /api/show {"model": id} — the Ollama Cloud registry's
+// per-model facts endpoint (verified live 2026-10-06; unauthenticated
+// calls work, but the Bearer rides anyway for hosts that gate it).
+func (p *Provider) showModel(ctx context.Context, model string) (showResponse, error) {
+	body, err := json.Marshal(map[string]string{"model": model})
+	if err != nil {
+		return showResponse{}, fmt.Errorf("ollamacloud: encode /api/show request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.client.BaseURL+"/api/show", bytes.NewReader(body))
+	if err != nil {
+		return showResponse{}, fmt.Errorf("ollamacloud: build /api/show request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+p.client.APIKey)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := p.client.HTTP.Do(req)
+	if err != nil {
+		return showResponse{}, fmt.Errorf("ollamacloud: /api/show: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return showResponse{}, fmt.Errorf("ollamacloud: read /api/show body: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return showResponse{}, fmt.Errorf("ollamacloud: /api/show %s: HTTP %d", model, resp.StatusCode)
+	}
+	var out showResponse
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return showResponse{}, fmt.Errorf("ollamacloud: decode /api/show body: %w", err)
+	}
+	return out, nil
+}
+
+// showResponse is the /api/show subset relevant to detection. The
+// context_length key's arch prefix varies per model family
+// ("kimi-k2.context_length", "glm5_next.context_length", …) — it is
+// parsed from ANY model_info key with that suffix. Capability name
+// strings ("completion", "thinking", "tools", "vision") are Ollama's
+// registry wire facts, mapped below like other vendor-specific mappings.
+type showResponse struct {
+	ModelInfo    map[string]int64 `json:"model_info"`
+	Capabilities []string         `json:"capabilities"`
+	Error        string           `json:"error"`
+}
+
+// contextLength returns any "<arch>.context_length" value from model_info.
+func (s showResponse) contextLength() int {
+	for k, v := range s.ModelInfo {
+		if v > 0 && strings.HasSuffix(k, "context_length") {
+			if v > math.MaxInt32 {
+				return math.MaxInt32
+			}
+			return int(v)
+		}
+	}
+	return 0
+}
+
+// hasCapability reports whether the capabilities list names cap.
+func (s showResponse) hasCapability(cap string) bool {
+	return slices.Contains(s.Capabilities, cap)
 }
 
 // RefreshCredentials is a no-op: Ollama Cloud authenticates with a static

@@ -161,6 +161,17 @@ type CredentialedProvider interface {
 type ModelInfo struct {
 	// Name is the upstream model identifier (OpenAI "id", Ollama "name").
 	Name string
+
+	// ContextLength is the model's context window in tokens, when the
+	// discovery endpoint reports one; 0 = undetected (2026-10-06 context
+	// auto-detect: Ollama Cloud's /api/show model_info context_length).
+	ContextLength int
+
+	// Thinking / Tools / Vision are the model's detected capabilities;
+	// false = undetected or absent.
+	Thinking bool
+	Tools    bool
+	Vision   bool
 }
 
 // ModelLister is the optional model-discovery surface a provider exposes

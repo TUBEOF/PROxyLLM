@@ -348,21 +348,24 @@ func TestStream_Cancel(t *testing.T) {
 // ("data":[{"id":...}]); empty and duplicate IDs are skipped.
 func TestListModels_OpenAIShape(t *testing.T) {
 	pr := newProvider(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Errorf("method = %s, want GET", r.Method)
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/models":
+			if got := r.Header.Get("Authorization"); got != "Bearer "+testAPIKey {
+				t.Errorf("Authorization = %q, want Bearer %q", got, testAPIKey)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			mustWriteString(t, w, `{"object":"list","data":[`+
+				`{"id":"gemma4:31b","object":"model","owned_by":"library"},`+
+				`{"id":"gpt-oss:20b","object":"model","owned_by":"library"},`+
+				`{"id":"gemma4:31b","object":"model","owned_by":"dup"},`+
+				`{"id":"","object":"model","owned_by":"empty"}]}`)
+		default:
+			// The enrichment probes (/api/show) are best-effort; this
+			// handler fails them — models must still import with zero
+			// facts (detection degrades explicitly per model).
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"model not found"}`))
 		}
-		if r.URL.Path != "/v1/models" {
-			t.Errorf("path = %s, want /v1/models", r.URL.Path)
-		}
-		if got := r.Header.Get("Authorization"); got != "Bearer "+testAPIKey {
-			t.Errorf("Authorization = %q, want Bearer %q", got, testAPIKey)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		mustWriteString(t, w, `{"object":"list","data":[`+
-			`{"id":"gemma4:31b","object":"model","owned_by":"library"},`+
-			`{"id":"gpt-oss:20b","object":"model","owned_by":"library"},`+
-			`{"id":"gemma4:31b","object":"model","owned_by":"dup"},`+
-			`{"id":"","object":"model","owned_by":"empty"}]}`)
 	})
 
 	models, err := pr.ListModels(context.Background())
