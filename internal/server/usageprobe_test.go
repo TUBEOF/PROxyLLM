@@ -58,10 +58,10 @@ func TestProbeOllamaUsage_SendsCookieAndRejectsSignedOut(t *testing.T) {
 		gotCookie = r.Header.Get("Cookie")
 		gotPath = r.URL.Path
 		if status == 0 {
-			w.Write([]byte(`<html><body>signed out</body></html>`))
+			_, _ = w.Write([]byte(`<html><body>signed out</body></html>`))
 			return
 		}
-		w.Write([]byte(`<div data-usage-track aria-label="5% used"></div>`))
+		_, _ = w.Write([]byte(`<div data-usage-track aria-label="5% used"></div>`))
 	}))
 	defer ts.Close()
 
