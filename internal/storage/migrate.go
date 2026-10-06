@@ -105,6 +105,20 @@ var migrations = []string{
 	// drops it). Existing rows read as "manual" — pre-sync models were all
 	// operator-curated, and the sync must never delete them.
 	`ALTER TABLE models ADD COLUMN origin TEXT NOT NULL DEFAULT 'manual';`,
+	// v5: Logs-page redesign — per-request protocol surface, feature
+	// flags, and conversation identity. conversation_id is derived only for
+	// rows written after this patch (no backfill — pre-patch rows read as
+	// "" and render as "—" in the WebUI). conv_key is the deterministic
+	// derivation input persisted so the rolling-window conversation
+	// assignment (RecentConversation) is a single indexed query; it is
+	// internal grouping state, never exposed on the wire. Append-only:
+	// v1-v4 statements are never edited.
+	`ALTER TABLE request_logs ADD COLUMN conversation_id TEXT NOT NULL DEFAULT '';`,
+	`ALTER TABLE request_logs ADD COLUMN conv_key TEXT NOT NULL DEFAULT '';`,
+	`ALTER TABLE request_logs ADD COLUMN protocol TEXT NOT NULL DEFAULT '';`,
+	`ALTER TABLE request_logs ADD COLUMN features TEXT NOT NULL DEFAULT '{}';`,
+	`CREATE INDEX IF NOT EXISTS idx_request_logs_conversation ON request_logs(conversation_id);`,
+	`CREATE INDEX IF NOT EXISTS idx_request_logs_convkey ON request_logs(client_key_id, conv_key, id);`,
 }
 
 func (s *Store) migrate() error {

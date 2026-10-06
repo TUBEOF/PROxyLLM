@@ -52,10 +52,19 @@ func (a *api) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	a.runChat(w, r, raw, req)
+	// Log-meta annotation + in-flight registration (Logs-page redesign):
+	// one call at the decode site — the ~20 writeRequestLog call sites
+	// read the meta from the request context.
+	r2 := a.beginRequest(r, protocolOpenAI, raw, req)
+
+	a.runChat(w, r2, raw, req)
 }
 
-// runChat executes the shared pipeline for the chat surface.
+// runChat executes the shared pipeline for the chat surface. r arrives
+// annotated (logmeta: protocol/features/conversation + in-flight
+// registration) — every writeRequestLog call site below reads the meta
+// from its context. GET /v1/models stays unlogged by design: no upstream
+// dispatch, no usage, no conversation context (see repo CLAUDE.md).
 func (a *api) runChat(w http.ResponseWriter, r *http.Request, raw []byte, req ir.Request) {
 	ew := openAIErrorWriter()
 

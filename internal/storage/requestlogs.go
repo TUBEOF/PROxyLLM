@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 )
 
@@ -22,11 +23,60 @@ type RequestLog struct {
 	Usage         json.RawMessage
 	RouteTrace    json.RawMessage
 	ErrorRedacted string
+	// Logs-page redesign (v5): conversation identity and surface meta.
+	// ConversationID derives only for post-patch rows; ConvKey is the
+	// internal grouping input (never exposed on the wire).
+	ConversationID string
+	ConvKey        string
+	Protocol       string
+	Features       json.RawMessage
+}
+
+// requestLogCols is the column list shared by every request_logs lister —
+// the SELECT projection and the Scan target must stay in lockstep.
+const requestLogCols = `id, ts, client_key_id, provider_id, model, status, latency_ms, usage, route_trace, error_redacted, conversation_id, conv_key, protocol, features`
+
+// scanRequestLog scans one request_logs row in requestLogCols order.
+func scanRequestLog(rows *sql.Rows) (RequestLog, error) {
+	var l RequestLog
+	var clientKeyID, providerID, model, errorRedacted sql.NullString
+	var conversationID, convKey, protocol sql.NullString
+	var usage, trace, features string
+	if err := rows.Scan(&l.ID, &l.Timestamp, &clientKeyID, &providerID, &model,
+		&l.Status, &l.LatencyMS, &usage, &trace, &errorRedacted,
+		&conversationID, &convKey, &protocol, &features); err != nil {
+		return RequestLog{}, err
+	}
+	l.ClientKeyID = clientKeyID.String
+	l.ProviderID = providerID.String
+	l.Model = model.String
+	l.ErrorRedacted = errorRedacted.String
+	l.ConversationID = conversationID.String
+	l.ConvKey = convKey.String
+	l.Protocol = protocol.String
+	l.Usage = json.RawMessage(usage)
+	l.RouteTrace = json.RawMessage(trace)
+	l.Features = json.RawMessage(features)
+	return l, nil
+}
+
+// scanRequestLogs drains the rows in requestLogCols order.
+func scanRequestLogs(rows *sql.Rows) ([]RequestLog, error) {
+	defer func() { _ = rows.Close() }()
+	var out []RequestLog
+	for rows.Next() {
+		l, err := scanRequestLog(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
 }
 
 // InsertRequestLog appends one log row and returns the autoincrement id.
-// Empty usage/route_trace default to '{}' — a log row must always render
-// valid JSON in the WebUI, never NULL.
+// Empty usage/route_trace/features default to '{}' — a log row must always
+// render valid JSON in the WebUI, never NULL.
 func (s *Store) InsertRequestLog(ctx context.Context, l RequestLog) (int64, error) {
 	if len(l.Usage) == 0 {
 		l.Usage = json.RawMessage("{}")
@@ -34,11 +84,15 @@ func (s *Store) InsertRequestLog(ctx context.Context, l RequestLog) (int64, erro
 	if len(l.RouteTrace) == 0 {
 		l.RouteTrace = json.RawMessage("{}")
 	}
+	if len(l.Features) == 0 {
+		l.Features = json.RawMessage("{}")
+	}
 	res, err := s.db.ExecContext(ctx, `
-		INSERT INTO request_logs (ts, client_key_id, provider_id, model, status, latency_ms, usage, route_trace, error_redacted)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO request_logs (ts, client_key_id, provider_id, model, status, latency_ms, usage, route_trace, error_redacted, conversation_id, conv_key, protocol, features)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		l.Timestamp, l.ClientKeyID, l.ProviderID, l.Model, l.Status, l.LatencyMS,
-		string(l.Usage), string(l.RouteTrace), l.ErrorRedacted)
+		string(l.Usage), string(l.RouteTrace), l.ErrorRedacted,
+		l.ConversationID, l.ConvKey, l.Protocol, string(l.Features))
 	if err != nil {
 		return 0, err
 	}
@@ -53,33 +107,14 @@ func (s *Store) ListRequestLogs(ctx context.Context, limit int) ([]RequestLog, e
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, ts, client_key_id, provider_id, model, status, latency_ms, usage, route_trace, error_redacted
+		SELECT `+requestLogCols+`
 		FROM request_logs
 		ORDER BY ts DESC, id DESC
 		LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-
-	var out []RequestLog
-	for rows.Next() {
-		var l RequestLog
-		var clientKeyID, providerID, model, errorRedacted sql.NullString
-		var usage, trace string
-		if err := rows.Scan(&l.ID, &l.Timestamp, &clientKeyID, &providerID, &model,
-			&l.Status, &l.LatencyMS, &usage, &trace, &errorRedacted); err != nil {
-			return nil, err
-		}
-		l.ClientKeyID = clientKeyID.String
-		l.ProviderID = providerID.String
-		l.Model = model.String
-		l.ErrorRedacted = errorRedacted.String
-		l.Usage = json.RawMessage(usage)
-		l.RouteTrace = json.RawMessage(trace)
-		out = append(out, l)
-	}
-	return out, rows.Err()
+	return scanRequestLogs(rows)
 }
 
 // RequestLogFilter selects request-log rows for the WebUI log viewer. The
@@ -108,33 +143,38 @@ func (s *Store) ListRequestLogsAfter(ctx context.Context, f RequestLogFilter, li
 		where += " AND id > ?"
 		args = append(args, after)
 	}
-	const logCols = `id, ts, client_key_id, provider_id, model, status, latency_ms, usage, route_trace, error_redacted`
-	q := `SELECT ` + logCols + ` FROM request_logs` + where + ` ORDER BY id DESC LIMIT ?` //nolint:gosec // where is built from fixed literals only
+	q := `SELECT ` + requestLogCols + ` FROM request_logs` + where + ` ORDER BY id DESC LIMIT ?` //nolint:gosec // where is built from fixed literals only
 	args = append(args, limit)
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
+	return scanRequestLogs(rows)
+}
 
-	var out []RequestLog
-	for rows.Next() {
-		var l RequestLog
-		var clientKeyID, providerID, model, errorRedacted sql.NullString
-		var usage, trace string
-		if err := rows.Scan(&l.ID, &l.Timestamp, &clientKeyID, &providerID, &model,
-			&l.Status, &l.LatencyMS, &usage, &trace, &errorRedacted); err != nil {
-			return nil, err
-		}
-		l.ClientKeyID = clientKeyID.String
-		l.ProviderID = providerID.String
-		l.Model = model.String
-		l.ErrorRedacted = errorRedacted.String
-		l.Usage = json.RawMessage(usage)
-		l.RouteTrace = json.RawMessage(trace)
-		out = append(out, l)
+// RecentConversation returns the conversation_id of the newest row with the
+// same client key and conv_key whose ts is within `within` seconds of `ts`
+// ("" when none): the rolling-window conversation assignment of the
+// Logs-page redesign. The window keeps "same system prompt, different
+// conversation a week later" from merging forever without any wall-clock
+// state in the render path.
+func (s *Store) RecentConversation(ctx context.Context, clientKeyID, convKey string, ts, within int64) (string, error) {
+	var convID sql.NullString
+	err := s.db.QueryRowContext(ctx, `
+		SELECT conversation_id
+		FROM request_logs
+		WHERE client_key_id = ? AND conv_key = ? AND conversation_id != ''
+			AND ts >= ? AND ts <= ?
+		ORDER BY id DESC
+		LIMIT 1`,
+		clientKeyID, convKey, ts-within, ts).Scan(&convID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
 	}
-	return out, rows.Err()
+	if err != nil {
+		return "", err
+	}
+	return convID.String, nil
 }
 
 // ListRequestLogsPage returns one page of newest-first rows plus the total
@@ -155,33 +195,17 @@ func (s *Store) ListRequestLogsPage(ctx context.Context, f RequestLogFilter, lim
 
 	// whereClause emits only fixed literals (values stay placeholders), so
 	// no user-controlled text can enter the SQL string.
-	const logCols = `id, ts, client_key_id, provider_id, model, status, latency_ms, usage, route_trace, error_redacted`
-	q := `SELECT ` + logCols + ` FROM request_logs` + where + ` ORDER BY ts DESC, id DESC LIMIT ? OFFSET ?` //nolint:gosec // where is built from fixed literals only
+	q := `SELECT ` + requestLogCols + ` FROM request_logs` + where + ` ORDER BY ts DESC, id DESC LIMIT ? OFFSET ?` //nolint:gosec // where is built from fixed literals only
 	args = append(args, limit, offset)
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, 0, err
 	}
-	defer func() { _ = rows.Close() }()
-
-	var out []RequestLog
-	for rows.Next() {
-		var l RequestLog
-		var clientKeyID, providerID, model, errorRedacted sql.NullString
-		var usage, trace string
-		if err := rows.Scan(&l.ID, &l.Timestamp, &clientKeyID, &providerID, &model,
-			&l.Status, &l.LatencyMS, &usage, &trace, &errorRedacted); err != nil {
-			return nil, 0, err
-		}
-		l.ClientKeyID = clientKeyID.String
-		l.ProviderID = providerID.String
-		l.Model = model.String
-		l.ErrorRedacted = errorRedacted.String
-		l.Usage = json.RawMessage(usage)
-		l.RouteTrace = json.RawMessage(trace)
-		out = append(out, l)
+	logs, err := scanRequestLogs(rows)
+	if err != nil {
+		return nil, 0, err
 	}
-	return out, total, rows.Err()
+	return logs, total, nil
 }
 
 // whereClause renders the filter as a SQL WHERE prefix plus positional
