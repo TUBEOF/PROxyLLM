@@ -2,6 +2,7 @@ package openai_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -447,4 +448,48 @@ func TestEncodeRequest_ToolCallOnlyAssistantEncodesEmptyStringContent(t *testing
 	if tc, ok := assistant.Parts[0].(ir.ToolCallPart); !ok || tc.Name != "get_weather" || tc.ID != "toolu_1" {
 		t.Errorf("round trip tool call = %+v", assistant.Parts[0])
 	}
+}
+
+// The anchoring tool_calls delta may carry the COMPLETE arguments string
+// (spec O4: arguments arrive as appends to the same index — and upstreams
+// like ollama.com/v1 send the whole string in one delta). The decoder must
+// queue the initial fragment for the NEWLY opened block too; dropping it
+// produces a tool_use with empty input, which clients reject as invalid
+// tool parameters (bug pinned 2026-10-06, WebSearch screenshot).
+func TestStreamDecode_ToolCallOneShotArgs(t *testing.T) {
+	wire := testutil.LoadGolden(t, "openai/chat-stream-tool-oneshot.sse")
+	want := testutil.LoadExpectedEvents(t, "openai/chat-stream-tool-oneshot.expected.json")
+
+	got := testutil.DrainStreamDecoder(t, oa.NewStreamDecoder(bytes.NewReader(wire)))
+	testutil.AssertEventsEqual(t, "openai/chat-stream-tool-oneshot.sse", want, got)
+}
+
+// Inverse direction: an IR BlockStart whose ToolCallPart carries a
+// complete Input (assembled upstream of encoding) must emit its full
+// arguments in the ANCHOR chunk — OpenAI clients re-issuing from the
+// first delta must not see arguments:"" silently replacing the payload.
+func TestStreamEncode_ToolCallAnchorWithArgs(t *testing.T) {
+	var b bytes.Buffer
+	enc := oa.NewStreamEncoder(&b)
+	events := []ir.StreamEvent{
+		{Type: ir.Start, Response: &ir.Response{ID: "r1", Model: "m1"}},
+		{Type: ir.BlockStart, Index: 1, Part: ir.ToolCallPart{
+			ID: "call_1", Name: "get_weather", Input: json.RawMessage(`{"city":"SF"}`),
+		}},
+		{Type: ir.BlockStop, Index: 1},
+		{Type: ir.MessageDelta, MessageDelta: &ir.MessageDeltaPayload{StopReason: ir.StopToolUse}},
+		{Type: ir.Done},
+	}
+	for _, ev := range events {
+		if err := enc.Write(t.Context(), ev); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
+	}
+	out := b.String()
+	// The anchor chunk must carry the arguments; a lone "" loses them.
+	if !strings.Contains(out, `\"city\":\"SF\"`) && !strings.Contains(out, `{"city":"SF"}`) {
+		t.Errorf("anchor chunk must carry the complete arguments, got:\n%s", out)
+	}
+	// Argument fragments (DeltaToolInput) still ride their own chunk
+	// afterwards; nothing about the fragment shape changes.
 }

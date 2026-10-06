@@ -201,6 +201,15 @@ func (d *streamDecoder) mapChunk(w *wireChunk) {
 				d.toolBlocks[tc.Index] = block
 				d.queue = append(d.queue, ir.StreamEvent{Type: ir.BlockStart, Index: block,
 					Part: ir.ToolCallPart{ID: tc.ID, Name: tc.Function.Name}})
+				// The ANCHOR delta may already carry arguments (ollama.com/v1
+				// One-shot shape: the whole JSON string in one chunk; spec O4
+				// allows appends to a fresh index too). Dropping it produces
+				// a tool_use with empty input — clients reject that as
+				// invalid tool parameters.
+				if tc.Function.Arguments != "" {
+					d.queue = append(d.queue, ir.StreamEvent{Type: ir.Delta, Index: block,
+						Delta: ir.DeltaPayload{Kind: ir.DeltaToolInput, PartialJSON: tc.Function.Arguments}})
+				}
 			} else if tc.Function.Arguments != "" {
 				// Argument fragment for this index's tool block.
 				d.queue = append(d.queue, ir.StreamEvent{Type: ir.Delta, Index: block,

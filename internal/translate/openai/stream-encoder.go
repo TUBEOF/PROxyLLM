@@ -90,13 +90,21 @@ func (e *streamEncoder) Write(ctx context.Context, ev ir.StreamEvent) error {
 				e.toolIndex++
 			}
 			e.hasTool = true
+			// The anchor may already carry complete arguments (an IR
+			// assembly that decoded Input into the block start — e.g. a
+			// one-shot tool call): emit them here, never a lone "" that
+			// loses the payload (inverse of the decode-side one-shot loss).
+			args := ""
+			if len(tc.Input) > 0 && string(tc.Input) != "null" {
+				args = string(tc.Input)
+			}
 			return e.emit(e.chunk([]encChoice{{
 				Index: 0,
 				Delta: &encDelta{ToolCalls: []encToolCall{{
 					Index:    e.toolIndex,
 					ID:       tc.ID,
 					Type:     "function",
-					Function: encFunction{Name: tc.Name, Arguments: ptrString("")},
+					Function: encFunction{Name: tc.Name, Arguments: ptrString(args)},
 				}}},
 			}}, nil, nil))
 		}

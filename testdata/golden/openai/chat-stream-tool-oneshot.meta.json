@@ -1,0 +1,7 @@
+{
+  "fixture": "chat-stream-tool-oneshot.sse",
+  "source": "https://developers.openai.com/api/docs/guides/streaming (tool_calls deltas)",
+  "accessed": "2026-10-06",
+  "facts": ["O4"],
+  "notes": "One-shot tool call: the anchoring tool_calls delta carries the COMPLETE arguments string (spec-legal — arguments may arrive in a single delta; upstreams like ollama.com/v1 emit this shape). The decoder must queue the initial argument fragment for the newly opened block, not only for already-open blocks. Pinned by TestStreamDecode_ToolCallOneShotArgs."
+}
