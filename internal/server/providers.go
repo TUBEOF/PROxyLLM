@@ -114,7 +114,7 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 	case webui.ProviderTypeOllamaCloud:
 		// Empty base_url is a legal save: the provider defaults to the
 		// hosted endpoint.
-		return ollamacloud.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type)), nil, nil
+		return ollamacloud.NewWithLogger(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type), logger), nil, nil
 
 	case webui.ProviderTypeCodexOAuth:
 		// The codex provider speaks the ChatGPT backend (X7/X19); the

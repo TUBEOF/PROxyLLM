@@ -697,3 +697,62 @@ func TestMessages_SystemRoleHistoryEncodesSystemMessageContent(t *testing.T) {
 		t.Errorf(`upstream body must carry the system message text: %s`, up)
 	}
 }
+
+// Context-marker strip must extend to the compat lookup (review finding
+// I1): a suffixed request routes to the base model, and the compat policy
+// lives on the BASE row — the marker must not silently bypass the
+// operator's thinking handling / clamps (the lookup before this fix
+// keyed on the typed name and found no row, so the zero-value defaults
+// ran instead of the operator's policy). Pinned on the visible wire
+// effect: the base row's max_tokens_clamp must cap the suffixed
+// request's max_completion_tokens, and its thinking_handling=block must
+// refuse the request with 400 (the marker's presence must not restore
+// default-strip behavior for neither).
+func TestMessages_SuffixedModelAppliesBaseCompatPolicy(t *testing.T) {
+	e := newEnvWithRules(t, routing.Rule{
+		MatchModel: "glm-5.3-flash", Chain: []string{"mock-main"}, Priority: 100, Enabled: true,
+	})
+	e.seedModel(t, "glm-5.3-flash", []byte(`{"thinking_handling":"block","max_tokens_clamp":8}`))
+
+	// Clamp: the 1024-token suffixed request must reach the wire capped
+	// to the base row's clamp of 8.
+	e.mock.Enqueue(mockJSON(t, http.StatusOK, string(golden(t, "openai/chat-response.json"))))
+	body := `{
+		"model": "glm-5.3-flash[1M]",
+		"max_tokens": 1024,
+		"messages": [{"role": "user", "content": "hello"}]
+	}`
+	if code, _ := e.postAnthropic(t, "/v1/messages", body); code != http.StatusOK {
+		t.Fatalf("suffixed request status = %d, want 200", code)
+	}
+	reqs := e.mock.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("upstream saw %d requests, want 1", len(reqs))
+	}
+	if reqs[0].Body == "" {
+		t.Fatal("upstream body is empty")
+	}
+	var sent struct {
+		MaxCompletionTokens int `json:"max_completion_tokens"`
+	}
+	if err := json.Unmarshal([]byte(reqs[0].Body), &sent); err != nil {
+		t.Fatalf("upstream body not JSON: %v (%s)", err, reqs[0].Body)
+	}
+	if sent.MaxCompletionTokens != 8 {
+		t.Errorf("base row's max_tokens_clamp must cap the marker-bearing request: max_completion_tokens = %d, want 8", sent.MaxCompletionTokens)
+	}
+
+	// Block: the operator's thinking_handling=block must refuse the
+	// marker-bearing thinking request exactly like the unsuffixed one.
+	e.mock.Enqueue(mockJSON(t, http.StatusOK, string(golden(t, "openai/chat-response.json"))))
+	thinking := `{
+		"model": "glm-5.3-flash[1M]",
+		"max_tokens": 1024,
+		"thinking": {"type": "enabled", "budget_tokens": 2048},
+		"messages": [{"role": "user", "content": "hello"}]
+	}`
+	code, _ := e.postAnthropic(t, "/v1/messages", thinking)
+	if code != http.StatusBadRequest {
+		t.Errorf("thinking_handling=block must refuse the marker-bearing thinking request, got status %d — the marker must not bypass the base policy", code)
+	}
+}

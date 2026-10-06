@@ -71,8 +71,13 @@ type wireCompat struct {
 // default (strip) policy — the store is eventually consistent with the
 // WebUI editor, and requests must not hard-fail on a missing row.
 func (a *api) compatFor(ctx context.Context, model string) routing.Compat {
+	// Follow routing's context-marker strip: a suffixed request
+	// ("glm-5.3-flash[1M]") carries no row of its own — the operator's
+	// compat policy lives on the base row and must apply (otherwise the
+	// marker would silently bypass thinking handling, clamps, emulation).
+	base, _ := routing.StripContextMarker(model)
 	var c routing.Compat
-	m, err := a.store.GetModel(ctx, model)
+	m, err := a.store.GetModel(ctx, base)
 	if err != nil {
 		return c // zero value: strip default, no clamp
 	}
@@ -191,7 +196,8 @@ func requiredCapabilities(req ir.Request) provider.Capabilities {
 // Version 4 adds the model_resolved event (2026-09-21 model identity:
 // routing ID → wire-name resolution). Version 5 adds the implicit_route
 // event (ADR-011: no rule matched, the models-table row named the
-// provider).
+// provider). Version 6 adds the context_override event (2026-10-06: the
+// Claude Code "[1m]"/"[1M]" context-marker strip, base model routed).
 type chainTrace struct {
 	Version int               `json:"version"`
 	Events  []json.RawMessage `json:"events"`

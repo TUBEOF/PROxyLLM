@@ -66,8 +66,8 @@ func TestResolveChain_StripsContextMarker(t *testing.T) {
 // client-facing surfaces can echo/log the base name consistently).
 func TestStripContextMarker(t *testing.T) {
 	cases := []struct {
-		in, base      string
-		hadMarker     bool
+		in, base  string
+		hadMarker bool
 	}{
 		{"glm-5.3-flash[1m]", "glm-5.3-flash", true},
 		{"glm-5.3-flash[1M]", "glm-5.3-flash", true},
@@ -138,4 +138,3 @@ func TestResolveChain_KeyScopeAllowsSuffixedName(t *testing.T) {
 		t.Fatal("suffixed request allowed under a scope that does not allow the model")
 	}
 }
-

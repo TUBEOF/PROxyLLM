@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"math"
 	"net/http"
 	"slices"
@@ -42,11 +43,18 @@ type Provider struct {
 	caps    provider.Capabilities
 	codec   openai.Codec
 	decoder func(r io.Reader) translate.StreamDecoder
+	logger  *slog.Logger // nil = silent (tests); enrichment failures log here
 }
 
 // New constructs the Ollama Cloud provider. baseURL defaults to
 // DefaultBaseURL when empty.
 func New(id, baseURL, apiKey string, caps provider.Capabilities) *Provider {
+	return NewWithLogger(id, baseURL, apiKey, caps, nil)
+}
+
+// NewWithLogger is New with a logger for detection-enrichment failures
+// (best-effort probes degrade per model — but never silently).
+func NewWithLogger(id, baseURL, apiKey string, caps provider.Capabilities, logger *slog.Logger) *Provider {
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
@@ -62,12 +70,11 @@ func New(id, baseURL, apiKey string, caps provider.Capabilities) *Provider {
 			// followed redirect.
 			HTTP: httpguard.NewStreamingClient(),
 		},
-		id:    id,
-		caps:  caps,
-		codec: openai.Codec{},
-		decoder: func(r io.Reader) translate.StreamDecoder {
-			return openai.NewStreamDecoder(r)
-		},
+		id:      id,
+		caps:    caps,
+		codec:   openai.Codec{},
+		decoder: func(r io.Reader) translate.StreamDecoder { return openai.NewStreamDecoder(r) },
+		logger:  logger,
 	}
 }
 
@@ -124,12 +131,17 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error)
 		info := provider.ModelInfo{Name: m.ID}
 		// Per-model enrichment, best-effort: a failed /api/show probe
 		// leaves the zero-value facts — the model still imports (never a
-		// sync-run failure).
+		// sync-run failure). The failure is never silent: it lands in the
+		// sync log so an operator seeing all-zero facts can tell a failing
+		// registry from genuinely capability-less models.
 		if shown, err := p.showModel(ctx, m.ID); err == nil {
 			info.ContextLength = shown.contextLength()
 			info.Thinking = shown.hasCapability("thinking")
 			info.Tools = shown.hasCapability("tools")
 			info.Vision = shown.hasCapability("vision")
+		} else if p.logger != nil {
+			p.logger.Debug("model sync: /api/show detection probe failed — importing with zero facts",
+				"provider_id", p.id, "model", m.ID, "error", err)
 		}
 		out = append(out, info)
 	}
@@ -170,29 +182,43 @@ func (p *Provider) showModel(ctx context.Context, model string) (showResponse, e
 	return out, nil
 }
 
-// showResponse is the /api/show subset relevant to detection. The
-// context_length key's arch prefix varies per model family
-// ("kimi-k2.context_length", "glm5_next.context_length", …) — it is
-// parsed from ANY model_info key with that suffix. Capability name
-// strings ("completion", "thinking", "tools", "vision") are Ollama's
-// registry wire facts, mapped below like other vendor-specific mappings.
+// showResponse is the /api/show subset relevant to detection. model_info
+// carries heterogeneous values (strings like "general.architecture",
+// numerics like parameter counts) and is decoded as raw messages — the
+// context_length value parses per matching key below. The context_length
+// key's arch prefix varies per model family ("kimi-k2.context_length",
+// "glm5_next.context_length", …) — it is parsed from ANY model_info key
+// with that suffix. Capability name strings ("completion", "thinking",
+// "tools", "vision") are Ollama's registry wire facts, mapped below like
+// other vendor-specific mappings.
 type showResponse struct {
-	ModelInfo    map[string]int64 `json:"model_info"`
-	Capabilities []string         `json:"capabilities"`
-	Error        string           `json:"error"`
+	ModelInfo    map[string]json.RawMessage `json:"model_info"`
+	Capabilities []string                   `json:"capabilities"`
+	Error        string                     `json:"error"`
 }
 
-// contextLength returns any "<arch>.context_length" value from model_info.
+// contextLength returns any "<arch>.context_length" numeric value from
+// model_info. Ties on multiple matching keys resolve deterministically on
+// the lexicographically first key (determinism contract).
 func (s showResponse) contextLength() int {
-	for k, v := range s.ModelInfo {
-		if v > 0 && strings.HasSuffix(k, "context_length") {
-			if v > math.MaxInt32 {
-				return math.MaxInt32
-			}
-			return int(v)
+	bestKey := ""
+	var bestVal int64
+	for k, raw := range s.ModelInfo {
+		if !strings.HasSuffix(k, "context_length") {
+			continue
+		}
+		var v int64
+		if err := json.Unmarshal(raw, &v); err != nil || v <= 0 {
+			continue
+		}
+		if bestKey == "" || k < bestKey {
+			bestKey, bestVal = k, v
 		}
 	}
-	return 0
+	if bestVal > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int(bestVal)
 }
 
 // hasCapability reports whether the capabilities list names cap.

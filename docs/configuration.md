@@ -90,8 +90,9 @@ verified live 2026-10-06). Detection populates:
 - **`context_window`** in the model's compat blob — from the endpoint's
   `model_info` `<arch>.context_length` (e.g. `glm5_next.context_length:
   1048576` for `glm-5.3-flash`; the arch prefix varies per model family).
-  Routing's context-window capability filtering uses the detected value
-  instead of assuming the default window.
+  The detected value is populated and shown in the Models editor; when
+  it is present, the count_tokens heuristic and capability checks can
+  read it instead of assuming a default window.
 - **Capabilities** (`tools`, `vision`, `thinking`) in the model's
   capabilities blob, from the endpoint's `capabilities` list.
 

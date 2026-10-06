@@ -62,12 +62,13 @@ func TestListModels_ErrorSurfaces(t *testing.T) {
 // Context/capability detection (2026-10-06 context auto-detect plan,
 // Task 2): after the /v1/models list, ListModels enriches each model by
 // POSTing /api/show {"model": id} — the registry's per-model facts
-// endpoint (verified live 2026-10-06: {"model":"glm-5.3-flash"} answers
-// {"model_info":{"glm5_next.context_length":1048576},"capabilities":
-// ["completion","thinking","tools","vision"]}; unauthed calls work; the
-// context_length key's arch prefix VARIES per model family —
-// "kimi-k2.context_length" vs "glm5_next.context_length" — so ANY key
-// with that suffix parses). Per-model errors are best-effort: a model
+// endpoint. The mock body below is the VERBATIM live response for
+// glm-5.3-flash (https://ollama.com/api/show, accessed 2026-10-06 —
+// re-verified after review finding C1): model_info carries heterogeneous
+// values (string "general.architecture", numeric parameter counts) and
+// the detected context_length key suffixed by arch. A decode type that
+// assumes map[string]int64 silently probe-fails every real model — this
+// fixture pins that away. Per-model errors are best-effort: a model
 // whose /api/show fails still imports, with zero facts.
 func TestListModels_EnrichesContextAndCapabilities(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -86,8 +87,8 @@ func TestListModels_EnrichesContextAndCapabilities(t *testing.T) {
 				_, _ = w.Write([]byte(`{"error":"model 'ghost-model' not found"}`))
 				return
 			}
-			// Live shape: the arch prefix varies per family.
-			_, _ = w.Write([]byte(`{"model_info":{"glm5_next.context_length":1048576},"capabilities":["completion","thinking","tools","vision"]}`))
+			// Verbatim live body (ollama.com/api/show, 2026-10-06).
+			_, _ = w.Write([]byte(`{"capabilities":["completion","thinking","tools","vision"],"details":{"parent_model":"glm-5.3-flash","format":"","family":"glm5_next","families":null,"parameter_size":"321323031390","quantization_level":"FP8"},"model_info":{"general.architecture":"glm5_next","general.parameter_count":321323031390,"glm5_next.context_length":1048576,"glm5_next.embedding_length":4096},"modified_at":"2026-08-26T07:00:00-07:00","thinking":{"values":["low","high","max"],"default":"max"}}`))
 		default:
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
