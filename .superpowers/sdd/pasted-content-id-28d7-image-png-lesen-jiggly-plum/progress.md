@@ -24,3 +24,12 @@ Task 8+9-page (Step 8 verification + Quota SPA page): complete (commit 54e9087; 
 Task 10 (Step 9 design polish + e2e specs): complete (commit 62f81fd; .form-note class, sync card reblocked, e2e specs updated, suites + typecheck + lint green; local playwright browsers not installed — visual baselines regen in CI per doctrine)
 Final suites: complete (commits through ce78751; go test full GO_PKGS + -race: 21 pkgs green; vet clean; golangci-lint: 7 pre-existing main findings (gosec G115 + 6 nolintlint on untouched files), 0 new from this branch)
 Task 9 verification + polish complete at ce78751 — all 9 plan steps done.
+Final review: reviewer agent on review-9feec39..ce78751.diff
+Final: fixed C1 stream:true on emulated detour — TestExecuteStream_StreamEmulatesWithStreamFalse RED→GREEN
+Final: fixed I4 modelsync hardcoded strip — TestSync_NewRowCarriesDetectedFacts + PreFeatureSyncedRow recast RED→GREEN
+Final: fixed I5 PUT models wipes compat — TestModels_PutWithoutCompatPreservesBlob RED→GREEN
+Final: fixed I6 quota refresh errors unrendered + button for non-scrape types — typecheck/lint green
+Final: minor (deferred): M1 between-round ctx check (fail-fast preserved), M2 double now() in overview, M3/M7 N+1 quota poll scale, M4 redundant schema guard, M5 after-cursor backend without SPA consumer, M6 double-fetch on reload, M8 legacy forward-cache_control override on non-Anthropic targets
+Final: Ruling (reviewer declined): ollama.com live stream:true behavior unverified — needs PROXYLLM_SMOKE run; Anthropic encoder anchor+delta doubling for synthesized ServerToolUse — flagged for a follow-up fixture
+Post-fix suite: 21 pkgs green + -race + vet + lint (7 pre-existing main findings, 0 new) + webui typecheck/lint/build
+All 9 tasks complete. Fix-pass commit: 55f1e49
