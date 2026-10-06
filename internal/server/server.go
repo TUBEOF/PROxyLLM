@@ -211,6 +211,11 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 	if o.masterKey != nil {
 		admin := webui.NewAdminAPI(webui.AdminParams{
 			Store: store,
+			// ADR-012 Quota page: the per-account cooldown-reason badge and
+			// the on-demand usage scrape (fixed ollama.com host; the
+			// cookie rides the encrypted token store).
+			HealthSnapshot: health.Reason,
+			Prober:         s.prodUsageProber(),
 			ReloadRouting: func() {
 				fresh, err := loadRoutingRules(context.Background(), store)
 				if err != nil {

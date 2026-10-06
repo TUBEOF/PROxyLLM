@@ -15,5 +15,8 @@ consequences.
 | [ADR-007](ADR-007-security-concept.md) | Security: auth default-on, envelope encryption, redaction-first | Accepted |
 | [ADR-008](ADR-008-non-claude-routing.md) | Non-Claude routing via Anthropic surface: first-class feature | Accepted |
 | [ADR-009](ADR-009-provider-accounts-and-strategies.md) | Provider accounts (rows per type) and routing strategies (round robin / fill-first) | Accepted |
+| [ADR-010](ADR-010-model-sync-and-capability-fallbacks.md) | Model sync + capability fallback lists | Accepted |
+| [ADR-011](ADR-011-implicit-model-routes.md) | Implicit model routes when no rule matches | Accepted |
+| [ADR-012](ADR-012-account-usage-quota-page.md) | Per-account usage snapshot (Quota page): scrape-or-local KV blob, usage-cookie token kind | Accepted |
 
 ADR template: [TEMPLATE.md](TEMPLATE.md)

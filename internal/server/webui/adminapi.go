@@ -62,6 +62,13 @@ type AdminParams struct {
 	// row's provider (2026-09-22 Models page test button). nil when not
 	// wired (no master key) — the endpoint answers the uniform 404.
 	TestModel func(ctx context.Context, modelID string) (TestModelResult, error)
+	// HealthSnapshot names the per-account cooldown reason for the Quota
+	// page badge (ADR-012; "quota_exhausted" | "breaker" | ""). nil when
+	// not wired — badges render unknown.
+	HealthSnapshot func(accountID string) string
+	// Prober is the on-demand usage scrape (ADR-012; injectable for
+	// tests). nil = the production ollama.com client.
+	Prober    UsageProbeFunc
 	Now       func() int64
 	MasterKey []byte
 }
@@ -80,6 +87,14 @@ type AdminAPI struct {
 	syncNow         func(ctx context.Context) (storage.ModelSyncState, error)
 	testModel       func(ctx context.Context, modelID string) (TestModelResult, error)
 	sessions        *auth.SessionManager
+
+	// Usage probing (ADR-012): healthSnapshot names the per-account
+	// cooldown reason for the Quota badge; prober scrapes on demand
+	// (injectable — tests stub it; nil = the fixed ollama.com client).
+	// now is the injected clock.
+	healthSnapshot func(accountID string) string
+	prober         UsageProbeFunc
+	now            func() int64
 
 	oauthMu    sync.Mutex
 	oauthFlows map[string]*codex.DeviceSession // providerID → active flow
@@ -102,6 +117,9 @@ func NewAdminAPI(p AdminParams) *AdminAPI {
 		syncNow:         p.SyncNow,
 		testModel:       p.TestModel,
 		sessions:        auth.NewSessionManager(p.Store, p.MasterKey, now),
+		healthSnapshot:  p.HealthSnapshot,
+		prober:          p.Prober,
+		now:             now,
 		oauthFlows:      map[string]*codex.DeviceSession{},
 	}
 }
@@ -165,6 +183,10 @@ func (a *AdminAPI) Handler() http.Handler {
 
 	mux.Handle("GET /api/admin/usage", a.sessions.RequireAdmin(http.HandlerFunc(a.getUsage)))
 	mux.Handle("GET /api/admin/logs", a.sessions.RequireAdmin(http.HandlerFunc(a.getLogs)))
+
+	// ADR-012 Quota page: per-account usage/limit cards + on-demand scrape.
+	mux.Handle("GET /api/admin/accounts/usage", a.sessions.RequireAdmin(http.HandlerFunc(a.getAccountUsage)))
+	mux.Handle("POST /api/admin/accounts/usage/refresh/{id...}", a.sessions.RequireAdmin(http.HandlerFunc(a.accountsUsageRefresh)))
 
 	mux.Handle("GET /api/admin/settings", a.sessions.RequireAdmin(http.HandlerFunc(a.listSettings)))
 	mux.Handle("PUT /api/admin/settings", a.sessions.RequireAdmin(http.HandlerFunc(a.putSetting)))
@@ -510,12 +532,18 @@ func (a *AdminAPI) getProviderType(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]accountDTO, 0, len(accounts))
 	for _, p := range accounts {
-		out = append(out, accountDTO{
+		dto := accountDTO{
 			ID:            p.ID,
 			Type:          p.Type,
 			Name:          p.Name,
 			HasCredential: a.hasCredential(r, p.ID),
-		})
+		}
+		// ADR-012: ollama-cloud accounts report the usage-cookie presence
+		// (the cookie itself never leaves the store).
+		if p.Type == ProviderTypeOllamaCloud {
+			dto.HasUsageCookie = a.hasUsageCookie(r, p.ID)
+		}
+		out = append(out, dto)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"settings": settings[typ],
@@ -635,6 +663,11 @@ func (a *AdminAPI) postProviderTypeAccount(w http.ResponseWriter, r *http.Reques
 		Name   string          `json:"name"`
 		APIKey string          `json:"api_key"`
 		Config json.RawMessage `json:"config"`
+		// UsageCookie is the OPTIONAL ADR-012 scrape credential
+		// (ollama-cloud accounts): the raw __Secure-session value. It
+		// lands in the ENCRYPTED token store (kind usage_cookie), never
+		// in the config blob, never in any log (redactor list).
+		UsageCookie string `json:"usage_cookie"`
 	}
 	if err := decodeBody(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -688,14 +721,28 @@ func (a *AdminAPI) postProviderTypeAccount(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
+	// ADR-012: the usage cookie rides the same encrypted store (separate
+	// kind — rotating the API key must not touch the scrape credential).
+	if req.UsageCookie != "" && desc.Auth != "oauth" {
+		if err := a.store.PutProviderTokens(r.Context(), storage.ProviderToken{
+			ProviderID: id,
+			Kind:       UsageCookieTokenKind,
+			Secret:     []byte(req.UsageCookie),
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+	}
 	if a.reloadProviders != nil {
 		a.reloadProviders()
 	}
+	hasUsageCookie := req.UsageCookie != ""
 	writeJSON(w, http.StatusOK, map[string]any{"account": accountDTO{
-		ID:            id,
-		Type:          typ,
-		Name:          req.Name,
-		HasCredential: req.APIKey != "",
+		ID:             id,
+		Type:           typ,
+		Name:           req.Name,
+		HasCredential:  req.APIKey != "",
+		HasUsageCookie: hasUsageCookie,
 	}})
 }
 
@@ -723,6 +770,13 @@ func (a *AdminAPI) validateAccountConfig(r *http.Request, typ string, own json.R
 // failure degrades to "no credential" rather than failing the list.
 func (a *AdminAPI) hasCredential(r *http.Request, providerID string) bool {
 	_, err := a.store.GetProviderToken(r.Context(), providerID, "access_token")
+	return err == nil
+}
+
+// hasUsageCookie probes the token store for the ADR-012 scrape credential
+// (kind usage_cookie) — same presence-only contract as hasCredential.
+func (a *AdminAPI) hasUsageCookie(r *http.Request, providerID string) bool {
+	_, err := a.store.GetProviderToken(r.Context(), providerID, UsageCookieTokenKind)
 	return err == nil
 }
 
@@ -1224,6 +1278,11 @@ type accountDTO struct {
 	Type          string `json:"type"`
 	Name          string `json:"name"`
 	HasCredential bool   `json:"has_credential"`
+	// HasUsageCookie: the OPTIONAL ADR-012 scrape credential is present
+	// (ollama-cloud accounts only; the cookie itself never leaves the
+	// encrypted token store). omitempty keeps the pre-ADR-012 wire shape
+	// for types without the field.
+	HasUsageCookie bool `json:"has_usage_cookie,omitempty"`
 }
 
 type keyDTO struct {

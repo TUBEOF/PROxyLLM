@@ -262,3 +262,17 @@ func TestRedact_Base64Boundary(t *testing.T) {
 		t.Errorf("340-char base64 blob survived: %q", got)
 	}
 }
+
+// ADR-012 usage cookies (2026-10-06): the ollama.com __Secure-session
+// value is masked in its header form and as a bare JSON pair.
+func TestRedact_OllamaSessionCookie(t *testing.T) {
+	r := NewRedactor()
+	in := "Cookie: __Secure-session=abcdef0123456789abcdef0123"
+	if got := r.Redact(in); strings.Contains(got, "abcdef0123456789") {
+		t.Fatalf("session cookie leaked: %q", got)
+	}
+	in2 := `{"usage_cookie":"abcdef0123456789abcdef0123"}`
+	if got := r.Redact(in2); strings.Contains(got, "abcdef0123456789") {
+		t.Fatalf("usage_cookie value leaked: %q", got)
+	}
+}

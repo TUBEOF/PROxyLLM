@@ -15,3 +15,5 @@ No briefs directory (plan has no per-task briefs generated); each task works dir
 Task 1 (Step 1 tool-call fix): complete (commit b0d2ad1, tests: go test ./internal/translate/... ./internal/provider/... ./internal/server/httpapi/... → all pass incl. new TestStreamDecode_ToolCallOneShotArgs RED→GREEN + TestStreamEncode_ToolCallAnchorWithArgs)
 Task 2 (Step 2 web-tool fallback KVs consumed): complete (commit 92073cf, tests: go test ./internal/server/ ./internal/routing/ + full ./internal/... ./cmd/... → 21 pkgs ok)
 Task 3 (Step 3 stream emulation): complete (commit e897420, tests: go test ./internal/routing/ + -race routing/translate/server/provider -> all pass; TestExecuteStream_StreamEmulatesWebTools + StreamEmulationRespectsCancel RED->GREEN)
+Task 4 (Step 4 quota cooldown): complete (commit 9428633, tests: go test ./internal/routing/ + -race → pass; TestHealthTracker_Quota* + TestExecutor_QuotaMarksAccount RED→GREEN)
+Task 5 (Step 5 usage backend): complete (commit 464d47c, tests: storage+server+webui+observability all pass; parser fixture RED→GREEN, KV round-trip, admin endpoints, redactor cookie shapes)
