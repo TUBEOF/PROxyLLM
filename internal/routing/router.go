@@ -233,7 +233,7 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 	// operator scope entry naming either form allows the request; a
 	// scope without either still rejects.
 	if pats := r.cfg.KeyScopes[keyID]; keyID != "" && len(pats) > 0 {
-		if !matchAny(typed, pats) && !(hadMarker && matchAny(base, pats)) {
+		if !matchAny(typed, pats) && (!hadMarker || !matchAny(base, pats)) {
 			trace.add(Event{Type: EventRejected, Reason: "key scope: model not allowed for key", Model: model})
 			return nil, trace, ErrNoRoute
 		}
