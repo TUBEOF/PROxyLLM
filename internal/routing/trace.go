@@ -82,6 +82,14 @@ const (
 	// one-entry chain (ADR-011). From carries the model ID, To the
 	// provider. Implicit routes are never silent.
 	EventImplicitRoute EventType = "implicit_route"
+
+	// EventContextOverride: the requested model name carried the Claude
+	// Code context-window marker ("[1m]"/"[1M]") and was stripped to the
+	// base model before routing (2026-10-06 context auto-detect plan,
+	// Task 1). From carries the typed name, To the stripped base. The
+	// marker is a client-side context hint, never part of the model
+	// identity — overrides are never silent.
+	EventContextOverride EventType = "context_override"
 )
 
 // Event is one observable routing transition.
@@ -145,6 +153,12 @@ func (t *Trace) ModelResolved(routingID, wireName string) {
 // matched, the models-table row named the provider.
 func (t *Trace) ImplicitRoute(modelID, providerID string) {
 	t.add(Event{Type: EventImplicitRoute, From: modelID, To: providerID})
+}
+
+// ContextOverride records a stripped Claude Code context-window marker:
+// the client typed name, routing continues with the base model.
+func (t *Trace) ContextOverride(from, to string) {
+	t.add(Event{Type: EventContextOverride, From: from, To: to})
 }
 
 // Skip records a skipped chain entry.

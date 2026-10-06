@@ -197,10 +197,11 @@ type chainTrace struct {
 	Events  []json.RawMessage `json:"events"`
 }
 
-// routeTraceVersion is the current route_trace schema version (implicit
-// model routes / ADR-011; previously 4 / model identity). The WebUI
+// routeTraceVersion is the current route_trace schema version (v6 adds
+// the context_override event — the Claude Code "[1m]" marker strip,
+// 2026-10-06; previously 5 / implicit model routes ADR-011). The WebUI
 // renders route_trace as raw JSON, so bumps are additive.
-const routeTraceVersion = 5
+const routeTraceVersion = 6
 
 // routeTrace marshals the trace object from collected traces. Trace
 // embeds a mutex, so events are appended from the Events() copies — the

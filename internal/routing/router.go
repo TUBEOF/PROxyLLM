@@ -196,6 +196,17 @@ func (r *Router) ResolveChainFor(model string, required provider.Capabilities, o
 	return r.resolveWithTrace(model, required, o.KeyID, o.Ctx)
 }
 
+// StripContextMarker strips a trailing Claude Code context-window marker
+// ("[1m]" / "[1M]", case-insensitive) from a model name. The marker is a
+// client-side hint, never part of the model identity: hadMarker is true
+// exactly when the returned base differs from the typed name.
+func StripContextMarker(model string) (base string, hadMarker bool) {
+	if len(model) >= 4 && strings.EqualFold(model[len(model)-4:], "[1m]") {
+		return model[:len(model)-4], true
+	}
+	return model, false
+}
+
 // resolveWithTrace runs the deterministic pipeline:
 //
 //  1. key scope  — the key's allowed patterns must match the model
@@ -206,10 +217,23 @@ func (r *Router) ResolveChainFor(model string, required provider.Capabilities, o
 func (r *Router) resolveWithTrace(model string, required provider.Capabilities, keyID string, ctx context.Context) ([]ChainEntry, *Trace, error) {
 	trace := &Trace{}
 
+	// The Claude Code context-window marker ("[1m]"/"[1M]") is a
+	// client-side hint, never part of the model identity: strip it and
+	// route the base name, recording the override (never silent).
+	typed := model
+	base, hadMarker := StripContextMarker(model)
+	if hadMarker {
+		model = base
+		trace.ContextOverride(typed, base)
+	}
+
 	// Step 1: key scope. A key with patterns must match; a key with no
-	// entry is unrestricted.
+	// entry is unrestricted. Checked against the TYPED name first, then
+	// also against the base name when a marker was stripped — an
+	// operator scope entry naming either form allows the request; a
+	// scope without either still rejects.
 	if pats := r.cfg.KeyScopes[keyID]; keyID != "" && len(pats) > 0 {
-		if !matchAny(model, pats) {
+		if !matchAny(typed, pats) && !(hadMarker && matchAny(base, pats)) {
 			trace.add(Event{Type: EventRejected, Reason: "key scope: model not allowed for key", Model: model})
 			return nil, trace, ErrNoRoute
 		}
