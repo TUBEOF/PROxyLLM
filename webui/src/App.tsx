@@ -14,7 +14,6 @@ const Models = lazy(() => import('./routes/Models'));
 const Routing = lazy(() => import('./routes/Routing'));
 const Logs = lazy(() => import('./routes/Logs'));
 const Keys = lazy(() => import('./routes/Keys'));
-const Settings = lazy(() => import('./routes/Settings'));
 
 export default function App() {
   return (
@@ -36,7 +35,6 @@ export default function App() {
           <Route path="routing" element={<Routing />} />
           <Route path="logs" element={<Logs />} />
           <Route path="keys" element={<Keys />} />
-          <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

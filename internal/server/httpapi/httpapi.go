@@ -13,6 +13,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/provider"
@@ -31,6 +32,11 @@ type Params struct {
 
 	// Executor dispatches requests through the chain with failover.
 	Executor *routing.Executor
+
+	// HasWebToolAccounts reports the web-tool account presence at
+	// assembly time (R5 emulation default). nil keeps native; the server
+	// refreshes it via RefreshWebToolAccounts on provider reloads.
+	HasWebToolAccounts func() bool
 }
 
 // api holds the wired collaborators.
@@ -38,11 +44,31 @@ type api struct {
 	store    *storage.Store
 	router   *routing.Router
 	executor *routing.Executor
+	// hasWebToolAccounts is refreshed by the admin provider reload (the
+	// emulation default consults it per compatFor; a per-request store
+	// scan is the alternative — a bool swap avoids the hot-path query).
+	hasWebToolAccounts atomic.Bool
 }
 
+// API is the assembled client-facing handler (New's return): the mux
+// itself, with the refresh points the server's admin reload hooks need
+// (R5 emulation-presence live swap).
+type API struct {
+	http.Handler
+	a *api
+}
+
+// SetWebToolAccounts swaps the cached emulation-presence bool (the admin
+// provider reload calls it). Atomic — the emulation default picks up the
+// next request after a provider write.
+func (p *API) SetWebToolAccounts(present bool) { p.a.hasWebToolAccounts.Store(present) }
+
 // New assembles the client-facing HTTP handler (plan §5.1).
-func New(p Params) http.Handler {
+func New(p Params) *API {
 	a := &api{store: p.Store, router: p.Router, executor: p.Executor}
+	if p.HasWebToolAccounts != nil {
+		a.hasWebToolAccounts.Store(p.HasWebToolAccounts())
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/chat/completions", a.handleChat)
@@ -50,7 +76,7 @@ func New(p Params) http.Handler {
 	mux.HandleFunc("POST /v1/messages", a.handleMessages)
 	mux.HandleFunc("POST /v1/messages/count_tokens", a.handleCountTokens)
 	mux.HandleFunc("GET /v1/models", a.handleModels)
-	return mux
+	return &API{Handler: mux, a: a}
 }
 
 // --- shared pipeline ---
@@ -66,10 +92,17 @@ type wireCompat struct {
 	CacheControl        string `json:"cache_control"`
 }
 
-// compatFor loads the per-model compat policy. A model without a row (or
-// with an unparsable compat blob) is not an error: it routes with the
-// default (strip) policy — the store is eventually consistent with the
-// WebUI editor, and requests must not hard-fail on a missing row.
+// compatFor loads the per-model compat policy. The model row's
+// capabilities drive the policy now (2026-10-06, R5: the WebUI compat
+// editor is REMOVED — the defaults are internal policy, capability-aware;
+// the plan's R5 decision): a stored compat blob still wins when present
+// (legacy rows keep their explicitly-set behavior — read-only, the SPA
+// no longer writes this field).
+//
+// A model without a row (or with an unparsable compat blob) is not an
+// error: it routes with the default (strip) policy — the store is
+// eventually consistent, and requests must not hard-fail on a missing
+// row.
 func (a *api) compatFor(ctx context.Context, model string) routing.Compat {
 	// Follow routing's context-marker strip: a suffixed request
 	// ("glm-5.3-flash[1M]") carries no row of its own — the operator's
@@ -85,12 +118,73 @@ func (a *api) compatFor(ctx context.Context, model string) routing.Compat {
 	if len(m.Compat) > 0 {
 		_ = json.Unmarshal(m.Compat, &w)
 	}
-	c.ThinkingHandling = w.ThinkingHandling
-	c.ServerToolEmulation = w.ServerToolEmulation
+	c.ThinkingHandling = defaultThinkingFor(m.Capabilities, w.ThinkingHandling)
+	c.ServerToolEmulation = emulationFor(a.hasWebToolAccounts.Load(), w.ServerToolEmulation)
 	c.MaxTokensClamp = w.MaxTokensClamp
 	c.ContextWindow = w.ContextWindow
-	c.CacheControl = w.CacheControl
+	c.CacheControl = defaultCacheControl(w.CacheControl)
 	return c
+}
+
+// defaultThinkingFor derives the thinking policy from the model row's
+// capabilities when the stored blob left it unset (or was never written
+// again): a thinking-capable target maps the budget to the reasoning
+// effort it actually understands; everything else strips (signatures
+// must never reach a non-thinking target — A12).
+func defaultThinkingFor(capsJSON json.RawMessage, stored string) string {
+	if stored != "" {
+		return stored
+	}
+	for _, flag := range capabilityFlags(capsJSON) {
+		if flag == "thinking" {
+			return routing.ThinkingMapToEffort
+		}
+	}
+	return "" // routing.Compat's zero value: the strip default (compat.go)
+}
+
+// capabilityFlags parses the model row's capability blob's true-valued
+// flags; a corrupted blob reads as empty (never a routing failure).
+func capabilityFlags(capsJSON json.RawMessage) []string {
+	if len(capsJSON) == 0 {
+		return nil
+	}
+	var flags map[string]bool
+	if err := json.Unmarshal(capsJSON, &flags); err != nil {
+		return nil
+	}
+	present := make([]string, 0, len(flags))
+	for name, on := range flags {
+		if on {
+			present = append(present, name)
+		}
+	}
+	return present
+}
+
+// defaultCacheControl pins the C4 rule as the enforced default: forward
+// markers only Anthropic→Anthropic (the caller decides by the target's
+// surface — for all other targets the stored value stays "" = the drop
+// default through compat.go).
+func defaultCacheControl(stored string) string {
+	if stored == routing.CacheControlForward {
+		return routing.CacheControlForward
+	}
+	return "" // compat.go: "" = drop for non-Anthropic targets
+}
+
+// emulationFor pins the R5 emulation default: emulate-firecrawl whenever
+// a web-tool account exists (the model cannot serve native web search
+// through this proxy without one), otherwise native (forward whatever
+// the provider accepts). A stored blob value still wins (legacy rows).
+func emulationFor(hasWebTool bool, stored string) string {
+	if stored != "" {
+		return stored
+	}
+	if hasWebTool {
+		return routing.EmulationEmulateFirecrawl
+	}
+	return routing.EmulationNative
 }
 
 // Settings keys read by this package (the SPA Settings surface writes them

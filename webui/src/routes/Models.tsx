@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { apiCall } from '../api';
 import type {
   Model,
@@ -8,17 +8,25 @@ import type {
   ModelTestResponse,
   Provider,
   ProvidersResponse,
+  SettingsResponse,
 } from '../types';
 import { EmptyState, ErrorNote, PageHead, useAdminData, useMutation } from '../hooks';
+
+// The relocated Settings-editor keys (2026-10-06): model-surface policy,
+// not compat knobs.
+const NON_CLAUDE_KEY = 'anthropic_surface_non_claude';
+const ALIASES_KEY = 'model_aliases';
+const NON_CLAUDE_VALUES = ['allow', 'warn', 'block'] as const;
 import { Drawer } from '../components/Overlays';
 import { IconPlus } from '../icons';
 
-// "Models & Compatibility" (plan §9 + §6.4) — the central per-model editor:
-// identity, provider link, capabilities, priority, and the compatibility
-// policy that governs non-Claude routing on the Anthropic surface. The
-// compat blob is structured here (not raw JSON): the four §6.4 settings
-// have fixed value sets, so the editor renders real controls instead of a
-// JSON textarea — validation errors are impossible by construction.
+// "Models" (plan §9) — the central per-model editor: identity, provider
+// link, capabilities, priority. The compat knobs are NOT editable anymore
+// (2026-10-06, owner decision "Alles raus, automatisch"): the per-model
+// policy derives from the row's capabilities server-side (thinking
+// handling, cache markers, server-tool emulation, clamps — every
+// application still recorded in route_trace, never silent). Legacy compat
+// blobs on existing rows keep working as read-only overrides.
 //
 // Layout (2026-09-22): provider-grouped collapsible sections with model
 // CARDS (not a flat table) — the per-model test button needs a card-level
@@ -28,46 +36,7 @@ import { IconPlus } from '../icons';
 // cause). Block layout throughout — no variable-length text in flex-wrap
 // lines above other content (the v1.0.1/v1.0.2 screenshot lesson).
 
-interface CompatForm {
-  thinking_handling: 'strip' | 'map-to-reasoning-effort' | 'block';
-  server_tool_emulation: 'native' | 'emulate-firecrawl' | 'off';
-  max_tokens_clamp: string; // text input → number | 'off' (0 = off)
-  context_window: string; // text input → number
-  cache_control: 'forward' | 'drop';
-}
-
-const DEFAULT_COMPAT: CompatForm = {
-  thinking_handling: 'strip',
-  server_tool_emulation: 'off',
-  max_tokens_clamp: '0',
-  context_window: '0',
-  cache_control: 'drop',
-};
-
 const CAPABILITY_FLAGS = ['streaming', 'tools', 'vision', 'thinking', 'web_search', 'web_fetch', 'code_execution'] as const;
-
-// Read the raw compat blob defensively: unknown/missing fields fall back
-// to defaults instead of crashing the editor (the blob round-trips through
-// the API verbatim; we only project the §6.4 keys we know).
-function compatFromRaw(raw: unknown): CompatForm {
-  if (raw === null || raw === undefined || typeof raw !== 'object') return { ...DEFAULT_COMPAT };
-  const o = raw as Record<string, unknown>;
-  const pick = (key: keyof CompatForm, allowed: string[], fallback: string): string => {
-    const v = o[key];
-    return typeof v === 'string' && allowed.includes(v) ? v : fallback;
-  };
-  return {
-    thinking_handling: pick('thinking_handling', ['strip', 'map-to-reasoning-effort', 'block'], 'strip') as CompatForm['thinking_handling'],
-    server_tool_emulation: pick(
-      'server_tool_emulation',
-      ['native', 'emulate-firecrawl', 'off'],
-      'off',
-    ) as CompatForm['server_tool_emulation'],
-    max_tokens_clamp: typeof o.max_tokens_clamp === 'number' ? String(o.max_tokens_clamp) : '0',
-    context_window: typeof o.context_window === 'number' ? String(o.context_window) : '0',
-    cache_control: pick('cache_control', ['forward', 'drop'], 'drop') as CompatForm['cache_control'],
-  };
-}
 
 function capsFromRaw(raw: unknown): Record<string, boolean> {
   const out: Record<string, boolean> = {};
@@ -113,7 +82,6 @@ export default function Models() {
     name: '',
     priority: '0',
     capabilities: {} as Record<string, boolean>,
-    compat: DEFAULT_COMPAT,
   });
 
   const save = useMutation();
@@ -126,7 +94,6 @@ export default function Models() {
       name: '',
       priority: '0',
       capabilities: capsFromRaw(null),
-      compat: { ...DEFAULT_COMPAT },
     });
     setCreating(true);
     setEditing(null);
@@ -140,7 +107,6 @@ export default function Models() {
       name: m.name,
       priority: String(m.priority),
       capabilities: capsFromRaw(m.capabilities),
-      compat: compatFromRaw(m.compat),
     });
     setEditing(m);
     setCreating(false);
@@ -171,12 +137,6 @@ export default function Models() {
         setFormError('Priority must be a non-negative integer');
         return;
       }
-      const clamp = parsePositiveInt(form.compat.max_tokens_clamp);
-      const window_ = parsePositiveInt(form.compat.context_window);
-      if (clamp === null || window_ === null) {
-        setFormError('max_tokens_clamp and context_window must be non-negative integers');
-        return;
-      }
       setFormError(null);
       const caps: Record<string, unknown> = { tools: Object.keys(form.capabilities).filter((k) => form.capabilities[k]) };
       // Operator save = manual selection: every flag written here is
@@ -189,21 +149,13 @@ export default function Models() {
         pinned[flag] = on;
       }
       caps.pinned = pinned;
+      // NOTE: compat is NOT sent — the row's stored blob (legacy) stays
+      // untouched; the server derives the policy from capabilities.
       const ok = await save.run(() =>
         apiCall('PUT', `/api/admin/models/${encodeURIComponent(id)}`, {
           provider_id: form.provider_id,
           name: form.name,
           capabilities: caps,
-          compat: {
-            thinking_handling: form.compat.thinking_handling,
-            server_tool_emulation: form.compat.server_tool_emulation,
-            // Wire contract (httpapi wireCompat): int, 0 = off — never the
-            // string 'off', which would fail decoding and silently drop the
-            // whole policy.
-            max_tokens_clamp: clamp,
-            context_window: window_,
-            cache_control: form.compat.cache_control,
-          },
           priority,
         }),
       );
@@ -253,6 +205,73 @@ export default function Models() {
   const lastRunText = lastRun === null || lastRun.ran_at === 0
     ? 'never run'
     : new Date(lastRun.ran_at * 1000).toLocaleString();
+
+  // Surface policy (relocated from the removed Settings page, 2026-10-06):
+  // the non-Claude gate + the Claude Code alias map — model-surface
+  // policy, not compat knobs. Same key/value writes; the editors' shapes
+  // are unchanged.
+  const { data: settingsData, reload: reloadSettings } = useAdminData<SettingsResponse>(
+    (signal) => apiCall<SettingsResponse>('GET', '/api/admin/settings', undefined, signal),
+  );
+  const entries = useMemo(() => settingsData?.entries ?? [], [settingsData]);
+  const [aliasesText, setAliasesText] = useState('');
+  const [aliasesError, setAliasesError] = useState<string | null>(null);
+  const saveAlias = useMutation();
+  const saveSwitch = useMutation();
+
+  const valueOf = useCallback(
+    (key: string): string => entries.find((e) => e.key === key)?.value ?? '',
+    [entries],
+  );
+  const nonClaudeValue = useMemo(() => {
+    const raw = valueOf(NON_CLAUDE_KEY);
+    return (NON_CLAUDE_VALUES as readonly string[]).includes(raw) ? raw : '';
+  }, [valueOf]);
+  const isDefault = nonClaudeValue === '';
+
+  // Seed the alias textarea from the loaded override once per load — an
+  // accidental save must not clobber an existing map with an empty object
+  // (the Settings-page lesson carried over verbatim).
+  useEffect(() => {
+    setAliasesText(entries.find((e) => e.key === ALIASES_KEY)?.value ?? '');
+  }, [entries]);
+
+  const setNonClaude = useCallback(
+    async (value: string) => {
+      const ok = await saveSwitch.run(() => apiCall('PUT', '/api/admin/settings', { key: NON_CLAUDE_KEY, value }));
+      if (ok !== null) reloadSettings();
+    },
+    [saveSwitch, reloadSettings],
+  );
+
+  const submitAliases = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      let parsed: unknown;
+      try {
+        parsed = aliasesText.trim() === '' ? {} : JSON.parse(aliasesText);
+      } catch {
+        setAliasesError('Alias map is not valid JSON');
+        return;
+      }
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        setAliasesError('Alias map must be a JSON object of alias → model id');
+        return;
+      }
+      for (const [alias, target] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof target !== 'string' || target === '') {
+          setAliasesError(`Target for "${alias}" must be a non-empty model id string`);
+          return;
+        }
+      }
+      setAliasesError(null);
+      const ok = await saveAlias.run(() =>
+        apiCall('PUT', '/api/admin/settings', { key: ALIASES_KEY, value: JSON.stringify(parsed) }),
+      );
+      if (ok !== null) reloadSettings();
+    },
+    [aliasesText, saveAlias, reloadSettings],
+  );
 
   // Model test (2026-09-22): one minimal round trip per model card. State
   // is per-model: pending + the last result. Latency is NOT rendered in
@@ -371,6 +390,72 @@ export default function Models() {
             )}
           </div>
         </div>
+
+        {/* Surface policy (relocated from the removed Settings page): the
+            non-Claude gate is the §6.4 safety net; the alias map is C6. */}
+        <div className="widget w-full" style={{ marginBottom: 8 }}>
+          <div className="widget-head">
+            <h3 className="title">Non-Claude routing on the Anthropic surface</h3>
+          </div>
+          <div className="widget-body">
+            <div className="rpills" role="radiogroup" aria-label="Non-Claude routing mode">
+              {NON_CLAUDE_VALUES.map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`rpill${(!isDefault && nonClaudeValue === mode) || (isDefault && mode === 'allow') ? ' active' : ''}`}
+                  role="radio"
+                  aria-checked={(!isDefault && nonClaudeValue === mode) || (isDefault && mode === 'allow')}
+                  onClick={() => void setNonClaude(mode)}
+                  disabled={saveSwitch.pending}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+            <p className="hint" style={{ marginBottom: 0 }}>
+              {isDefault
+                ? 'No override set — the default is allow.'
+                : `Override: ${nonClaudeValue}. allow passes requests through; warn annotates the route trace; block rejects with a clear error.`}
+            </p>
+            {saveSwitch.error !== null && <ErrorNote message={saveSwitch.error} />}
+          </div>
+        </div>
+
+        <div className="widget w-full" style={{ marginBottom: 8 }}>
+          <div className="widget-head">
+            <h3 className="title">Claude Code alias map</h3>
+          </div>
+          <div className="widget-body">
+            <form className="form" onSubmit={submitAliases}>
+              <div className="field">
+                <label htmlFor="s-aliases">Aliases (JSON object)</label>
+                <textarea
+                  id="s-aliases"
+                  className="textarea mono"
+                  rows={4}
+                  value={aliasesText}
+                  onChange={(e) => setAliasesText(e.target.value)}
+                  placeholder={'{"haiku": "gpt-5-mini", "sonnet": "llama-4-sonnet"}'}
+                  spellCheck={false}
+                />
+              </div>
+              {aliasesError !== null && (
+                <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+                  {aliasesError}
+                </p>
+              )}
+              {saveAlias.error !== null && (
+                <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+                  {saveAlias.error}
+                </p>
+              )}
+              <button type="submit" className="btn btn-primary btn-sm" disabled={saveAlias.pending}>
+                Save alias map
+              </button>
+            </form>
+          </div>
+        </div>
         {error !== null ? (
           <div className="w-full">
             <ErrorNote message={error} />
@@ -412,7 +497,6 @@ export default function Models() {
                     </p>
                   )}
                   {g.models.map((m) => {
-                    const compat = compatFromRaw(m.compat);
                     const caps = capsFromRaw(m.capabilities);
                     const result = testResults[m.id];
                     return (
@@ -427,9 +511,7 @@ export default function Models() {
                           <span className={m.origin === 'synced' ? 'badge info' : 'badge paused'}>
                             <span className="b-dot" />
                             {m.origin === 'synced' ? 'synced' : 'manual'}
-                          </span>{' '}
-                          <span className="badge info">{compat.thinking_handling}</span>{' '}
-                          <span className="badge info">{compat.server_tool_emulation}</span>
+                          </span>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                           {CAPABILITY_FLAGS.map((flag) => (
@@ -610,91 +692,6 @@ export default function Models() {
               ))}
             </fieldset>
 
-            <fieldset className="fieldset">
-              <legend>Compatibility policy (§6.4)</legend>
-              <div className="field has-select">
-                <label htmlFor="m-thinking">Thinking handling</label>
-                <select
-                  id="m-thinking"
-                  value={form.compat.thinking_handling}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      compat: { ...f.compat, thinking_handling: e.target.value as CompatForm['thinking_handling'] },
-                    }))
-                  }
-                >
-                  <option value="strip">strip — remove thinking blocks + param upstream</option>
-                  <option value="map-to-reasoning-effort">map-to-reasoning-effort — budget → effort</option>
-                  <option value="block">block — refuse with a protocol-conform error</option>
-                </select>
-                <span className="hint">Never fabricates signatures; strip is the safe default for non-Claude targets.</span>
-              </div>
-              <div className="field has-select">
-                <label htmlFor="m-emulation">Server tool emulation</label>
-                <select
-                  id="m-emulation"
-                  value={form.compat.server_tool_emulation}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      compat: {
-                        ...f.compat,
-                        server_tool_emulation: e.target.value as CompatForm['server_tool_emulation'],
-                      },
-                    }))
-                  }
-                >
-                  <option value="off">off — no emulation, capability gap fails the chain</option>
-                  <option value="emulate-firecrawl">emulate-firecrawl — Firecrawl substitutes web tools</option>
-                  <option value="native">native — provider has its own server tools</option>
-                </select>
-              </div>
-              <div className="form-row">
-                <div className="field">
-                  <label htmlFor="m-clamp">max_tokens clamp</label>
-                  <input
-                    id="m-clamp"
-                    className="input num"
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={form.compat.max_tokens_clamp}
-                    onChange={(e) => setForm((f) => ({ ...f, compat: { ...f.compat, max_tokens_clamp: e.target.value } }))}
-                  />
-                  <span className="hint">0 = off. Clamps output for targets with lower limits.</span>
-                </div>
-                <div className="field">
-                  <label htmlFor="m-window">Context window</label>
-                  <input
-                    id="m-window"
-                    className="input num"
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={form.compat.context_window}
-                    onChange={(e) => setForm((f) => ({ ...f, compat: { ...f.compat, context_window: e.target.value } }))}
-                  />
-                  <span className="hint">0 = unknown. Used for capability filtering and token estimates.</span>
-                </div>
-              </div>
-              <div className="field has-select">
-                <label htmlFor="m-cache">cache_control</label>
-                <select
-                  id="m-cache"
-                  value={form.compat.cache_control}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      compat: { ...f.compat, cache_control: e.target.value as CompatForm['cache_control'] },
-                    }))
-                  }
-                >
-                  <option value="drop">drop — remove cache markers when crossing protocols</option>
-                  <option value="forward">forward — pass through on Anthropic-shaped upstreams</option>
-                </select>
-              </div>
-            </fieldset>
           </form>
         </Drawer>
       )}

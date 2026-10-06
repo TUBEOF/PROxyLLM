@@ -224,6 +224,28 @@ func providerAPIKey(ctx context.Context, logger *slog.Logger, store *storage.Sto
 	return string(tok.Secret)
 }
 
+// webToolAccountsPresent returns a bool-closure over the R5 emulation
+// default (httpapi.Params.HasWebToolAccounts): whether ANY stored account
+// is a web_tool kind (firecrawl). The function is read at assembly and on
+// every provider reload — a per-request store query is avoided (the
+// emulation default must not add latency to every chat dispatch).
+// A store failure reads as false — the emulation default degrades to
+// native, never a request failure.
+func webToolAccountsPresent(store *storage.Store) func() bool {
+	return func() bool {
+		rows, err := store.ListProviders(context.Background())
+		if err != nil {
+			return false
+		}
+		for _, row := range rows {
+			if desc, isType := webui.ProviderTypeDescription(row.Type); isType && desc.Kind == webui.KindWebTool {
+				return true
+			}
+		}
+		return false
+	}
+}
+
 // codexBaseURL is the ChatGPT backend root (X7/X19) every codex provider
 // instance pins — the backend URL is not operator configuration.
 const codexBaseURL = "https://chatgpt.com/backend-api"

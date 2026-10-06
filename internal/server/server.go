@@ -190,18 +190,24 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		Store:    store,
 		Router:   router,
 		Executor: exec,
+		// R5 emulation default: emulate-firecrawl when a web-tool account
+		// exists; the provider reload refreshes the bool live.
+		HasWebToolAccounts: webToolAccountsPresent(store),
 	})
 	// The proxy API mounts at /v1/ (every httpapi route lives there), so the
 	// SPA can own the root: a browser hitting / gets the WebUI without a
 	// client key — the WebUI session is the WebUI's auth, not the client
 	// key's (plan §9, §5.2).
 	s.mux.Handle("/v1/", authMiddleware.Wrap(handler))
+	// R5: the provider reloads refresh the emulation-presence bool (the
+	// emulation default derives from the live account set).
+	refreshWebToolPresence := func() {
+		if fn := webToolAccountsPresent(store); handler != nil {
+			handler.SetWebToolAccounts(fn())
+		}
+	}
 
 	// Admin API (plan §5.2): mounted only when the master key is wired —
-	// the reload hook pushes freshly stored routing rules into the LIVE
-	// router (Analysis E: WebUI rule writes take effect without restart;
-	// a failed store write never reloads, so the router never sees a
-	// rule set that is not the persisted one).
 	//
 	// Without the master key there is no admin surface to mount — but the
 	// path must still answer with the auth gate's uniform 401, never the
@@ -239,6 +245,7 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 					return
 				}
 				exec.SetEmulator(buildEmulatorPool(context.Background(), emus, nil, store, logger))
+				refreshWebToolPresence()
 			},
 			ReloadSettings: func() {
 				// Settings KV writes reach the live runtime without restart:
@@ -273,6 +280,7 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 					return
 				}
 				exec.SetEmulator(buildEmulatorPool(context.Background(), emus, nil, store, logger))
+				refreshWebToolPresence()
 			},
 			SyncNow: func(ctx context.Context) (storage.ModelSyncState, error) {
 				return modelsync.New(store, reg, logger).Run(ctx)
