@@ -167,3 +167,29 @@ func TestEmulatorPool_AllFailedSurfacesLastError(t *testing.T) {
 		t.Errorf("all-failed error = %v, want the LAST emulator's error", err)
 	}
 }
+
+// TestEmulatorPool_OrderAccessor: the pool's per-family order is
+// observable (test-only, additive): NewEmulatorPool pins the lists it was
+// built with; SetSearch/SetFetch replace them atomically. This accessor
+// is how the server wiring test asserts the stored web_search/web_fetch
+// fallback lists are CONSUMED (ADR-010 decision 3 — previously stored and
+// validated but never read, pool order was registry insertion order).
+func TestEmulatorPool_OrderAccessor(t *testing.T) {
+	a, b := &poolEmulator{id: "a"}, &poolEmulator{id: "b"}
+	c, d := &poolEmulator{id: "c"}, &poolEmulator{id: "d"}
+	pool := routing.NewEmulatorPool([]routing.Emulator{a, b}, []routing.Emulator{c})
+	if got := pool.SearchOrder(); len(got) != 2 || got[0] != routing.Emulator(a) || got[1] != routing.Emulator(b) {
+		t.Fatalf("SearchOrder = %+v", got)
+	}
+	if got := pool.FetchOrder(); len(got) != 1 || got[0] != routing.Emulator(c) {
+		t.Fatalf("FetchOrder = %+v", got)
+	}
+	pool.SetSearch([]routing.Emulator{d})
+	pool.SetFetch([]routing.Emulator{d, a})
+	if got := pool.SearchOrder(); len(got) != 1 || got[0] != routing.Emulator(d) {
+		t.Fatalf("SearchOrder after SetSearch = %+v", got)
+	}
+	if got := pool.FetchOrder(); len(got) != 2 || got[0] != routing.Emulator(d) || got[1] != routing.Emulator(a) {
+		t.Fatalf("FetchOrder after SetFetch = %+v", got)
+	}
+}

@@ -277,8 +277,8 @@ type wireToolCall struct {
 }
 
 type wireFunction struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
 	// Parameters is the tool's JSON schema. omitempty would drop an empty
 	// schema upstream — a strict provider (schema-less function tool) is
 	// rejected; the absent-schema case normalizes to {} (schema present

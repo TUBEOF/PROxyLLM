@@ -50,9 +50,11 @@ import (
 // never a startup death on store noise.
 //
 // ADR-010: web_tool-kind rows (firecrawl) construct Emulators instead of
-// chat providers; they are returned separately so the executor's emulator
-// pool can pick them up. An LLM row and a web_tool row never cross.
-func loadProviders(ctx context.Context, store *storage.Store, logger *slog.Logger) ([]provider.Provider, []routing.Emulator, error) {
+// chat providers; they are returned separately WITH their account IDs so
+// the emulator pool can apply the stored web_search/web_fetch fallback
+// KVs (the lists name ACCOUNT ids — pool order is the stored order). An
+// LLM row and a web_tool row never cross.
+func loadProviders(ctx context.Context, store *storage.Store, logger *slog.Logger) ([]provider.Provider, []NamedEmulator, error) {
 	rows, err := store.ListProviders(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -64,7 +66,7 @@ func loadProviders(ctx context.Context, store *storage.Store, logger *slog.Logge
 		typeSettings = map[string]json.RawMessage{}
 	}
 	out := make([]provider.Provider, 0, len(rows))
-	var emus []routing.Emulator
+	var emus []NamedEmulator
 	for _, row := range rows {
 		p, emu, err := buildProvider(ctx, store, row, typeSettings, logger)
 		if err != nil {
@@ -73,12 +75,20 @@ func loadProviders(ctx context.Context, store *storage.Store, logger *slog.Logge
 			continue
 		}
 		if emu != nil {
-			emus = append(emus, emu)
+			emus = append(emus, NamedEmulator{ID: row.ID, Emulator: emu})
 			continue
 		}
 		out = append(out, p)
 	}
 	return out, emus, nil
+}
+
+// NamedEmulator pairs one web-tool emulator with its account ID (the
+// providers row the account was built from): the stored
+// web_search_fallback / web_fetch_fallback KVs name these IDs.
+type NamedEmulator struct {
+	ID       string
+	Emulator routing.Emulator
 }
 
 // buildProvider constructs one row into its live form (ADR-010): an LLM

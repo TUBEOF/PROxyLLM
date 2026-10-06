@@ -46,6 +46,50 @@ func resolveCapabilityFallbacks(ctx context.Context, store *storage.Store, logge
 	return entries, nil
 }
 
+// resolveWebToolFallbacks orders the emulator pool per the stored
+// web_search_fallback / web_fetch_fallback KVs (ADR-010 decision 3): each
+// entry is a WEB-TOOL ACCOUNT ID resolved to its emulator among the just-
+// loaded accounts. Unknown IDs are skipped with a warn (same
+// last-known-good contract as resolveCapabilityFallbacks; the Put path
+// already validated kind membership — a stale row can only exist from a
+// pre-validation database or a since-deleted account). An empty/unresolvable
+// list falls back to the account insertion order (the pre-list behavior).
+// The store read failure is returned; callers keep the live pool.
+func resolveWebToolFallbacks(ctx context.Context, store *storage.Store, logger *slog.Logger, emus []NamedEmulator) (search, fetch []NamedEmulator, err error) {
+	all := map[string]routing.Emulator{}
+	for _, e := range emus {
+		all[e.ID] = e.Emulator
+	}
+	insertion := append([]NamedEmulator(nil), emus...)
+
+	lists, err := store.GetWebToolFallbacks(ctx)
+	if err != nil {
+		return insertion, insertion, err
+	}
+	order := func(ids []string) []NamedEmulator {
+		out := make([]NamedEmulator, 0, len(ids))
+		for _, id := range ids {
+			emu, ok := all[id]
+			if !ok {
+				if logger != nil {
+					logger.Warn("web-tool fallback entry is not a known account — skipping", "account", id)
+				}
+				continue
+			}
+			out = append(out, NamedEmulator{ID: id, Emulator: emu})
+		}
+		return out
+	}
+	s, f := order(lists.Search), order(lists.Fetch)
+	if len(s) == 0 {
+		s = insertion
+	}
+	if len(f) == 0 {
+		f = insertion
+	}
+	return s, f, nil
+}
+
 // learnTimeout bounds one learning write; a slow store must not pile up
 // goroutines behind the failover path.
 const learnTimeout = 5 * time.Second

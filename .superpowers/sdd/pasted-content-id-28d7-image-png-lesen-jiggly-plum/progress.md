@@ -12,3 +12,4 @@ No briefs directory (plan has no per-task briefs generated); each task works dir
 - Step 5 (usage API) consumes health Reason added in Step 4 — sequenced after 4.
 - Step 6 (live polling) touches httpapi getLogs + new overview; Step 7 touches compatFor in same file — sequenced.
 - No conflicting concurrent edits: strictly in order, one at a time.
+Task 1 (Step 1 tool-call fix): complete (commit b0d2ad1, tests: go test ./internal/translate/... ./internal/provider/... ./internal/server/httpapi/... → all pass incl. new TestStreamDecode_ToolCallOneShotArgs RED→GREEN + TestStreamEncode_ToolCallAnchorWithArgs)

@@ -93,6 +93,14 @@ modality — image, multimodal, unsupported content), never to rescue an
 unresolvable chain (that stays the no-route error).
 
 **Automatic capability learning**: every `capability_gap` rejection
+**Wiring note (2026-10-06)**: the two web-tool lists are now CONSUMED —
+until this fix the pool was assembled in registry account order and the
+stored lists were validated but ignored. Pool assembly resolves each
+entry's account to its emulator and walks the lists in priority order;
+unknown accounts (e.g. a deleted account named in a stale list) are
+skipped with a log line, and an empty list keeps the insertion order.
+
+**Automatic capability learning**: every `capability_gap` rejection
 persists the observed gap into the model row's capabilities (e.g.
 `"vision": false`) — asynchronously, never on the request path. A pinned
 flag (the operator's manual selection in the Models editor, written as
