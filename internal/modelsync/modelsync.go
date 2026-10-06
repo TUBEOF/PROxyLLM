@@ -220,10 +220,10 @@ func (s *Syncer) syncProvider(ctx context.Context, providerID, typ, prefix strin
 					"provider_id", providerID, "error", err)
 				return ps
 			}
-			if err := s.store.PutModel(ctx, storage.Model{
+			if err := s.store.PutModel(ctx, mergeDetectedNewRow(storage.Model{
 				ID: rowID, ProviderID: providerID, Name: info.Name,
 				Origin: storage.ModelSyncedOrigin,
-			}); err != nil {
+			}, info)); err != nil {
 				ps.Skipped = 1
 				ps.SkippedReason = err.Error()
 				s.logger.Error("model sync: model insert failed — skipping provider",
@@ -235,6 +235,14 @@ func (s *Syncer) syncProvider(ctx context.Context, providerID, typ, prefix strin
 		}
 		// Existing row: refresh only the name — capabilities/compat/
 		// priority are operator edits and survive (ADR-010 policy).
+		//
+		// Detection persistence (2026-10-06 context auto-detect plan,
+		// Task 3): rows synced by an earlier run merge the detected
+		// capabilities/context into EMPTY blobs only, plus context_window
+		// into a compat blob without a non-zero pin (operator pins win).
+		// Manual rows are never touched by detection — the merge below
+		// keys on the row's origin BEFORE the name-refresh conversion.
+		wasSynced := row.Origin == storage.ModelSyncedOrigin
 		if row.Name != info.Name || row.Origin != storage.ModelSyncedOrigin {
 			// Manual rows converted by the upstream re-offering the same
 			// name keep their settings but become synced-tracked; name
@@ -249,6 +257,19 @@ func (s *Syncer) syncProvider(ctx context.Context, providerID, typ, prefix strin
 				return ps
 			}
 			ps.Updated++
+		}
+		if wasSynced {
+			if merged, changed := mergeDetected(row, info); changed {
+				// Post-merge logging reads the transition, not the old row.
+				if err := s.store.PutModel(ctx, merged); err != nil {
+					ps.Skipped = 1
+					ps.SkippedReason = err.Error()
+					s.logger.Error("model sync: detection merge failed — skipping provider",
+						"provider_id", providerID, "model_id", rowID, "error", err)
+					return ps
+				}
+				ps.Updated++
+			}
 		}
 	}
 

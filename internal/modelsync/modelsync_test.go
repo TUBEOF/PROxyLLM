@@ -12,9 +12,11 @@ package modelsync
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
+	"reflect"
 	"testing"
 
 	"github.com/tubeof/proxyllm/internal/config"
@@ -244,5 +246,188 @@ func TestSync_NonListerProvidersIgnored(t *testing.T) {
 	}
 	if len(state.Providers) != 0 {
 		t.Errorf("non-lister providers must not appear in the state: %+v", state.Providers)
+	}
+}
+
+// ---- 2026-10-06 context/capability auto-detection persistence ----
+// (plan task 3) Detected facts (provider.ModelInfo from ollamacloud
+// /api/show, verified live 2026-10-06: glm-5.3-flash → context_length
+// 1048576, capabilities thinking/tools/vision) persist into model rows.
+// Operator pins win; manual rows are never touched.
+
+// detectGLM is the detected-info fixture pinning the live /api/show facts.
+func detectGLM() provider.ModelInfo {
+	return provider.ModelInfo{
+		Name:          "glm-5.3-flash",
+		ContextLength: 1048576,
+		Thinking:      true,
+		Tools:         true,
+		Vision:        true,
+	}
+}
+
+// assertBlob compares a JSON blob against a map via deep equality; the
+// want map round-trips through JSON so numbers compare as the decoder
+// sees them (float64), not as literal int values.
+func assertBlob(t *testing.T, label, raw string, want map[string]any) {
+	t.Helper()
+	var got map[string]any
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("%s blob is not JSON: %v (%s)", label, err, raw)
+	}
+	wantJSON, _ := json.Marshal(want)
+	var wantNorm map[string]any
+	if err := json.Unmarshal(wantJSON, &wantNorm); err != nil { // cannot fail: marshaled JSON
+		t.Fatalf("normalize want: %v", err)
+	}
+	if !reflect.DeepEqual(got, wantNorm) {
+		t.Errorf("%s blob = %s, want %v", label, raw, want)
+	}
+}
+
+// New models import with the detected capabilities and context window
+// (plan contract: capabilities {"streaming":true,"tools":det,"vision":det,
+// "thinking":det} + server tools false; compat {"thinking_handling":"strip",
+// "context_window":N}).
+func TestSync_NewRowCarriesDetectedFacts(t *testing.T) {
+	s := openStore(t, "acc-a")
+	reg := &fakeRegistry{}
+	reg.Register((&stubProvider{id: "acc-a", list: []provider.ModelInfo{detectGLM()}}).asLister())
+
+	if _, err := New(s, reg, testLogger()).Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	m := mustGet(t, s, "custom-openai/glm-5.3-flash")
+	assertBlob(t, "capabilities", string(m.Capabilities), map[string]any{
+		"streaming": true, "tools": true, "vision": true, "thinking": true,
+		"web_search": false, "web_fetch": false, "code_execution": false,
+	})
+	assertBlob(t, "compat", string(m.Compat), map[string]any{
+		"thinking_handling": "strip", "context_window": 1048576,
+	})
+}
+
+// Review Focus 2: a model synced BEFORE the feature (empty capabilities
+// blob) must receive detected caps + context on the next sync.
+func TestSync_PreFeatureSyncedRowReceivesDetection(t *testing.T) {
+	s := openStore(t, "acc-a")
+	if err := s.PutModel(context.Background(), storage.Model{
+		ID: "custom-openai/glm-5.3-flash", ProviderID: "acc-a", Name: "glm-5.3-flash",
+		Origin: storage.ModelSyncedOrigin, // pre-feature sync: empty blobs
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reg := &fakeRegistry{}
+	reg.Register((&stubProvider{id: "acc-a", list: []provider.ModelInfo{detectGLM()}}).asLister())
+
+	if _, err := New(s, reg, testLogger()).Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	m := mustGet(t, s, "custom-openai/glm-5.3-flash")
+	assertBlob(t, "capabilities", string(m.Capabilities), map[string]any{
+		"streaming": true, "tools": true, "vision": true, "thinking": true,
+		"web_search": false, "web_fetch": false, "code_execution": false,
+	})
+	assertBlob(t, "compat", string(m.Compat), map[string]any{
+		"thinking_handling": "strip", "context_window": 1048576,
+	})
+}
+
+// Review Focus 3: an operator-edited context_window (non-zero in the
+// compat blob) must survive every sync run.
+func TestSync_OperatorContextWindowPinSurvives(t *testing.T) {
+	s := openStore(t, "acc-a")
+	if err := s.PutModel(context.Background(), storage.Model{
+		ID: "custom-openai/glm-5.3-flash", ProviderID: "acc-a", Name: "glm-5.3-flash",
+		Capabilities: []byte(`{"vision":true}`),
+		Compat:       []byte(`{"thinking_handling":"block","context_window":131072}`),
+		Origin:       storage.ModelSyncedOrigin,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reg := &fakeRegistry{}
+	reg.Register((&stubProvider{id: "acc-a", list: []provider.ModelInfo{detectGLM()}}).asLister())
+
+	if _, err := New(s, reg, testLogger()).Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	m := mustGet(t, s, "custom-openai/glm-5.3-flash")
+	if string(m.Compat) != `{"thinking_handling":"block","context_window":131072}` {
+		t.Errorf("operator context pin was overwritten: %s", m.Compat)
+	}
+	if string(m.Capabilities) != `{"vision":true}` {
+		t.Errorf("operator capabilities blob was overwritten: %s", m.Capabilities)
+	}
+}
+
+// Review Focus 4: a manual-origin row with the same ID must never be
+// touched by detection.
+func TestSync_ManualRowNeverMerged(t *testing.T) {
+	s := openStore(t, "acc-a")
+	if err := s.PutModel(context.Background(), storage.Model{
+		ID: "custom-openai/glm-5.3-flash", ProviderID: "acc-a", Name: "glm-5.3-flash",
+		Capabilities: []byte(`{"tools":false}`), // manual operator choice
+		Compat:       []byte(`{"thinking_handling":"block"}`),
+		Origin:       storage.ModelManualOrigin,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reg := &fakeRegistry{}
+	reg.Register((&stubProvider{id: "acc-a", list: []provider.ModelInfo{detectGLM()}}).asLister())
+
+	if _, err := New(s, reg, testLogger()).Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	m := mustGet(t, s, "custom-openai/glm-5.3-flash")
+	if string(m.Compat) != `{"thinking_handling":"block"}` || string(m.Capabilities) != `{"tools":false}` {
+		t.Errorf("manual row was touched by detection: caps=%s compat=%s", m.Capabilities, m.Compat)
+	}
+}
+
+// An existing synced row whose compat blob carries other keys but no
+// context_window receives the detected value only — the other keys and a
+// non-empty capabilities blob stay untouched.
+func TestSync_MergesContextWindowIntoPopulatedCompat(t *testing.T) {
+	s := openStore(t, "acc-a")
+	if err := s.PutModel(context.Background(), storage.Model{
+		ID: "custom-openai/glm-5.3-flash", ProviderID: "acc-a", Name: "glm-5.3-flash",
+		Capabilities: []byte(`{"vision":true}`),               // operator blob: untouched
+		Compat:       []byte(`{"thinking_handling":"block"}`), // no pin
+		Origin:       storage.ModelSyncedOrigin,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reg := &fakeRegistry{}
+	reg.Register((&stubProvider{id: "acc-a", list: []provider.ModelInfo{detectGLM()}}).asLister())
+
+	if _, err := New(s, reg, testLogger()).Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	m := mustGet(t, s, "custom-openai/glm-5.3-flash")
+	assertBlob(t, "compat", string(m.Compat), map[string]any{
+		"thinking_handling": "block", "context_window": 1048576,
+	})
+	if string(m.Capabilities) != `{"vision":true}` {
+		t.Errorf("non-empty capabilities blob must not merge: %s", m.Capabilities)
+	}
+}
+
+// Repeated runs are idempotent: after detection has been persisted, the
+// next run makes no further writes (Updated stays 0).
+func TestSync_DetectionMergeIsIdempotent(t *testing.T) {
+	s := openStore(t, "acc-a")
+	reg := &fakeRegistry{}
+	reg.Register((&stubProvider{id: "acc-a", list: []provider.ModelInfo{detectGLM()}}).asLister())
+	syncer := New(s, reg, testLogger())
+
+	if _, err := syncer.Run(context.Background()); err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+	state, err := syncer.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	if state.Providers[0].Updated != 0 {
+		t.Errorf("second run re-wrote rows: Updated=%d", state.Providers[0].Updated)
 	}
 }
