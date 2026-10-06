@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { apiCall } from '../api';
 import type { UsageResponse, UsageRow } from '../types';
-import { EmptyState, ErrorNote, PageHead, useAdminData } from '../hooks';
+import { EmptyState, ErrorNote, PageHead, useLiveData } from '../hooks';
 import { IconBoxes, IconGauge, IconPlug, IconRoute } from '../icons';
 
 // Overview: honest usage dashboard (plan §9). Data source is the single
@@ -67,17 +67,24 @@ function Ring({ pct }: { pct: number }) {
   );
 }
 
+// POLL_MS is the Overview's live-update poll interval (2026-10-06).
+const POLL_MS = 5000;
+
 export default function Overview() {
   // Last 30 days, inclusive — the honest window the usage endpoint serves.
+  // Live updates (2026-10-06): the snapshot poll replaces the manual
+  // reload; the day-window recomputes only when a poll crosses midnight
+  // (the data itself is keyed by day, so a stale window label is the only
+  // cost — acceptable against a hidden-tab-paused poll).
   const { from, to } = useMemo(() => {
     const today = new Date();
     const start = new Date(today.getTime() - 29 * 86_400_000);
     return { from: start.toISOString().slice(0, 10), to: today.toISOString().slice(0, 10) };
   }, []);
 
-  const { data, loading, error, reload } = useAdminData<UsageResponse>(
+  const { data, loading, error, reload, updatedAt } = useLiveData<UsageResponse>(
     (signal) => apiCall<UsageResponse>('GET', `/api/admin/usage?from=${from}&to=${to}`, undefined, signal),
-    [from, to],
+    POLL_MS,
   );
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
@@ -120,9 +127,12 @@ export default function Overview() {
         title="Overview"
         sub={`Requests, tokens and failures over the last 30 days (${from} to ${to}).`}
         actions={
-          <button type="button" className="btn btn-ghost btn-sm" onClick={reload}>
-            Refresh
-          </button>
+          <>
+            {updatedAt !== null && <span className="badge info">live</span>}
+            <button type="button" className="btn btn-ghost btn-sm" onClick={reload}>
+              Refresh
+            </button>
+          </>
         }
       />
       <div className="canvas">

@@ -1,0 +1,15 @@
+<!-- Fixture: ollama.com/settings usage section (shape per the OmniRoute
+     parser open-sse/services/opencodeOllamaUsage.ts, accessed 2026-10-06).
+     The parser must extract: session percent (first usage-track block,
+     via aria-label "X% used" or style width:X%), its reset time
+     (local-time class + data-time), the weekly percent (second block)
+     and its reset time. The plan tier ships as its own element. -->
+<div data-usage-track aria-label="28.8% used">
+  <div class="track">Session usage</div>
+  <span class="local-time" data-time="1759000000">resets in 5d 11h</span>
+</div>
+<div data-usage-track style="width: 27.4%;"></div>
+<div>
+  <span class="local-time" data-time="1759500000">resets in 1d</span>
+</div>
+<div data-plan-tier>Pro</div>

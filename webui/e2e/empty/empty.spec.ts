@@ -12,12 +12,12 @@ test.beforeEach(async ({ page }) => {
 
 for (const [route, name] of [
   ['/', 'overview'],
+  ['/quota', 'quota'],
   ['/providers', 'providers'],
   ['/models', 'models'],
   ['/routing', 'routing'],
   ['/logs', 'logs'],
   ['/keys', 'keys'],
-  ['/settings', 'settings'],
 ] as const) {
   test(`empty ${name}`, async ({ page }) => {
     await page.goto(route);

@@ -93,6 +93,23 @@ modality — image, multimodal, unsupported content), never to rescue an
 unresolvable chain (that stays the no-route error).
 
 **Automatic capability learning**: every `capability_gap` rejection
+**Wiring note (2026-10-06)**: the two web-tool lists are now CONSUMED —
+until this fix the pool was assembled in registry account order and the
+stored lists were validated but ignored. Pool assembly resolves each
+entry's account to its emulator and walks the lists in priority order;
+unknown accounts (e.g. a deleted account named in a stale list) are
+skipped with a log line, and an empty list keeps the insertion order.
+
+**Streaming emulation (2026-10-06)**: a STREAMING request whose tools
+include emulated defs rides the complete-path emulation round trip to
+finality, and the final response is synthesized into a protocol-conform
+event stream. Latency trade: such a request has no token streaming (the
+model's whole answer completes before the first byte) — the trade for
+real tool results; relaying raw tool_use (the previous behavior) was
+neither conform nor useful. The stream path's failover/capability
+discipline is unchanged for requests WITHOUT emulated defs.
+
+**Automatic capability learning**: every `capability_gap` rejection
 persists the observed gap into the model row's capabilities (e.g.
 `"vision": false`) — asynchronously, never on the request path. A pinned
 flag (the operator's manual selection in the Models editor, written as

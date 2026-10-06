@@ -113,7 +113,7 @@ function CapabilityFallbacksCard() {
           Every use is traced in the logs.
         </p>
         {(error ?? saveError) !== null && (
-          <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+          <p role="alert" className="form-note">
             {error ?? saveError}
           </p>
         )}
@@ -325,7 +325,7 @@ export default function Routing() {
               </label>
             ))}
             {saveGlobal.error !== null && (
-              <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+              <p role="alert" className="form-note">
                 {saveGlobal.error}
               </p>
             )}
@@ -467,7 +467,7 @@ export default function Routing() {
         >
           <form className="form" id="routing-form" onSubmit={submit}>
             {drawerError !== null && (
-              <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+              <p role="alert" className="form-note">
                 {drawerError}
               </p>
             )}

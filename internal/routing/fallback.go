@@ -52,6 +52,22 @@ func (p *EmulatorPool) SetFetch(list []Emulator) {
 	p.fetch = list
 }
 
+// SearchOrder returns a snapshot of the web_search list (the wiring test
+// asserts the stored web_search_fallback KV order is what the pool
+// walks — ADR-010 decision 3 is a runtime contract now).
+func (p *EmulatorPool) SearchOrder() []Emulator {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return append([]Emulator(nil), p.search...)
+}
+
+// FetchOrder returns a snapshot of the web_fetch list (same contract).
+func (p *EmulatorPool) FetchOrder() []Emulator {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return append([]Emulator(nil), p.fetch...)
+}
+
 // Search answers one web_search invocation, walking the family list.
 func (p *EmulatorPool) Search(ctx context.Context, query string, st ir.ServerToolConfig) ([]ir.WebSearchResultItem, error) {
 	p.mu.RLock()

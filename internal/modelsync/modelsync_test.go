@@ -286,9 +286,11 @@ func assertBlob(t *testing.T, label, raw string, want map[string]any) {
 }
 
 // New models import with the detected capabilities and context window
-// (plan contract: capabilities {"streaming":true,"tools":det,"vision":det,
-// "thinking":det} + server tools false; compat {"thinking_handling":"strip",
-// "context_window":N}).
+// (plan contract, R5-amended 2026-10-06: capabilities
+// {"streaming":true,"tools":det,"vision":det,"thinking":det} + server
+// tools false; compat carries ONLY the detected context_window — the
+// thinking policy derives from the capability blob server-side, never a
+// hardcoded "strip" that would pin every synced row).
 func TestSync_NewRowCarriesDetectedFacts(t *testing.T) {
 	s := openStore(t, "acc-a")
 	reg := &fakeRegistry{}
@@ -303,7 +305,7 @@ func TestSync_NewRowCarriesDetectedFacts(t *testing.T) {
 		"web_search": false, "web_fetch": false, "code_execution": false,
 	})
 	assertBlob(t, "compat", string(m.Compat), map[string]any{
-		"thinking_handling": "strip", "context_window": 1048576,
+		"context_window": 1048576,
 	})
 }
 
@@ -329,7 +331,7 @@ func TestSync_PreFeatureSyncedRowReceivesDetection(t *testing.T) {
 		"web_search": false, "web_fetch": false, "code_execution": false,
 	})
 	assertBlob(t, "compat", string(m.Compat), map[string]any{
-		"thinking_handling": "strip", "context_window": 1048576,
+		"context_window": 1048576,
 	})
 }
 

@@ -214,6 +214,7 @@ func (e *Executor) walkChain(ctx context.Context, chain []ChainEntry, req ir.Req
 			status, code, _ := AsUpstreamError(err)
 			trace.Failed(entry.ProviderID, c, status, code, latency)
 			e.reportFailure(entry.ProviderID)
+			e.reportQuota(entry.ProviderID, err, c)
 			if c.Class != ClassCapabilityGap {
 				gapOnly = false
 			}
@@ -344,12 +345,108 @@ func (e *Executor) ReportStreamOutcome(providerID string, streamErr *ir.Upstream
 // relayed the stream it must call ReportStreamOutcome so a mid-stream
 // failure still counts (ReportStreamOutcome).
 func (e *Executor) ExecuteStream(ctx context.Context, chain []ChainEntry, req ir.Request) (<-chan ir.StreamEvent, func(), *Trace, error) {
+	// Streaming with emulated web tools (§6.2, 2026-10-06): the emulation
+	// round-trip loop only exists on the complete path — a streamed tool
+	// call would relay raw to the client with no data (the reported bug:
+	// streaming Claude Code requests got bared tool_use). Once the first
+	// tool_use is on the wire it cannot be retrofitted, so requests whose
+	// tools include emulated defs ride the COMPLETE emulation loop to
+	// finality; the final response synthesizes the event stream below.
+	// Latency trade: no token streaming for this request class (the model
+	// runs its whole answer before the first byte) — documented, and the
+	// trade for protocol-conform tool RESULTS.
+	if len(emulatedToolDefs(req.Tools)) > 0 {
+		return e.executeEmulatedAsStream(ctx, chain, req)
+	}
 	trace := &Trace{}
 	ch, cancel, err := e.walkChainStream(ctx, chain, req, trace, true)
 	if ch == nil && err != nil {
 		return nil, cancel, trace, err
 	}
 	return ch, cancel, trace, err
+}
+
+// executeEmulatedAsStream runs the complete-path emulation loop (full
+// failover/retry discipline) and produces the wire stream from the final
+// response: Start → BlockStart/Delta/BlockStop per content part →
+// MessageDelta → Done. Cancellation: the caller's ctx aborts between
+// rounds (executeWithEmulation honors it on the dispatches; a ctx.Done
+// while encoding closes the channel) and cancel() stops nothing extra —
+// everything the loop ran has released itself on return.
+func (e *Executor) executeEmulatedAsStream(ctx context.Context, chain []ChainEntry, req ir.Request) (<-chan ir.StreamEvent, func(), *Trace, error) {
+	// The client's stream flag rides the IR request — the complete-path
+	// decoders set it for streamed requests, and a complete dispatch that
+	// still carries true makes real upstreams answer chunked SSE (which
+	// the non-streaming decode cannot parse). Clear it on the detour's
+	// COPY (the caller's request object is not mutated).
+	req.Stream = false
+	trace := &Trace{}
+	resp, err := e.executeWithEmulation(ctx, chain, req, trace)
+	if err != nil {
+		// Pre-stream failure semantics: no bytes were sent (the channel
+		// did not open), so ExecuteStream returns the error directly.
+		return nil, func() {}, trace, err
+	}
+
+	ch := make(chan ir.StreamEvent) // unbuffered: backpressure to the caller
+	cancel := func() {}
+	go func() {
+		defer func() { cancel() }()
+		synthesizeStream(ctx, ch, resp, resp.Usage)
+	}()
+	return ch, cancel, trace, nil
+}
+
+// synthesizeStream writes the response as a canonical event sequence — the
+// same vocabulary the relay paths consume. honors ctx: a cancelled
+// caller stops writing (the channel close is the loop's exit).
+func synthesizeStream(ctx context.Context, ch chan<- ir.StreamEvent, resp ir.Response, usage ir.Usage) {
+	defer close(ch)
+	if err := ctx.Err(); err != nil {
+		ch <- ir.StreamEvent{Type: ir.Error, Error: &ir.UpstreamError{
+			Type: "cancelled", Message: "request cancelled",
+		}}
+		return
+	}
+	// Start.
+	respFull := resp
+	respFull.Usage = ir.Usage{} // usage rides the terminal MessageDelta
+	ch <- ir.StreamEvent{Type: ir.Start, Response: &respFull}
+	for i, part := range resp.Content {
+		if err := ctx.Err(); err != nil {
+			return
+		}
+		switch p := part.(type) {
+		case ir.TextPart:
+			ch <- ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: ir.TextPart{}}
+			ch <- ir.StreamEvent{Type: ir.Delta, Index: i,
+				Delta: ir.DeltaPayload{Kind: ir.DeltaText, Text: p.Text}}
+			ch <- ir.StreamEvent{Type: ir.BlockStop, Index: i}
+		case ir.ThinkingPart:
+			ch <- ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: ir.ThinkingPart{}}
+			ch <- ir.StreamEvent{Type: ir.Delta, Index: i,
+				Delta: ir.DeltaPayload{Kind: ir.DeltaThinking, Text: p.Thinking}}
+			ch <- ir.StreamEvent{Type: ir.BlockStop, Index: i}
+		case ir.ToolCallPart:
+			ch <- ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: ir.ToolCallPart{ID: p.ID, Name: p.Name}}
+			ch <- ir.StreamEvent{Type: ir.Delta, Index: i,
+				Delta: ir.DeltaPayload{Kind: ir.DeltaToolInput, PartialJSON: string(p.Input)}}
+			ch <- ir.StreamEvent{Type: ir.BlockStop, Index: i}
+		case ir.ServerToolUsePart:
+			ch <- ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: p}
+		case ir.ServerToolResultPart:
+			ch <- ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: p}
+			ch <- ir.StreamEvent{Type: ir.BlockStop, Index: i}
+		default:
+			// Unknown parts skip (the round-trip loop never produces others).
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		return
+	}
+	md := ir.MessageDeltaPayload{StopReason: resp.StopReason, Usage: usage}
+	ch <- ir.StreamEvent{Type: ir.MessageDelta, MessageDelta: &md}
+	ch <- ir.StreamEvent{Type: ir.Done}
 }
 
 // walkChainStream is ExecuteStream's core with the fallback gate:
@@ -390,6 +487,7 @@ func (e *Executor) walkChainStream(ctx context.Context, chain []ChainEntry, req 
 		status, code, _ := AsUpstreamError(err)
 		trace.Failed(entry.ProviderID, c, status, code, latency)
 		e.reportFailure(entry.ProviderID)
+		e.reportQuota(entry.ProviderID, err, c)
 		if c.Class != ClassCapabilityGap {
 			gapOnly = false
 		}
@@ -481,6 +579,22 @@ func (e *Executor) reportFailure(pid string) {
 	if e.cfg.Health != nil {
 		e.cfg.Health.ReportFailure(pid)
 	}
+}
+
+// reportQuota marks a class-insufficient_quota rejection as a dedicated
+// account cooldown (2026-10-06): the next request must not re-pay the
+// exhaustion; the account re-probes at the announced reset window (the
+// upstream Retry-After when carried) or hourly.
+func (e *Executor) reportQuota(pid string, err error, c Classification) {
+	if e.cfg.Health == nil || c.Class != ClassInsufficientQuota {
+		return
+	}
+	var until time.Time
+	var ue *provider.UpstreamError
+	if errors.As(err, &ue) && ue.RetryAfter > 0 {
+		until = e.cfg.now().Add(ue.RetryAfter)
+	}
+	e.cfg.Health.ReportQuotaExhausted(pid, until)
 }
 
 // withModel stamps the chain entry's target model onto the request (the

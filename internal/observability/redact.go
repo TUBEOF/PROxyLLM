@@ -41,6 +41,10 @@ var (
 	fcRe = regexp.MustCompile(`\bfc-[A-Za-z0-9\-_]{12,}\b`)
 	// pk_ keys (PROxyLLM client keys).
 	pkRe = regexp.MustCompile(`\bpk_[A-Za-z0-9\-_]{4,}\b`)
+	// ollama.com session cookies (ADR-012 usage scraper): the
+	// __Secure-session value and the Cookie-header form — opaque long
+	// hex/URL-safe material.
+	ollamaSessionRe = regexp.MustCompile(`(?i)\b__Secure-session\s*[=:]\s*([A-Za-z0-9\-._~+/=]{16,})`)
 	// JWTs: three base64url segments, each length >= 20.
 	jwtRe = regexp.MustCompile(`\beyJ[A-Za-z0-9\-_]{18,}\.[A-Za-z0-9\-_]{18,}\.[A-Za-z0-9\-_]{18,}\b`)
 	// Generic key/token query params in URLs.
@@ -48,10 +52,11 @@ var (
 	// JSON-form key/value pairs: "api_key": "value", "secret": "value", …
 	// JSON key/value secrets: keep the key name, mask the value. The
 	// alternation lists the multi-word names (secret_?key, refresh_?token,
-	// access_?token) before their short prefixes: RE2 alternations match
-	// leftmost-first, so a bare `secret` or `token` would otherwise claim
-	// the key name and the extended spellings would never fire.
-	jsonSecretRe = regexp.MustCompile(`(?i)["'](api_?key|access_?key|secret_?key|refresh_?token|access_?token|secret|token|password|credential)["']\s*:\s*["']([^"']{16,})["']`)
+	// access_?token, usage_?cookie) before their short prefixes: RE2
+	// alternations match leftmost-first, so a bare `secret` or `token`
+	// would otherwise claim the key name and the extended spellings would
+	// never fire. usage_cookie rides the ADR-012 scrape credential.
+	jsonSecretRe = regexp.MustCompile(`(?i)["'](api_?key|access_?key|secret_?key|refresh_?token|access_?token|usage_?cookie|secret|token|password|credential)["']\s*:\s*["']([^"']{16,})["']`)
 	// Oversized base64-ish blobs (>= 256 chars) — likely key/cert/image
 	// material that should not appear in logs verbatim.
 	bigBlobRe = regexp.MustCompile(`[A-Za-z0-9+/]{256,}={0,2}`)
@@ -95,6 +100,11 @@ func (*redactor) Redact(value string) string {
 	value = skRe.ReplaceAllString(value, maskFor("sk"))
 	value = fcRe.ReplaceAllString(value, maskFor("fc"))
 	value = pkRe.ReplaceAllString(value, maskFor("pk"))
+	// ADR-012 usage cookies: masked BEFORE the bearer pass — the bare
+	// cookie value has no scheme context, the name-anchored form is the
+	// only reliable trigger.
+	value = ollamaSessionRe.ReplaceAllString(value,
+		"__Secure-session="+maskFor("ollama_session"))
 	value = jwtRe.ReplaceAllString(value, maskFor("jwt"))
 	value = bigBlobRe.ReplaceAllString(value, maskFor("blob"))
 

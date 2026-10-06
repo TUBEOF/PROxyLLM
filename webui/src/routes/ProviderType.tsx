@@ -212,7 +212,7 @@ export default function ProviderTypePage() {
                 Shared by all accounts of this type. Account-level fields override these.
               </p>
               {(settingsError ?? saveSettings.error) !== null && (
-                <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+                <p role="alert" className="form-note">
                   {settingsError ?? saveSettings.error}
                 </p>
               )}
@@ -413,7 +413,7 @@ export default function ProviderTypePage() {
           {oauthDraftId === null ? (
             <form className="form" id="account-form" onSubmit={submitAdd}>
               {(addError ?? addAccount.error) !== null && (
-                <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+                <p role="alert" className="form-note">
                   {addError ?? addAccount.error}
                 </p>
               )}

@@ -93,6 +93,50 @@ type RequestLogFilter struct {
 	Until      int64
 }
 
+// ListRequestLogsAfter returns rows with id > after (the live-feed
+// cursor: the page polls its last-seen id for newer rows), newest-first,
+// limited. Filter semantics match the page query.
+func (s *Store) ListRequestLogsAfter(ctx context.Context, f RequestLogFilter, limit int, after int64) ([]RequestLog, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	where, args := f.whereClause()
+	if where == "" {
+		where = " WHERE id > ?"
+		args = []any{after}
+	} else {
+		where += " AND id > ?"
+		args = append(args, after)
+	}
+	const logCols = `id, ts, client_key_id, provider_id, model, status, latency_ms, usage, route_trace, error_redacted`
+	q := `SELECT ` + logCols + ` FROM request_logs` + where + ` ORDER BY id DESC LIMIT ?` //nolint:gosec // where is built from fixed literals only
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []RequestLog
+	for rows.Next() {
+		var l RequestLog
+		var clientKeyID, providerID, model, errorRedacted sql.NullString
+		var usage, trace string
+		if err := rows.Scan(&l.ID, &l.Timestamp, &clientKeyID, &providerID, &model,
+			&l.Status, &l.LatencyMS, &usage, &trace, &errorRedacted); err != nil {
+			return nil, err
+		}
+		l.ClientKeyID = clientKeyID.String
+		l.ProviderID = providerID.String
+		l.Model = model.String
+		l.ErrorRedacted = errorRedacted.String
+		l.Usage = json.RawMessage(usage)
+		l.RouteTrace = json.RawMessage(trace)
+		out = append(out, l)
+	}
+	return out, rows.Err()
+}
+
 // ListRequestLogsPage returns one page of newest-first rows plus the total
 // number of matching rows (so the UI can render page links without a second
 // query per page). limit<=0 defaults to 50; offset is 0-based; an offset

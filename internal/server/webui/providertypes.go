@@ -130,6 +130,13 @@ var providerTypes = []providerTypeDesc{
 	},
 }
 
+// ProviderTypeDescription returns the catalog entry for a canonical type
+// (exported for the server package's emulation-presence check; the admin
+// API's internal uses keep the unexported alias).
+func ProviderTypeDescription(typ string) (providerTypeDesc, bool) {
+	return providerTypeByID(typ)
+}
+
 // providerTypeByID returns the catalog entry for a canonical type.
 func providerTypeByID(typ string) (providerTypeDesc, bool) {
 	for _, pt := range providerTypes {

@@ -166,15 +166,14 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		capabilityFallbacks = entries
 	}
 
-	// ADR-010 web-tool emulator pool: the stored firecrawl accounts are the
-	// pool's base; the ENV emulator (o.emulator) rides as an additional
-	// member when no DB account provided an emulator (the legacy ENV
-	// configuration path stays functional). Pool order refinement via the
-	// web_search/web_fetch fallback KVs happens on the admin reload.
+	// ADR-010 web-tool emulator pool: the stored web_search/web_fetch
+	// fallback ACCOUNT KVs order the pool (decision 3, consumed now); the
+	// ENV emulator (o.emulator) rides the tail when set (the legacy
+	// PROXYLLM_FIRECRAWL_API_KEY configuration path stays functional).
 	exec := routing.NewExecutor(routing.ExecutorConfig{
 		Registry:            reg,
 		Health:              health,
-		Emulator:            buildEmulatorPool(dbEmulators, o.emulator),
+		Emulator:            buildEmulatorPool(context.Background(), dbEmulators, o.emulator, store, logger),
 		CapabilityFallbacks: capabilityFallbacks,
 		OnCapabilityGap:     s.learnCapabilityGap,
 	})
@@ -191,18 +190,24 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		Store:    store,
 		Router:   router,
 		Executor: exec,
+		// R5 emulation default: emulate-firecrawl when a web-tool account
+		// exists; the provider reload refreshes the bool live.
+		HasWebToolAccounts: webToolAccountsPresent(store),
 	})
 	// The proxy API mounts at /v1/ (every httpapi route lives there), so the
 	// SPA can own the root: a browser hitting / gets the WebUI without a
 	// client key — the WebUI session is the WebUI's auth, not the client
 	// key's (plan §9, §5.2).
 	s.mux.Handle("/v1/", authMiddleware.Wrap(handler))
+	// R5: the provider reloads refresh the emulation-presence bool (the
+	// emulation default derives from the live account set).
+	refreshWebToolPresence := func() {
+		if fn := webToolAccountsPresent(store); handler != nil {
+			handler.SetWebToolAccounts(fn())
+		}
+	}
 
 	// Admin API (plan §5.2): mounted only when the master key is wired —
-	// the reload hook pushes freshly stored routing rules into the LIVE
-	// router (Analysis E: WebUI rule writes take effect without restart;
-	// a failed store write never reloads, so the router never sees a
-	// rule set that is not the persisted one).
 	//
 	// Without the master key there is no admin surface to mount — but the
 	// path must still answer with the auth gate's uniform 401, never the
@@ -212,6 +217,11 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 	if o.masterKey != nil {
 		admin := webui.NewAdminAPI(webui.AdminParams{
 			Store: store,
+			// ADR-012 Quota page: the per-account cooldown-reason badge and
+			// the on-demand usage scrape (fixed ollama.com host; the
+			// cookie rides the encrypted token store).
+			HealthSnapshot: health.Reason,
+			Prober:         s.prodUsageProber(),
 			ReloadRouting: func() {
 				fresh, err := loadRoutingRules(context.Background(), store)
 				if err != nil {
@@ -234,7 +244,8 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 				if err != nil {
 					return
 				}
-				exec.SetEmulator(buildEmulatorPool(emus, nil))
+				exec.SetEmulator(buildEmulatorPool(context.Background(), emus, nil, store, logger))
+				refreshWebToolPresence()
 			},
 			ReloadSettings: func() {
 				// Settings KV writes reach the live runtime without restart:
@@ -268,7 +279,8 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 				if err != nil {
 					return
 				}
-				exec.SetEmulator(buildEmulatorPool(emus, nil))
+				exec.SetEmulator(buildEmulatorPool(context.Background(), emus, nil, store, logger))
+				refreshWebToolPresence()
 			},
 			SyncNow: func(ctx context.Context) (storage.ModelSyncState, error) {
 				return modelsync.New(store, reg, logger).Run(ctx)
@@ -313,29 +325,57 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 }
 
 // buildEmulatorPool assembles the executor's web-tool emulator (ADR-010):
-//   - one DB account  → that account's emulator (the pool with one member
-//     behaves exactly like the pre-ADR-010 single emulator);
-//   - multiple accounts → the EmulatorPool (failover per tool family);
-//   - no DB accounts   → the ENV-wired emulator (o.emulator; the legacy
-//     PROXYLLM_FIRECRAWL_API_KEY path) or nil (the documented
-//     "unavailable" degrade state).
-func buildEmulatorPool(dbEmulators []routing.Emulator, envEmulator routing.Emulator) routing.Emulator {
-	switch {
-	case len(dbEmulators) == 1:
-		return dbEmulators[0]
-	case len(dbEmulators) > 1:
-		return routing.NewEmulatorPool(dbEmulators, dbEmulators)
-	default:
+//   - no DB accounts and a fallback list that resolves to nothing → the
+//     ENV-wired emulator (o.emulator; the legacy PROXYLLM_FIRECRAWL_API_KEY
+//     path) or nil (the documented "unavailable" degrade state);
+//   - otherwise → the EmulatorPool over the STORED web_search/web_fetch
+//     fallback KVs (ADR-010 decision 3, consumed as of 2026-10-06): each
+//     list names ACCOUNT IDs in priority order; unknown entries skip with
+//     a warn; an empty/unresolvable list keeps the registry insertion
+//     order. Single-account pools behave exactly like the pre-ADR-010
+//     single emulator.
+//
+// A read failure on the fallback KVs logs and uses insertion order (never
+// de-route on store noise).
+func buildEmulatorPool(ctx context.Context, accounts []NamedEmulator, envEmulator routing.Emulator, store *storage.Store, logger *slog.Logger) routing.Emulator {
+	if len(accounts) == 0 && envEmulator == nil {
+		return nil
+	}
+	if len(accounts) == 0 && envEmulator != nil {
 		return envEmulator
 	}
+	// The ENV emulator joins both families as the pool's final entry.
+	search, fetch, err := resolveWebToolFallbacks(ctx, store, logger, accounts)
+	if err != nil {
+		logger.Error("web-tool fallback read failed — pool in registry order", "error", err)
+		search, fetch = accounts, accounts
+	}
+	searchEmus := namedToEmulators(search)
+	fetchEmus := namedToEmulators(fetch)
+	if envEmulator != nil {
+		// The legacy ENV path joins both families as the final entry.
+		searchEmus = append(searchEmus, envEmulator)
+		fetchEmus = append(fetchEmus, envEmulator)
+	}
+	return routing.NewEmulatorPool(searchEmus, fetchEmus)
+}
+
+// namedToEmulators strips the ID pairing for the pool lists.
+func namedToEmulators(named []NamedEmulator) []routing.Emulator {
+	out := make([]routing.Emulator, 0, len(named))
+	for _, e := range named {
+		out = append(out, e.Emulator)
+	}
+	return out
 }
 
 // loadAndReplaceProviders builds the provider set from the store and swaps
 // it into the live registry's dynamic slot; the constructed web-tool
-// emulators (firecrawl accounts, ADR-010) are returned for the executor's
-// emulator pool. On a store failure the live set is kept (last known-good)
-// and the error is logged — the contract mirrors ReloadRouting.
-func loadAndReplaceProviders(ctx context.Context, store *storage.Store, logger *slog.Logger, reg *provider.LiveRegistry) ([]routing.Emulator, error) {
+// emulators (firecrawl accounts, ADR-010) are returned with their account
+// IDs for the executor's emulator pool. On a store failure the live set is
+// kept (last known-good) and the error is logged — the contract mirrors
+// ReloadRouting.
+func loadAndReplaceProviders(ctx context.Context, store *storage.Store, logger *slog.Logger, reg *provider.LiveRegistry) ([]NamedEmulator, error) {
 	fresh, emus, err := loadProviders(ctx, store, logger)
 	if err != nil {
 		logger.Error("provider reload failed; keeping last known-good providers", "error", err)

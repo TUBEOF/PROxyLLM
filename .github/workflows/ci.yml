@@ -16,6 +16,10 @@ permissions:
   contents: read
   security-events: write
   actions: read
+  # pull-requests: read — gitleaks-action in PR mode lists the PR's
+  # commits; without this scope it aborts with 403 "Resource not
+  # accessible by integration" (security job, PR events only).
+  pull-requests: read
 
 env:
   # Go packages scoped to the module's own code — `./...` would descend

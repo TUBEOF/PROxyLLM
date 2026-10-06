@@ -71,6 +71,9 @@ func (f *fakeEmulator) Fetch(ctx context.Context, url string, st ir.ServerToolCo
 type emulProvider struct {
 	calls   int
 	lastReq ir.Request
+	// streamCalls counts Stream dispatches (the stream-emulation contract
+	// pins it to 0: emulated requests ride the complete loop).
+	streamCalls int
 }
 
 func (p *emulProvider) ID() string { return "emul" }
@@ -95,6 +98,7 @@ func (p *emulProvider) Complete(_ context.Context, req ir.Request) (ir.Response,
 }
 
 func (p *emulProvider) Stream(ctx context.Context, req ir.Request) (<-chan ir.StreamEvent, func(), error) {
+	p.streamCalls++
 	return nil, func() {}, nil
 }
 

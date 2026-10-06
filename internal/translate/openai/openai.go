@@ -125,12 +125,20 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 		w.Messages = append(w.Messages, wm)
 	}
 	for _, t := range req.Tools {
+		schema := t.InputSchema
+		if len(schema) == 0 || string(schema) == "null" {
+			// omitempty on an empty schema drops the field upstream —
+			// a function tool without any parameters object can be
+			// rejected by strict providers; {} is the documented
+			// "no parameters" shape (O3).
+			schema = json.RawMessage(`{}`)
+		}
 		w.Tools = append(w.Tools, wireTool{
 			Type: "function",
 			Function: wireFunction{
 				Name:        t.Name,
 				Description: t.Description,
-				Parameters:  t.InputSchema,
+				Parameters:  schema,
 			},
 		})
 	}
@@ -269,10 +277,14 @@ type wireToolCall struct {
 }
 
 type wireFunction struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description,omitempty"`
-	Parameters  json.RawMessage `json:"parameters,omitempty"`
-	Arguments   string          `json:"arguments,omitempty"` // chat: JSON string (O3)
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	// Parameters is the tool's JSON schema. omitempty would drop an empty
+	// schema upstream — a strict provider (schema-less function tool) is
+	// rejected; the absent-schema case normalizes to {} (schema present
+	// but empty object, the OpenAI request shape for "no validation").
+	Parameters json.RawMessage `json:"parameters,omitempty"`
+	Arguments  string          `json:"arguments,omitempty"` // chat: JSON string (O3)
 }
 
 type wireMessage struct {

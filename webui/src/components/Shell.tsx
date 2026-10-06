@@ -10,7 +10,6 @@ import {
   IconPlug,
   IconRoute,
   IconBoxes,
-  IconSliders,
 } from '../icons';
 
 // App shell (kit "APP SHELL" section): sticky sidebar + topbar + routed
@@ -27,6 +26,7 @@ const NAV_SECTIONS: { label: string; items: { to: string; name: string; icon: ty
     label: 'Monitor',
     items: [
       { to: '/', name: 'Overview', icon: IconGauge, end: true },
+      { to: '/quota', name: 'Quota', icon: IconPlug },
       { to: '/logs', name: 'Logs', icon: IconList },
     ],
   },
@@ -42,7 +42,6 @@ const NAV_SECTIONS: { label: string; items: { to: string; name: string; icon: ty
     label: 'Access',
     items: [
       { to: '/keys', name: 'Client keys', icon: IconKey },
-      { to: '/settings', name: 'Settings', icon: IconSliders },
     ],
   },
 ];

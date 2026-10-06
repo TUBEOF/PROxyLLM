@@ -197,7 +197,7 @@ export default function Keys() {
           {created === null ? (
             <form className="form" id="key-form" onSubmit={submit}>
               {(formError ?? create.error) !== null && (
-                <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+                <p role="alert" className="form-note">
                   {formError ?? create.error}
                 </p>
               )}

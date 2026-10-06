@@ -258,11 +258,31 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 				Requests: int64(40 + i*3), Failures: int64(i % 3)},
 			{Day: day, ClientKeyID: "ckey-ci", ProviderID: "prv-codex", Model: "gpt-5",
 				InputTokens: int64(2000 + i*150), OutputTokens: int64(600 + i*40), Requests: int64(8 + i)},
+			{Day: day, ClientKeyID: "ckey-claude-code", ProviderID: "prv-ollama", Model: "glm-5.3-flash",
+				InputTokens: int64(900 + i*100), OutputTokens: int64(250 + i*30), Requests: int64(6 + i%4)},
 		} {
 			if err := store.IncrUsageDaily(ctx, u); err != nil {
 				return fmt.Errorf("seed usage %s: %w", day, err)
 			}
 		}
+	}
+
+	// ADR-012 Quota-page cards: one LIVE blob (the ollama settings shape,
+	// frozen reset times near the clock) and one local-only account. The
+	// blobs are seeded straight into the KV — the fixturesrv never scrapes
+	// (the no-live-upstream-calls doctrine).
+	sessionPct := 28.8
+	weeklyPct := 71.2
+	if err := store.PutAccountUsage(ctx, "prv-ollama", storage.AccountUsageBlob{
+		FetchedAt:    now.Unix(),
+		Source:       "ollama",
+		Plan:         "Pro",
+		SessionPct:   &sessionPct,
+		SessionReset: now.Add(4 * time.Hour).Add(59 * time.Minute).Unix(),
+		WeeklyPct:    &weeklyPct,
+		WeeklyReset:  now.Add(5 * time.Hour).Add(11 * time.Minute).Unix(),
+	}); err != nil {
+		return fmt.Errorf("seed ollama usage blob: %w", err)
 	}
 
 	// Request logs with route traces — deterministic content, relative
