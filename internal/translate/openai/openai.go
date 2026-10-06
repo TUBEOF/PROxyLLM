@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/tubeof/proxyllm/internal/translate"
 	"github.com/tubeof/proxyllm/internal/translate/ir"
@@ -88,6 +89,21 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 	for _, m := range req.Messages {
 		wm := wireMessage{Role: string(m.Role)}
 		switch m.Role {
+		case ir.RoleSystem:
+			// A system-role message inside messages (Claude Code appends
+			// one for hook output / injected reminders; the Anthropic
+			// codec decodes it verbatim). Falls through to the OpenAI
+			// chat system message — and must never leave the zero-value
+			// wireContent whose marshal is "content":null (Ollama 400
+			// invalid message content type: <nil>).
+			var sb strings.Builder
+			for _, p := range m.Parts {
+				if tp, ok := p.(ir.TextPart); ok {
+					sb.WriteString(tp.Text)
+				}
+			}
+			text := sb.String()
+			wm.Content = wireContent{Str: &text}
 		case ir.RoleUser:
 			wm.Content = contentFromParts(m.Parts)
 		case ir.RoleAssistant:
@@ -288,13 +304,13 @@ func (m wireMessage) contentText() string {
 		return *m.Content.Str
 	}
 	// Block-form system content concatenates text parts.
-	var out string
+	var sb strings.Builder
 	for _, p := range m.Content.Parts {
 		if p.Type == "text" {
-			out += p.Text
+			sb.WriteString(p.Text)
 		}
 	}
-	return out
+	return sb.String()
 }
 
 type wireTool struct {

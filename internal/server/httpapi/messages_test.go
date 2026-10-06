@@ -655,3 +655,45 @@ func TestMessages_ToolOnlyHistoryEncodesEmptyStringContent(t *testing.T) {
 		t.Errorf("upstream body must carry empty-string content for the tool-only assistant turn: %s", up)
 	}
 }
+
+// Second cross-surface regression for the Ollama "invalid message content
+// type: <nil>" 400: Claude Code appends a role:"system" message to
+// messages (SessionStart-hook output, injected reminders). The Anthropic
+// codec decodes it into ir.RoleSystem; the OpenAI chat encoder's role
+// switch previously had no RoleSystem case, so the zero-value wireContent
+// marshaled as "content":null and Ollama's OpenAI-compatibility endpoint
+// answered 400 (capture: real Claude Code client against the proxy,
+// 2026-10-06; repro also live-confirmed on the deployed instance). The
+// system message must reach the upstream wire as a system-role message
+// carrying its text.
+func TestMessages_SystemRoleHistoryEncodesSystemMessageContent(t *testing.T) {
+	e := newClaudeEnv(t)
+	e.mock.Enqueue(mockJSON(t, http.StatusOK, string(golden(t, "openai/chat-response.json"))))
+
+	body := `{
+		"model": "claude-sonnet-5",
+		"max_tokens": 1024,
+		"messages": [
+			{"role": "user", "content": "hello"},
+			{"role": "system", "content": [{"type": "text", "text": "SessionStart hook output"}]}
+		]
+	}`
+	if _, respBody := e.postAnthropic(t, "/v1/messages", body); respBody == "" {
+		t.Fatal("empty client response")
+	}
+
+	reqs := e.mock.Requests()
+	if len(reqs) != 1 {
+		t.Fatalf("upstream saw %d requests, want 1", len(reqs))
+	}
+	up := reqs[0].Body
+	if strings.Contains(up, `"content":null`) {
+		t.Errorf(`upstream body carries "content":null — Ollama's compat endpoint answers 400 invalid message content type: <nil>: %s`, up)
+	}
+	if !strings.Contains(up, `"role":"system"`) {
+		t.Errorf(`upstream body must keep the system-role message: %s`, up)
+	}
+	if !strings.Contains(up, "SessionStart hook output") {
+		t.Errorf(`upstream body must carry the system message text: %s`, up)
+	}
+}
