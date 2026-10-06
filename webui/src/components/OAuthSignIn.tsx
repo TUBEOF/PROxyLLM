@@ -121,7 +121,7 @@ export default function OAuthSignIn({ providerId, onApproved }: { providerId: st
             token material.
           </span>
           {failure !== null && (
-            <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+            <p role="alert" className="form-note">
               {failure}
             </p>
           )}
@@ -183,7 +183,7 @@ export default function OAuthSignIn({ providerId, onApproved }: { providerId: st
               <span className="b-dot" />
               Sign-in failed
             </span>
-            <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+            <p role="alert" className="form-note">
               {failure}
             </p>
           </>

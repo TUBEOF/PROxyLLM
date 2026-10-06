@@ -20,3 +20,4 @@ Task 5 (Step 5 usage backend): complete (commit 464d47c, tests: storage+server+w
 Task 5 (Step 5 usage backend): complete (commit 8812f40, tests: storage+server+webui+observability pass; parser fixture + KV round-trip + admin endpoints + redactor)
 Task 6 (Step 6 live updates): complete (commit 8905e7b, tests: webui+storage suites pass; typecheck+lint clean; TestOverview_Snapshot + TestLogs_AfterCursorFeed + cursor storage test RED→GREEN)
 Task 7 (Step 7 compat defaults + UI removal): complete (commit 04360e3, tests: httpapi compat defaults RED→GREEN + full internal suites pass; typecheck+lint clean)
+Task 8+9-page (Step 8 verification + Quota SPA page): complete (commit 54e9087; strategy tests verified a/b/c coverage exists — no code change; Quota.tsx + route + nav + fixturesrv seed + e2e spec; typecheck+lint clean)

@@ -31,6 +31,10 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
    ============================================================ */
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 20px;border-radius:2rem;border:1px solid transparent;font-family:inherit;font-size:var(--fs-sm);font-weight:var(--fw-regular);line-height:1;text-decoration:none;cursor:pointer;transition:all var(--transition-button);white-space:nowrap}
+/* form-note is the honest error/alert line under a field or widget —
+   replaces the per-page inline alert styles (design-polish pass
+   2026-10-06; one class instead of seven inline copies). */
+.form-note{color:var(--status-down);font-size:var(--fs-sm);margin:0}
 .btn-primary{background:var(--gradient-primary);color:var(--neutral-900);border-color:var(--neutral-600);box-shadow:var(--shadow-btn-primary)}
 .btn-primary:hover,.btn-primary:active{background:var(--gradient-primary-hover);box-shadow:var(--shadow-btn-hover)}
 .btn-ghost{color:var(--accent);border-color:var(--neutral-600);background:transparent}

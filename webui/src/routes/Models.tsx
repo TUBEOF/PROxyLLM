@@ -361,11 +361,13 @@ export default function Models() {
         }
       />
       <div className="canvas">
-        {/* ADR-010 model-sync status card. */}
-        <div className="w-full" style={{ marginBottom: 8 }}>
-          <div className="fieldset" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '10px 14px' }}>
+        {/* ADR-010 model-sync status card. Block layout (the v1.0.1/v1.0.2
+            lesson: variable-length text never rides a flex-wrap line above
+            other content — the run list renders on its own lines). */}
+        <div className="widget w-full" style={{ marginBottom: 8 }}>
+          <div className="widget-head">
             <h4 style={{ margin: 0 }}>Auto-sync</h4>
-            <label className="toggle" style={{ display: 'flex', gap: 6 }}>
+            <label className="toggle" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <input
                 type="checkbox"
                 checked={syncData?.enabled ?? true}
@@ -375,6 +377,8 @@ export default function Models() {
               <span className="tswitch" />
               enabled
             </label>
+          </div>
+          <div className="widget-body" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span className="hint" style={{ margin: 0 }}>
               every {syncData?.interval_hours ?? 24}h · last run {lastRunText}
             </span>
@@ -384,7 +388,7 @@ export default function Models() {
               </span>
             )}
             {syncRun.error !== null && (
-              <span role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)' }}>
+              <span role="alert" className="form-note">
                 {syncRun.error}
               </span>
             )}
@@ -441,12 +445,12 @@ export default function Models() {
                 />
               </div>
               {aliasesError !== null && (
-                <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+                <p role="alert" className="form-note">
                   {aliasesError}
                 </p>
               )}
               {saveAlias.error !== null && (
-                <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+                <p role="alert" className="form-note">
                   {saveAlias.error}
                 </p>
               )}
@@ -529,15 +533,16 @@ export default function Models() {
                             </span>
                           ))}
                         </div>
-                        {/* Test result badge: status-only (no wall-clock
-                            numbers in screenshots). Block layout. */}
+                        {/* Test result badge: status-only (kit .form-note
+                            carries the color; no wall-clock numbers in
+                            screenshots). Block layout. */}
                         {result !== undefined && (
                           <p
                             role="status"
+                            className={`form-note${result.ok ? '' : ''}`}
                             style={{
                               margin: 0,
-                              fontSize: 'var(--fs-sm)',
-                              color: result.ok ? 'var(--status-up)' : 'var(--status-down)',
+                              color: result.ok ? 'var(--status-up)' : undefined,
                               overflowWrap: 'anywhere',
                             }}
                           >
@@ -605,7 +610,7 @@ export default function Models() {
         >
           <form className="form" id="model-form" onSubmit={submit}>
             {drawerError !== null && (
-              <p role="alert" style={{ color: 'var(--status-down)', fontSize: 'var(--fs-sm)', margin: 0 }}>
+              <p role="alert" className="form-note">
                 {drawerError}
               </p>
             )}
