@@ -31,10 +31,13 @@ func detectedCaps(info provider.ModelInfo) json.RawMessage {
 	return blob
 }
 
-// detectedCompat blob: default thinking handling plus the detected
-// context window (omitted when undetected).
+// detectedCompat blob: the detected context window (omitted when
+// undetected). The thinking policy is deliberately NOT written here
+// (R5, 2026-10-06): httpapi's compatFor derives thinking handling from
+// the capability blob — a hardcoded "strip" would pin every synced row
+// and neutralize the capability-driven default forever.
 func detectedCompat(info provider.ModelInfo) json.RawMessage {
-	m := map[string]any{"thinking_handling": "strip"}
+	m := map[string]any{}
 	if info.ContextLength > 0 {
 		m["context_window"] = info.ContextLength
 	}

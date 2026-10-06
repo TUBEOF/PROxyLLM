@@ -22,3 +22,5 @@ Task 6 (Step 6 live updates): complete (commit 8905e7b, tests: webui+storage sui
 Task 7 (Step 7 compat defaults + UI removal): complete (commit 04360e3, tests: httpapi compat defaults RED→GREEN + full internal suites pass; typecheck+lint clean)
 Task 8+9-page (Step 8 verification + Quota SPA page): complete (commit 54e9087; strategy tests verified a/b/c coverage exists — no code change; Quota.tsx + route + nav + fixturesrv seed + e2e spec; typecheck+lint clean)
 Task 10 (Step 9 design polish + e2e specs): complete (commit 62f81fd; .form-note class, sync card reblocked, e2e specs updated, suites + typecheck + lint green; local playwright browsers not installed — visual baselines regen in CI per doctrine)
+Final suites: complete (commits through ce78751; go test full GO_PKGS + -race: 21 pkgs green; vet clean; golangci-lint: 7 pre-existing main findings (gosec G115 + 6 nolintlint on untouched files), 0 new from this branch)
+Task 9 verification + polish complete at ce78751 — all 9 plan steps done.

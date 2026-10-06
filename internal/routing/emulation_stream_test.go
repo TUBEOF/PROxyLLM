@@ -95,6 +95,30 @@ drained:
 	}
 }
 
+// C1 (final review): the detour must dispatch stream:false — a complete
+// request carrying true makes real upstreams answer chunked SSE, which
+// the non-streaming decode cannot parse (the whole request class would
+// fail instead of being emulated). Pinned via the provider's view.
+func TestExecuteStream_StreamEmulatesWithStreamFalse(t *testing.T) {
+	p := &emulProvider{}
+	emu := &fakeEmulator{searchAnswers: []string{`[]`}}
+	e := roundTripExecutor(p, emu)
+
+	ch, cancel, _, err := e.ExecuteStream(context.Background(),
+		[]routing.ChainEntry{{ProviderID: "emul"}},
+		func(r ir.Request) ir.Request { r.Stream = true; return r }(emulatedSearchRequest()))
+	if err != nil {
+		t.Fatalf("ExecuteStream: %v", err)
+	}
+	defer cancel()
+	for ev := range ch {
+		_ = ev // drain
+	}
+	if p.lastReq.Stream {
+		t.Fatal("the emulated round trip must dispatch with stream:false")
+	}
+}
+
 // A cancellation arriving while the emulated round trip is still running
 // must not deadlock: the stream closes (with at most an error event) and
 // ExecuteStream's returned cancel releases everything.

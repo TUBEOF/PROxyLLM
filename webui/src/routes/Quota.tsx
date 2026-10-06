@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { apiCall } from '../api';
 import type { AccountUsage, AccountUsageResponse } from '../types';
 import { EmptyState, ErrorNote, PageHead, useLiveData, useMutation } from '../hooks';
@@ -59,13 +59,21 @@ export default function Quota() {
   const refreshAll = async () => {
     // Sequential per-card refreshes — the bounded-concurrency pool lives
     // server-side when a periodic refresher is added (ADR-012).
+    let failed = false;
     for (const a of accounts) {
       if (a.type === 'ollama-cloud') {
-        await refreshOne(a);
+        const ok = await refreshOne(a);
+        if (ok === null) failed = true; // thrown error is the truth
       }
     }
+    if (failed) setRefreshError('One or more accounts failed to refresh — see the card errors.');
+    else setRefreshError(null);
     reload();
   };
+  // Per-card refresh error surfacing: the mutation's error field is
+  // shared, so the page note is set alongside (the v1.0.2 stale-error
+  // lesson: branch on our own state).
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   return (
     <>
@@ -81,6 +89,11 @@ export default function Quota() {
           </>
         }
       />
+      {(refreshError !== null || refresh.error !== null) && (
+        <div style={{ margin: '8px 0' }}>
+          <p role="alert" className="form-note">{refreshError ?? refresh.error}</p>
+        </div>
+      )}
       <div className="canvas">
         {error !== null ? (
           <div className="w-full">
@@ -169,14 +182,16 @@ export default function Quota() {
                       </div>
                     )}
                     <div style={{ textAlign: 'right' }}>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => void refreshOne(a)}
-                        disabled={refresh.pending}
-                      >
-                        Refresh now
-                      </button>
+                      {a.type === 'ollama-cloud' && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => void refreshOne(a)}
+                          disabled={refresh.pending}
+                        >
+                          Refresh now
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

@@ -907,6 +907,15 @@ func (a *AdminAPI) putModel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	// R5 (2026-10-06): the SPA never sends compat anymore (the policy is
+	// derived server-side). An ABSENT field preserves the stored blob
+	// (the legacy read-only override must survive operator saves); an
+	// explicit field still replaces it. Presence, not value, is the signal.
+	if len(req.Compat) == 0 {
+		if existing, err := a.store.GetModel(r.Context(), id); err == nil {
+			req.Compat = existing.Compat
+		}
+	}
 	// FK guarantee surfaced as a deterministic 400 — never a SQLite error
 	// string match (models.provider_id FK, plan Analysis C).
 	if _, err := a.store.GetProvider(r.Context(), req.ProviderID); err != nil {

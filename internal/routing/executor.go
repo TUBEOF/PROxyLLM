@@ -374,6 +374,12 @@ func (e *Executor) ExecuteStream(ctx context.Context, chain []ChainEntry, req ir
 // while encoding closes the channel) and cancel() stops nothing extra —
 // everything the loop ran has released itself on return.
 func (e *Executor) executeEmulatedAsStream(ctx context.Context, chain []ChainEntry, req ir.Request) (<-chan ir.StreamEvent, func(), *Trace, error) {
+	// The client's stream flag rides the IR request — the complete-path
+	// decoders set it for streamed requests, and a complete dispatch that
+	// still carries true makes real upstreams answer chunked SSE (which
+	// the non-streaming decode cannot parse). Clear it on the detour's
+	// COPY (the caller's request object is not mutated).
+	req.Stream = false
 	trace := &Trace{}
 	resp, err := e.executeWithEmulation(ctx, chain, req, trace)
 	if err != nil {
