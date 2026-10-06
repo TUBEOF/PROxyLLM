@@ -13,6 +13,7 @@ const ProviderType = lazy(() => import('./routes/ProviderType'));
 const Models = lazy(() => import('./routes/Models'));
 const Routing = lazy(() => import('./routes/Routing'));
 const Logs = lazy(() => import('./routes/Logs'));
+const Quota = lazy(() => import('./routes/Quota'));
 const Keys = lazy(() => import('./routes/Keys'));
 
 export default function App() {
@@ -29,6 +30,7 @@ export default function App() {
           }
         >
           <Route index element={<Overview />} />
+          <Route path="quota" element={<Quota />} />
           <Route path="providers" element={<Providers />} />
           <Route path="providers/:type" element={<ProviderType />} />
           <Route path="models" element={<Models />} />

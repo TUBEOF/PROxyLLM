@@ -29,6 +29,17 @@ test.describe('signed in', () => {
     await expect(page).toHaveScreenshot('overview.png', { mask: kpiMasks(page) });
   });
 
+  // ADR-012 Quota page: per-account usage cards. The reset timestamps
+  // render from the seeded blob (frozen clock) — masked along with the
+  // percent values to stay robust against seed drift.
+  test('quota', async ({ page }) => {
+    await page.goto('/quota');
+    await readyForCapture(page);
+    await expect(page).toHaveScreenshot('quota.png', {
+      mask: [...kpiMasks(page), page.locator('.bar-fill')],
+    });
+  });
+
   test('providers', async ({ page }) => {
     await page.goto('/providers');
     await readyForCapture(page);
@@ -89,9 +100,4 @@ test.describe('signed in', () => {
     await expect(page).toHaveScreenshot('keys.png');
   });
 
-  test('settings', async ({ page }) => {
-    await page.goto('/settings');
-    await readyForCapture(page);
-    await expect(page).toHaveScreenshot('settings.png');
-  });
 });

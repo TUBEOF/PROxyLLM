@@ -26,6 +26,7 @@ const NAV_SECTIONS: { label: string; items: { to: string; name: string; icon: ty
     label: 'Monitor',
     items: [
       { to: '/', name: 'Overview', icon: IconGauge, end: true },
+      { to: '/quota', name: 'Quota', icon: IconPlug },
       { to: '/logs', name: 'Logs', icon: IconList },
     ],
   },

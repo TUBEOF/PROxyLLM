@@ -19,3 +19,4 @@ Task 4 (Step 4 quota cooldown): complete (commit 9428633, tests: go test ./inter
 Task 5 (Step 5 usage backend): complete (commit 464d47c, tests: storage+server+webui+observability all pass; parser fixture RED→GREEN, KV round-trip, admin endpoints, redactor cookie shapes)
 Task 5 (Step 5 usage backend): complete (commit 8812f40, tests: storage+server+webui+observability pass; parser fixture + KV round-trip + admin endpoints + redactor)
 Task 6 (Step 6 live updates): complete (commit 8905e7b, tests: webui+storage suites pass; typecheck+lint clean; TestOverview_Snapshot + TestLogs_AfterCursorFeed + cursor storage test RED→GREEN)
+Task 7 (Step 7 compat defaults + UI removal): complete (commit 04360e3, tests: httpapi compat defaults RED→GREEN + full internal suites pass; typecheck+lint clean)

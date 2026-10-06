@@ -204,3 +204,32 @@ export interface ModelTestResponse {
   reply?: string;
   error?: string;
 }
+
+// ADR-012 Quota page: per-account usage snapshot (one card per account).
+export interface LiveUsage {
+  session_pct?: number | null;
+  session_reset?: number;
+  weekly_pct?: number | null;
+  weekly_reset?: number;
+  plan?: string;
+}
+export interface LocalUsage {
+  requests: number;
+  failures: number;
+  input_tokens: number;
+  output_tokens: number;
+}
+export interface AccountUsage {
+  account_id: string;
+  type: string;
+  name: string;
+  live?: LiveUsage | null;
+  source?: string;
+  error?: string;
+  health?: string;
+  local?: LocalUsage | null;
+  fetched_at?: number;
+}
+export interface AccountUsageResponse {
+  accounts: AccountUsage[];
+}
