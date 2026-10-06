@@ -77,8 +77,22 @@ admin account when none exists.
 | Capability fallbacks (ADR-010) | `GET /capability-fallbacks`, `PUT /capability-fallbacks` — one write for all three lists (`vision`, `web_search`, `web_fetch`; vision entries = provider IDs/LLM types, web entries = web-tool account IDs, validated at the boundary) |
 | Model sync (ADR-010) | `GET /model-sync` (config + last-run state), `PUT /model-sync` (`enabled`, `interval_hours`), `POST /model-sync/run` (synchronous pass, returns the run summary) |
 | Client keys | `POST /keys` (secret shown once), `GET /keys`, `POST /keys/{id}/revoke` |
-| Observability | `GET /usage`, `GET /logs` (redacted; `route_trace` detail) |
+| Observability | `GET /usage`, `GET /logs` (redacted; `route_trace` detail; rows carry `conversation_id`, `protocol`, `features`, `error_redacted` since the Logs-page redesign, plus `key_name`/`key_prefix`/`provider_name` display projections), `GET /logs/stream` (SSE, see below) |
 | Settings | `GET /settings`, `PUT /settings`, `DELETE /settings/{key}` (DB override layer) |
+
+### Live log stream (2026-10-06)
+
+`GET /api/admin/logs/stream` is an SSE feed over the request log: the wire
+is `event: hello` (ack) → `event: running` (the in-flight snapshot — every
+snapshot replaces the previous list) → `event: log` (one finished request
+row per event, via the store tail) with `: ping` comment heartbeats every
+15 s. GET needs no CSRF header (the session cookie suffices — native
+`EventSource` connects directly). A slow or dead client is dropped at the
+first failed flush; `EventSource` auto-reconnect restores state. Note: the
+connect keeps the admin session warm (an open Logs tab refreshes the idle
+window — a documented side effect, not a bug). Conversation identities
+(`conv_<8 hex>`) derive only for requests written after this release —
+older rows render without one.
 
 Live-routing overrides via settings: `model_aliases`,
 `anthropic_surface_non_claude`, `routing_strategy`, plus the ADR-010

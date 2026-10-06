@@ -285,31 +285,51 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 		return fmt.Errorf("seed ollama usage blob: %w", err)
 	}
 
-	// Request logs with route traces — deterministic content, relative
-	// timestamps, one failure and one failover so the log viewer's
-	// highlighted degradations render.
+	// Request logs — deterministic content, relative timestamps. Four rows
+	// (Logs-page redesign): a conversation chain (two rows sharing
+	// conv_a1b2c3d4 → one gutter line), and a 429→200 healing pair sharing
+	// conv_de1a7e00 (chain + healed chip on the 200). Route traces are the
+	// real chainTrace v6 shape — the drawer + derivations (REQUESTED,
+	// healed) see production-shaped content. No clocks beyond the shared
+	// relative-offset pattern.
 	base := now.Add(-2 * time.Hour).Unix()
 	logs := []storage.RequestLog{
 		{
 			Timestamp: base, ClientKeyID: "ckey-claude-code", ProviderID: "prv-openai",
 			Model: "claude-sonnet-5", Status: 200, LatencyMS: 842,
-			Usage:      json.RawMessage(`{"input_tokens":1204,"output_tokens":318,"cache_read_input_tokens":512}`),
-			RouteTrace: json.RawMessage(`{"rule":"rule-claude","chain":["prv-openai/claude-sonnet-5"],"transitions":[]}`),
+			Usage:          json.RawMessage(`{"input_tokens":1204,"output_tokens":318,"cache_read_input_tokens":512}`),
+			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"claude-sonnet-5","to":"claude-sonnet-5","provider_id":"prv-openai"},{"type":"attempt","provider_id":"prv-openai","model":"claude-sonnet-5"}]}`),
+			ConversationID: "conv_a1b2c3d4", ConvKey: "sess:11223344-5566-7788-99aa-bbccddeeff00",
+			Protocol: "anthropic", Features: json.RawMessage(`{"streaming":true,"tools":true,"thinking":false,"web_search":false,"web_fetch":false,"vision":false}`),
 		},
 		{
+			// Second turn of the same conversation → chain line in the gutter.
 			Timestamp: base - 300, ClientKeyID: "ckey-claude-code", ProviderID: "prv-ollama",
 			Model: "llama3.3-70b", Status: 200, LatencyMS: 1930,
-			Usage: json.RawMessage(`{"input_tokens":1204,"output_tokens":502}`),
-			RouteTrace: json.RawMessage(`{"rule":"rule-claude","chain":["prv-openai/claude-sonnet-5","prv-ollama/llama3.3-70b"],` +
-				`"transitions":[{"kind":"failover","from":"prv-openai/claude-sonnet-5","to":"prv-ollama/llama3.3-70b","reason":"upstream 503"}],` +
-				`"compat":[{"policy":"thinking_handling","applied":"map-to-reasoning-effort"}]}`),
+			Usage:          json.RawMessage(`{"input_tokens":1204,"output_tokens":502}`),
+			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"llama3.3-70b","to":"llama3.3-70b","provider_id":"prv-ollama"},{"type":"failover","from":"prv-openai/claude-sonnet-5","to":"prv-ollama/llama3.3-70b","reason":"upstream 503"},{"type":"compat_policy","policy":"thinking_handling","applied":"map-to-reasoning-effort"}]}`),
+			ConversationID: "conv_a1b2c3d4", ConvKey: "sess:11223344-5566-7788-99aa-bbccddeeff00",
+			Protocol: "anthropic", Features: json.RawMessage(`{"streaming":true,"tools":true,"thinking":true,"web_search":false,"web_fetch":false,"vision":false}`),
 		},
 		{
+			// The failure leg of the healing pair.
 			Timestamp: base - 900, ClientKeyID: "ckey-ci", ProviderID: "prv-codex",
 			Model: "gpt-5", Status: 429, LatencyMS: 210,
-			Usage:         json.RawMessage(`{}`),
-			RouteTrace:    json.RawMessage(`{"rule":"rule-default","chain":["prv-codex/gpt-5"],"transitions":[]}`),
-			ErrorRedacted: "upstream rate limit exceeded",
+			Usage:          json.RawMessage(`{}`),
+			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"gpt-5","to":"gpt-5","provider_id":"prv-codex"},{"type":"failed","class":"rate_limit","http_status":429}]}`),
+			ErrorRedacted:  "upstream rate limit exceeded",
+			ConversationID: "conv_de1a7e00", ConvKey: "sys:ci-smoke",
+			Protocol: "openai", Features: json.RawMessage(`{"streaming":false,"tools":false,"thinking":false,"web_search":false,"web_fetch":false,"vision":false}`),
+		},
+		{
+			// The healed leg: same conversation, succeeded after the 429 —
+			// the cross-row heal chip renders (previous failed, this 2xx).
+			Timestamp: base - 895, ClientKeyID: "ckey-ci", ProviderID: "prv-ollama",
+			Model: "glm-5.3-flash", Status: 200, LatencyMS: 1180,
+			Usage:          json.RawMessage(`{"input_tokens":88211,"output_tokens":72,"cache_read_input_tokens":88128}`),
+			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"glm-5.3-flash","to":"ollama-cloud/glm-5.3-flash","provider_id":"prv-ollama"},{"type":"capability_fallback","capability":"rate_limit","from":"prv-codex/gpt-5","to":"prv-ollama/glm-5.3-flash"}]}`),
+			ConversationID: "conv_de1a7e00", ConvKey: "sys:ci-smoke",
+			Protocol: "anthropic", Features: json.RawMessage(`{"streaming":false,"tools":false,"thinking":false,"web_search":false,"web_fetch":false,"vision":false}`),
 		},
 	}
 	for _, l := range logs {

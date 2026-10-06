@@ -118,6 +118,27 @@ export interface RequestLog {
   latency_ms: number;
   usage: unknown;
   route_trace: unknown;
+  // Logs-page redesign (additive; pre-patch rows omit these).
+  conversation_id?: string;
+  protocol?: string;
+  features?: unknown;
+  error_redacted?: string;
+  // Display projections from the admin API (raw ids stay the fallback).
+  key_name?: string;
+  key_prefix?: string;
+  provider_name?: string;
+}
+
+// RunningRequest is one in-flight request on the SSE stream (a pseudo-row
+// at its started_at position; converts to a RequestLog on the log event).
+// The id is the tracker's run_… string — never collides with the store's
+// numeric rowids.
+export interface RunningRequest {
+  id: string;
+  started_at: number;
+  client_key_id: string;
+  model: string;
+  protocol?: string;
 }
 
 export interface SettingsEntry {
