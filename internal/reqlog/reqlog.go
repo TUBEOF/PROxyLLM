@@ -108,6 +108,21 @@ func New() *Stream {
 // send so at most one wake is pending — a missed wake only delays.
 func (s *Stream) Wait() <-chan struct{} { return s.notify }
 
+// InflightCount reports the current in-flight registration count (the
+// no-leak tests' probe).
+func (s *Stream) InflightCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.inflight)
+}
+
+// SubCount reports the current subscriber registration count.
+func (s *Stream) SubCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.subs)
+}
+
 func (s *Stream) ping() {
 	select {
 	case s.notify <- struct{}{}:

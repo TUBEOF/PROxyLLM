@@ -15,6 +15,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/config"
 	"github.com/tubeof/proxyllm/internal/modelsync"
 	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/reqlog"
 	"github.com/tubeof/proxyllm/internal/routing"
 	"github.com/tubeof/proxyllm/internal/server/httpapi"
 	"github.com/tubeof/proxyllm/internal/server/webui"
@@ -186,10 +187,16 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		logger.Warn("PROxyLLM: client-key auth is DISABLED (PROxyLLM_AUTH_DISABLED); every client can use the proxy without a key")
 	}
 	authMiddleware := auth.NewMiddleware(store, authOpts...)
+	// One live log hub shared by both sides (Logs-page redesign): the
+	// client-facing api registers in-flight entries + publishes finished
+	// rows; the admin SSE endpoint subscribes. nil (tests) keeps both
+	// disabled.
+	liveLogs := reqlog.New()
 	handler := httpapi.New(httpapi.Params{
 		Store:    store,
 		Router:   router,
 		Executor: exec,
+		Stream:   liveLogs,
 		// R5 emulation default: emulate-firecrawl when a web-tool account
 		// exists; the provider reload refreshes the bool live.
 		HasWebToolAccounts: webToolAccountsPresent(store),
@@ -216,7 +223,8 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 	// TestServer_NoMasterKeyNoAdminAPI).
 	if o.masterKey != nil {
 		admin := webui.NewAdminAPI(webui.AdminParams{
-			Store: store,
+			Store:  store,
+			Stream: liveLogs,
 			// ADR-012 Quota page: the per-account cooldown-reason badge and
 			// the on-demand usage scrape (fixed ollama.com host; the
 			// cookie rides the encrypted token store).
