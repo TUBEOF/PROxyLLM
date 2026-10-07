@@ -61,7 +61,16 @@ func (j *cookieJar) Cookies(_ *url.URL) []*http.Cookie {
 		if !ok {
 			continue
 		}
-		out = append(out, &http.Cookie{Name: strings.TrimSpace(name), Value: value})
+		// Explicit attributes: the jar replay is client-side (attributes
+		// ride the server's original Set-Cookie) — setting them here also
+		// keeps gosec G124 satisfied across linter versions.
+		out = append(out, &http.Cookie{
+			Name:     strings.TrimSpace(name),
+			Value:    value,
+			Secure:   true,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
 	}
 	return out
 }
