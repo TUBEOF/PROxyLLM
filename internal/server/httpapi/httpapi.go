@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/reqlog"
 	"github.com/tubeof/proxyllm/internal/routing"
 	"github.com/tubeof/proxyllm/internal/storage"
 	"github.com/tubeof/proxyllm/internal/translate/ir"
@@ -37,6 +38,11 @@ type Params struct {
 	// assembly time (R5 emulation default). nil keeps native; the server
 	// refreshes it via RefreshWebToolAccounts on provider reloads.
 	HasWebToolAccounts func() bool
+
+	// Stream is the admin log stream hub (in-flight registry + finished-row
+	// broadcast). nil keeps it disabled — every existing test constructs
+	// api without it and stays green.
+	Stream *reqlog.Stream
 }
 
 // api holds the wired collaborators.
@@ -44,6 +50,7 @@ type api struct {
 	store    *storage.Store
 	router   *routing.Router
 	executor *routing.Executor
+	stream   *reqlog.Stream // nil = live log stream disabled
 	// hasWebToolAccounts is refreshed by the admin provider reload (the
 	// emulation default consults it per compatFor; a per-request store
 	// scan is the alternative — a bool swap avoids the hot-path query).
@@ -65,7 +72,7 @@ func (p *API) SetWebToolAccounts(present bool) { p.a.hasWebToolAccounts.Store(pr
 
 // New assembles the client-facing HTTP handler (plan §5.1).
 func New(p Params) *API {
-	a := &api{store: p.Store, router: p.Router, executor: p.Executor}
+	a := &api{store: p.Store, router: p.Router, executor: p.Executor, stream: p.Stream}
 	if p.HasWebToolAccounts != nil {
 		a.hasWebToolAccounts.Store(p.HasWebToolAccounts())
 	}
@@ -342,13 +349,35 @@ func lastProvider(tr *routing.Trace) string {
 	return providerID
 }
 
+const rollingConversationWindow = int64(1800) // 30 min, see conversation.go
+
 // writeRequestLog persists one request_logs row (plan §4.3). Called on
 // success AND error paths — a request that never reached an upstream is
 // still an observable request (Analysis E: fallbacks are never silent).
 // ErrorRedacted carries the terminal error message with credentials never
 // echoed: upstream bodies ride UpstreamError.Message, which never contains
 // request headers.
+//
+// Logs-page redesign: the per-request meta (protocol, features,
+// conversation) rides the request context (logmeta.go) — written here,
+// where the outcome is known, from fields captured at decode time. The
+// in-flight entry (if any) is finished here, exactly once, carrying the
+// real rowid to the live stream.
 func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID string, status int, latencyMS int64, usage *ir.Usage, trace json.RawMessage, errMsg string) {
+	meta := metaFromCtx(ctx)
+
+	// Conversation identity (rolling window): same key + conv_key within
+	// the window reuses the prior conversation_id; a store error falls
+	// back to the fresh deterministic id — the log write must never break
+	// the response already streamed (the same swallow-failure posture as
+	// the insert below).
+	var usageRaw json.RawMessage
+	if usage != nil {
+		if raw, err := json.Marshal(usage); err == nil {
+			usageRaw = raw
+		}
+	}
+
 	row := storage.RequestLog{
 		Timestamp:     time.Now().Unix(),
 		ClientKeyID:   keyID,
@@ -358,15 +387,62 @@ func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID stri
 		LatencyMS:     latencyMS,
 		RouteTrace:    trace,
 		ErrorRedacted: errMsg,
+		Usage:         usageRaw,
 	}
-	if usage != nil {
-		if raw, err := json.Marshal(usage); err == nil {
-			row.Usage = raw
+	if meta != nil {
+		row.Features = marshalFeatures(meta.Features)
+		row.Protocol = meta.Protocol
+		row.ConvKey = meta.ConvKey
+		if meta.ConvKey != "" {
+			var prior string
+			if a.store != nil {
+				prior, _ = a.store.RecentConversation(ctx, keyID, meta.ConvKey,
+					row.Timestamp, rollingConversationWindow)
+			}
+			if prior != "" {
+				row.ConversationID = prior
+			} else {
+				row.ConversationID = convIDFromKey(meta.ConvKey)
+			}
 		}
 	}
+	if len(row.Features) == 0 {
+		row.Features = json.RawMessage(`{}`)
+	}
+	if len(row.RouteTrace) == 0 {
+		row.RouteTrace = json.RawMessage(`{}`)
+	}
+
 	// The log write must not break the response already streamed to the
 	// client; a failed audit row is a server defect, not a client error.
-	_, _ = a.store.InsertRequestLog(ctx, row)
+	rowID, _ := a.store.InsertRequestLog(ctx, row)
+
+	// Live stream: finish the in-flight entry (idempotent; its broadcast
+	// carries the terminal row) — or, for rows without a registered entry
+	// (count_tokens pre-decode, stream wired nil), publish the row
+	// directly. ALL requests stay observable either way.
+	if a.stream != nil {
+		liveRow := reqlog.LogRow{
+			ID:             rowID,
+			Timestamp:      row.Timestamp,
+			ClientKeyID:    row.ClientKeyID,
+			ProviderID:     row.ProviderID,
+			Model:          row.Model,
+			Status:         row.Status,
+			LatencyMS:      row.LatencyMS,
+			Usage:          row.Usage,
+			RouteTrace:     row.RouteTrace,
+			ConversationID: row.ConversationID,
+			Protocol:       row.Protocol,
+			Features:       row.Features,
+			ErrorRedacted:  row.ErrorRedacted,
+		}
+		if meta != nil && meta.finish != nil {
+			a.finishInflight(meta, liveRow)
+		} else {
+			a.stream.PublishRow(liveRow)
+		}
+	}
 
 	// usage_daily increment (Analysis C schema): the Overview dashboard's
 	// data source. Same tuple as the log row, day = today (UTC). Every

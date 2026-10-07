@@ -89,8 +89,9 @@ test.describe('signed in', () => {
     await readyForCapture(page);
     // Timestamps render from the frozen clock + seeded relative offsets —
     // deterministic in CI, but masked to stay robust against seed drift.
+    // The gutter (first-child) keeps the chain lines out of the baseline.
     await expect(page).toHaveScreenshot('logs.png', {
-      mask: [page.locator('td:first-child'), ...kpiMasks(page)],
+      mask: [page.locator('td:first-child'), page.locator('td.col-time'), ...kpiMasks(page)],
     });
   });
 

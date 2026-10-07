@@ -3,7 +3,7 @@
 // color-scheme — the automatable subset of the DESIGN.md contract.
 
 import { test, expect } from '@playwright/test';
-import { login } from './helpers';
+import { login, readyForCapture } from './helpers';
 
 // The design contract in its robust form: every rendered color must be
 // built from the token palette's HUE families — neutral blue (250),
@@ -45,7 +45,7 @@ test('dark-only color-scheme', async ({ page }) => {
 test('tokens-only colors on all routes', async ({ page }) => {
   for (const route of ['/', '/quota', '/providers', '/models', '/routing', '/logs', '/keys']) {
     await page.goto(route);
-    await page.waitForLoadState('networkidle');
+    await readyForCapture(page);
     // `route` is closure-scoped on the Node side and not visible inside the
     // browser callback — pass it in as an argument.
     const violations = await page.evaluate(
@@ -134,7 +134,7 @@ test('tokens-only colors on all routes', async ({ page }) => {
 test('no emoji in rendered output', async ({ page }) => {
   for (const route of ['/', '/providers', '/models', '/routing', '/logs', '/keys', '/settings']) {
     await page.goto(route);
-    await page.waitForLoadState('networkidle');
+    await readyForCapture(page);
     const emoji = await page.evaluate(() => {
       // Emoji coverage: the main plane blocks + variation selector + flag
       // sequences. Inline SVG icons are the sanctioned alternative.

@@ -25,6 +25,7 @@ import (
 
 	"github.com/tubeof/proxyllm/internal/auth"
 	"github.com/tubeof/proxyllm/internal/provider/codex"
+	"github.com/tubeof/proxyllm/internal/reqlog"
 	"github.com/tubeof/proxyllm/internal/storage"
 )
 
@@ -68,8 +69,13 @@ type AdminParams struct {
 	HealthSnapshot func(accountID string) string
 	// Prober is the on-demand usage scrape (ADR-012; injectable for
 	// tests). nil = the production ollama.com client.
-	Prober    UsageProbeFunc
-	Now       func() int64
+	Prober UsageProbeFunc
+	Now    func() int64
+
+	// Stream is the live log hub (Logs-page redesign): in-flight registry
+	// + finished-row broadcast. nil keeps the SSE endpoint answering 503 —
+	// the page falls back to its page fetch (every existing test green).
+	Stream    *reqlog.Stream
 	MasterKey []byte
 }
 
@@ -87,6 +93,10 @@ type AdminAPI struct {
 	syncNow         func(ctx context.Context) (storage.ModelSyncState, error)
 	testModel       func(ctx context.Context, modelID string) (TestModelResult, error)
 	sessions        *auth.SessionManager
+	stream          *reqlog.Stream
+	// streamHeartbeat is the SSE `: ping` interval (15 s in production;
+	// tests pin it lower to keep the gate fast).
+	streamHeartbeat time.Duration
 
 	// Usage probing (ADR-012): healthSnapshot names the per-account
 	// cooldown reason for the Quota badge; prober scrapes on demand
@@ -119,6 +129,8 @@ func NewAdminAPI(p AdminParams) *AdminAPI {
 		sessions:        auth.NewSessionManager(p.Store, p.MasterKey, now),
 		healthSnapshot:  p.HealthSnapshot,
 		prober:          p.Prober,
+		stream:          p.Stream,
+		streamHeartbeat: logStreamHeartbeatDefault,
 		now:             now,
 		oauthFlows:      map[string]*codex.DeviceSession{},
 	}
@@ -183,6 +195,9 @@ func (a *AdminAPI) Handler() http.Handler {
 
 	mux.Handle("GET /api/admin/usage", a.sessions.RequireAdmin(http.HandlerFunc(a.getUsage)))
 	mux.Handle("GET /api/admin/logs", a.sessions.RequireAdmin(http.HandlerFunc(a.getLogs)))
+	// Live log stream (Logs-page redesign): SSE hub feed. GET — the CSRF
+	// layer only guards mutations, so the native EventSource works.
+	mux.Handle("GET /api/admin/logs/stream", a.sessions.RequireAdmin(http.HandlerFunc(a.streamLogs)))
 
 	// ADR-012 Quota page: per-account usage/limit cards + on-demand scrape.
 	mux.Handle("GET /api/admin/accounts/usage", a.sessions.RequireAdmin(http.HandlerFunc(a.getAccountUsage)))
@@ -1167,7 +1182,7 @@ func (a *AdminAPI) getLogs(w http.ResponseWriter, r *http.Request) {
 			writeStoreError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"logs": logsToDTO(logs)})
+		writeJSON(w, http.StatusOK, map[string]any{"logs": logsToDTO(logs, a.logNameProjection(r.Context()))})
 		return
 	}
 	logs, total, err := a.store.ListRequestLogsPage(r.Context(), filter, limit, offset)
@@ -1175,23 +1190,33 @@ func (a *AdminAPI) getLogs(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"logs": logsToDTO(logs), "total": total})
+	writeJSON(w, http.StatusOK, map[string]any{"logs": logsToDTO(logs, a.logNameProjection(r.Context())), "total": total})
 }
 
 // logsToDTO projects request-log rows (the shared shape of both reads).
-func logsToDTO(logs []storage.RequestLog) []logDTO {
+// Display names ride the batch projection — deleted rows fall back to the
+// raw id, never blank.
+func logsToDTO(logs []storage.RequestLog, names logNames) []logDTO {
 	out := make([]logDTO, 0, len(logs))
 	for _, l := range logs {
+		keyName, keyPrefix := names.keyDisplay(l.ClientKeyID)
 		out = append(out, logDTO{
-			ID:          l.ID,
-			Timestamp:   l.Timestamp,
-			ClientKeyID: l.ClientKeyID,
-			ProviderID:  l.ProviderID,
-			Model:       l.Model,
-			Status:      l.Status,
-			LatencyMS:   l.LatencyMS,
-			Usage:       json.RawMessage(l.Usage),
-			RouteTrace:  json.RawMessage(l.RouteTrace),
+			ID:             l.ID,
+			Timestamp:      l.Timestamp,
+			ClientKeyID:    l.ClientKeyID,
+			ProviderID:     l.ProviderID,
+			Model:          l.Model,
+			Status:         l.Status,
+			LatencyMS:      l.LatencyMS,
+			Usage:          json.RawMessage(l.Usage),
+			RouteTrace:     json.RawMessage(l.RouteTrace),
+			ConversationID: l.ConversationID,
+			Protocol:       l.Protocol,
+			Features:       json.RawMessage(l.Features),
+			ErrorRedacted:  l.ErrorRedacted,
+			KeyName:        keyName,
+			KeyPrefix:      keyPrefix,
+			ProviderName:   names.providerDisplay(l.ProviderID),
 		})
 	}
 	return out
@@ -1351,6 +1376,56 @@ type logDTO struct {
 	LatencyMS   int64           `json:"latency_ms"`
 	Usage       json.RawMessage `json:"usage"`
 	RouteTrace  json.RawMessage `json:"route_trace"`
+	// Logs-page redesign (additive, omitempty: pre-patch rows omit all).
+	ConversationID string          `json:"conversation_id,omitempty"`
+	Protocol       string          `json:"protocol,omitempty"`
+	Features       json.RawMessage `json:"features,omitempty"`
+	ErrorRedacted  string          `json:"error_redacted,omitempty"`
+	// Display projections (getLogs fills them; the raw ids remain).
+	KeyName      string `json:"key_name,omitempty"`
+	KeyPrefix    string `json:"key_prefix,omitempty"`
+	ProviderName string `json:"provider_name,omitempty"`
+}
+
+// logNames carries the batch-projected display names for one getLogs
+// response (one ListClientKeys + one ListProviders per request — small
+// config tables; no SQL JOIN keeps storage display-agnostic).
+type logNames struct {
+	keys      map[string]storage.ClientKey
+	providers map[string]storage.Provider
+}
+
+// logNameProjection builds the display maps for a log page.
+func (a *AdminAPI) logNameProjection(ctx context.Context) logNames {
+	names := logNames{keys: map[string]storage.ClientKey{}, providers: map[string]storage.Provider{}}
+	if keys, err := a.store.ListClientKeys(ctx); err == nil {
+		for _, k := range keys {
+			names.keys[k.ID] = k
+		}
+	}
+	if providers, err := a.store.ListProviders(ctx); err == nil {
+		for _, p := range providers {
+			names.providers[p.ID] = p
+		}
+	}
+	return names
+}
+
+// keyDisplay renders the API-key cell: "name (prefix****)" — raw id
+// fallback when the key row was deleted (never blank).
+func (n logNames) keyDisplay(id string) (name, prefix string) {
+	if k, ok := n.keys[id]; ok {
+		return k.Name, k.KeyPrefix
+	}
+	return id, ""
+}
+
+// providerDisplay renders provider display name (raw id fallback).
+func (n logNames) providerDisplay(id string) string {
+	if p, ok := n.providers[id]; ok {
+		return p.Name
+	}
+	return id
 }
 
 type entryDTO struct {

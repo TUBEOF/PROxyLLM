@@ -34,6 +34,9 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Log-meta annotation + in-flight registration (Logs-page redesign).
+	r = a.beginRequest(r, protocolAnthropic, raw, req)
+
 	ctx := r.Context()
 	keyID := auth.ClientKeyIDFromContext(ctx)
 
@@ -172,6 +175,11 @@ func (a *api) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 			"", "", http.StatusBadRequest, 0, nil, nil, msg)
 		return
 	}
+
+	// Observable request (Analysis E): the heuristic runs locally, but the
+	// row still records it — annotated without in-flight registration
+	// (no upstream dispatch to trace).
+	r = a.beginRequest(r, protocolAnthropic, raw, req)
 
 	estimate := countTokensHeuristic(req)
 	w.Header().Set("Content-Type", "application/json")

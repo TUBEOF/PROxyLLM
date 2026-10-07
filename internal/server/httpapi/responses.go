@@ -30,6 +30,11 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Log-meta annotation + in-flight registration (Logs-page redesign):
+	// one call before the stream/static split covers both runners (they
+	// share r's context).
+	r = a.beginRequest(r, protocolOpenAIResponses, raw, req)
+
 	ctx := r.Context()
 	keyID := auth.ClientKeyIDFromContext(ctx)
 

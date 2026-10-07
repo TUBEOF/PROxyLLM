@@ -422,3 +422,34 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
   *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
   .sidebar-brand .dot,.status-dot.up::after{animation:none}
 }
+
+/* ============================================================
+   REQUEST LOG TABLE (Logs-page redesign, 2026-10-06)
+   ============================================================ */
+
+.logs-table .td-gutter{position:relative;width:18px;padding:0}
+/* Chain lines: a vertical connector into this row (cont) and a stub to
+   the row below (start) — adjacent rows sharing a conversation id. */
+.logs-table tr[data-chain-cont] .td-gutter::before{
+  content:'';position:absolute;left:8px;top:0;height:100%;width:2px;
+  background:var(--accent-dim);border-radius:1px
+}
+.logs-table tr[data-chain-start] .td-gutter::after{
+  content:'';position:absolute;left:8px;top:50%;height:50%;width:2px;
+  background:var(--accent-dim);border-radius:1px
+}
+/* Neutral + warm pills (provider / protocol badges) */
+.pill{display:inline-flex;align-items:center;padding:2px 8px;border-radius:var(--radius-full);font-size:11px;font-weight:var(--fw-medium);letter-spacing:.04em;background:var(--surface);border:1px solid var(--border);color:var(--muted);white-space:nowrap}
+.pill-warm{color:var(--status-warn);background:oklch(78% 0.15 75 / 10%);border-color:oklch(78% 0.15 75 / 25%)}
+/* Healed chip: a request that recovered (failover/retry → 2xx) */
+.chip{display:inline-flex;align-items:center;padding:1px 6px;border-radius:var(--radius-full);font-size:10px;font-weight:var(--fw-medium);margin-left:6px;white-space:nowrap}
+.chip-healed{color:var(--status-up);background:var(--accent-dim);border:1px solid oklch(78% 0.20 144 / 25%)}
+/* Tokens cell numbers */
+.num-ti{color:var(--text)}
+.num-to{color:var(--status-up)}
+.num-cr{color:var(--status-info)}
+.log-row{cursor:pointer}
+.log-row:hover{background:var(--surface-raised)}
+/* Running-row spinner dot */
+.b-dot-spin{animation:b-dot-pulse 1.2s ease-in-out infinite}
+@keyframes b-dot-pulse{0%,100%{opacity:.35}50%{opacity:1}}
