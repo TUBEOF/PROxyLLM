@@ -119,6 +119,27 @@ var migrations = []string{
 	`ALTER TABLE request_logs ADD COLUMN features TEXT NOT NULL DEFAULT '{}';`,
 	`CREATE INDEX IF NOT EXISTS idx_request_logs_conversation ON request_logs(conversation_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_request_logs_convkey ON request_logs(client_key_id, conv_key, id);`,
+	// Logs-page sub-operations (2026-10-07). A request's separable upstream
+	// operations — a chain failover, a capability (vision) fallback model
+	// walk, an emulated web-tool call, a same-provider retry — get their own
+	// row here instead of living only inside the parent's route_trace. A
+	// separate table (not a parent_id column on request_logs) keeps every
+	// request_logs row a request, so the log viewer's pagination and its
+	// total count stay unchanged. parent_id references request_logs(id) by
+	// convention, not by FK, so a request retention cleanup cannot cascade
+	// unexpectedly. Append-only: all earlier statements are never edited.
+	`CREATE TABLE IF NOT EXISTS request_child_logs (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		parent_id   INTEGER NOT NULL,
+		ts          INTEGER NOT NULL,
+		kind        TEXT NOT NULL,
+		provider_id TEXT,
+		model       TEXT,
+		from_ref    TEXT,
+		to_ref      TEXT,
+		detail      TEXT
+	);`,
+	`CREATE INDEX IF NOT EXISTS idx_request_child_logs_parent ON request_child_logs(parent_id);`,
 }
 
 func (s *Store) migrate() error {
