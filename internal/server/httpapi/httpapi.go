@@ -417,6 +417,17 @@ func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID stri
 	// client; a failed audit row is a server defect, not a client error.
 	rowID, _ := a.store.InsertRequestLog(ctx, row)
 
+	// Sub-operations (2026-10-07 Logs page): the trace's separable upstream
+	// operations — failovers, capability (vision) fallback walks, emulated
+	// web-tool calls, same-provider retries — persist as their own rows
+	// under this request's id, so a fallback model or a web-tool call is
+	// visible in the log instead of only inside route_trace. Derived from
+	// the same trace just stored. Same swallow-failure posture as the row
+	// above: a failed child write is a server defect, not a client error.
+	if ops := childOpsFromTrace(trace); len(ops) > 0 {
+		_ = a.store.InsertChildLogs(ctx, rowID, ops)
+	}
+
 	// Live stream: finish the in-flight entry (idempotent; its broadcast
 	// carries the terminal row) — or, for rows without a registered entry
 	// (count_tokens pre-decode, stream wired nil), publish the row
@@ -465,6 +476,46 @@ func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID stri
 		inc.CacheReadTokens = int64(usage.CacheReadInputTokens)
 	}
 	_ = a.store.IncrUsageDaily(ctx, inc)
+}
+
+// childOpsFromTrace decodes a stored route_trace object into the request's
+// separable sub-operations (routing.ChildOps). A trace that is absent,
+// unparseable, or in a shape without the op-carrying events yields no ops —
+// the same forgiving posture the WebUI's raw-JSON fallback takes, so an old
+// or unexpected row can never break the log write.
+func childOpsFromTrace(trace json.RawMessage) []storage.ChildLog {
+	if len(trace) == 0 {
+		return nil
+	}
+	var t chainTrace
+	if err := json.Unmarshal(trace, &t); err != nil {
+		return nil
+	}
+	events := make([]routing.Event, 0, len(t.Events))
+	for _, raw := range t.Events {
+		var ev routing.Event
+		if err := json.Unmarshal(raw, &ev); err != nil {
+			continue // skip one malformed event, keep the rest
+		}
+		events = append(events, ev)
+	}
+	ops := routing.ChildOps(events)
+	if len(ops) == 0 {
+		return nil
+	}
+	out := make([]storage.ChildLog, 0, len(ops))
+	for _, op := range ops {
+		out = append(out, storage.ChildLog{
+			TS:         time.Now().Unix(),
+			Kind:       string(op.Kind),
+			ProviderID: op.ProviderID,
+			Model:      op.Model,
+			FromRef:    op.From,
+			ToRef:      op.To,
+			Detail:     op.Detail,
+		})
+	}
+	return out
 }
 
 // failureDelta counts a failure for status >= 400: any client-visible

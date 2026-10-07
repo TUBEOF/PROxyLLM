@@ -4,9 +4,8 @@ package routing
 // operator needs as their own log rows rather than as trace-only detail —
 // a chain failover, a capability (vision) fallback model walk, an emulated
 // web-tool call, and a same-provider retry. This mapper is the single
-// source of truth shared by the persist path (httpapi.writeRequestLog) and
-// the live feed (server/livefeed), so the two can never disagree about what
-// a sub-operation is.
+// source of truth for that mapping; the persist path
+// (httpapi.writeRequestLog → storage.InsertChildLogs) consumes it.
 //
 // Everything else in the trace (alias, model_resolved, attempt, failed,
 // skipped, expand, rotation, compat_policy, rejected, implicit_route,
