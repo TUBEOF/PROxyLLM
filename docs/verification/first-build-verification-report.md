@@ -105,7 +105,7 @@ provider-create and client-key-create interaction smoke, logout.
 `webui/e2e/design-rules.spec.ts` (dark-only, tokens-only, no-emoji on all
 routes) runs against the fixture server without needing CI-only screenshot
 baselines; the fixture server binary was rebuilt with the fixed bundle
-(`go build -o webui/e2e/fixturesrv-bin.exe ./webui/e2e/fixturesrv`).
+(`go build -o webui/e2e/fixturesrv-bin ./webui/e2e/fixturesrv`).
 
 *(Results recorded below after the run — see §3.)*
 
