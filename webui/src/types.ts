@@ -132,13 +132,32 @@ export interface RequestLog {
 // RunningRequest is one in-flight request on the SSE stream (a pseudo-row
 // at its started_at position; converts to a RequestLog on the log event).
 // The id is the tracker's run_… string — never collides with the store's
-// numeric rowids.
+// numeric rowids. conv_key lets a running row chain into its conversation
+// before the terminal row assigns the real conversation_id.
 export interface RunningRequest {
   id: string;
   started_at: number;
   client_key_id: string;
   model: string;
   protocol?: string;
+  conversation_id?: string;
+  conv_key?: string;
+}
+
+// ChildLog is one sub-operation of a request (GET /api/admin/logs →
+// `children`, keyed by parent row id): a chain failover, a capability
+// (vision) fallback model walk, an emulated web-tool call, or a retry.
+// Rendered as its own nested row under the parent request.
+export interface ChildLog {
+  id: number;
+  parent_id: number;
+  ts: number;
+  kind: 'failover' | 'capability_fallback' | 'emulated_tool' | 'retry' | string;
+  provider_id?: string;
+  model?: string;
+  from_ref?: string;
+  to_ref?: string;
+  detail?: string;
 }
 
 export interface SettingsEntry {
@@ -179,6 +198,8 @@ export interface UsageResponse {
 export interface LogsResponse {
   logs: RequestLog[];
   total: number;
+  /** Sub-operations keyed by parent row id (absent when none in the page). */
+  children?: Record<string, ChildLog[]>;
 }
 export interface SettingsResponse {
   entries: SettingsEntry[];

@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/config"
+	"github.com/tubeof/proxyllm/internal/routing"
 	"github.com/tubeof/proxyllm/internal/server"
 	"github.com/tubeof/proxyllm/internal/storage"
 )
@@ -307,7 +308,7 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 			Timestamp: base - 300, ClientKeyID: "ckey-claude-code", ProviderID: "prv-ollama",
 			Model: "llama3.3-70b", Status: 200, LatencyMS: 1930,
 			Usage:          json.RawMessage(`{"input_tokens":1204,"output_tokens":502}`),
-			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"llama3.3-70b","to":"llama3.3-70b","provider_id":"prv-ollama"},{"type":"failover","from":"prv-openai/claude-sonnet-5","to":"prv-ollama/llama3.3-70b","reason":"upstream 503"},{"type":"compat_policy","policy":"thinking_handling","applied":"map-to-reasoning-effort"}]}`),
+			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"llama3.3-70b","to":"llama3.3-70b","provider_id":"prv-ollama"},{"type":"attempt","provider_id":"prv-openai","model":"claude-sonnet-5"},{"type":"failover","from":"prv-openai/claude-sonnet-5","to":"prv-ollama/llama3.3-70b","reason":"upstream 503"},{"type":"attempt","provider_id":"prv-ollama","model":"llama3.3-70b"},{"type":"compat_policy","policy":"thinking_handling","applied":"map-to-reasoning-effort"}]}`),
 			ConversationID: "conv_a1b2c3d4", ConvKey: "sess:11223344-5566-7788-99aa-bbccddeeff00",
 			Protocol: "anthropic", Features: json.RawMessage(`{"streaming":true,"tools":true,"thinking":true,"web_search":false,"web_fetch":false,"vision":false}`),
 		},
@@ -327,14 +328,22 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 			Timestamp: base - 895, ClientKeyID: "ckey-ci", ProviderID: "prv-ollama",
 			Model: "glm-5.3-flash", Status: 200, LatencyMS: 1180,
 			Usage:          json.RawMessage(`{"input_tokens":88211,"output_tokens":72,"cache_read_input_tokens":88128}`),
-			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"glm-5.3-flash","to":"ollama-cloud/glm-5.3-flash","provider_id":"prv-ollama"},{"type":"capability_fallback","capability":"rate_limit","from":"prv-codex/gpt-5","to":"prv-ollama/glm-5.3-flash"}]}`),
+			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"glm-5.3-flash","to":"ollama-cloud/glm-5.3-flash","provider_id":"prv-ollama"},{"type":"attempt","provider_id":"prv-codex","model":"gpt-5"},{"type":"failed","provider_id":"prv-codex","class":"capability_gap","error_code":"unsupported_image","http_status":400,"failure_position":"pre_stream","capability":"vision","latency_ms":140},{"type":"capability_fallback","capability":"vision","reason":"chain exhausted on capability gaps; trying the capability fallback models"},{"type":"failover","from":"prv-codex","to":"prv-ollama","reason":"capability fallback model"},{"type":"attempt","provider_id":"prv-ollama","model":"glm-5.3-flash"}]}`),
 			ConversationID: "conv_de1a7e00", ConvKey: "sys:ci-smoke",
 			Protocol: "anthropic", Features: json.RawMessage(`{"streaming":false,"tools":false,"thinking":false,"web_search":false,"web_fetch":false,"vision":false}`),
 		},
 	}
 	for _, l := range logs {
-		if _, err := store.InsertRequestLog(ctx, l); err != nil {
+		id, err := store.InsertRequestLog(ctx, l)
+		if err != nil {
 			return fmt.Errorf("seed request log: %w", err)
+		}
+		// Sub-operations (2026-10-07): the rows whose traces carry a failover
+		// / capability-fallback / emulated-tool event get their child rows by
+		// the same derivation the server uses, so the fixture exercises the
+		// real parent→sub-op rendering (nested table rows + drawer list).
+		if err := store.InsertChildLogs(ctx, id, fixtureChildren(l.RouteTrace, base)); err != nil {
+			return fmt.Errorf("seed child logs: %w", err)
 		}
 	}
 
@@ -350,4 +359,35 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 	}
 
 	return nil
+}
+
+// fixtureChildren derives a seeded row's sub-operations with the same
+// mapping the server uses (routing.ChildOps over the trace events), so the
+// fixture's parent→sub-op content is production-shaped rather than a
+// hand-written approximation. A trace that does not parse yields no
+// children — the row simply renders without them.
+func fixtureChildren(trace json.RawMessage, ts int64) []storage.ChildLog {
+	var t struct {
+		Events []json.RawMessage `json:"events"`
+	}
+	if err := json.Unmarshal(trace, &t); err != nil {
+		return nil
+	}
+	events := make([]routing.Event, 0, len(t.Events))
+	for _, raw := range t.Events {
+		var ev routing.Event
+		if err := json.Unmarshal(raw, &ev); err != nil {
+			continue
+		}
+		events = append(events, ev)
+	}
+	ops := routing.ChildOps(events)
+	out := make([]storage.ChildLog, 0, len(ops))
+	for _, op := range ops {
+		out = append(out, storage.ChildLog{
+			TS: ts, Kind: string(op.Kind), ProviderID: op.ProviderID,
+			Model: op.Model, FromRef: op.From, ToRef: op.To, Detail: op.Detail,
+		})
+	}
+	return out
 }

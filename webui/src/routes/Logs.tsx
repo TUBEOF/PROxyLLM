@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiCall } from '../api';
-import type { LogsResponse, RequestLog, RunningRequest } from '../types';
+import type { ChildLog, LogsResponse, RequestLog, RunningRequest } from '../types';
 import { EmptyState, ErrorNote, PageHead, useLiveData } from '../hooks';
 import { useLogStream } from '../hooks/useLogStream';
 import { Drawer } from '../components/Overlays';
 import { IconChevronLeft, IconChevronRight } from '../icons';
-import { LogRow, type LogRowShape } from '../components/LogRow';
+import { LogRow, type LogRowShape, type ParentShape } from '../components/LogRow';
+import {
+  ChainSummary,
+  TraceTimeline,
+  RawTrace,
+  parseEvents,
+  childTitle,
+  childCls,
+  childMeta,
+} from '../components/RouteTrace';
 
 // Logs (Logs-page redesign, 2026-10-06): the dense request log — status /
 // model / requested / provider / protocol / account / api key / tokens /
@@ -82,22 +91,44 @@ export default function Logs() {
 
   // Render shapes: the grouping pass (chain marks + healed) runs over
   // running pseudo-rows + finished rows (running rows first — newest).
+  // Sub-operations expand inline directly under their parent request as
+  // nested `child` shapes (2026-10-07) — the parent→sub-op hierarchy.
   const shapes = useMemo<LogRowShape[]>(() => {
-    const rows: LogRowShape[] = [
-      ...running.map((run) => ({ kind: 'running', run, chainStart: false, chainCont: false }) as LogRowShape),
+    const children = data?.children ?? {};
+    const parents: ParentShape[] = [
+      ...running.map((run) => ({ kind: 'running', run, chainStart: false, chainCont: false }) as ParentShape),
       ...logs.map((row) => ({
         kind: 'done',
         row,
         chainStart: false,
         chainCont: false,
         healed: intraRowHealed(row),
-      }) as LogRowShape),
+        childCount: children[String(row.id)]?.length ?? 0,
+      }) as ParentShape),
     ];
-    return buildShapes(rows);
-  }, [logs, running]);
+    const marked = buildShapes(parents);
+    // Expand after the marks: children never participate in the
+    // conversation-chain adjacency (they are not requests). A child whose
+    // parent continues the chain carries the cont mark so the conversation
+    // line stays visually unbroken across the expansion.
+    const out: LogRowShape[] = [];
+    for (const s of marked) {
+      out.push(s);
+      if (s.kind === 'done') {
+        const kidCont = s.chainCont === true;
+        const parent = s.row;
+        for (const child of children[String(s.row.id)] ?? []) {
+          out.push({ kind: 'child', child, chainCont: kidCont, onOpenParent: () => openTraceRef.current(parent) });
+        }
+      }
+    }
+    return out;
+  }, [logs, running, data]);
 
   const openTrace = useCallback((l: RequestLog) => setSelected(l), []);
   const closeTrace = useCallback(() => setSelected(null), []);
+  const openTraceRef = useRef(openTrace);
+  openTraceRef.current = openTrace;
 
   return (
     <>
@@ -153,7 +184,12 @@ export default function Logs() {
                   </thead>
                   <tbody>
                     {shapes.map((shape, i) => {
-                      const rowKey = shape.kind === 'running' ? shape.run.id : shape.row.id;
+                      const rowKey =
+                        shape.kind === 'running'
+                          ? shape.run.id
+                          : shape.kind === 'child'
+                            ? `c${shape.child.id}`
+                            : shape.row.id;
                       return (
                         <LogRow
                           key={`${rowKey}-${i}`}
@@ -197,26 +233,35 @@ export default function Logs() {
 
       {selected !== null && (
         <Drawer title={`Request #${selected.id}`} onClose={closeTrace}>
-          <LogDetail selected={selected} />
+          <LogDetail selected={selected} subOps={data?.children?.[String(selected.id)] ?? []} />
         </Drawer>
       )}
     </>
   );
 }
 
-// buildShapes: the client-side grouping pass. Two jobs:
+// buildShapes: the client-side grouping pass over REQUEST rows (running
+// pseudo-rows + finished rows; sub-operations never participate — they are
+// not requests). Two jobs:
 //  1. chain marks — adjacent rows (in render order) sharing a non-empty
 //     conversation identity get start/cont marks; the gutter lines render
-//     from them (running pseudo-rows chain by their conv hint = none
-//     today, so effectively finished rows chain).
+//     from them. A running row chains by its conv_key (its conversation_id
+//     is only assigned at the terminal write).
 //  2. cross-row heal — the previous row of the same conversation failed
 //     (≥400) and this row is 2xx → healed chip (a retry recovered it).
-function buildShapes(rows: LogRowShape[]): LogRowShape[] {
+function buildShapes(rows: ParentShape[]): ParentShape[] {
   const out = rows.map((s) => ({ ...s }));
   let prevConv: string | null = null;
   let prevFailed = false;
   for (const s of out) {
-    const conv = s.kind === 'done' ? (s.row.conversation_id ?? '') : '';
+    // A running row chains by its conv_key (its real conversation_id is only
+    // assigned at the terminal write); a finished row by its id.
+    const conv =
+      s.kind === 'done'
+        ? (s.row.conversation_id ?? '')
+        : s.kind === 'running'
+          ? (s.run.conv_key ?? s.run.conversation_id ?? '')
+          : '';
     if (conv !== '') {
       if (prevConv === conv) {
         s.chainCont = true;
@@ -259,10 +304,11 @@ function intraRowHealed(row: RequestLog): boolean {
   );
 }
 
-function LogDetail({ selected }: { selected: RequestLog }) {
+function LogDetail({ selected, subOps }: { selected: RequestLog; subOps: ChildLog[] }) {
   const features = (selected.features ?? {}) as Record<string, boolean | undefined>;
   const featureKeys = ['streaming', 'tools', 'thinking', 'web_search', 'web_fetch', 'vision'] as const;
   const active = featureKeys.filter((k) => features[k] === true);
+  const events = parseEvents(selected.route_trace);
   return (
     <div className="form">
       <div className="fieldset">
@@ -323,12 +369,29 @@ function LogDetail({ selected }: { selected: RequestLog }) {
       </div>
       <div className="fieldset">
         <legend>Route trace</legend>
-        {selected.route_trace === null || selected.route_trace === undefined ? (
+        {events === null ? (
           <p className="hint">No routing decisions recorded.</p>
         ) : (
-          <pre className="mono" style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12 }}>
-            {JSON.stringify(selected.route_trace, null, 2)}
-          </pre>
+          <>
+            <ChainSummary events={events} />
+            <TraceTimeline events={events} />
+          </>
+        )}
+        {subOps.length > 0 && (
+          <div className="child-ops">
+            <p className="hint">Sub-operations</p>
+            <ul className="child-op-list">
+              {subOps.map((c) => (
+                <li key={c.id}>
+                  <span className={childCls(c.kind)}>{childTitle(c)}</span>
+                  {childMeta(c) !== '' && <span className="child-op-detail mono">{childMeta(c)}</span>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {selected.route_trace !== null && selected.route_trace !== undefined && (
+          <RawTrace trace={selected.route_trace} />
         )}
       </div>
     </div>
