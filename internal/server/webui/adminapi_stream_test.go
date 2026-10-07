@@ -50,7 +50,10 @@ type cookieJar struct {
 // SetCookies is a no-op adapter (the server sets cookies via the response).
 func (j *cookieJar) SetCookies(_ *url.URL, _ []*http.Cookie) {}
 
-// Cookies returns the login state's cookies for the target URL.
+// Cookies returns the login state's cookies for the target URL. The
+// constructed cookie is a client-side jar entry replaying the session the
+// server issued (attributes ride the original Set-Cookie) — test-only, no
+// security boundary here.
 func (j *cookieJar) Cookies(_ *url.URL) []*http.Cookie {
 	var out []*http.Cookie
 	for _, pair := range strings.Split(j.state.cookieHeader(), "; ") {
