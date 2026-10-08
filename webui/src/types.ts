@@ -106,10 +106,6 @@ export interface UsageRow {
   cache_read_tokens: number;
   requests: number;
   failures: number;
-  // Display projections (raw ids stay the fallback).
-  key_name?: string;
-  provider_name?: string;
-  provider_kind?: string;
 }
 
 export interface RequestLog {

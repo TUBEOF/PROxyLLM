@@ -426,11 +426,12 @@ func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID stri
 
 	// Sub-operations (2026-10-07 Logs page): the trace's separable upstream
 	// operations — failovers, capability (vision) fallback walks, emulated
-	// web-tool calls, same-provider retries — persist as their own rows
-	// under this request's id, so a fallback model or a web-tool call is
-	// visible in the log instead of only inside route_trace. Derived from
-	// the same trace just stored. Same swallow-failure posture as the row
-	// above: a failed child write is a server defect, not a client error.
+	// web-tool calls — persist as their own rows under this request's id,
+	// so a fallback model or a web-tool call is visible in the log instead
+	// of only inside route_trace (a same-provider retry stays a timeline
+	// event). Derived from the same trace just stored. Same swallow-failure
+	// posture as the row above: a failed child write is a server defect,
+	// not a client error.
 	if ops := ChildOpsFromTrace(trace); len(ops) > 0 {
 		_ = a.store.InsertChildLogs(ctx, rowID, ops)
 	}

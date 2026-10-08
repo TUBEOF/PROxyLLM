@@ -252,6 +252,19 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 				if err != nil {
 					return
 				}
+				// Reload the capability fallbacks on the SAME reload: a
+				// provider deletion cascades its model rows away, so the
+				// stored fallback list drops entries that name the account —
+				// but only a re-resolve removes them from the live executor
+				// list (SetCapabilityFallbacks otherwise keeps the stale
+				// until-deleted entry, and the walk would Skip it on every
+				// gap-exhausted request). A failed re-resolve keeps the live
+				// list (last-known-good, same contract as the write path);
+				// the walk's own registry check then skips the dead account
+				// (traceCapabilityFallback), so this is belt and braces.
+				if entries, rerr := resolveCapabilityFallbacks(context.Background(), store, logger); rerr == nil {
+					exec.SetCapabilityFallbacks(entries)
+				}
 				exec.SetEmulator(buildEmulatorPool(context.Background(), emus, nil, store, logger))
 				refreshWebToolPresence()
 			},

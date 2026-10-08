@@ -9,7 +9,7 @@ import type {
   RulesResponse,
   Strategy,
 } from '../types';
-import { EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation } from '../hooks';
+import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
 import { Drawer } from '../components/Overlays';
 import PrioList from '../components/PrioList';
@@ -43,7 +43,7 @@ const STRATEGIES: { value: Strategy; label: string; desc: string }[] = [
 function CapabilityFallbacksCard() {
   const { data, loading, error, reload, updatedAt } = useLiveData<CapabilityFallbacks>(
     (signal) => apiCall<CapabilityFallbacks>('GET', '/api/admin/capability-fallbacks', undefined, signal),
-    LIVE_MS,
+    CONFIG_LIVE_MS,
   );
   // Models (for the vision picker) + web-tool accounts (for the web pickers).
   const { data: modelsData } = useAdminData<ModelsResponse>(
@@ -111,7 +111,7 @@ function CapabilityFallbacksCard() {
         <legend>
           Capability fallbacks
           <span style={{ marginLeft: 8, verticalAlign: 'middle' }}>
-            <LiveBadge updatedAt={updatedAt} intervalMs={LIVE_MS} />
+            <LiveBadge updatedAt={updatedAt} intervalMs={CONFIG_LIVE_MS} />
           </span>
         </legend>
         <p className="hint" style={{ marginTop: 0 }}>
@@ -184,14 +184,10 @@ interface ProvidersResponseLike {
   providers: { id: string; type: string; name: string }[];
 }
 
-// LIVE_MS is the config pages' light refresh — they change rarely, so a
-// slow poll keeps the LIVE badge honest without churn.
-const LIVE_MS = 15000;
-
 export default function Routing() {
   const { data, loading, error, reload, updatedAt } = useLiveData<RulesResponse>(
     (signal) => apiCall<RulesResponse>('GET', '/api/admin/routing', undefined, signal),
-    LIVE_MS,
+    CONFIG_LIVE_MS,
   );
   const { data: modelsData } = useAdminData<ModelsResponse>(
     (signal) => apiCall<ModelsResponse>('GET', '/api/admin/models', undefined, signal),
@@ -329,7 +325,7 @@ export default function Routing() {
         sub="Fallback chains per model pattern. Every transition at request time is traced in the logs — fallbacks are never silent."
         actions={
           <>
-            <LiveBadge updatedAt={updatedAt} intervalMs={LIVE_MS} />
+            <LiveBadge updatedAt={updatedAt} intervalMs={CONFIG_LIVE_MS} />
             <button type="button" className="btn btn-primary" onClick={openCreate}>
               <IconPlus width="16" height="16" />
               Add rule

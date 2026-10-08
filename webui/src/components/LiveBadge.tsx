@@ -34,14 +34,16 @@ function ago(updatedAt: number | null | undefined): string {
 
 export function LiveBadge({ updatedAt = null, connected, intervalMs = 0 }: LiveBadgeProps) {
   // now ticks so a page whose poll has silently died flips to PAUSED
-  // instead of showing a stale "LIVE" forever.
+  // instead of showing a stale "LIVE" forever. The tick only exists for
+  // that staleness check — on a stream-fed page `connected` decides the
+  // state alone, so the 1 Hz re-render would be pure waste.
+  const streamed = typeof connected === 'boolean';
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
+    if (streamed) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, []);
-
-  const streamed = typeof connected === 'boolean';
+  }, [streamed]);
   const stale =
     !streamed &&
     (updatedAt === null ||

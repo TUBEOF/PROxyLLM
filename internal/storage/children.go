@@ -7,9 +7,11 @@ import (
 
 // ChildLog is one persisted sub-operation of a request (Logs page,
 // 2026-10-07): a chain failover, a capability (vision) fallback model walk,
-// an emulated web-tool call, or a same-provider retry. It is derived from
-// the parent request's route_trace by routing.ChildOps and stored beside it
-// so the operation is visible as its own row.
+// or an emulated web-tool call. It is derived from the parent request's
+// route_trace by routing.ChildOps and stored beside it so the operation is
+// visible as its own row (a same-provider retry is deliberately NOT a row
+// — it is one attempt of the same operation, and a retry storm would flood
+// the log; it stays a timeline event).
 //
 // It carries provider/model identity and an operator-facing detail string
 // only — never request bodies, headers, or credentials. Detail is
@@ -21,7 +23,7 @@ type ChildLog struct {
 	TS       int64
 
 	// Kind is the routing.OpKind string ("failover", "capability_fallback",
-	// "emulated_tool", "retry").
+	// "emulated_tool").
 	Kind string
 
 	ProviderID string

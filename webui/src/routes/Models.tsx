@@ -10,7 +10,7 @@ import type {
   ProvidersResponse,
   SettingsResponse,
 } from '../types';
-import { EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation } from '../hooks';
+import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
 
 // The relocated Settings-editor keys (2026-10-06): model-surface policy,
@@ -64,18 +64,14 @@ function parsePositiveInt(s: string): number | null {
   return n;
 }
 
-// LIVE_MS is the config pages' light refresh — they change rarely, so a
-// slow poll keeps the LIVE badge honest without churn.
-const LIVE_MS = 15000;
-
 export default function Models() {
   const { data, loading, error, reload, updatedAt } = useLiveData<ModelsResponse>(
     (signal) => apiCall<ModelsResponse>('GET', '/api/admin/models', undefined, signal),
-    LIVE_MS,
+    CONFIG_LIVE_MS,
   );
   const { data: providersData } = useLiveData<ProvidersResponse>(
     (signal) => apiCall<ProvidersResponse>('GET', '/api/admin/providers', undefined, signal),
-    LIVE_MS,
+    CONFIG_LIVE_MS,
   );
   const models = useMemo(() => data?.models ?? [], [data]);
   const providers = useMemo(() => providersData?.providers ?? [], [providersData]);
@@ -354,7 +350,7 @@ export default function Models() {
         sub="Every model's routing identity, capabilities and compatibility policy — the single place non-Claude routing on the Anthropic surface is configured."
         actions={
           <>
-            <LiveBadge updatedAt={updatedAt} intervalMs={LIVE_MS} />
+            <LiveBadge updatedAt={updatedAt} intervalMs={CONFIG_LIVE_MS} />
             <button
               type="button"
               className="btn btn-secondary"

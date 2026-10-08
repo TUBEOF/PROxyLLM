@@ -6,7 +6,7 @@ import { useLogStream } from '../hooks/useLogStream';
 import { Drawer } from '../components/Overlays';
 import { LiveBadge } from '../components/LiveBadge';
 import { IconChevronLeft, IconChevronRight } from '../icons';
-import { LogRow, type LogRowShape, type ParentShape } from '../components/LogRow';
+import { LogRow, tpsOf, type LogRowShape, type ParentShape } from '../components/LogRow';
 import {
   ChainSummary,
   TraceTimeline,
@@ -347,10 +347,7 @@ function LogDetail({ selected, subOps, names }: { selected: RequestLog; subOps: 
   const active = featureKeys.filter((k) => features[k] === true);
   const events = parseEvents(selected.route_trace);
   const u = (selected.usage ?? {}) as { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number };
-  const tps =
-    typeof u.output_tokens === 'number' && selected.latency_ms > 0
-      ? (u.output_tokens / (selected.latency_ms / 1000)).toFixed(1)
-      : '—';
+  const tps = tpsOf(u.output_tokens, selected.latency_ms);
   return (
     <div className="form">
       <div className="fieldset">

@@ -252,7 +252,7 @@ func (e *Executor) walkChain(ctx context.Context, chain []ChainEntry, req ir.Req
 	if gapOnly && attempted > 0 && allowFallback {
 		fallbacks := e.currentCapabilityFallbacks()
 		if len(fallbacks) > 0 {
-			traceCapabilityFallback(trace, lastProviderOf(chain), fallbacks)
+			e.traceCapabilityFallback(trace, lastProviderOf(chain), fallbacks)
 			return e.walkChain(ctx, fallbacks, req, trace, false)
 		}
 	}
@@ -270,13 +270,27 @@ func (e *Executor) walkChain(ctx context.Context, chain []ChainEntry, req ir.Req
 // reached. The edge is also suppressed when it would be a self-edge — the
 // exhausted chain's last provider frequently IS the first fallback account,
 // and "A → A" tells the operator nothing.
-func traceCapabilityFallback(trace *Trace, from string, fallbacks []ChainEntry) {
+func (e *Executor) traceCapabilityFallback(trace *Trace, from string, fallbacks []ChainEntry) {
 	trace.CapabilityFallback("vision",
 		"chain exhausted on capability gaps; trying the capability fallback models")
 	if len(fallbacks) == 0 {
 		return
 	}
-	to := fallbacks[0].ProviderID
+	// The edge names an account the walk actually reaches: the first
+	// REGISTERED fallback entry. A list can hold a since-deleted account
+	// (provider deletion cascade-deletes its model rows, but a stale live
+	// list is refreshed only on the next fallback write) — the walk would
+	// Skip it, so the edge goes past it instead of onto it, and an edge to
+	// an account the walk never attempts would re-create the very
+	// "fallbacks that are never reached" defect this trace shape exists to
+	// prevent.
+	var to string
+	for _, fb := range fallbacks {
+		if _, ok := e.cfg.Registry.Get(fb.ProviderID); ok {
+			to = fb.ProviderID
+			break
+		}
+	}
 	if to == "" || to == from {
 		return
 	}
@@ -552,7 +566,7 @@ func (e *Executor) walkChainStream(ctx context.Context, chain []ChainEntry, req 
 	if gapOnly && attempted > 0 && allowFallback {
 		fallbacks := e.currentCapabilityFallbacks()
 		if len(fallbacks) > 0 {
-			traceCapabilityFallback(trace, lastProviderOf(chain), fallbacks)
+			e.traceCapabilityFallback(trace, lastProviderOf(chain), fallbacks)
 			return e.walkChainStream(ctx, fallbacks, req, trace, false)
 		}
 	}

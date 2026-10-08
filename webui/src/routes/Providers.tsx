@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiCall } from '../api';
 import type { ProvidersResponse, ProviderTypesResponse } from '../types';
-import { EmptyState, ErrorNote, PageHead, useLiveData } from '../hooks';
+import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useLiveData } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
 
 // Providers (ADR-009): every supported provider type is a card — its
@@ -10,19 +10,15 @@ import { LiveBadge } from '../components/LiveBadge';
 // page. No JSON editing anywhere: the settings page renders forms from the
 // catalog the server ships. The old table+textarea drawer is gone.
 
-// LIVE_MS is the config pages' light refresh — they change rarely, so a
-// slow poll keeps the LIVE badge honest without churn.
-const LIVE_MS = 15000;
-
 export default function Providers() {
   const navigate = useNavigate();
   const { data: catalog, loading, error, updatedAt } = useLiveData<ProviderTypesResponse>(
     (signal) => apiCall<ProviderTypesResponse>('GET', '/api/admin/provider-types', undefined, signal),
-    LIVE_MS,
+    CONFIG_LIVE_MS,
   );
   const { data: providersData } = useLiveData<ProvidersResponse>(
     (signal) => apiCall<ProvidersResponse>('GET', '/api/admin/providers', undefined, signal),
-    LIVE_MS,
+    CONFIG_LIVE_MS,
   );
 
   const counts = useMemo(() => {
@@ -52,7 +48,7 @@ export default function Providers() {
       <PageHead
         title="Providers"
         sub="Every supported provider type. Add accounts per type — routing spreads requests over them."
-        actions={<LiveBadge updatedAt={updatedAt} intervalMs={LIVE_MS} />}
+        actions={<LiveBadge updatedAt={updatedAt} intervalMs={CONFIG_LIVE_MS} />}
       />
       <div className="canvas">
         <div

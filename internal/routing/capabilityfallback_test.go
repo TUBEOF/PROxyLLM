@@ -183,3 +183,52 @@ func TestExecutor_OnCapabilityGap_NotOnOtherFailures(t *testing.T) {
 		t.Error("learning callback fired on a non-gap failure")
 	}
 }
+
+func TestExecutor_CapabilityFallback_StaleEntryGetsNoEdge(t *testing.T) {
+	// A fallback list can hold a since-deleted account (provider deletion
+	// cascade-deletes the model rows; a stale live list is refreshed only
+	// on the next fallback write — server.go ReloadProviders now re-resolves
+	// it, this pins the walk's own defense). The failover edge must name an
+	// account the walk actually ATTEMPTS, never the dead entry the walk
+	// skips ("fallbacks that are never reached" is the defect the single-
+	// edge shape exists to prevent).
+	main := &scriptedProvider{id: "main", completeErrs: []error{gapErr()}}
+	alive := &scriptedProvider{id: "alive"}
+
+	e := routing.NewExecutor(routing.ExecutorConfig{
+		Registry:     regOf(main, alive), // "stale" is NOT registered
+		Health:       routing.NewHealthTracker(),
+		RetrySleeper: func(time.Duration) {},
+		CapabilityFallbacks: []routing.ChainEntry{
+			{ProviderID: "stale", Model: "gone"}, // skipped: not registered
+			{ProviderID: "alive", Model: "m2"},
+		},
+	})
+
+	resp, trace, err := e.Execute(context.Background(),
+		[]routing.ChainEntry{{ProviderID: "main", Model: "m"}}, ir.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if resp.ID != "ok" {
+		t.Errorf("fallback did not serve: %+v", resp)
+	}
+	if alive.calls == 0 {
+		t.Error("the reachable fallback was never attempted")
+	}
+	for _, ev := range trace.Events() {
+		if ev.Type == routing.EventFailover && ev.To == "stale" {
+			t.Errorf("failover edge to the skipped stale account: %+v", ev)
+		}
+	}
+	// The edge onto the account that actually served must still exist.
+	sawEdge := false
+	for _, ev := range trace.Events() {
+		if ev.Type == routing.EventFailover && ev.To == "alive" {
+			sawEdge = true
+		}
+	}
+	if !sawEdge {
+		t.Error("trace has no failover edge onto the attempted fallback 'alive'")
+	}
+}

@@ -138,6 +138,12 @@ export function fmtDay(ts: number): string {
   return new Date(ts * 1000).toISOString().slice(0, 10);
 }
 
+// CONFIG_LIVE_MS is the config pages' shared light-refresh interval — they
+// change rarely, so a slow poll keeps their LIVE badge honest without
+// churn (one constant, not one per page: a window tune must not drift the
+// pages apart).
+export const CONFIG_LIVE_MS = 15000;
+
 // useLiveData polls a GET endpoint while the page is mounted (2026-10-06
 // live updates): a fixed interval, paused while the tab is hidden (the
 // poll resumes on visibility), in-flight aborted on unmount. Same 401 →

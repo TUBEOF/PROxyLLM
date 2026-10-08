@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 
@@ -193,10 +194,18 @@ func parsePHCParams(s string) (phcParams, error) {
 	if _, err := fmt.Sscanf(s, "m=%d,t=%d,p=%d", &p.memory, &time, &threads); err != nil {
 		return p, err
 	}
-	if time < 0 || threads < 0 || threads > 255 {
+	// Upper bounds are sanity caps: a tampered PHC string must fail
+	// parsing, not burn minutes of CPU (argon2 itself panics on time<1).
+	// Each conversion sits directly behind its own bound — the exact
+	// single-condition shape the conversion-overflow analysis accepts.
+	if time >= 1 && time <= math.MaxUint32 {
+		p.time = uint32(time)
+	} else {
 		return p, errors.New("storage: parameters out of range")
 	}
-	p.time = uint32(time)
+	if threads < 0 || threads > 255 {
+		return p, errors.New("storage: parameters out of range")
+	}
 	p.threads = uint8(threads)
 	return p, nil
 }

@@ -76,8 +76,9 @@ function tokensCell(usage: unknown): [string, string, string] {
 
 // tpsOf is the request's average output rate: output tokens over the whole
 // request latency. Labelled TPS in the header; the drawer breaks the same
-// number into its parts.
-const tpsOf = (output: number | undefined, latencyMS: number): string => {
+// number into its parts. One shared derivation — the table cell and the
+// detail drawer must never disagree on the same request.
+export const tpsOf = (output: number | undefined, latencyMS: number): string => {
   if (latencyMS <= 0 || typeof output !== 'number') return '—';
   return (output / (latencyMS / 1000)).toFixed(1);
 };

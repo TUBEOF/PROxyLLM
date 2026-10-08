@@ -1116,7 +1116,12 @@ func (a *AdminAPI) getUsage(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
-	names := a.logNameProjection(r.Context())
+	// No name projection here on purpose: the Overview page (the only
+	// consumer) aggregates the rows' numbers — it renders no account or
+	// key cell, so the fields would be pure response weight and the
+	// projection's two config-table reads per poll pure waste. The Logs
+	// page, which renders names, projects in logsToDTO (and per-wake in
+	// the stream).
 	out := make([]usageDTO, 0, len(rows))
 	for _, u := range rows {
 		out = append(out, usageDTO{
@@ -1129,9 +1134,6 @@ func (a *AdminAPI) getUsage(w http.ResponseWriter, r *http.Request) {
 			CacheReadTokens: u.CacheReadTokens,
 			Requests:        u.Requests,
 			Failures:        u.Failures,
-			KeyName:         names.keyName(u.ClientKeyID),
-			ProviderName:    names.providerDisplay(u.ProviderID),
-			ProviderKind:    names.providerKind(u.ProviderID),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"rows": out})
@@ -1473,10 +1475,6 @@ type usageDTO struct {
 	CacheReadTokens int64  `json:"cache_read_tokens"`
 	Requests        int64  `json:"requests"`
 	Failures        int64  `json:"failures"`
-	// Display projections (raw ids above stay the identity/fallback).
-	KeyName      string `json:"key_name,omitempty"`
-	ProviderName string `json:"provider_name,omitempty"`
-	ProviderKind string `json:"provider_kind,omitempty"`
 }
 
 type logDTO struct {
@@ -1535,12 +1533,6 @@ func (n logNames) keyDisplay(id string) (name, prefix string) {
 		return k.Name, k.KeyPrefix
 	}
 	return id, ""
-}
-
-// keyName is keyDisplay's name-only form, for DTOs that carry no prefix.
-func (n logNames) keyName(id string) string {
-	name, _ := n.keyDisplay(id)
-	return name
 }
 
 // providerDisplay renders provider display name (raw id fallback).
@@ -1605,26 +1597,7 @@ func (n logNames) optionalKind(id string) string {
 	return p.Type
 }
 
-// Summary renders the account cell for a request: the provider name, with
-// the provider type appended when the two differ. The operator named the
-// account, but knowing what kind of endpoint served the request is the
-// next question — "main-2" alone does not say Ollama Cloud.
-func (n logNames) Summary(id string) string {
-	p, ok := n.providers[id]
-	if !ok {
-		return id
-	}
-	kind := n.providerKind(id)
-	if p.Name == "" {
-		return kind
-	}
-	if kind == p.Name {
-		return p.Name
-	}
-	return p.Name + " · " + kind
-}
-
-// DisplayName is Summary's no-derivation sibling for callers that already
+// DisplayName is optionalName's no-lookup sibling for callers that already
 // hold the row: the account name, raw-id fallback.
 func DisplayName(p storage.Provider) string {
 	if p.Name != "" {
