@@ -454,22 +454,8 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 /* The gutter's tree graphics are absolutely positioned; this sized spacer
    keeps the column from collapsing to zero and clipping them. */
 .logs-table .gutter-spacer{display:inline-block;width:18px;height:1px}
-/* Chain lines: a vertical connector into this row (cont) and a stub to
-   the row below (start) — adjacent rows sharing a conversation id. */
-.logs-table tr[data-chain-cont] .td-gutter::before{
-  content:'';position:absolute;left:8px;top:0;height:100%;width:2px;
-  background:var(--accent-dim);border-radius:1px
-}
-.logs-table tr[data-chain-start] .td-gutter::after{
-  content:'';position:absolute;left:8px;top:50%;height:50%;width:2px;
-  background:var(--accent-dim);border-radius:1px
-}
-/* Chain start cap: a short horizontal tick marks where a conversation
-   chain opens, so the top of a run is readable rather than an open line. */
-.logs-table tr[data-chain-start] .chain-tip{
-  position:absolute;left:8px;top:50%;width:7px;height:2px;
-  background:var(--accent);border-radius:1px
-}
+/* (The conversation-adjacency chain marks were removed 2026-10-08 — the
+   gutter renders ONLY the parent→sub-op tree: how requests relate.) */
 
 /* --- Sub-operations (2026-10-07) --- */
 /* A child row hangs under its parent: dimmed, non-clickable, and drawn as

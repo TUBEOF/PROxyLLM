@@ -136,8 +136,9 @@ export interface RequestLog {
 // RunningRequest is one in-flight request on the SSE stream (a pseudo-row
 // at its started_at position; converts to a RequestLog on the log event).
 // The id is the tracker's run_… string — never collides with the store's
-// numeric rowids. conv_key lets a running row chain into its conversation
-// before the terminal row assigns the real conversation_id.
+// numeric rowids. (conv_key lost its consumer 2026-10-08: the gutter's
+// conversation-adjacency chain marks were removed — chaining must show
+// how REQUESTS relate, not which chat they belong to.)
 export interface RunningRequest {
   id: string;
   started_at: number;
