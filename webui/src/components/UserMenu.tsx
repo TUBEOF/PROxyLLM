@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from './AuthContext';
 import { apiCall } from '../api';
@@ -26,6 +27,7 @@ export default function UserMenu() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const avatarRef = useRef<HTMLButtonElement | null>(null);
 
   // The username is fetched when the menu first opens — no /me poll, no
   // fabricated name before then (the honest-UI rule: null renders the
@@ -77,6 +79,7 @@ export default function UserMenu() {
         aria-expanded={open}
         aria-label="Account menu"
         onClick={() => setOpen((o) => !o)}
+        ref={avatarRef}
       >
         <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
           <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-4 0-8 2-8 5v1h16v-1c0-3-4-5-8-5Z" />
@@ -84,32 +87,40 @@ export default function UserMenu() {
       </button>
       {open &&
         createPortal(
-          <div ref={menuRef} className="user-menu" role="menu" aria-label="Account">
-            <div className="user-menu-head">
-              <span className="user-menu-name">{username ?? 'Admin'}</span>
-              <span className="hint">signed in</span>
-            </div>
-            <button
-              type="button"
-              className="user-menu-item"
-              role="menuitem"
-              onClick={() => {
-                setOpen(false);
-                setSettingsOpen(true);
-              }}
-            >
-              Account settings
-            </button>
-            <button
-              type="button"
-              className="user-menu-item user-menu-signout"
-              role="menuitem"
-              onClick={() => void signOut()}
-            >
-              <IconLogout width="15" height="15" />
-              Sign out
-            </button>
-          </div>,
+          (() => {
+            const rect = avatarRef.current?.getBoundingClientRect();
+            const style: CSSProperties = rect
+              ? { position: 'fixed', top: rect.bottom + 8, left: Math.max(rect.right - 210, 8) }
+              : { position: 'fixed', right: 24, top: 64 };
+            return (
+              <div ref={menuRef} className="user-menu" role="menu" aria-label="Account" style={style}>
+                <div className="user-menu-head">
+                  <span className="user-menu-name">{username ?? 'Admin'}</span>
+                  <span className="hint">signed in</span>
+                </div>
+                <button
+                  type="button"
+                  className="user-menu-item"
+                  role="menuitem"
+                  onClick={() => {
+                    setOpen(false);
+                    setSettingsOpen(true);
+                  }}
+                >
+                  Account settings
+                </button>
+                <button
+                  type="button"
+                  className="user-menu-item user-menu-signout"
+                  role="menuitem"
+                  onClick={() => void signOut()}
+                >
+                  <IconLogout width="15" height="15" />
+                  Sign out
+                </button>
+              </div>
+            );
+          })(),
           document.body,
         )}
       {settingsOpen &&
