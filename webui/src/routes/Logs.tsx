@@ -90,43 +90,36 @@ export default function Logs() {
   const canPrev = offset > 0;
   const canNext = offset + PAGE_SIZE < total;
 
-  // Render shapes: the grouping pass (chain marks + healed) runs over
-  // running pseudo-rows + finished rows (running rows first — newest).
-  // Sub-operations expand inline directly under their parent request as
-  // nested `child` shapes (2026-10-07) — the parent→sub-op hierarchy.
+  // Render shapes: children expand inline directly under their parent
+  // request as nested `child` shapes (2026-10-07). Chain marks are GONE
+  // (2026-10-08 owner decision): conversation adjacency chained unrelated
+  // requests (same system prompt ⇒ same conv id) — the gutter now renders
+  // ONLY the parent→sub-op tree, i.e. how requests relate (retry /
+  // fallback / emulated web tool), not which chat they belong to.
   const shapes = useMemo<LogRowShape[]>(() => {
     const children = data?.children ?? {};
     // One source for both the chip count and the expansion — they can never
     // disagree about how many children a row has.
     const kidsOf = (id: number): ChildLog[] => children[String(id)] ?? [];
     const parents: ParentShape[] = [
-      ...running.map((run) => ({ kind: 'running', run, chainStart: false, chainCont: false }) as ParentShape),
+      ...running.map((run) => ({ kind: 'running', run }) as ParentShape),
       ...logs.map((row) => ({
         kind: 'done',
         row,
-        chainStart: false,
-        chainCont: false,
         healed: intraRowHealed(row),
         childCount: kidsOf(row.id).length,
       }) as ParentShape),
     ];
-    const marked = buildShapes(parents);
-    // Expand after the marks: children never participate in the
-    // conversation-chain adjacency (they are not requests). A child whose
-    // parent continues the chain carries the cont mark so the conversation
-    // line stays visually unbroken across the expansion.
     const out: LogRowShape[] = [];
-    for (const s of marked) {
+    for (const s of parents) {
       out.push(s);
       if (s.kind === 'done') {
-        const kidCont = s.chainCont === true;
         const parent = s.row;
         const kids = kidsOf(s.row.id);
         kids.forEach((child, ci) => {
           out.push({
             kind: 'child',
             child,
-            chainCont: kidCont,
             last: ci === kids.length - 1,
             onOpenParent: () => openTraceRef.current(parent),
           });
@@ -277,54 +270,13 @@ export default function Logs() {
   );
 }
 
-// buildShapes: the client-side grouping pass over REQUEST rows (running
-// pseudo-rows + finished rows; sub-operations never participate — they are
-// not requests). Two jobs:
-//  1. chain marks — adjacent rows (in render order) sharing a non-empty
-//     conversation identity get start/cont marks; the gutter lines render
-//     from them. A running row chains by its conv_key (its conversation_id
-//     is only assigned at the terminal write).
-//  2. cross-row heal — the previous row of the same conversation failed
-//     (≥400) and this row is 2xx → healed chip (a retry recovered it).
-function buildShapes(rows: ParentShape[]): ParentShape[] {
-  const out = rows.map((s) => ({ ...s }));
-  let prevConv: string | null = null;
-  let prevFailed = false;
-  for (const s of out) {
-    // A running row chains by its conv_key (its real conversation_id is only
-    // assigned at the terminal write); a finished row by its id.
-    const conv =
-      s.kind === 'done'
-        ? (s.row.conversation_id ?? '')
-        : s.kind === 'running'
-          ? (s.run.conv_key ?? s.run.conversation_id ?? '')
-          : '';
-    if (conv !== '') {
-      if (prevConv === conv) {
-        s.chainCont = true;
-      } else {
-        s.chainStart = true;
-      }
-      prevConv = conv;
-    } else {
-      prevConv = null;
-    }
-    if (s.kind === 'done') {
-      if (prevFailed && s.row.status < 400) {
-        s.healed = true;
-      }
-      prevFailed = s.row.status >= 400;
-    }
-  }
-  // Suppress start marks that never continue (no visible line otherwise).
-  for (let i = 0; i < out.length; i++) {
-    const s = out[i];
-    if (s !== undefined && s.chainStart && !out[i + 1]?.chainCont) {
-      s.chainStart = false;
-    }
-  }
-  return out;
-}
+// buildShapes was removed (2026-10-08 owner decision): the conversation-
+// adjacency chain marks chained UNRELATED requests — the `sys:` fallback key
+// groups by (client key, system prompt), so every turn of every CLI session
+// shared one conv id and the gutter linked everything into one line. The
+// gutter now renders only the parent→sub-op tree (retry / fallback /
+// emulated web tool), which is how requests actually relate; the
+// conversation identity stays in the drawer's Conversation field.
 
 // intraRowHealed: request succeeded despite trace failures (failover,
 // retry, capability_fallback, failed) — the request-level heal.

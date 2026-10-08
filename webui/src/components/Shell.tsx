@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { useAuth } from './AuthContext';
+import UserMenu from './UserMenu';
 import {
   IconGauge,
   IconKey,
   IconList,
-  IconLogout,
   IconPanelLeft,
   IconPlug,
   IconRoute,
@@ -17,9 +16,10 @@ import {
 // the 64px icon rail, mobile slides the off-canvas sidebar in. Navigating
 // closes it again on mobile so the content is never covered for long.
 //
-// The avatar shows a generic glyph, not an initial: there is no /me
-// endpoint on the admin surface, so after a page refresh no username is
-// known — fabricating one would violate the honest-UI rule.
+// Account surface (2026-10-08): the topbar avatar IS the user menu —
+// identity, account settings (password change), sign out. The sidebar's
+// bottom Sign out button is gone (it read as a nav item and broke the
+// sections' visual line).
 
 const NAV_SECTIONS: { label: string; items: { to: string; name: string; icon: typeof IconGauge; end?: boolean }[] }[] = [
   {
@@ -47,7 +47,6 @@ const NAV_SECTIONS: { label: string; items: { to: string; name: string; icon: ty
 ];
 
 export default function Shell() {
-  const { signOut } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
 
@@ -89,14 +88,6 @@ export default function Shell() {
             </div>
           ))}
         </nav>
-        <div className="sidebar-foot">
-          <button type="button" className="sidebar-link" onClick={() => void signOut()}>
-            <span className="ic">
-              <IconLogout width="20" height="20" />
-            </span>
-            <span>Sign out</span>
-          </button>
-        </div>
       </aside>
 
       <div className="content">
@@ -110,11 +101,7 @@ export default function Shell() {
             <IconPanelLeft width="18" height="18" />
           </button>
           <div className="topbar-actions">
-            <span className="avatar" title="Admin session">
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
-                <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-4 0-8 2-8 5v1h16v-1c0-3-4-5-8-5Z" />
-              </svg>
-            </span>
+            <UserMenu />
           </div>
         </header>
         <Outlet />

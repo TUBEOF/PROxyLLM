@@ -86,11 +86,18 @@
    z-index:200 sibling, but .modal itself is unpositioned — the backdrop
    covers it and swallows every click (Overlays.tsx renders the pair as
    siblings, unlike the kit demo which nests the modal inside). Position
-   the modal over its backdrop using the token layer's own --z-modal.
+   the modal over its backdrop using the token layer's own --z-modal,
+   and center it: as a SIBLING of the flex backdrop it inherits no
+   centering — left to itself it pins to the parent's top-right flow
+   (the 2026-10-08 screenshot: the account modal hung off the avatar).
    The kit file stays verbatim (K-1); this is a webui-local addition. */
 .modal {
-  position: relative;
+  position: fixed;
   z-index: var(--z-modal);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  margin: 0;
 }
 
 /* Brand link color (D-4): .sidebar-brand is an <a> but only its child

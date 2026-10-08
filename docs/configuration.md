@@ -71,7 +71,7 @@ restart:
 
 | Key | Values | Effect |
 |---|---|---|
-| `model_aliases` | JSON object alias → model-id | Routing-side alias resolution (WebUI "Models & Compatibility"): the target model's rule chain routes the alias request; an invalid blob logs and routes without aliases until it is fixed |
+| `model_aliases` | JSON object alias → model-id | Routing-side alias resolution (WebUI "Routing" → "Claude Code aliases", relocated from Models 2026-10-08): the target model's rule chain routes the alias request; an invalid blob logs and routes without aliases until it is fixed |
 | `anthropic_surface_non_claude` | `allow` (default) / `warn` / `block` | Global switch on the Anthropic surface (plan §6.4): `warn` annotates route_trace with a compat_policy event; `block` refuses non-Claude model names with a 400 — Claude targets are always spared; a missing or invalid value is `allow` (never fails closed) |
 | `routing_strategy` | `round_robin` (default) / `fill_first` | Global default routing strategy (ADR-009): how requests spread across a chain's accounts. Rules without their own strategy inherit it; the WebUI Routing page edits it. A missing or invalid value is `round_robin` |
 | `vision_fallback` | JSON array of MODEL IDs | Capability fallback models (ADR-010, amended 2026-09-21): after the routed chain failed with real upstream `capability_gap` rejections (e.g. image input), the executor walks these models in order; entries are validated against the models table at save time (v1.0.2 provider-ID/type entries no longer resolve); edited on the Routing page. Empty/absent = no fallback (the request fails with the upstream error) |

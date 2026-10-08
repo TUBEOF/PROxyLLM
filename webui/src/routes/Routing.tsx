@@ -7,27 +7,36 @@ import type {
   RoutingRule,
   RoutingStrategyResponse,
   RulesResponse,
+  SettingsResponse,
   Strategy,
 } from '../types';
 import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
 import { Drawer } from '../components/Overlays';
 import PrioList from '../components/PrioList';
+import AliasEditor from '../components/AliasEditor';
 import { IconPlus } from '../icons';
 
+// The Claude Code alias map's settings key (the KV the router loads; the
+// interactive editor writes the same JSON object the old textarea did).
+const ALIASES_KEY = 'model_aliases';
+
 // Routing (plan §9 + ADR-009 + ADR-010): the global strategy (Round Robin
-// default / Fill-First), rules with per-rule strategy overrides, and the
-// capability fallback lists. The admin API's rule model is match_model →
-// chain ([]string of provider types, provider ids, or provider/model pairs)
-// + priority + enabled + strategy; the chain editor is an ordered list the
-// operator can append to and reorder (PrioList drag-drop), since the chain
-// IS the fallback order (Analysis E). Type entries expand to all accounts
-// of that type at request time — new accounts join without rule edits.
-// The ADR-010 fallback lists (vision / web_search / web_fetch) are global
-// PrioLists: vision entries are provider IDs/types appended to vision-less
-// chains, web entries are web_tool accounts tried in order by the emulator
-// pool. The alias map and the global allow/warn/block switch ride the
-// settings surface (config KV) — they live on /settings.
+// default / Fill-First), rules with per-rule strategy overrides, the
+// capability fallback lists, and the Claude Code alias map (2026-10-08,
+// relocated here from Models — it IS routing configuration: it rewrites
+// the client-requested name before any rule matches; the interactive
+// AliasEditor replaced the raw-JSON textarea). The admin API's rule model
+// is match_model → chain ([]string of provider types, provider ids, or
+// provider/model pairs) + priority + enabled + strategy; the chain editor
+// is an ordered list the operator can append to and reorder (PrioList
+// drag-drop), since the chain IS the fallback order (Analysis E). Type
+// entries expand to all accounts of that type at request time — new
+// accounts join without rule edits. The ADR-010 fallback lists (vision /
+// web_search / web_fetch) are global PrioLists: vision entries are
+// provider IDs/types appended to vision-less chains, web entries are
+// web_tool accounts tried in order by the emulator pool. The global
+// allow/warn/block switch stays on Models (the model-surface policy).
 
 const STRATEGIES: { value: Strategy; label: string; desc: string }[] = [
   { value: 'round_robin', label: 'Round Robin', desc: 'Requests rotate across all accounts of a type — even load distribution.' },
@@ -182,6 +191,115 @@ function CapabilityFallbacksCard() {
 // Providers page owns the canonical type; here only id/type/name matter).
 interface ProvidersResponseLike {
   providers: { id: string; type: string; name: string }[];
+}
+
+// AliasCard (2026-10-08): the Claude Code alias map, relocated here from
+// Models — it IS routing configuration (it rewrites the client-requested
+// name before any rule matches). The interactive AliasEditor (rows of
+// alias → target picker) replaced the raw-JSON textarea; writes ride the
+// same settings KV, so the router's live alias reload applies untouched.
+function AliasCard() {
+  const { data: settingsData, reload: reloadSettings } = useAdminData<SettingsResponse>(
+    (signal) => apiCall<SettingsResponse>('GET', '/api/admin/settings', undefined, signal),
+  );
+  const { data: modelsData } = useAdminData<ModelsResponse>(
+    (signal) => apiCall<ModelsResponse>('GET', '/api/admin/models', undefined, signal),
+  );
+  const options = useMemo(
+    () => (modelsData?.models ?? []).map((m) => ({
+      id: m.id,
+      label: `${m.id}${m.name !== m.id ? ` (${m.name})` : ''}`,
+    })),
+    [modelsData],
+  );
+
+  const [aliases, setAliases] = useState<Record<string, string> | null>(null);
+  const [seeded, setSeeded] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const save = useMutation();
+
+  useEffect(() => {
+    if (seeded || settingsData === null) return;
+    const raw = settingsData.entries.find((e) => e.key === ALIASES_KEY)?.value ?? '';
+    const parsed: Record<string, string> = {};
+    if (raw !== '') {
+      try {
+        const p: unknown = JSON.parse(raw);
+        if (p !== null && typeof p === 'object' && !Array.isArray(p)) {
+          for (const [k, v] of Object.entries(p as Record<string, unknown>)) {
+            if (typeof v === 'string' && v !== '') parsed[k] = v;
+          }
+        }
+      } catch {
+        // A corrupted blob starts the editor empty and is replaced on the
+        // next save — never a hard failure (the server load's posture).
+      }
+    }
+    setAliases(parsed);
+    setSeeded(true);
+  }, [seeded, settingsData]);
+
+  const submit = useCallback(async () => {
+    if (aliases === null) return;
+    const ok = await save.run(() =>
+      apiCall('PUT', '/api/admin/settings', { key: ALIASES_KEY, value: JSON.stringify(aliases) }),
+    );
+    if (ok !== null) {
+      setSaveError(null);
+      reloadSettings();
+    }
+  }, [aliases, save, reloadSettings]);
+
+  const dirty = useMemo(() => {
+    if (settingsData === null || aliases === null) return false;
+    const raw = settingsData.entries.find((e) => e.key === ALIASES_KEY)?.value ?? '{}';
+    try {
+      return JSON.stringify(JSON.parse(raw)) !== JSON.stringify(aliases);
+    } catch {
+      return true;
+    }
+  }, [settingsData, aliases]);
+
+  return (
+    <div className="w-full" style={{ marginBottom: 8 }}>
+      <fieldset className="fieldset">
+        <legend>
+          Claude Code aliases
+        </legend>
+        <p className="hint" style={{ marginTop: 0 }}>
+          Client-requested names rewritten to registered models before routing —
+          Claude Code&apos;s <span className="mono">sonnet</span>/<span className="mono">haiku</span> family names map onto
+          whatever model serves them here.
+        </p>
+        {saveError !== null && (
+          <p role="alert" className="form-note">{saveError}</p>
+        )}
+        {aliases === null ? (
+          <p className="hint">Loading aliases…</p>
+        ) : (
+          <>
+            <AliasEditor
+              value={aliases}
+              onChange={setAliases}
+              options={options}
+              disabled={save.pending}
+            />
+            <div style={{ marginTop: 10 }}>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                disabled={save.pending || !dirty}
+                title={dirty ? undefined : 'No changes to save'}
+                onClick={() => void submit()}
+              >
+                {save.pending ? 'Saving…' : 'Save aliases'}
+              </button>
+            </div>
+          </>
+        )}
+      </fieldset>
+    </div>
+  );
 }
 
 export default function Routing() {
@@ -372,6 +490,8 @@ export default function Routing() {
         </div>
         {/* ADR-010: the three global capability fallback lists. */}
         <CapabilityFallbacksCard />
+        {/* The Claude Code alias map — relocated from Models (2026-10-08). */}
+        <AliasCard />
         {error !== null ? (
           <div className="w-full">
             <ErrorNote message={error} />

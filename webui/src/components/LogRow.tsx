@@ -12,9 +12,9 @@ import type { ChildLog, RequestLog, RunningRequest } from '../types';
 import { childCls, childMeta, childTitle } from './RouteTrace';
 
 export type LogRowShape =
-  | { kind: 'done'; row: RequestLog; chainStart: boolean; chainCont: boolean; healed: boolean; childCount?: number }
-  | { kind: 'running'; run: RunningRequest; chainStart: boolean; chainCont: boolean }
-  | { kind: 'child'; child: ChildLog; chainCont?: boolean; last?: boolean; onOpenParent?: () => void };
+  | { kind: 'done'; row: RequestLog; healed: boolean; childCount?: number }
+  | { kind: 'running'; run: RunningRequest }
+  | { kind: 'child'; child: ChildLog; last?: boolean; onOpenParent?: () => void };
 
 // ParentShape is a request row (finished or running) — the rows the
 // conversation-chain grouping pass operates on (sub-operations never
@@ -58,6 +58,33 @@ function requestedModel(l: RequestLog): string {
     }
   }
   return l.model;
+}
+
+// servedModel: the model THAT ACTUALLY SERVED the request, shown only when
+// it DIFFERS from the routed primary — a failover moved to another
+// provider, or a capability-fallback walk served the request (2026-10-08:
+// the Logs page must say which model ran). '' when the primary served or
+// nothing was attributed: the normal wire-name resolution is not worth a
+// second label (the model_resolved event already carries it).
+function servedModel(l: RequestLog): string {
+  const trace = l.route_trace as { events?: Array<TraceEvent & { model?: string; provider_id?: string }> } | null;
+  if (trace === null || trace === undefined || !Array.isArray(trace.events)) return '';
+  let firstProvider = '';
+  let lastProvider = '';
+  let model = '';
+  let fallbackConsulted = false;
+  for (const ev of trace.events) {
+    if (ev === null || typeof ev !== 'object') continue;
+    if (ev.type === 'capability_fallback') fallbackConsulted = true;
+    if (ev.type === 'attempt' && typeof ev.provider_id === 'string' && ev.provider_id !== '') {
+      if (firstProvider === '') firstProvider = ev.provider_id;
+      lastProvider = ev.provider_id;
+      if (typeof ev.model === 'string') model = ev.model;
+    }
+  }
+  if (model === '') return '';
+  const moved = fallbackConsulted || (firstProvider !== '' && firstProvider !== lastProvider);
+  return moved ? model : '';
 }
 
 // tokensCell parses the usage JSON into the TI/TO/CR triple (CR % =
@@ -115,11 +142,12 @@ function LogRowInner({
     const meta = childMeta(c);
     // The child carries the same column count as its parent so its cells
     // sit directly under the parent's — the failover's target lines up
-    // with the parent's provider, not in a merged blob.
+    // with the parent's provider, not in a merged blob. The MODEL column
+    // shows the model this op actually served/used (2026-10-08: the trace
+    // walk now attributes each op's model; empty → the meta as before).
     return (
       <tr
         className="log-row log-row-child"
-        {...(shape.chainCont ? { 'data-chain-cont': true } : {})}
         {...(shape.last ? { 'data-child-last': true } : {})}
       >
         <td className="td-gutter">
@@ -128,8 +156,8 @@ function LogRowInner({
         <td>
           <span className={childCls(c.kind)}>{childTitle(c)}</span>
         </td>
-        <td className="txt-muted child-meta" title={meta || c.model || undefined}>
-          {meta || c.model || '—'}
+        <td className="primary child-model" title={c.model || meta || undefined}>
+          {c.model || <span className="txt-muted">{meta || '—'}</span>}
         </td>
         <td>
           {c.provider_kind || c.provider_name ? (
@@ -149,16 +177,10 @@ function LogRowInner({
     );
   }
 
-  const chainAttrs = {
-    'data-chain': shape.chainStart || shape.chainCont ? '1' : undefined,
-    'data-chain-start': shape.chainStart || undefined,
-    'data-chain-cont': shape.chainCont || undefined,
-  };
-
   if (shape.kind === 'running') {
     const { run } = shape;
     return (
-      <tr {...chainAttrs} data-running className="log-row">
+      <tr data-running className="log-row">
         <td className="td-gutter" />
         <td>
           <span className="badge info"><span className="b-dot b-dot-spin" />…</span>
@@ -191,19 +213,17 @@ function LogRowInner({
   const provider = l.provider_kind ?? l.provider_id;
   const account = l.provider_name ?? l.provider_id;
   const requested = requestedModel(l);
+  const served = servedModel(l);
   const conv = convShort(l.conversation_id);
 
   return (
     <tr
-      {...chainAttrs}
       className="log-row"
       data-has-children={(shape.childCount ?? 0) > 0 || undefined}
       onClick={onOpen ? () => onOpen(l) : undefined}
-      title={conv !== '—' ? `conversation ${conv}` : undefined}
+      title={`conversation ${conv}`}
     >
-      <td className="td-gutter">
-        {shape.chainStart && <span className="chain-tip" aria-hidden="true" />}
-      </td>
+      <td className="td-gutter" />
       <td>
         <span className={`badge ${st.cls}`}><span className="b-dot" />{st.label}</span>
         {shape.healed && <span className="chip chip-healed">healed</span>}
@@ -216,6 +236,11 @@ function LogRowInner({
       <td className="primary">
         {l.model}
         {requested !== l.model && <span className="cell-sub mono">{requested}</span>}
+        {served !== '' && (
+          <span className="cell-sub mono cell-served" title="model that actually served the request (after fallback)">
+            ↳ {served}
+          </span>
+        )}
       </td>
       <td><span className="pill">{provider}</span></td>
       <td><span className="pill pill-warm">{protocolLabel(l.protocol)}</span></td>

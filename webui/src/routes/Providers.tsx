@@ -61,33 +61,25 @@ export default function Providers() {
               <button
                 key={t.type}
                 type="button"
-                className="card"
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 10,
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  padding: 'var(--sp-4, 16px)',
-                }}
+                className="widget provider-type-card"
                 onClick={() => open(t.type)}
               >
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                  <strong style={{ fontSize: 'var(--fs-md, 15px)' }}>{t.label}</strong>
+                <div className="type-head">
+                  <h3 className="title">{t.label}</h3>
                   {count > 0 ? (
-                    <span className="badge up">
+                    <span className="badge up type-count">
                       <span className="b-dot" />
                       {count} {count === 1 ? 'account' : 'accounts'}
                     </span>
                   ) : (
-                    <span className="badge paused">
+                    <span className="badge paused type-count">
                       <span className="b-dot" />
                       No accounts
                     </span>
                   )}
                 </div>
-                <p style={{ margin: 0, fontSize: 'var(--fs-sm)', opacity: 0.85 }}>{t.description}</p>
-                <span className="mono" style={{ fontSize: 'var(--fs-xs, 12px)', opacity: 0.6 }}>
+                <p className="type-desc">{t.description}</p>
+                <span className="mono hint type-auth">
                   {t.auth === 'oauth' ? 'OAuth device sign-in' : 'API key'}
                 </span>
               </button>

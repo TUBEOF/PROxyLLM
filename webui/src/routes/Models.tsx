@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useMemo, useState } from 'react';
 import { apiCall } from '../api';
 import type {
   Model,
@@ -13,10 +13,9 @@ import type {
 import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
 
-// The relocated Settings-editor keys (2026-10-06): model-surface policy,
-// not compat knobs.
+// The relocated Settings-editor key (2026-10-06): model-surface policy,
+// not compat knobs. (The alias-map key moved to Routing, 2026-10-08.)
 const NON_CLAUDE_KEY = 'anthropic_surface_non_claude';
-const ALIASES_KEY = 'model_aliases';
 const NON_CLAUDE_VALUES = ['allow', 'warn', 'block'] as const;
 import { Drawer } from '../components/Overlays';
 import { IconPlus } from '../icons';
@@ -216,16 +215,14 @@ export default function Models() {
     : new Date(lastRun.ran_at * 1000).toLocaleString();
 
   // Surface policy (relocated from the removed Settings page, 2026-10-06):
-  // the non-Claude gate + the Claude Code alias map — model-surface
-  // policy, not compat knobs. Same key/value writes; the editors' shapes
-  // are unchanged.
+  // the non-Claude gate — model-surface policy, not compat knobs. The
+  // Claude Code alias map moved to Routing (2026-10-08): it rewrites the
+  // client-requested name BEFORE any rule matches, which is routing
+  // configuration, not model policy.
   const { data: settingsData, reload: reloadSettings } = useAdminData<SettingsResponse>(
     (signal) => apiCall<SettingsResponse>('GET', '/api/admin/settings', undefined, signal),
   );
   const entries = useMemo(() => settingsData?.entries ?? [], [settingsData]);
-  const [aliasesText, setAliasesText] = useState('');
-  const [aliasesError, setAliasesError] = useState<string | null>(null);
-  const saveAlias = useMutation();
   const saveSwitch = useMutation();
 
   const valueOf = useCallback(
@@ -238,48 +235,12 @@ export default function Models() {
   }, [valueOf]);
   const isDefault = nonClaudeValue === '';
 
-  // Seed the alias textarea from the loaded override once per load — an
-  // accidental save must not clobber an existing map with an empty object
-  // (the Settings-page lesson carried over verbatim).
-  useEffect(() => {
-    setAliasesText(entries.find((e) => e.key === ALIASES_KEY)?.value ?? '');
-  }, [entries]);
-
   const setNonClaude = useCallback(
     async (value: string) => {
       const ok = await saveSwitch.run(() => apiCall('PUT', '/api/admin/settings', { key: NON_CLAUDE_KEY, value }));
       if (ok !== null) reloadSettings();
     },
     [saveSwitch, reloadSettings],
-  );
-
-  const submitAliases = useCallback(
-    async (e: FormEvent) => {
-      e.preventDefault();
-      let parsed: unknown;
-      try {
-        parsed = aliasesText.trim() === '' ? {} : JSON.parse(aliasesText);
-      } catch {
-        setAliasesError('Alias map is not valid JSON');
-        return;
-      }
-      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        setAliasesError('Alias map must be a JSON object of alias → model id');
-        return;
-      }
-      for (const [alias, target] of Object.entries(parsed as Record<string, unknown>)) {
-        if (typeof target !== 'string' || target === '') {
-          setAliasesError(`Target for "${alias}" must be a non-empty model id string`);
-          return;
-        }
-      }
-      setAliasesError(null);
-      const ok = await saveAlias.run(() =>
-        apiCall('PUT', '/api/admin/settings', { key: ALIASES_KEY, value: JSON.stringify(parsed) }),
-      );
-      if (ok !== null) reloadSettings();
-    },
-    [aliasesText, saveAlias, reloadSettings],
   );
 
   // Model test (2026-09-22): one minimal round trip per model card. State
@@ -441,40 +402,6 @@ export default function Models() {
           </div>
         </div>
 
-        <div className="widget w-full" style={{ marginBottom: 8 }}>
-          <div className="widget-head">
-            <h3 className="title">Claude Code alias map</h3>
-          </div>
-          <div className="widget-body">
-            <form className="form" onSubmit={submitAliases}>
-              <div className="field">
-                <label htmlFor="s-aliases">Aliases (JSON object)</label>
-                <textarea
-                  id="s-aliases"
-                  className="textarea mono"
-                  rows={4}
-                  value={aliasesText}
-                  onChange={(e) => setAliasesText(e.target.value)}
-                  placeholder={'{"haiku": "gpt-5-mini", "sonnet": "llama-4-sonnet"}'}
-                  spellCheck={false}
-                />
-              </div>
-              {aliasesError !== null && (
-                <p role="alert" className="form-note">
-                  {aliasesError}
-                </p>
-              )}
-              {saveAlias.error !== null && (
-                <p role="alert" className="form-note">
-                  {saveAlias.error}
-                </p>
-              )}
-              <button type="submit" className="btn btn-primary btn-sm" disabled={saveAlias.pending}>
-                Save alias map
-              </button>
-            </form>
-          </div>
-        </div>
         {error !== null ? (
           <div className="w-full">
             <ErrorNote message={error} />
