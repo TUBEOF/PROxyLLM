@@ -61,16 +61,27 @@ type ChildOp struct {
 }
 
 // ChildOps maps a request's recorded trace events to its child operations,
-// in trace order. Only the four op kinds above are selected; a request that
+// in trace order. Only the three op kinds above are selected; a request that
 // succeeded through its primary provider yields no ops.
+//
+// Model attribution (2026-10-08 Logs fix): attempt events carry the
+// provider+wire model actually dispatched, so the walk feeds the attempts
+// into the ops — a capability-fallback op names the fallback model its walk
+// served (the next attempt's model), a failover names the model the target
+// provider then attempted, and an emulated-tool op names the model that
+// issued the tool call. The Logs page renders that on the child row;
+// provider/model identity is the op's point (never request bodies).
 func ChildOps(events []Event) []ChildOp {
 	var ops []ChildOp
-	for _, ev := range events {
+	for i, ev := range events {
 		switch ev.Type {
 		case EventFailover:
 			ops = append(ops, ChildOp{
 				Kind: OpFailover,
 				From: ev.From, To: ev.To, Detail: ev.Reason,
+				// The model the failover's target actually attempted.
+				ProviderID: ev.To,
+				Model:      nextAttemptModel(events, i, ev.To),
 			})
 		case EventCapabilityFallback:
 			ops = append(ops, ChildOp{
@@ -78,13 +89,55 @@ func ChildOps(events []Event) []ChildOp {
 				// The event's Reason is the same boilerplate for every
 				// consultation; the capability family is the specific fact.
 				Detail: ev.Capability,
+				// The fallback model the walk then served.
+				Model: nextAttemptModel(events, i, ""),
 			})
 		case EventEmulatedTool:
 			ops = append(ops, ChildOp{
 				Kind: OpEmulatedTool,
 				To:   ev.To, Detail: ev.Reason,
+				// The model whose round issued the tool call (the last
+				// attempt before this event).
+				ProviderID: lastAttemptProvider(events, i),
+				Model:      lastAttemptModel(events, i),
 			})
 		}
 	}
 	return ops
+}
+
+// nextAttemptModel finds the model of the attempt event after index i
+// (the first attempt when to is "" — any provider — matching the given
+// provider otherwise). "" when the walk never attempted one.
+func nextAttemptModel(events []Event, i int, to string) string {
+	for j := i + 1; j < len(events); j++ {
+		ev := events[j]
+		if ev.Type != EventAttempt || ev.Model == "" {
+			continue
+		}
+		if to == "" || ev.ProviderID == to {
+			return ev.Model
+		}
+	}
+	return ""
+}
+
+// lastAttemptProvider/Model name the most recent attempt event before
+// index i — the dispatch context the event belongs to.
+func lastAttemptProvider(events []Event, i int) string {
+	for j := i - 1; j >= 0; j-- {
+		if events[j].Type == EventAttempt && events[j].ProviderID != "" {
+			return events[j].ProviderID
+		}
+	}
+	return ""
+}
+
+func lastAttemptModel(events []Event, i int) string {
+	for j := i - 1; j >= 0; j-- {
+		if events[j].Type == EventAttempt && events[j].Model != "" {
+			return events[j].Model
+		}
+	}
+	return ""
 }

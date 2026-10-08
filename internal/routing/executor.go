@@ -467,7 +467,15 @@ func synthesizeStream(ctx context.Context, ch chan<- ir.StreamEvent, resp ir.Res
 				Delta: ir.DeltaPayload{Kind: ir.DeltaToolInput, PartialJSON: string(p.Input)}}
 			ch <- ir.StreamEvent{Type: ir.BlockStop, Index: i}
 		case ir.ServerToolUsePart:
-			ch <- ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: p}
+			// BlockStart + the input_json_delta + BlockStop: every block is
+			// closed (the golden stream fixture discipline) — a bare start
+			// desynced strict parsers (Claude Code) on the next
+			// content_block_start. The input rides the delta like tool_use,
+			// not the content_block_start (the empty-init contract).
+			ch <- ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: ir.ServerToolUsePart{ID: p.ID, Name: p.Name}}
+			ch <- ir.StreamEvent{Type: ir.Delta, Index: i,
+				Delta: ir.DeltaPayload{Kind: ir.DeltaToolInput, PartialJSON: string(p.Input)}}
+			ch <- ir.StreamEvent{Type: ir.BlockStop, Index: i}
 		case ir.ServerToolResultPart:
 			ch <- ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: p}
 			ch <- ir.StreamEvent{Type: ir.BlockStop, Index: i}

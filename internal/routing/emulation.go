@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -214,15 +215,100 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 		return fail(errCodeInvalidToolInput, "unknown emulated tool "+call.Name)
 	}
 
-	// The re-dispatched tool result carries the raw emulator answer so
-	// the model can reason over it.
-	payload, err := json.Marshal(res)
-	if err != nil { // unreachable: res is plain data
-		return fail(errCodeEmulatorUnavailable, "result serialization failed")
-	}
+	// The re-dispatched tool result carries a compact, schema-shaped JSON
+	// of the emulator answer so the model can reason over it: the
+	// Anthropic result schema (tool_use_id / tool name / url|query /
+	// content) — NOT Go field names (ir.ServerToolResultPart's Go-field
+	// JSON told the model nothing and invited URL rewrites feeding the
+	// prior-context guard). Marshaled with HTML escaping OFF: a URL with
+	// & must ride verbatim, or the guard's verbatim set and the model's
+	// echo drift apart (the escaped form vs the decoded form).
+	payload := resultPayloadForModel(call, res)
 	tr := ir.ToolResultPart{ToolUseID: call.ID,
-		Content: []ir.Part{ir.TextPart{Text: string(payload)}}}
+		Content: []ir.Part{ir.TextPart{Text: payload}}}
 	return use, res, tr
+}
+
+// resultPayloadForModel renders the result block the MODEL sees on the
+// re-dispatch: the documented wire schema (tool_use_id, the search array
+// or the fetch object — §6.2 fixtures), html-escape free. Error results
+// keep the {"error_code":...} shape the loop's recovery path documents.
+func resultPayloadForModel(call ir.ToolCallPart, res ir.ServerToolResultPart) string {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "")
+	if res.IsError {
+		_ = enc.Encode(map[string]string{"error_code": res.ErrorCode})
+		return strings.TrimSpace(buf.String())
+	}
+	if res.ToolName == "web_search" {
+		items := res.Search
+		if items == nil {
+			items = []ir.WebSearchResultItem{}
+		}
+		wire := struct {
+			ToolUseID string           `json:"tool_use_id"`
+			Content   []wireSearchItem `json:"content"`
+		}{ToolUseID: call.ID, Content: make([]wireSearchItem, 0, len(items))}
+		for _, it := range items {
+			wire.Content = append(wire.Content, wireSearchItem{
+				URL: it.URL, Title: it.Title, PageAge: it.PageAge,
+			})
+		}
+		_ = enc.Encode(wire)
+		return strings.TrimSpace(buf.String())
+	}
+	// web_fetch: the single result object (§6.2 wire asymmetry).
+	fetch := struct {
+		ToolUseID string        `json:"tool_use_id"`
+		Content   wireFetchBody `json:"content"`
+	}{ToolUseID: call.ID}
+	if res.Fetch != nil {
+		fetch.Content = wireFetchBody{
+			URL:       res.Fetch.URL,
+			Title:     res.Fetch.Title,
+			Source:    mapSource(res.Fetch.Source),
+			MediaType: mapMediaType(res.Fetch.MediaType),
+			Data:      res.Fetch.Data,
+		}
+	}
+	_ = enc.Encode(fetch)
+	return strings.TrimSpace(buf.String())
+}
+
+// wireSearchItem is one content array entry of the model-facing
+// web_search result (the documented url/title/page_age block).
+type wireSearchItem struct {
+	URL     string `json:"url"`
+	Title   string `json:"title"`
+	PageAge string `json:"page_age,omitempty"`
+}
+
+// wireFetchBody is the model-facing web_fetch document object (the
+// documented source/media_type/text block, the document-block semantics).
+type wireFetchBody struct {
+	URL       string `json:"url,omitempty"`
+	Title     string `json:"title,omitempty"`
+	Source    string `json:"source,omitempty"`
+	MediaType string `json:"media_type,omitempty"`
+	Data      string `json:"data,omitempty"`
+}
+
+// mapSource/mapMediaType translate the IR's field spellings onto the
+// documented wire values ("text" → "text", "text/plain" → "text/plain").
+func mapSource(s string) string {
+	if s == "" {
+		return "text"
+	}
+	return s
+}
+
+func mapMediaType(mt string) string {
+	if mt == "" {
+		return "text/plain"
+	}
+	return mt
 }
 
 // appendRoundTrip extends the request with the model's assistant turn
@@ -318,27 +404,56 @@ func callConfig(t ir.Tool) ir.ServerToolConfig {
 // urlPattern matches http(s) URLs embedded in conversation text.
 var urlPattern = regexp.MustCompile(`https?://[^\s"'<>\\)\]]+`)
 
+// trimTrailingPunct strips the sentence punctuation the URL pattern's
+// "not whitespace" run can swallow — "fetch https://a/b." must not store
+// (and then require) the trailing dot the model will never re-emit.
+func trimTrailingPunct(u string) string {
+	return strings.TrimRight(u, ".,;:!?")
+}
+
+// unescapeHTML normalizes the HTML entities json.Marshal's default
+// escaping produces (the re-dispatch payload is marshaled WITHOUT
+// SetEscapeHTML(false), so a URL like ?a=1&b=2 rides as &amp;b=2). The
+// model echoes the decoded form — both spellings must collapse to one
+// set member. Entity handling is minimal on purpose: the three escapes
+// Go's encoder emits for text, no more.
+func unescapeHTML(s string) string {
+	if !strings.Contains(s, "&") {
+		return s
+	}
+	r := strings.NewReplacer("&amp;", "&", "&lt;", "<", "&gt;", ">", "&#39;", "'", "&quot;", `"`)
+	return r.Replace(s)
+}
+
 // priorContextURLs collects every URL embedded in prior conversation
 // context — user messages, client tool results, prior search/fetch
-// results — never model output or the system prompt (fixture security
-// rule). Synthesized tool results ride user-role messages, so their
-// URLs count for later fetches.
+// results — never model-generatable output or the system prompt (fixture
+// security rule). Synthesized tool results ride user-role messages, so
+// their URLs count for later fetches; on the NEXT client request the same
+// results ride ASSISTANT content (the wire encodes them into the
+// assistant turn), so assistant messages' tool-RESULT parts are scanned
+// too — never assistant text (a URL the model invented in its own prose
+// must stay un-fetchable — the SSRF/prompt-injection guard).
 func priorContextURLs(req ir.Request) map[string]struct{} {
 	set := map[string]struct{}{}
 	add := func(s string) {
-		for _, u := range urlPattern.FindAllString(s, -1) {
-			set[u] = struct{}{}
+		for _, u := range urlPattern.FindAllString(unescapeHTML(s), -1) {
+			set[trimTrailingPunct(u)] = struct{}{}
 		}
 	}
 	for _, msg := range req.Messages {
 		switch msg.Role {
-		case ir.RoleAssistant, ir.RoleSystem:
+		case ir.RoleSystem:
 			continue
 		}
 		for _, part := range msg.Parts {
 			switch p := part.(type) {
 			case ir.TextPart:
-				add(p.Text)
+				// Assistant text is model output — never context (the
+				// guard's security rule); user/system text is.
+				if msg.Role != ir.RoleAssistant {
+					add(p.Text)
+				}
 			case ir.ImagePart:
 				add(p.URL)
 			case ir.ToolResultPart:
@@ -346,6 +461,15 @@ func priorContextURLs(req ir.Request) map[string]struct{} {
 					if tp, ok := sub.(ir.TextPart); ok {
 						add(tp.Text)
 					}
+				}
+			case ir.ServerToolResultPart:
+				// The synthesized blocks (assistant-side replay):
+				// the search results' and the fetched page's own URLs.
+				for _, item := range p.Search {
+					add(item.URL)
+				}
+				if p.Fetch != nil {
+					add(p.Fetch.URL)
 				}
 			}
 		}
