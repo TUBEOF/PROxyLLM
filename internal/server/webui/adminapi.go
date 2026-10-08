@@ -1182,7 +1182,7 @@ func (a *AdminAPI) getLogs(w http.ResponseWriter, r *http.Request) {
 			writeStoreError(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"logs": logsToDTO(logs, a.logNameProjection(r.Context()))})
+		writeJSON(w, http.StatusOK, a.logsEnvelope(r.Context(), logs, -1))
 		return
 	}
 	logs, total, err := a.store.ListRequestLogsPage(r.Context(), filter, limit, offset)
@@ -1190,7 +1190,92 @@ func (a *AdminAPI) getLogs(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"logs": logsToDTO(logs, a.logNameProjection(r.Context())), "total": total})
+	writeJSON(w, http.StatusOK, a.logsEnvelope(r.Context(), logs, total))
+}
+
+// logsEnvelope builds the getLogs response: the projected rows plus their
+// sub-operations (children) keyed by parent row id, in one batched read —
+// never a query per row. total < 0 omits the field (the after-cursor feed
+// has no meaningful total). children is omitted entirely when no row in the
+// page has any, so a page without sub-operations is byte-identical to the
+// pre-children shape.
+func (a *AdminAPI) logsEnvelope(ctx context.Context, logs []storage.RequestLog, total int) map[string]any {
+	out := map[string]any{"logs": logsToDTO(logs, a.logNameProjection(ctx))}
+	if total >= 0 {
+		out["total"] = total
+	}
+	// A failed children read must not look like "no sub-operations" — that
+	// is exactly the silent degradation the feature exists to prevent. The
+	// failure is explicit on the wire, so the WebUI can say so instead of
+	// showing a cleaned-up route.
+	kids, failed := logChildrenField(a.rawLogChildren(ctx, logs))
+	if failed {
+		out["children_unavailable"] = true
+	}
+	if kids != nil {
+		out["children"] = kids
+	}
+	return out
+}
+
+// logChildrenField is the single decision point for the `children` field:
+// an absent map (no children anywhere) yields no field and no failure; a
+// successful read projects; a read error yields no field and failed=true.
+// Pure, so the three states are unit-testable without a store.
+func logChildrenField(byParent map[int64][]storage.ChildLog, err error) (field map[string][]childLogDTO, failed bool) {
+	if err != nil {
+		return nil, true
+	}
+	if len(byParent) == 0 {
+		return nil, false
+	}
+	out := make(map[string][]childLogDTO, len(byParent))
+	for parentID, ops := range byParent {
+		dtos := make([]childLogDTO, 0, len(ops))
+		for _, op := range ops {
+			dtos = append(dtos, childLogDTO{
+				ID:         op.ID,
+				ParentID:   op.ParentID,
+				TS:         op.TS,
+				Kind:       op.Kind,
+				ProviderID: op.ProviderID,
+				Model:      op.Model,
+				FromRef:    op.FromRef,
+				ToRef:      op.ToRef,
+				Detail:     op.Detail,
+			})
+		}
+		out[strconv.FormatInt(parentID, 10)] = dtos
+	}
+	return out, false
+}
+
+// rawLogChildren returns each page row's sub-operations keyed by parent id,
+// or the store error. An empty page issues no query.
+func (a *AdminAPI) rawLogChildren(ctx context.Context, logs []storage.RequestLog) (map[int64][]storage.ChildLog, error) {
+	if len(logs) == 0 {
+		return nil, nil
+	}
+	ids := make([]int64, 0, len(logs))
+	for _, l := range logs {
+		ids = append(ids, l.ID)
+	}
+	return a.store.ListChildLogsForParents(ctx, ids)
+}
+
+// childLogDTO is one sub-operation of a request (Logs page, 2026-10-07):
+// a failover, a capability (vision) fallback walk, an emulated web-tool
+// call, or a retry, carried beside its parent row.
+type childLogDTO struct {
+	ID         int64  `json:"id"`
+	ParentID   int64  `json:"parent_id"`
+	TS         int64  `json:"ts"`
+	Kind       string `json:"kind"`
+	ProviderID string `json:"provider_id,omitempty"`
+	Model      string `json:"model,omitempty"`
+	FromRef    string `json:"from_ref,omitempty"`
+	ToRef      string `json:"to_ref,omitempty"`
+	Detail     string `json:"detail,omitempty"`
 }
 
 // logsToDTO projects request-log rows (the shared shape of both reads).

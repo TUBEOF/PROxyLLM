@@ -1,14 +1,24 @@
 // LogRow (Logs-page redesign, 2026-10-06): one table row of the request
 // log — the OmniRoute-style dense layout. Both a finished RequestLog and a
 // running pseudo-row render through this component (running = the
-// `…`-badge row with em-dash cells). Pure render: all derivation (chain
-// marks, healed, row click) arrives via the props.
+// `…`-badge row with em-dash cells). Sub-operations (2026-10-07) render as
+// their own nested `child` rows: a failover, a capability (vision) fallback
+// walk, an emulated web-tool call, or a retry, hanging under their parent.
+// Pure render: all derivation (chain marks, healed, row click) arrives via
+// the props.
 import { memo } from 'react';
-import type { RequestLog, RunningRequest } from '../types';
+import type { ChildLog, RequestLog, RunningRequest } from '../types';
+import { childCls, childMeta, childTitle } from './RouteTrace';
 
 export type LogRowShape =
-  | { kind: 'done'; row: RequestLog; chainStart: boolean; chainCont: boolean; healed: boolean }
-  | { kind: 'running'; run: RunningRequest; chainStart: boolean; chainCont: boolean };
+  | { kind: 'done'; row: RequestLog; chainStart: boolean; chainCont: boolean; healed: boolean; childCount?: number }
+  | { kind: 'running'; run: RunningRequest; chainStart: boolean; chainCont: boolean }
+  | { kind: 'child'; child: ChildLog; chainCont?: boolean; onOpenParent?: () => void };
+
+// ParentShape is a request row (finished or running) — the rows the
+// conversation-chain grouping pass operates on (sub-operations never
+// participate: they are not requests).
+export type ParentShape = Exclude<LogRowShape, { kind: 'child' }>;
 
 interface UsageShape {
   input_tokens?: number;
@@ -97,6 +107,32 @@ function LogRowInner({
   shape: LogRowShape;
   onOpen?: (l: RequestLog) => void;
 }) {
+  if (shape.kind === 'child') {
+    const c = shape.child;
+    const meta = childMeta(c);
+    return (
+      <tr className="log-row log-row-child" {...(shape.chainCont ? { 'data-chain-cont': true } : {})}>
+        <td className="td-gutter">
+          <span className="child-stem" aria-hidden="true">↳</span>
+        </td>
+        <td>
+          <span className={childCls(c.kind)}>{childTitle(c)}</span>
+        </td>
+        <td className="mono txt-muted" colSpan={7}>
+          {meta}
+        </td>
+        <td className="mono num">—</td>
+        <td className="mono num">—</td>
+        <td className="mono col-time">{fmtTime(c.ts)}</td>
+        <td>
+          <button type="button" className="link-chip" onClick={shape.onOpenParent} disabled={!shape.onOpenParent}>
+            #{c.parent_id}
+          </button>
+        </td>
+      </tr>
+    );
+  }
+
   const chainAttrs = {
     'data-chain': shape.chainStart || shape.chainCont ? '1' : undefined,
     'data-chain-start': shape.chainStart || undefined,
@@ -121,7 +157,7 @@ function LogRowInner({
         <td className="mono num">—</td>
         <td className="mono num">—</td>
         <td className="mono col-time">{fmtTime(run.started_at)}</td>
-        <td className="mono">—</td>
+        <td className="mono">{convShort(run.conversation_id)}</td>
       </tr>
     );
   }
@@ -139,10 +175,17 @@ function LogRowInner({
 
   return (
     <tr {...chainAttrs} className="log-row" onClick={onOpen ? () => onOpen(l) : undefined}>
-      <td className="td-gutter" />
+      <td className="td-gutter">
+        {shape.chainStart && <span className="chain-tip" aria-hidden="true" />}
+      </td>
       <td>
         <span className={`badge ${st.cls}`}><span className="b-dot" />{st.label}</span>
         {shape.healed && <span className="chip chip-healed">healed</span>}
+        {(shape.childCount ?? 0) > 0 && (
+          <span className="chip chip-childops" title={`${shape.childCount} sub-operation(s)`}>
+            ↳ {shape.childCount} op{(shape.childCount ?? 0) === 1 ? '' : 's'}
+          </span>
+        )}
       </td>
       <td className="primary">{l.model}</td>
       <td className="mono">{requestedModel(l)}</td>
