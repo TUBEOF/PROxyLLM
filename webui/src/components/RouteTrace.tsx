@@ -189,14 +189,6 @@ export function childTitle(c: ChildLog): string {
   }
 }
 
-// childModel is the op's model attribution (2026-10-08): the model the op's
-// walk/round actually served — the drawer list renders it so a fallback
-// says which model took over. The trace's failover refs are account ids;
-// the DB's model column is a wire model name.
-export function childModel(c: ChildLog): string {
-  return c.model ?? '';
-}
-
 // childCls is the kind-specific chip class shared by the table row and the
 // drawer list.
 export function childCls(kind: string): string {
