@@ -17,14 +17,14 @@ test('log rows nest their sub-operations', async ({ page }) => {
   await page.goto('/logs');
   await readyForCapture(page);
 
-  const chip = page.locator('.chip-childops').first();
-  await expect(chip).toBeVisible();
+  await expect(page.locator('.chip-childops').first()).toBeVisible();
 
-  const child = page.locator('tr.log-row-child').first();
+  // By content, not by position: more than one row has children.
+  const child = page.locator('tr.log-row-child', { hasText: 'Failover' }).first();
   await expect(child).toBeVisible();
-  await expect(child.locator('.chip')).toContainText('Failover');
+  await expect(child.locator('.chip')).toHaveClass(/child-failover/);
   // The child hangs under its parent: its link chip names the parent row id.
-  await expect(child.locator('.link-chip')).toBeVisible();
+  await expect(child.locator('.link-chip')).toHaveText(/^#\d+$/);
 });
 
 // The parent row's chip counts its sub-operations.
@@ -32,6 +32,19 @@ test('the parent chip counts its sub-operations', async ({ page }) => {
   await page.goto('/logs');
   await readyForCapture(page);
   await expect(page.locator('.chip-childops').first()).toContainText('1 op');
+});
+
+// The seeded emulated-tool detail carries a token-shaped value; the child
+// row must show it masked, never raw (the write-path redaction, end to end).
+test('an emulated web-tool child masks its credential-shaped detail', async ({ page }) => {
+  await page.goto('/logs');
+  await readyForCapture(page);
+
+  const emulated = page.locator('tr.log-row-child', { hasText: 'Emulated web_search' }).first();
+  await expect(emulated).toBeVisible();
+  await expect(emulated.locator('.chip')).toHaveClass(/child-emulated-tool/);
+  await expect(emulated).toContainText('[REDACTED');
+  await expect(emulated).not.toContainText('sk-live-e2efixture1234');
 });
 
 // The detail drawer replaces the raw JSON dump with a chain summary and a

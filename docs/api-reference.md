@@ -80,6 +80,29 @@ admin account when none exists.
 | Observability | `GET /usage`, `GET /logs` (redacted; `route_trace` detail; rows carry `conversation_id`, `protocol`, `features`, `error_redacted` since the Logs-page redesign, plus `key_name`/`key_prefix`/`provider_name` display projections), `GET /logs/stream` (SSE, see below) |
 | Settings | `GET /settings`, `PUT /settings`, `DELETE /settings/{key}` (DB override layer) |
 
+### Sub-operations (2026-10-07)
+
+A request's separable upstream operations get their own log rows rather
+than living only inside the parent's `route_trace`: a chain failover, a
+capability (vision) fallback model walk, an emulated web-tool call
+(`web_search`/`web_fetch`), and a same-provider retry. They are derived
+from the parent's trace by one mapping (`internal/routing` `ChildOps`) and
+stored beside it. `GET /api/admin/logs` returns them as `children`, a map
+keyed by the parent row id (as a string — JSON object keys are strings):
+
+```json
+{ "logs": [...], "total": 3,
+  "children": { "4": [ { "id": 7, "parent_id": 4, "ts": 1760000000,
+                         "kind": "failover", "from_ref": "prv-codex",
+                         "to_ref": "prv-ollama", "detail": "capability fallback model" } ] } }
+```
+
+`children` is omitted entirely when no row in the page has any
+sub-operation; `kind` is one of `failover`, `capability_fallback`,
+`emulated_tool`, `retry`. Sub-operations are **not** requests: they never
+appear in `logs` and never count toward `total`, so pagination is
+unchanged. The `children` read is batched for the whole page.
+
 ### Live log stream (2026-10-06)
 
 `GET /api/admin/logs/stream` is an SSE feed over the request log: the wire
@@ -102,10 +125,14 @@ a successful write reaches the runtime without restart (see
 2026-09-21 the `vision_fallback` entries are MODEL IDs validated against
 the models table.
 
-`route_trace` rows carry `"version":4` since the model identity work
-(additive: the `model_resolved` event; version 3 added ADR-010's
-`capability_fallback` event, version 2 the ADR-009 `expand`/`rotation`
-events — older rows render unchanged, as do unversioned ones).
+`route_trace` rows carry `"version":6` since the context-marker work
+(additive: version 6 added the `context_override` event — the Claude Code
+`[1m]` marker strip; version 5 ADR-011's `implicit_route`, version 4 the
+`model_resolved` event; version 3 added ADR-010's `capability_fallback`
+event, version 2 the ADR-009 `expand`/`rotation` events — older rows render
+unchanged, as do unversioned ones). The WebUI renders the trace as a chain
+summary plus a routing timeline, with the exact JSON behind a "Raw JSON"
+disclosure — so an unrecognised or older shape still renders there.
 
 ### Model test (2026-09-22)
 

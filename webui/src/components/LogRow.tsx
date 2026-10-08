@@ -11,7 +11,7 @@ import type { ChildLog, RequestLog, RunningRequest } from '../types';
 import { childCls, childMeta, childTitle } from './RouteTrace';
 
 export type LogRowShape =
-  | { kind: 'done'; row: RequestLog; chainStart: boolean; chainCont: boolean; healed: boolean; nested?: boolean; childCount?: number }
+  | { kind: 'done'; row: RequestLog; chainStart: boolean; chainCont: boolean; healed: boolean; childCount?: number }
   | { kind: 'running'; run: RunningRequest; chainStart: boolean; chainCont: boolean }
   | { kind: 'child'; child: ChildLog; chainCont?: boolean; onOpenParent?: () => void };
 
@@ -174,7 +174,7 @@ function LogRowInner({
   const account = l.provider_name ?? l.provider_id;
 
   return (
-    <tr {...chainAttrs} className={`log-row${shape.nested ? ' log-row-nested' : ''}`} onClick={onOpen ? () => onOpen(l) : undefined}>
+    <tr {...chainAttrs} className="log-row" onClick={onOpen ? () => onOpen(l) : undefined}>
       <td className="td-gutter">
         {shape.chainStart && <span className="chain-tip" aria-hidden="true" />}
       </td>

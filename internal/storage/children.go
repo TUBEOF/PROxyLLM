@@ -13,8 +13,8 @@ import (
 //
 // It carries provider/model identity and an operator-facing detail string
 // only — never request bodies, headers, or credentials. Detail is
-// redactor-covered at the write site (it can carry upstream-influenced text
-// for the emulation case).
+// upstream-influenced for the emulation case and is masked by the write
+// path (httpapi.ChildOpsFromTrace) before it reaches this table.
 type ChildLog struct {
 	ID       int64
 	ParentID int64
@@ -79,8 +79,7 @@ func (s *Store) ListChildLogsForParents(ctx context.Context, parentIDs []int64) 
 	// Placeholders are generated from the arg count only — no user text
 	// enters the SQL string.
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(parentIDs)), ",")
-	q := `SELECT id, parent_id, ts, kind, provider_id, model, from_ref, to_ref, detail
-		FROM request_child_logs WHERE parent_id IN (` + placeholders + `) ORDER BY id` //nolint:gosec // placeholders are fixed literals; values stay bound args
+	q := `SELECT id, parent_id, ts, kind, provider_id, model, from_ref, to_ref, detail FROM request_child_logs WHERE parent_id IN (` + placeholders + `) ORDER BY id` //nolint:gosec // placeholders are fixed literals; values stay bound args
 	args := make([]any, 0, len(parentIDs))
 	for _, id := range parentIDs {
 		args = append(args, id)

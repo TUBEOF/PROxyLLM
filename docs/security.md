@@ -69,7 +69,11 @@ full `route_trace` (routing decisions, never credentials).
   SSRF guard (documented opt-out for the operator).
 - Rate limiting (token bucket) and concurrency caps per client key.
 - Fallback/failover transitions are recorded in `route_trace` —
-  fallbacks are never silent, so a degraded route is always visible.
+  fallbacks are never silent, so a degraded route is always visible. The
+  `route_trace` and its derived sub-operation rows (failover, capability
+  fallback, emulated web-tool call, retry) carry provider/model identity
+  and tool-invocation summaries only — never request bodies, headers, or
+  credentials; the live in-flight feed likewise holds no secret material.
 
 ## Container hardening
 

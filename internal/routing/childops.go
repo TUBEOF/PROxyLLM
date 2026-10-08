@@ -54,9 +54,10 @@ type ChildOp struct {
 	To   string
 
 	// Detail is the operator-facing summary: the failover/retry reason, the
-	// capability family, or the emulation invocation detail. Callers pass it
-	// through the redactor before persisting (it is upstream-influenced text
-	// for the emulation case).
+	// capability family, or the emulation invocation detail. It is
+	// upstream-influenced text (the emulated-tool path carries the
+	// emulator's error text and a model-supplied URL), so the write path
+	// MUST mask it before persisting — see httpapi.ChildOpsFromTrace.
 	Detail string
 }
 

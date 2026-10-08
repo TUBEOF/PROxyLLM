@@ -95,6 +95,9 @@ export default function Logs() {
   // nested `child` shapes (2026-10-07) — the parent→sub-op hierarchy.
   const shapes = useMemo<LogRowShape[]>(() => {
     const children = data?.children ?? {};
+    // One source for both the chip count and the expansion — they can never
+    // disagree about how many children a row has.
+    const kidsOf = (id: number): ChildLog[] => children[String(id)] ?? [];
     const parents: ParentShape[] = [
       ...running.map((run) => ({ kind: 'running', run, chainStart: false, chainCont: false }) as ParentShape),
       ...logs.map((row) => ({
@@ -103,7 +106,7 @@ export default function Logs() {
         chainStart: false,
         chainCont: false,
         healed: intraRowHealed(row),
-        childCount: children[String(row.id)]?.length ?? 0,
+        childCount: kidsOf(row.id).length,
       }) as ParentShape),
     ];
     const marked = buildShapes(parents);
@@ -117,7 +120,7 @@ export default function Logs() {
       if (s.kind === 'done') {
         const kidCont = s.chainCont === true;
         const parent = s.row;
-        for (const child of children[String(s.row.id)] ?? []) {
+        for (const child of kidsOf(s.row.id)) {
           out.push({ kind: 'child', child, chainCont: kidCont, onOpenParent: () => openTraceRef.current(parent) });
         }
       }
@@ -138,6 +141,11 @@ export default function Logs() {
         actions={
           <>
             <span className={`badge ${connected ? 'up' : 'info'}`}>{connected ? 'LIVE' : 'POLLED'}</span>
+            {data?.children_unavailable === true && (
+              <span className="badge warn" title="The sub-operation read failed — fallback/emulation rows are missing from this page">
+                sub-ops unavailable
+              </span>
+            )}
             <button type="button" className="btn btn-ghost btn-sm" onClick={reload}>
               Refresh
             </button>

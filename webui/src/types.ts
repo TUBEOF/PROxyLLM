@@ -200,6 +200,11 @@ export interface LogsResponse {
   total: number;
   /** Sub-operations keyed by parent row id (absent when none in the page). */
   children?: Record<string, ChildLog[]>;
+  /**
+   * True when the sub-operation read failed: the rows carry no children
+   * data, and that must not read as "this request had no fallbacks".
+   */
+  children_unavailable?: boolean;
 }
 export interface SettingsResponse {
   entries: SettingsEntry[];

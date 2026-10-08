@@ -1204,29 +1204,30 @@ func (a *AdminAPI) logsEnvelope(ctx context.Context, logs []storage.RequestLog, 
 	if total >= 0 {
 		out["total"] = total
 	}
-	if kids := a.logChildren(ctx, logs); kids != nil {
+	// A failed children read must not look like "no sub-operations" — that
+	// is exactly the silent degradation the feature exists to prevent. The
+	// failure is explicit on the wire, so the WebUI can say so instead of
+	// showing a cleaned-up route.
+	kids, failed := logChildrenField(a.rawLogChildren(ctx, logs))
+	if failed {
+		out["children_unavailable"] = true
+	}
+	if kids != nil {
 		out["children"] = kids
 	}
 	return out
 }
 
-// logChildren returns each page row's sub-operations, keyed by the parent
-// row id as a string (JSON object keys are strings). Returns nil when no
-// row in the page has any children — the caller omits the field then.
-func (a *AdminAPI) logChildren(ctx context.Context, logs []storage.RequestLog) map[string][]childLogDTO {
-	if len(logs) == 0 {
-		return nil
+// logChildrenField is the single decision point for the `children` field:
+// an absent map (no children anywhere) yields no field and no failure; a
+// successful read projects; a read error yields no field and failed=true.
+// Pure, so the three states are unit-testable without a store.
+func logChildrenField(byParent map[int64][]storage.ChildLog, err error) (field map[string][]childLogDTO, failed bool) {
+	if err != nil {
+		return nil, true
 	}
-	ids := make([]int64, 0, len(logs))
-	for _, l := range logs {
-		ids = append(ids, l.ID)
-	}
-	byParent, err := a.store.ListChildLogsForParents(ctx, ids)
-	if err != nil || len(byParent) == 0 {
-		// A failed children read must not sink the page: the log rows are
-		// the primary content, the sub-operations are a detail. Degrade to
-		// "no children shown" rather than an error page.
-		return nil
+	if len(byParent) == 0 {
+		return nil, false
 	}
 	out := make(map[string][]childLogDTO, len(byParent))
 	for parentID, ops := range byParent {
@@ -1246,7 +1247,20 @@ func (a *AdminAPI) logChildren(ctx context.Context, logs []storage.RequestLog) m
 		}
 		out[strconv.FormatInt(parentID, 10)] = dtos
 	}
-	return out
+	return out, false
+}
+
+// rawLogChildren returns each page row's sub-operations keyed by parent id,
+// or the store error. An empty page issues no query.
+func (a *AdminAPI) rawLogChildren(ctx context.Context, logs []storage.RequestLog) (map[int64][]storage.ChildLog, error) {
+	if len(logs) == 0 {
+		return nil, nil
+	}
+	ids := make([]int64, 0, len(logs))
+	for _, l := range logs {
+		ids = append(ids, l.ID)
+	}
+	return a.store.ListChildLogsForParents(ctx, ids)
 }
 
 // childLogDTO is one sub-operation of a request (Logs page, 2026-10-07):

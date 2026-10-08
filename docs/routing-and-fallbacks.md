@@ -131,6 +131,25 @@ LLM-chain-routable; the rule editor refuses them.
 - The terminal chain error plus the full route trace is logged; the
   client sees the protocol error, the WebUI shows the transitions.
 
+### Fallbacks as their own log rows (2026-10-07)
+
+Fallback transitions are never silent, and since this release the ones an
+operator most needs to see are no longer nested only inside the parent
+request's `route_trace` — they are their own rows in the WebUI log:
+
+- a **chain failover** (the request moving to the next chain entry),
+- a **capability fallback** consultation and the fallback model it walks
+  to (the vision fallback — ADR-010),
+- an **emulated web-tool** call (`web_search`/`web_fetch` served by the
+  Firecrawl fallback, §6.2),
+- a **same-provider retry** after backoff.
+
+In the log these hang under the request that caused them (nested rows in
+the flat table, with a `↳ N ops` chip on the parent, and a provider/model
+chain summary in the request's detail drawer). They are derived from the
+trace by a single mapping, so what the log shows and what `route_trace`
+records cannot drift apart.
+
 ## Health tracking
 
 A circuit breaker per provider opens after consecutive failures, backs
