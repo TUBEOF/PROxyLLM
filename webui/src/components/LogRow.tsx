@@ -1,9 +1,10 @@
 // LogRow (Logs-page redesign, 2026-10-06): one table row of the request
-// log — the OmniRoute-style dense layout. Both a finished RequestLog and a
-// running pseudo-row render through this component (running = the
-// `…`-badge row with em-dash cells). Sub-operations (2026-10-07) render as
-// their own nested `child` rows: a failover, a capability (vision) fallback
-// walk, an emulated web-tool call, or a retry, hanging under their parent.
+// log — the dense layout. Both a finished RequestLog and a running
+// pseudo-row render through this component (running = the `…`-badge row
+// with em-dash cells). Sub-operations (2026-10-07) render as their own
+// rows hanging under their parent: a failover, a capability (vision)
+// fallback walk, or an emulated web-tool call, each aligned to the SAME
+// columns as its parent so the eye can compare them line by line.
 // Pure render: all derivation (chain marks, healed, row click) arrives via
 // the props.
 import { memo } from 'react';
@@ -13,7 +14,7 @@ import { childCls, childMeta, childTitle } from './RouteTrace';
 export type LogRowShape =
   | { kind: 'done'; row: RequestLog; chainStart: boolean; chainCont: boolean; healed: boolean; childCount?: number }
   | { kind: 'running'; run: RunningRequest; chainStart: boolean; chainCont: boolean }
-  | { kind: 'child'; child: ChildLog; chainCont?: boolean; onOpenParent?: () => void };
+  | { kind: 'child'; child: ChildLog; chainCont?: boolean; last?: boolean; onOpenParent?: () => void };
 
 // ParentShape is a request row (finished or running) — the rows the
 // conversation-chain grouping pass operates on (sub-operations never
@@ -73,6 +74,9 @@ function tokensCell(usage: unknown): [string, string, string] {
   return [fmtNum(u.input_tokens), fmtNum(u.output_tokens), cr];
 }
 
+// tpsOf is the request's average output rate: output tokens over the whole
+// request latency. Labelled TPS in the header; the drawer breaks the same
+// number into its parts.
 const tpsOf = (output: number | undefined, latencyMS: number): string => {
   if (latencyMS <= 0 || typeof output !== 'number') return '—';
   return (output / (latencyMS / 1000)).toFixed(1);
@@ -86,15 +90,13 @@ const protocolLabel = (p: string | undefined): string => {
   return p.toUpperCase();
 };
 
-const providerLabel = (p: string | undefined): string => (p ? p.toUpperCase() : '—');
-
 function statusBadge(status: number): { label: string; cls: string } {
   if (status >= 500) return { label: String(status), cls: 'down' };
   if (status >= 400) return { label: String(status), cls: 'warn' };
   return { label: String(status), cls: 'up' };
 }
 
-// convShort renders the conversation cell: conv_ + the 8-hex tail.
+// convShort renders the conversation id: conv_ + the 8-hex tail.
 function convShort(id: string | undefined): string {
   if (typeof id !== 'string' || !id.startsWith('conv_') || id.length < 5 + 8) return '—';
   return id.slice(0, 5 + 8);
@@ -110,25 +112,38 @@ function LogRowInner({
   if (shape.kind === 'child') {
     const c = shape.child;
     const meta = childMeta(c);
+    // The child carries the same column count as its parent so its cells
+    // sit directly under the parent's — the failover's target lines up
+    // with the parent's provider, not in a merged blob.
     return (
-      <tr className="log-row log-row-child" {...(shape.chainCont ? { 'data-chain-cont': true } : {})}>
+      <tr
+        className="log-row log-row-child"
+        {...(shape.chainCont ? { 'data-chain-cont': true } : {})}
+        {...(shape.last ? { 'data-child-last': true } : {})}
+      >
         <td className="td-gutter">
-          <span className="child-stem" aria-hidden="true">↳</span>
+          <span className="child-elbow" aria-hidden="true" />
         </td>
         <td>
           <span className={childCls(c.kind)}>{childTitle(c)}</span>
         </td>
-        <td className="mono txt-muted" colSpan={7}>
-          {meta}
+        <td className="txt-muted child-meta" title={meta || c.model || undefined}>
+          {meta || c.model || '—'}
         </td>
-        <td className="mono num">—</td>
-        <td className="mono num">—</td>
-        <td className="mono col-time">{fmtTime(c.ts)}</td>
         <td>
-          <button type="button" className="link-chip" onClick={shape.onOpenParent} disabled={!shape.onOpenParent}>
-            #{c.parent_id}
-          </button>
+          {c.provider_kind || c.provider_name ? (
+            <span className="pill">{c.provider_kind ?? c.provider_name}</span>
+          ) : (
+            <span className="pill">—</span>
+          )}
         </td>
+        <td className="txt-muted">—</td>
+        <td className="txt-muted">{c.provider_name ?? '—'}</td>
+        <td className="mono txt-muted">—</td>
+        <td className="mono txt-muted">—</td>
+        <td className="mono num txt-muted">—</td>
+        <td className="mono num txt-muted">—</td>
+        <td className="mono col-time">{fmtTime(c.ts)}</td>
       </tr>
     );
   }
@@ -148,7 +163,6 @@ function LogRowInner({
           <span className="badge info"><span className="b-dot b-dot-spin" />…</span>
         </td>
         <td className="primary">{run.model}</td>
-        <td className="mono">{run.model}</td>
         <td><span className="pill">—</span></td>
         <td><span className="pill pill-warm">{protocolLabel(run.protocol)}</span></td>
         <td>—</td>
@@ -157,7 +171,6 @@ function LogRowInner({
         <td className="mono num">—</td>
         <td className="mono num">—</td>
         <td className="mono col-time">{fmtTime(run.started_at)}</td>
-        <td className="mono">{convShort(run.conversation_id)}</td>
       </tr>
     );
   }
@@ -171,10 +184,22 @@ function LogRowInner({
       ? `${l.key_name} (${l.key_prefix})`
       : l.key_name
     : l.client_key_id;
+  // PROVIDER shows the endpoint TYPE ("Ollama Cloud"), ACCOUNT the name the
+  // operator gave the account ("main-2"). Both fall back to the raw id so
+  // a deleted account still says something actionable.
+  const provider = l.provider_kind ?? l.provider_id;
   const account = l.provider_name ?? l.provider_id;
+  const requested = requestedModel(l);
+  const conv = convShort(l.conversation_id);
 
   return (
-    <tr {...chainAttrs} className="log-row" onClick={onOpen ? () => onOpen(l) : undefined}>
+    <tr
+      {...chainAttrs}
+      className="log-row"
+      data-has-children={(shape.childCount ?? 0) > 0 || undefined}
+      onClick={onOpen ? () => onOpen(l) : undefined}
+      title={conv !== '—' ? `conversation ${conv}` : undefined}
+    >
       <td className="td-gutter">
         {shape.chainStart && <span className="chain-tip" aria-hidden="true" />}
       </td>
@@ -187,21 +212,22 @@ function LogRowInner({
           </span>
         )}
       </td>
-      <td className="primary">{l.model}</td>
-      <td className="mono">{requestedModel(l)}</td>
-      <td><span className="pill">{providerLabel(l.provider_id)}</span></td>
+      <td className="primary">
+        {l.model}
+        {requested !== l.model && <span className="cell-sub mono">{requested}</span>}
+      </td>
+      <td><span className="pill">{provider}</span></td>
       <td><span className="pill pill-warm">{protocolLabel(l.protocol)}</span></td>
-      <td>{account}</td>
-      <td className="mono">{apiKey}</td>
-      <td className="mono">
+      <td className="col-account" title={account}>{account}</td>
+      <td className="mono col-key" title={apiKey}>{apiKey}</td>
+      <td className="mono col-tokens">
         <span className="txt-muted">TI:</span> <span className="num-ti">{ti}</span>{' '}
         <span className="txt-muted">TO:</span> <span className="num-to">{to}</span>{' '}
         <span className="txt-muted">CR:</span> <span className="num-cr">{cr}</span>
       </td>
       <td className="mono num">{tpsOf(u.output_tokens, l.latency_ms)}</td>
-      <td className="mono num">{(l.latency_ms / 1000).toFixed(1)}s</td>
+      <td className="mono num">{l.latency_ms} ms</td>
       <td className="mono col-time">{fmtTime(l.timestamp)}</td>
-      <td className="mono">{convShort(l.conversation_id)}</td>
     </tr>
   );
 }

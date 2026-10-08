@@ -11,6 +11,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -236,6 +237,37 @@ func TestChatCompletions_StreamRelay(t *testing.T) {
 	}
 	if !strings.Contains(body, `"Hello"`) || !strings.Contains(body, `" world"`) {
 		t.Errorf("relayed stream missing upstream text deltas: %s", body)
+	}
+}
+
+// Streaming responses MUST declare Content-Type: text/event-stream. A
+// strict SSE client (a browser's native EventSource, and any spec-conform
+// consumer) fails the connection on any other type, so a missing header
+// turns a working stream into a silently dead one for the client — with
+// nothing failing server-side.
+func TestChatCompletions_StreamContentType(t *testing.T) {
+	e := newEnv(t)
+	e.mock.Enqueue(mockSSE(t, string(golden(t, "openai/chat-stream.sse"))))
+	req := strings.Replace(string(golden(t, "openai/chat-request.json")), `"stream": false`, `"stream": true`, 1)
+
+	httpReq, err := http.NewRequest(http.MethodPost, e.srv.URL+"/v1/chat/completions", strings.NewReader(req))
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+e.key)
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	if got := resp.Header.Get("Content-Type"); got != "text/event-stream" {
+		t.Errorf("Content-Type = %q, want text/event-stream (strict SSE clients reject anything else)", got)
+	}
+	if got := resp.Header.Get("Cache-Control"); got != "no-cache" {
+		t.Errorf("Cache-Control = %q, want no-cache", got)
 	}
 }
 

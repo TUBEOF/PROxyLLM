@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { apiCall } from '../api';
 import type { UsageResponse, UsageRow } from '../types';
 import { EmptyState, ErrorNote, PageHead, useLiveData } from '../hooks';
+import { LiveBadge } from '../components/LiveBadge';
 import { IconBoxes, IconGauge, IconPlug, IconRoute } from '../icons';
 
 // Overview: honest usage dashboard (plan §9). Data source is the single
@@ -128,7 +129,7 @@ export default function Overview() {
         sub={`Requests, tokens and failures over the last 30 days (${from} to ${to}).`}
         actions={
           <>
-            {updatedAt !== null && <span className="badge info">live</span>}
+            <LiveBadge updatedAt={updatedAt} intervalMs={POLL_MS} />
             <button type="button" className="btn btn-ghost btn-sm" onClick={reload}>
               Refresh
             </button>

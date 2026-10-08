@@ -252,15 +252,35 @@ func (e *Executor) walkChain(ctx context.Context, chain []ChainEntry, req ir.Req
 	if gapOnly && attempted > 0 && allowFallback {
 		fallbacks := e.currentCapabilityFallbacks()
 		if len(fallbacks) > 0 {
-			trace.CapabilityFallback("vision",
-				"chain exhausted on capability gaps; trying the capability fallback models")
-			for _, fb := range fallbacks {
-				trace.Failover(lastProviderOf(chain), fb.ProviderID, "capability fallback model")
-			}
+			traceCapabilityFallback(trace, lastProviderOf(chain), fallbacks)
 			return e.walkChain(ctx, fallbacks, req, trace, false)
 		}
 	}
 	return ir.Response{}, &exhaustedError{last: lastErr}
+}
+
+// traceCapabilityFallback records the capability-fallback consultation and
+// the resulting fallback-model walk, for both the complete and the stream
+// path.
+//
+// One consultation event, then exactly ONE failover edge onto the first
+// fallback model actually about to be tried: the walk visits the fallback
+// entries in order and traces its own per-entry failovers, so emitting an
+// edge per configured fallback here would report models that are never
+// reached. The edge is also suppressed when it would be a self-edge — the
+// exhausted chain's last provider frequently IS the first fallback account,
+// and "A → A" tells the operator nothing.
+func traceCapabilityFallback(trace *Trace, from string, fallbacks []ChainEntry) {
+	trace.CapabilityFallback("vision",
+		"chain exhausted on capability gaps; trying the capability fallback models")
+	if len(fallbacks) == 0 {
+		return
+	}
+	to := fallbacks[0].ProviderID
+	if to == "" || to == from {
+		return
+	}
+	trace.Failover(from, to, "capability fallback model")
 }
 
 // lastProviderOf returns the last chain entry's provider ID for the
@@ -532,11 +552,7 @@ func (e *Executor) walkChainStream(ctx context.Context, chain []ChainEntry, req 
 	if gapOnly && attempted > 0 && allowFallback {
 		fallbacks := e.currentCapabilityFallbacks()
 		if len(fallbacks) > 0 {
-			trace.CapabilityFallback("vision",
-				"chain exhausted on capability gaps; trying the capability fallback models")
-			for _, fb := range fallbacks {
-				trace.Failover(lastProviderOf(chain), fb.ProviderID, "capability fallback model")
-			}
+			traceCapabilityFallback(trace, lastProviderOf(chain), fallbacks)
 			return e.walkChainStream(ctx, fallbacks, req, trace, false)
 		}
 	}

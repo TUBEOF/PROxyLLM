@@ -83,6 +83,15 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 		TopP:                req.TopP,
 		Stream:              req.Stream,
 	}
+	// Ask the upstream to close a streamed response with a usage chunk.
+	// Without it an OpenAI-compatible upstream reports no token counts at
+	// all on the stream, and the request log can only record zeros — the
+	// log's token/TPS columns are useless. Only meaningful while streaming
+	// (the field is otherwise ignored, and some upstreams reject it on a
+	// non-streaming request), so it rides the Stream flag.
+	if req.Stream {
+		w.StreamOptions = &wireStreamOptions{IncludeUsage: true}
+	}
 	for _, sys := range req.System {
 		w.Messages = append(w.Messages, wireMessage{Role: "system", Content: wireContent{Str: &sys.Text}})
 	}
@@ -361,15 +370,23 @@ func (c wireToolChoice) MarshalJSON() ([]byte, error) {
 }
 
 type wireRequest struct {
-	Model               string          `json:"model"`
-	Messages            []wireMessage   `json:"messages"`
-	Tools               []wireTool      `json:"tools,omitempty"`
-	ToolChoice          *wireToolChoice `json:"tool_choice,omitempty"`
-	MaxCompletionTokens int             `json:"max_completion_tokens,omitempty"`
-	MaxTokens           int             `json:"max_tokens,omitempty"`
-	Temperature         *float64        `json:"temperature,omitempty"`
-	TopP                *float64        `json:"top_p,omitempty"`
-	Stream              bool            `json:"stream,omitempty"`
+	Model               string             `json:"model"`
+	Messages            []wireMessage      `json:"messages"`
+	Tools               []wireTool         `json:"tools,omitempty"`
+	ToolChoice          *wireToolChoice    `json:"tool_choice,omitempty"`
+	MaxCompletionTokens int                `json:"max_completion_tokens,omitempty"`
+	MaxTokens           int                `json:"max_tokens,omitempty"`
+	Temperature         *float64           `json:"temperature,omitempty"`
+	TopP                *float64           `json:"top_p,omitempty"`
+	Stream              bool               `json:"stream,omitempty"`
+	StreamOptions       *wireStreamOptions `json:"stream_options,omitempty"`
+}
+
+// wireStreamOptions carries the OpenAI stream_options object. include_usage
+// appends a final chunk whose usage object holds the turn's token counts —
+// the only way a streamed response reports them.
+type wireStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
 }
 
 type wireUsageDetails struct {

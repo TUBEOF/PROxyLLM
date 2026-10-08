@@ -12,19 +12,23 @@ test.beforeEach(async ({ page }) => {
 });
 
 // The seeded failover row (llama3.3-70b) recorded a failover event, so it
-// carries a sub-operation chip and nests one child row beneath it.
+// carries a sub-operation chip and nests one child row beneath it, drawn as
+// a tree so the branch reads as belonging to the parent above it.
 test('log rows nest their sub-operations', async ({ page }) => {
   await page.goto('/logs');
   await readyForCapture(page);
 
   await expect(page.locator('.chip-childops').first()).toBeVisible();
 
-  // By content, not by position: more than one row has children.
-  const child = page.locator('tr.log-row-child', { hasText: 'Failover' }).first();
+  // By content, not by position: more than one row has children. The parent
+  // drops a tree stub into the gutter; the child continues the line.
+  await expect(page.locator('tr.log-row[data-has-children]').first()).toBeVisible();
+  const child = page.locator('tr.log-row-child', { hasText: 'Fallback' }).first();
   await expect(child).toBeVisible();
   await expect(child.locator('.chip')).toHaveClass(/child-failover/);
-  // The child hangs under its parent: its link chip names the parent row id.
-  await expect(child.locator('.link-chip')).toHaveText(/^#\d+$/);
+  await expect(child.locator('.child-elbow').first()).toBeAttached();
+  // The last child terminates the branch rather than trailing a dangling line.
+  await expect(page.locator('tr.log-row-child[data-child-last]').first()).toBeAttached();
 });
 
 // The parent row's chip counts its sub-operations.
@@ -40,7 +44,7 @@ test('an emulated web-tool child masks its credential-shaped detail', async ({ p
   await page.goto('/logs');
   await readyForCapture(page);
 
-  const emulated = page.locator('tr.log-row-child', { hasText: 'Emulated web_search' }).first();
+  const emulated = page.locator('tr.log-row-child', { hasText: 'Web tool: web_search' }).first();
   await expect(emulated).toBeVisible();
   await expect(emulated.locator('.chip')).toHaveClass(/child-emulated-tool/);
   await expect(emulated).toContainText('[REDACTED');

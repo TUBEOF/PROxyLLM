@@ -427,7 +427,10 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
    REQUEST LOG TABLE (Logs-page redesign, 2026-10-06)
    ============================================================ */
 
-.logs-table .td-gutter{position:relative;width:18px;padding:0}
+.logs-table .td-gutter{position:relative;width:18px;min-width:18px;padding:0}
+/* The gutter's tree graphics are absolutely positioned; this sized spacer
+   keeps the column from collapsing to zero and clipping them. */
+.logs-table .gutter-spacer{display:inline-block;width:18px;height:1px}
 /* Chain lines: a vertical connector into this row (cont) and a stub to
    the row below (start) — adjacent rows sharing a conversation id. */
 .logs-table tr[data-chain-cont] .td-gutter::before{
@@ -446,12 +449,28 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 }
 
 /* --- Sub-operations (2026-10-07) --- */
-/* A child row hangs under its parent: dimmed, non-clickable, with a stem
-   into the gutter. */
+/* A child row hangs under its parent: dimmed, non-clickable, and drawn as
+   a tree — a continuous line down the gutter with an elbow into each child,
+   so a fallback reads as belonging to the request above it instead of
+   floating in a list. The child keeps its parent's column count, so its
+   cells line up under the parent's for a line-by-line comparison. */
 .log-row-child{cursor:default;background:oklch(14% 0.013 250 / 45%)}
 .log-row-child:hover{background:oklch(14% 0.013 250 / 45%)}
-.log-row-child .child-stem{position:absolute;left:6px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:12px;line-height:1}
-.logs-table tr.log-row-child .td-gutter{position:relative;padding-left:18px}
+/* The parent drops a stub into the tree; the last child's line stops at its
+   own elbow so the branch terminates cleanly. */
+.logs-table tr.log-row[data-has-children] .td-gutter::after{
+  content:'';position:absolute;left:8px;top:50%;height:50%;width:2px;
+  background:var(--accent-dim);border-radius:1px
+}
+.log-row-child .child-elbow{position:absolute;left:8px;top:0;height:100%;width:2px;background:var(--accent-dim);border-radius:1px}
+.log-row-child[data-child-last] .child-elbow{height:50%;border-bottom-left-radius:4px}
+.log-row-child .child-elbow::after{content:'';position:absolute;left:0;top:50%;width:9px;height:2px;background:var(--accent-dim);border-radius:1px}
+/* Sub-operation meta: the op's reason — one line, truncated so a long
+   emulator error cannot stretch the row; the full text rides the title. */
+.logs-table .child-meta{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Model cell: the resolved model with the client-requested id as a muted
+   sub-line, shown only when the two differ. */
+.cell-sub{display:block;font-size:10px;color:var(--muted);margin-top:1px}
 .chip-childops{color:var(--status-info);background:oklch(72% 0.09 230 / 12%);border:1px solid oklch(72% 0.09 230 / 25%)}
 .child-failover{color:var(--status-warn);background:oklch(78% 0.15 75 / 12%);border:1px solid oklch(78% 0.15 75 / 25%)}
 .child-capability-fallback{color:var(--status-info);background:oklch(72% 0.09 230 / 12%);border:1px solid oklch(72% 0.09 230 / 25%)}
@@ -480,6 +499,14 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 /* Healed chip: a request that recovered (failover/retry → 2xx) */
 .chip{display:inline-flex;align-items:center;padding:1px 6px;border-radius:var(--radius-full);font-size:10px;font-weight:var(--fw-medium);margin-left:6px;white-space:nowrap}
 .chip-healed{color:var(--status-up);background:var(--accent-dim);border:1px solid oklch(78% 0.20 144 / 25%)}
+/* Account / API-key cells stay on ONE line: a long account name otherwise
+   wraps and triples the row's height, which destroys the table's density.
+   The full value rides the cell's title. */
+.logs-table .col-account{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.logs-table .col-key{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Tokens cell: the TI/TO/CR triple stays on ONE line — a wrapped triple
+   turns one row into a column of numbers and destroys the table's density. */
+.logs-table .col-tokens{white-space:nowrap}
 /* Tokens cell numbers */
 .num-ti{color:var(--text)}
 .num-to{color:var(--status-up)}

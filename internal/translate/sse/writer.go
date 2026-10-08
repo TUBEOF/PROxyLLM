@@ -38,8 +38,23 @@ func NewWriter(w io.Writer) *Writer {
 // comment (`: ok`), flushing once — releasing the HTTP/2 HEADERS frame
 // behind proxies before any event is due. Without an http.ResponseWriter
 // sink only the comment frame is written.
+//
+// The event-stream response headers are set here, immediately before the
+// status: an SSE response MUST carry Content-Type: text/event-stream. A
+// browser's native EventSource FAILS the connection on any other type
+// (WHATWG SSE), so an untyped response silently degrades every live feed
+// into a dead one — and streaming API clients are entitled to reject it
+// too. no-cache keeps intermediaries from buffering frames, and
+// X-Accel-Buffering disables the same buffering on nginx-fronted
+// deployments (the header is ignored where it does not apply).
 func (w *Writer) WriteHeader(status int) {
 	if rw, ok := w.w.(http.ResponseWriter); ok {
+		h := rw.Header()
+		if h.Get("Content-Type") == "" {
+			h.Set("Content-Type", "text/event-stream")
+		}
+		h.Set("Cache-Control", "no-cache")
+		h.Set("X-Accel-Buffering", "no")
 		rw.WriteHeader(status)
 	}
 	w.headerComment()

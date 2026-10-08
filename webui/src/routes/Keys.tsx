@@ -1,7 +1,8 @@
 import { FormEvent, useCallback, useMemo, useState } from 'react';
 import { apiCall } from '../api';
 import type { ClientKey, CreatedKey, KeysResponse } from '../types';
-import { EmptyState, ErrorNote, PageHead, useAdminData, useMutation } from '../hooks';
+import { EmptyState, ErrorNote, PageHead, useLiveData, useMutation } from '../hooks';
+import { LiveBadge } from '../components/LiveBadge';
 import { Modal } from '../components/Overlays';
 import { IconCheck, IconCopy, IconPlus } from '../icons';
 
@@ -10,9 +11,14 @@ import { IconCheck, IconCopy, IconPlus } from '../icons';
 // the only persisted remnants) — this modal is the only place the secret is
 // ever shown, with an explicit display-once warning and a copy button.
 
+// LIVE_MS is the config pages' light refresh — they change rarely, so a
+// slow poll keeps the LIVE badge honest without churn.
+const LIVE_MS = 15000;
+
 export default function Keys() {
-  const { data, loading, error, reload } = useAdminData<KeysResponse>(
+  const { data, loading, error, reload, updatedAt } = useLiveData<KeysResponse>(
     (signal) => apiCall<KeysResponse>('GET', '/api/admin/keys', undefined, signal),
+    LIVE_MS,
   );
   const keys = useMemo(() => data?.keys ?? [], [data]);
 
@@ -84,10 +90,13 @@ export default function Keys() {
         title="Client keys"
         sub="Keys clients use against both API surfaces. Secrets are shown once at creation and stored as Argon2id hashes only."
         actions={
+          <>
+          <LiveBadge updatedAt={updatedAt} intervalMs={LIVE_MS} />
           <button type="button" className="btn btn-primary" onClick={openCreate}>
             <IconPlus width="16" height="16" />
             Create key
           </button>
+          </>
         }
       />
       <div className="canvas">

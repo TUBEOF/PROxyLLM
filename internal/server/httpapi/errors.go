@@ -18,6 +18,26 @@ import (
 	"github.com/tubeof/proxyllm/internal/routing"
 )
 
+// writeSSEHeaders declares a response as an event stream, before any event
+// is encoded. An SSE response MUST carry Content-Type: text/event-stream: a
+// strict client (a browser's native EventSource, and any spec-conform SSE
+// consumer) FAILS the connection on any other type, turning a streaming
+// response into a silently dead one. The cache guards accompany it — an
+// intermediary that buffers frames defeats streaming — with
+// X-Accel-Buffering disabling the same buffering on nginx-fronted
+// deployments (ignored where it does not apply).
+//
+// Sets no status: a pre-stream failure must still be able to answer with a
+// real HTTP error, and these headers are harmless on one. Called from the
+// streaming entry points, so the headers are on the wire before the first
+// event is flushed.
+func writeSSEHeaders(w http.ResponseWriter) {
+	h := w.Header()
+	h.Set("Content-Type", "text/event-stream")
+	h.Set("Cache-Control", "no-cache")
+	h.Set("X-Accel-Buffering", "no")
+}
+
 // errorType codes the surfaces emit for internal (non-upstream) failures.
 const (
 	errTypeInvalidRequest = "invalid_request_error"

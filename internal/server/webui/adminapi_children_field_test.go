@@ -15,7 +15,7 @@ import (
 
 func TestLogChildrenField_ThreeStates(t *testing.T) {
 	// Failed read: no field, and the caller must flag it unavailable.
-	field, failed := logChildrenField(nil, errors.New("store unavailable"))
+	field, failed := logChildrenField(nil, errors.New("store unavailable"), logNames{})
 	if field != nil {
 		t.Errorf("field = %+v, want nil on a failed read", field)
 	}
@@ -24,7 +24,7 @@ func TestLogChildrenField_ThreeStates(t *testing.T) {
 	}
 
 	// No children anywhere: no field, not a failure.
-	field, failed = logChildrenField(map[int64][]storage.ChildLog{}, nil)
+	field, failed = logChildrenField(map[int64][]storage.ChildLog{}, nil, logNames{})
 	if field != nil || failed {
 		t.Errorf("empty map → field=%+v failed=%v, want nil/false (plain absence)", field, failed)
 	}
@@ -32,7 +32,7 @@ func TestLogChildrenField_ThreeStates(t *testing.T) {
 	// Children present: projected, not a failure.
 	field, failed = logChildrenField(map[int64][]storage.ChildLog{
 		7: {{ID: 1, ParentID: 7, Kind: "failover", Detail: "d"}},
-	}, nil)
+	}, nil, logNames{})
 	if failed {
 		t.Error("failed = true on a successful read")
 	}

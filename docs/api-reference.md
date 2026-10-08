@@ -77,31 +77,42 @@ admin account when none exists.
 | Capability fallbacks (ADR-010) | `GET /capability-fallbacks`, `PUT /capability-fallbacks` — one write for all three lists (`vision`, `web_search`, `web_fetch`; vision entries = provider IDs/LLM types, web entries = web-tool account IDs, validated at the boundary) |
 | Model sync (ADR-010) | `GET /model-sync` (config + last-run state), `PUT /model-sync` (`enabled`, `interval_hours`), `POST /model-sync/run` (synchronous pass, returns the run summary) |
 | Client keys | `POST /keys` (secret shown once), `GET /keys`, `POST /keys/{id}/revoke` |
-| Observability | `GET /usage`, `GET /logs` (redacted; `route_trace` detail; rows carry `conversation_id`, `protocol`, `features`, `error_redacted` since the Logs-page redesign, plus `key_name`/`key_prefix`/`provider_name` display projections), `GET /logs/stream` (SSE, see below) |
+| Observability | `GET /usage`, `GET /logs` (redacted; `route_trace` detail; rows carry `conversation_id`, `protocol`, `features`, `error_redacted` since the Logs-page redesign, plus `key_name`/`key_prefix`/`provider_name`/`provider_kind` display projections), `GET /logs/stream` (SSE, see below) |
 | Settings | `GET /settings`, `PUT /settings`, `DELETE /settings/{key}` (DB override layer) |
 
 ### Sub-operations (2026-10-07)
 
 A request's separable upstream operations get their own log rows rather
 than living only inside the parent's `route_trace`: a chain failover, a
-capability (vision) fallback model walk, an emulated web-tool call
-(`web_search`/`web_fetch`), and a same-provider retry. They are derived
-from the parent's trace by one mapping (`internal/routing` `ChildOps`) and
-stored beside it. `GET /api/admin/logs` returns them as `children`, a map
-keyed by the parent row id (as a string — JSON object keys are strings):
+capability (vision) fallback model walk, and an emulated web-tool call
+(`web_search`/`web_fetch`). They are derived from the parent's trace by one
+mapping (`internal/routing` `ChildOps`) and stored beside it. A
+same-provider retry is deliberately **not** a row — it re-attempts the same
+operation rather than naming a separable one, and a retry storm would flood
+the log with rows; it stays a timeline event in the detail drawer.
+`GET /api/admin/logs` returns sub-operations as `children`, a map keyed by
+the parent row id (as a string — JSON object keys are strings):
 
 ```json
 { "logs": [...], "total": 3,
   "children": { "4": [ { "id": 7, "parent_id": 4, "ts": 1760000000,
-                         "kind": "failover", "from_ref": "prv-codex",
-                         "to_ref": "prv-ollama", "detail": "capability fallback model" } ] } }
+                         "kind": "failover", "from_ref": "prv-codex/glm-5.3",
+                         "to_ref": "prv-ollama/llama3.3-70b", "detail": "capability fallback model",
+                         "from_name": "Work account", "to_name": "Ollama key 1",
+                         "provider_name": "Ollama key 1", "provider_kind": "Ollama Cloud" } ] } }
 ```
 
 `children` is omitted entirely when no row in the page has any
 sub-operation; `kind` is one of `failover`, `capability_fallback`,
-`emulated_tool`, `retry`. Sub-operations are **not** requests: they never
-appear in `logs` and never count toward `total`, so pagination is
-unchanged. The `children` read is batched for the whole page.
+`emulated_tool`. Sub-operations are **not** requests: they never appear in
+`logs` and never count toward `total`, so pagination is unchanged. The
+`children` read is batched for the whole page. The `*_name` / `*_kind`
+fields are display projections of the raw `*_ref` / `provider_id` values (a
+failover ref is a `provider/model` composite, resolved on its provider
+half): the admin API resolves them at read time from the provider catalog.
+The raw refs remain on the wire — a ref naming something that is not a
+configured account (a model id, or a since-deleted row) projects no name
+and its raw value stays authoritative.
 
 ### Live log stream (2026-10-06)
 
@@ -109,7 +120,13 @@ unchanged. The `children` read is batched for the whole page.
 is `event: hello` (ack) → `event: running` (the in-flight snapshot — every
 snapshot replaces the previous list) → `event: log` (one finished request
 row per event, via the store tail) with `: ping` comment heartbeats every
-15 s. GET needs no CSRF header (the session cookie suffices — native
+15 s. The response declares `Content-Type: text/event-stream` (a native
+`EventSource` fails the connection on any other type) with `Cache-Control:
+no-cache` and `X-Accel-Buffering: no` so intermediaries do not buffer
+frames. Rows emitted here carry the same display projections as the page
+endpoint (`key_name`, `key_prefix`, `provider_name`, `provider_kind`), so a
+row delivered live renders identically to the same row after the next page
+fetch. GET needs no CSRF header (the session cookie suffices — native
 `EventSource` connects directly). A slow or dead client is dropped at the
 first failed flush; `EventSource` auto-reconnect restores state. Note: the
 connect keeps the admin session warm (an open Logs tab refreshes the idle

@@ -1116,6 +1116,7 @@ func (a *AdminAPI) getUsage(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	names := a.logNameProjection(r.Context())
 	out := make([]usageDTO, 0, len(rows))
 	for _, u := range rows {
 		out = append(out, usageDTO{
@@ -1128,6 +1129,9 @@ func (a *AdminAPI) getUsage(w http.ResponseWriter, r *http.Request) {
 			CacheReadTokens: u.CacheReadTokens,
 			Requests:        u.Requests,
 			Failures:        u.Failures,
+			KeyName:         names.keyName(u.ClientKeyID),
+			ProviderName:    names.providerDisplay(u.ProviderID),
+			ProviderKind:    names.providerKind(u.ProviderID),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"rows": out})
@@ -1200,7 +1204,11 @@ func (a *AdminAPI) getLogs(w http.ResponseWriter, r *http.Request) {
 // page has any, so a page without sub-operations is byte-identical to the
 // pre-children shape.
 func (a *AdminAPI) logsEnvelope(ctx context.Context, logs []storage.RequestLog, total int) map[string]any {
-	out := map[string]any{"logs": logsToDTO(logs, a.logNameProjection(ctx))}
+	// One projection serves both the rows and their sub-operations. It is
+	// re-read per response so an account renamed or deleted while the
+	// stream is open is reflected on the next page fetch.
+	names := a.logNameProjection(ctx)
+	out := map[string]any{"logs": logsToDTO(logs, names)}
 	if total >= 0 {
 		out["total"] = total
 	}
@@ -1208,7 +1216,8 @@ func (a *AdminAPI) logsEnvelope(ctx context.Context, logs []storage.RequestLog, 
 	// is exactly the silent degradation the feature exists to prevent. The
 	// failure is explicit on the wire, so the WebUI can say so instead of
 	// showing a cleaned-up route.
-	kids, failed := logChildrenField(a.rawLogChildren(ctx, logs))
+	byParent, childErr := a.rawLogChildren(ctx, logs)
+	kids, failed := logChildrenField(byParent, childErr, names)
 	if failed {
 		out["children_unavailable"] = true
 	}
@@ -1222,7 +1231,7 @@ func (a *AdminAPI) logsEnvelope(ctx context.Context, logs []storage.RequestLog, 
 // an absent map (no children anywhere) yields no field and no failure; a
 // successful read projects; a read error yields no field and failed=true.
 // Pure, so the three states are unit-testable without a store.
-func logChildrenField(byParent map[int64][]storage.ChildLog, err error) (field map[string][]childLogDTO, failed bool) {
+func logChildrenField(byParent map[int64][]storage.ChildLog, err error, names logNames) (field map[string][]childLogDTO, failed bool) {
 	if err != nil {
 		return nil, true
 	}
@@ -1243,6 +1252,14 @@ func logChildrenField(byParent map[int64][]storage.ChildLog, err error) (field m
 				FromRef:    op.FromRef,
 				ToRef:      op.ToRef,
 				Detail:     op.Detail,
+				// A failover's from/to are account ids in the trace; the
+				// operator needs the account names. A ref that is not a
+				// known account (a model id, or a deleted row) passes
+				// through unchanged.
+				ProviderName: names.optionalName(op.ProviderID),
+				ProviderKind: names.optionalKind(op.ProviderID),
+				FromName:     names.optionalName(op.FromRef),
+				ToName:       names.optionalName(op.ToRef),
 			})
 		}
 		out[strconv.FormatInt(parentID, 10)] = dtos
@@ -1264,8 +1281,8 @@ func (a *AdminAPI) rawLogChildren(ctx context.Context, logs []storage.RequestLog
 }
 
 // childLogDTO is one sub-operation of a request (Logs page, 2026-10-07):
-// a failover, a capability (vision) fallback walk, an emulated web-tool
-// call, or a retry, carried beside its parent row.
+// a failover, a capability (vision) fallback walk, or an emulated web-tool
+// call, carried beside its parent row.
 type childLogDTO struct {
 	ID         int64  `json:"id"`
 	ParentID   int64  `json:"parent_id"`
@@ -1276,6 +1293,12 @@ type childLogDTO struct {
 	FromRef    string `json:"from_ref,omitempty"`
 	ToRef      string `json:"to_ref,omitempty"`
 	Detail     string `json:"detail,omitempty"`
+	// Display projections of the raw refs above (a failover's from/to name
+	// accounts, not opaque ids) — raw-value fallback, never blank.
+	ProviderName string `json:"provider_name,omitempty"`
+	ProviderKind string `json:"provider_kind,omitempty"`
+	FromName     string `json:"from_name,omitempty"`
+	ToName       string `json:"to_name,omitempty"`
 }
 
 // logsToDTO projects request-log rows (the shared shape of both reads).
@@ -1302,6 +1325,7 @@ func logsToDTO(logs []storage.RequestLog, names logNames) []logDTO {
 			KeyName:        keyName,
 			KeyPrefix:      keyPrefix,
 			ProviderName:   names.providerDisplay(l.ProviderID),
+			ProviderKind:   names.providerKind(l.ProviderID),
 		})
 	}
 	return out
@@ -1449,6 +1473,10 @@ type usageDTO struct {
 	CacheReadTokens int64  `json:"cache_read_tokens"`
 	Requests        int64  `json:"requests"`
 	Failures        int64  `json:"failures"`
+	// Display projections (raw ids above stay the identity/fallback).
+	KeyName      string `json:"key_name,omitempty"`
+	ProviderName string `json:"provider_name,omitempty"`
+	ProviderKind string `json:"provider_kind,omitempty"`
 }
 
 type logDTO struct {
@@ -1470,6 +1498,10 @@ type logDTO struct {
 	KeyName      string `json:"key_name,omitempty"`
 	KeyPrefix    string `json:"key_prefix,omitempty"`
 	ProviderName string `json:"provider_name,omitempty"`
+	// ProviderKind is the provider TYPE's human label (e.g. "Ollama Cloud",
+	// "ChatGPT / Codex") — what the PROVIDER column shows. The raw
+	// provider_id below stays the identity/fallback.
+	ProviderKind string `json:"provider_kind,omitempty"`
 }
 
 // logNames carries the batch-projected display names for one getLogs
@@ -1505,12 +1537,100 @@ func (n logNames) keyDisplay(id string) (name, prefix string) {
 	return id, ""
 }
 
+// keyName is keyDisplay's name-only form, for DTOs that carry no prefix.
+func (n logNames) keyName(id string) string {
+	name, _ := n.keyDisplay(id)
+	return name
+}
+
 // providerDisplay renders provider display name (raw id fallback).
 func (n logNames) providerDisplay(id string) string {
 	if p, ok := n.providers[id]; ok {
 		return p.Name
 	}
 	return id
+}
+
+// providerKind renders the provider TYPE's human label (e.g. "Ollama
+// Cloud") — the PROVIDER column's value. Falls back to the raw id: a
+// deleted account, or a type the catalog no longer knows (the catalog is
+// the same source the Providers page renders from), must still say
+// something an operator can act on.
+func (n logNames) providerKind(id string) string {
+	p, ok := n.providers[id]
+	if !ok {
+		return id
+	}
+	if desc, isType := providerTypeByID(p.Type); isType && desc.Label != "" {
+		return desc.Label
+	}
+	return p.Type
+}
+
+// optionalName is providerDisplay for refs that may not be account ids at
+// all (a trace's from/to can carry a model id): an unknown ref projects
+// EMPTY so the field is omitted, rather than echoing the raw value into a
+// place the operator reads as a name.
+//
+// A failover ref is a "provider/model" composite; the provider half is the
+// account, so it is resolved and the model half dropped from the name (the
+// raw ref stays on the wire for the tooltip).
+func (n logNames) optionalName(ref string) string {
+	if ref == "" {
+		return ""
+	}
+	id := ref
+	if i := strings.IndexByte(ref, '/'); i >= 0 {
+		id = ref[:i]
+	}
+	p, ok := n.providers[id]
+	if !ok {
+		return ""
+	}
+	return DisplayName(p)
+}
+
+// optionalKind is providerKind's omit-when-unknown sibling.
+func (n logNames) optionalKind(id string) string {
+	if id == "" {
+		return ""
+	}
+	p, ok := n.providers[id]
+	if !ok {
+		return ""
+	}
+	if desc, isType := providerTypeByID(p.Type); isType && desc.Label != "" {
+		return desc.Label
+	}
+	return p.Type
+}
+
+// Summary renders the account cell for a request: the provider name, with
+// the provider type appended when the two differ. The operator named the
+// account, but knowing what kind of endpoint served the request is the
+// next question — "main-2" alone does not say Ollama Cloud.
+func (n logNames) Summary(id string) string {
+	p, ok := n.providers[id]
+	if !ok {
+		return id
+	}
+	kind := n.providerKind(id)
+	if p.Name == "" {
+		return kind
+	}
+	if kind == p.Name {
+		return p.Name
+	}
+	return p.Name + " · " + kind
+}
+
+// DisplayName is Summary's no-derivation sibling for callers that already
+// hold the row: the account name, raw-id fallback.
+func DisplayName(p storage.Provider) string {
+	if p.Name != "" {
+		return p.Name
+	}
+	return p.ID
 }
 
 type entryDTO struct {

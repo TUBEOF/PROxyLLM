@@ -400,6 +400,39 @@ func TestEncodeRequest_FromIR(t *testing.T) {
 	}
 }
 
+// TestEncodeRequest_StreamAsksForUsage pins the include_usage contract: a
+// streamed request MUST ask the upstream for its usage chunk — without it
+// an OpenAI-compatible upstream reports no token counts on the stream at
+// all, so the request log can only ever record zeros (the log's token and
+// TPS columns would be permanently empty). A non-streaming request omits
+// it: the field is meaningless there and some upstreams reject it.
+func TestEncodeRequest_StreamAsksForUsage(t *testing.T) {
+	raw, err := oa.Codec{}.EncodeRequest(ir.Request{Model: "m", Stream: true})
+	if err != nil {
+		t.Fatalf("EncodeRequest(stream): %v", err)
+	}
+	var streamed struct {
+		Stream        bool `json:"stream"`
+		StreamOptions struct {
+			IncludeUsage bool `json:"include_usage"`
+		} `json:"stream_options"`
+	}
+	if err := json.Unmarshal(raw, &streamed); err != nil {
+		t.Fatalf("decode streamed body: %v", err)
+	}
+	if !streamed.StreamOptions.IncludeUsage {
+		t.Errorf("streamed body lacks stream_options.include_usage: %s", raw)
+	}
+
+	rawPlain, err := oa.Codec{}.EncodeRequest(ir.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("EncodeRequest(plain): %v", err)
+	}
+	if strings.Contains(string(rawPlain), "stream_options") {
+		t.Errorf("non-streaming body must not carry stream_options: %s", rawPlain)
+	}
+}
+
 // TestEncodeRequest_ToolCallOnlyAssistantEncodesEmptyStringContent: an
 // assistant turn carrying only a tool call is the standard shape of
 // every agent loop (Claude Code sends tool_use-only assistant turns

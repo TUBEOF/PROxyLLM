@@ -136,6 +136,10 @@ func (a *api) runChat(w http.ResponseWriter, r *http.Request, raw []byte, req ir
 // streamChat relays an upstream stream to the chat-wire client (O4:
 // data-only SSE frames, [DONE] terminal, per-event flush).
 func (a *api) streamChat(w http.ResponseWriter, r *http.Request, keyID string, req ir.Request, chain []routing.ChainEntry, traces ...*routing.Trace) {
+	// Declare the event-stream response up front, before any dispatch
+	// (a pre-stream failure below still substitutes a real error).
+	writeSSEHeaders(w)
+
 	ew := openAIErrorWriter()
 
 	ctx := r.Context()

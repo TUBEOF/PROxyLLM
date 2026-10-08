@@ -4,6 +4,7 @@ import type { ChildLog, LogsResponse, RequestLog, RunningRequest } from '../type
 import { EmptyState, ErrorNote, PageHead, useLiveData } from '../hooks';
 import { useLogStream } from '../hooks/useLogStream';
 import { Drawer } from '../components/Overlays';
+import { LiveBadge } from '../components/LiveBadge';
 import { IconChevronLeft, IconChevronRight } from '../icons';
 import { LogRow, type LogRowShape, type ParentShape } from '../components/LogRow';
 import {
@@ -120,13 +121,34 @@ export default function Logs() {
       if (s.kind === 'done') {
         const kidCont = s.chainCont === true;
         const parent = s.row;
-        for (const child of kidsOf(s.row.id)) {
-          out.push({ kind: 'child', child, chainCont: kidCont, onOpenParent: () => openTraceRef.current(parent) });
-        }
+        const kids = kidsOf(s.row.id);
+        kids.forEach((child, ci) => {
+          out.push({
+            kind: 'child',
+            child,
+            chainCont: kidCont,
+            last: ci === kids.length - 1,
+            onOpenParent: () => openTraceRef.current(parent),
+          });
+        });
       }
     }
     return out;
   }, [logs, running, data]);
+
+  // names maps a raw account id to its display name, for the trace
+  // renderers (route_trace stores ids; the row payload carries the names).
+  // Built from the page's own rows — no extra request.
+  const names = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const row of logs) {
+      if (row.provider_name) m.set(row.provider_id, row.provider_name);
+    }
+    for (const row of data?.logs ?? []) {
+      if (row.provider_name) m.set(row.provider_id, row.provider_name);
+    }
+    return m;
+  }, [logs, data]);
 
   const openTrace = useCallback((l: RequestLog) => setSelected(l), []);
   const closeTrace = useCallback(() => setSelected(null), []);
@@ -140,7 +162,7 @@ export default function Logs() {
         sub="Every request with its routing trace — fallback transitions and compatibility degradations are always visible here."
         actions={
           <>
-            <span className={`badge ${connected ? 'up' : 'info'}`}>{connected ? 'LIVE' : 'POLLED'}</span>
+            <LiveBadge connected={connected} />
             {data?.children_unavailable === true && (
               <span className="badge warn" title="The sub-operation read failed — fallback/emulation rows are missing from this page">
                 sub-ops unavailable
@@ -175,19 +197,22 @@ export default function Logs() {
                 <table className="table logs-table">
                   <thead>
                     <tr>
-                      <th className="td-gutter" aria-label="chain" />
+                      <th className="td-gutter" aria-label="chain">
+                        {/* A real, sized child: the tree graphics are
+                            absolutely positioned, so an empty cell lets the
+                            column collapse to zero and clip them away. */}
+                        <span className="gutter-spacer" aria-hidden="true" />
+                      </th>
                       <th>Status</th>
                       <th>Model</th>
-                      <th>Requested</th>
                       <th>Provider</th>
-                      <th>Request Protocol</th>
+                      <th>Protocol</th>
                       <th>Account</th>
                       <th>API Key</th>
                       <th>Tokens</th>
                       <th className="num">TPS</th>
                       <th className="num">Duration</th>
                       <th>Time ↓</th>
-                      <th>Conversation</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -241,7 +266,11 @@ export default function Logs() {
 
       {selected !== null && (
         <Drawer title={`Request #${selected.id}`} onClose={closeTrace}>
-          <LogDetail selected={selected} subOps={data?.children?.[String(selected.id)] ?? []} />
+          <LogDetail
+            selected={selected}
+            subOps={data?.children?.[String(selected.id)] ?? []}
+            names={names}
+          />
         </Drawer>
       )}
     </>
@@ -312,11 +341,16 @@ function intraRowHealed(row: RequestLog): boolean {
   );
 }
 
-function LogDetail({ selected, subOps }: { selected: RequestLog; subOps: ChildLog[] }) {
+function LogDetail({ selected, subOps, names }: { selected: RequestLog; subOps: ChildLog[]; names: Map<string, string> }) {
   const features = (selected.features ?? {}) as Record<string, boolean | undefined>;
   const featureKeys = ['streaming', 'tools', 'thinking', 'web_search', 'web_fetch', 'vision'] as const;
   const active = featureKeys.filter((k) => features[k] === true);
   const events = parseEvents(selected.route_trace);
+  const u = (selected.usage ?? {}) as { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number };
+  const tps =
+    typeof u.output_tokens === 'number' && selected.latency_ms > 0
+      ? (u.output_tokens / (selected.latency_ms / 1000)).toFixed(1)
+      : '—';
   return (
     <div className="form">
       <div className="fieldset">
@@ -327,13 +361,26 @@ function LogDetail({ selected, subOps }: { selected: RequestLog; subOps: ChildLo
           <dt className="muted">Model</dt>
           <dd style={{ margin: 0 }}>{selected.model}</dd>
           <dt className="muted">Provider</dt>
-          <dd style={{ margin: 0 }}>{selected.provider_id}</dd>
+          <dd style={{ margin: 0 }}>
+            {selected.provider_kind ?? selected.provider_id}
+            {selected.provider_name && selected.provider_name !== selected.provider_kind && (
+              <span className="muted"> · {selected.provider_name}</span>
+            )}
+          </dd>
+          <dt className="muted">Account</dt>
+          <dd style={{ margin: 0 }} title={selected.provider_id}>{selected.provider_name ?? selected.provider_id}</dd>
           <dt className="muted">Protocol</dt>
           <dd style={{ margin: 0 }}>{selected.protocol ?? '—'}</dd>
           <dt className="muted">Conversation</dt>
           <dd className="mono" style={{ margin: 0 }}>{selected.conversation_id ?? '—'}</dd>
           <dt className="muted">Client key</dt>
-          <dd className="mono" style={{ margin: 0 }}>{selected.client_key_id}</dd>
+          <dd className="mono" style={{ margin: 0 }} title={selected.client_key_id}>
+            {selected.key_name
+              ? selected.key_prefix
+                ? `${selected.key_name} (${selected.key_prefix})`
+                : selected.key_name
+              : selected.client_key_id}
+          </dd>
           <dt className="muted">Status</dt>
           <dd style={{ margin: 0 }}>
             <span className={`badge ${statusBadge(selected.status).cls}`}>
@@ -341,8 +388,10 @@ function LogDetail({ selected, subOps }: { selected: RequestLog; subOps: ChildLo
               {selected.status}
             </span>
           </dd>
-          <dt className="muted">Latency</dt>
+          <dt className="muted">Duration</dt>
           <dd className="mono" style={{ margin: 0 }}>{selected.latency_ms} ms</dd>
+          <dt className="muted">TPS</dt>
+          <dd className="mono" style={{ margin: 0 }}>{tps}</dd>
         </dl>
       </div>
       <div className="fieldset">
@@ -381,8 +430,8 @@ function LogDetail({ selected, subOps }: { selected: RequestLog; subOps: ChildLo
           <p className="hint">No routing decisions recorded.</p>
         ) : (
           <>
-            <ChainSummary events={events} />
-            <TraceTimeline events={events} />
+            <ChainSummary events={events} names={names} />
+            <TraceTimeline events={events} names={names} />
           </>
         )}
         {subOps.length > 0 && (

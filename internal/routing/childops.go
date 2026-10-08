@@ -1,16 +1,18 @@
 package routing
 
-// Child operations (2026-10-07 Logs page): the upstream attempts the
+// Child operations (2026-10-07 Logs page): the upstream operations the
 // operator needs as their own log rows rather than as trace-only detail —
-// a chain failover, a capability (vision) fallback model walk, an emulated
-// web-tool call, and a same-provider retry. This mapper is the single
-// source of truth for that mapping; the persist path
-// (httpapi.writeRequestLog → storage.InsertChildLogs) consumes it.
+// a chain failover, a capability (vision) fallback model walk, and an
+// emulated web-tool call. This mapper is the single source of truth for
+// that mapping; the persist path (httpapi.writeRequestLog →
+// storage.InsertChildLogs) consumes it.
 //
-// Everything else in the trace (alias, model_resolved, attempt, failed,
-// skipped, expand, rotation, compat_policy, rejected, implicit_route,
-// context_override) stays a timeline event in the detail drawer — it is
-// bookkeeping about one attempt, not a separable operation.
+// A same-provider retry is deliberately NOT a row: it is one attempt of the
+// same operation, not a separable one, and a retry storm floods the log.
+// It stays a timeline event in the detail drawer, alongside everything else
+// the trace records (alias, model_resolved, attempt, failed, skipped,
+// expand, rotation, compat_policy, rejected, implicit_route,
+// context_override).
 
 // OpKind enumerates the trace event types that become their own log row.
 type OpKind string
@@ -30,9 +32,6 @@ const (
 	// (the model's tool call answered via the Firecrawl fallback). To carries
 	// the tool name, Detail the invocation summary (query/url, outcome).
 	OpEmulatedTool OpKind = "emulated_tool"
-
-	// OpRetry: the request re-attempted the same provider after backoff.
-	OpRetry OpKind = "retry"
 )
 
 // ChildOp is one separable sub-operation of a request, derived from its
@@ -84,11 +83,6 @@ func ChildOps(events []Event) []ChildOp {
 			ops = append(ops, ChildOp{
 				Kind: OpEmulatedTool,
 				To:   ev.To, Detail: ev.Reason,
-			})
-		case EventRetry:
-			ops = append(ops, ChildOp{
-				Kind:       OpRetry,
-				ProviderID: ev.ProviderID, Detail: ev.Reason,
 			})
 		}
 	}

@@ -102,6 +102,10 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 // (O7: response.created → output_text.delta / function_call_arguments
 // deltas → response.completed carrying the terminal usage).
 func (a *api) streamResponses(w http.ResponseWriter, r *http.Request, keyID string, req ir.Request, chain []routing.ChainEntry, traces ...*routing.Trace) {
+	// Declare the event-stream response up front, before any dispatch
+	// (a pre-stream failure below still substitutes a real error).
+	writeSSEHeaders(w)
+
 	ew := openAIErrorWriter()
 
 	ctx := r.Context()

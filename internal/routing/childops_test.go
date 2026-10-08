@@ -118,22 +118,17 @@ func TestChildOps_EmulatedTool(t *testing.T) {
 	}
 }
 
-// TestChildOps_Retry pins the same-provider backoff retry as its own op.
-func TestChildOps_Retry(t *testing.T) {
+// TestChildOps_IgnoresRetry pins that a same-provider backoff retry is NOT
+// its own op: it re-attempts the same operation rather than naming a
+// separable one, and a retry storm otherwise floods the log with rows. It
+// stays a timeline event in the detail drawer.
+func TestChildOps_IgnoresRetry(t *testing.T) {
 	events := []Event{
 		{Type: EventRetry, ProviderID: "acc-a", Reason: "retry after 503 (backoff)"},
 	}
 
-	ops := ChildOps(events)
-
-	if len(ops) != 1 {
-		t.Fatalf("ChildOps = %d ops, want 1: %+v", len(ops), ops)
-	}
-	if ops[0].Kind != OpRetry || ops[0].ProviderID != "acc-a" {
-		t.Errorf("op = %+v, want a retry op for acc-a", ops[0])
-	}
-	if ops[0].Detail != "retry after 503 (backoff)" {
-		t.Errorf("Detail = %q, want the retry reason", ops[0].Detail)
+	if ops := ChildOps(events); len(ops) != 0 {
+		t.Errorf("ChildOps = %+v, want no ops for a bare retry", ops)
 	}
 }
 
@@ -142,8 +137,9 @@ func TestChildOps_Retry(t *testing.T) {
 func TestChildOps_PreservesOrder(t *testing.T) {
 	events := []Event{
 		{Type: EventFailover, From: "a1", To: "a2", Reason: "first"},
+		{Type: EventRetry, ProviderID: "a2", Reason: "interleaved retry (no op)"},
 		{Type: EventEmulatedTool, To: "web_search", Reason: "second"},
-		{Type: EventRetry, ProviderID: "a2", Reason: "third"},
+		{Type: EventCapabilityFallback, Capability: "vision", Reason: "third"},
 	}
 
 	ops := ChildOps(events)
@@ -151,7 +147,9 @@ func TestChildOps_PreservesOrder(t *testing.T) {
 	if len(ops) != 3 {
 		t.Fatalf("ChildOps = %d ops, want 3: %+v", len(ops), ops)
 	}
-	for i, want := range []string{"first", "second", "third"} {
+	// The capability-fallback op's Detail is the capability FAMILY (the
+	// event Reason is identical boilerplate for every consultation).
+	for i, want := range []string{"first", "second", "vision"} {
 		if ops[i].Detail != want {
 			t.Errorf("ops[%d].Detail = %q, want %q (trace order lost)", i, ops[i].Detail, want)
 		}

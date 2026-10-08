@@ -192,6 +192,7 @@ func (a *AdminAPI) getOverview(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	names := a.logNameProjection(r.Context())
 	usage := make([]usageDTO, 0, len(rows))
 	var td overviewTodayDTO
 	todayStr := to
@@ -206,6 +207,9 @@ func (a *AdminAPI) getOverview(w http.ResponseWriter, r *http.Request) {
 			CacheReadTokens: u.CacheReadTokens,
 			Requests:        u.Requests,
 			Failures:        u.Failures,
+			KeyName:         names.keyName(u.ClientKeyID),
+			ProviderName:    names.providerDisplay(u.ProviderID),
+			ProviderKind:    names.providerKind(u.ProviderID),
 		})
 		if u.Day == todayStr {
 			td.Requests += u.Requests

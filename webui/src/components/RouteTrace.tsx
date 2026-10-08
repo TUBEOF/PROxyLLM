@@ -22,6 +22,14 @@ export interface TraceEvent {
   latency_ms?: number;
 }
 
+// refName renders a trace ref for display: a projected account name when the
+// payload carries one, else the raw ref (a model id, or a deleted account).
+// The trace itself stores ids; the names ride the row's projections.
+export function refName(name: string | undefined, raw: string | undefined): string {
+  if (name && name !== '') return name;
+  return raw ?? '';
+}
+
 // parseEvents returns the trace's events, or null when the blob is not the
 // {version, events:[...]} object this renderer knows (→ raw fallback).
 export function parseEvents(trace: unknown): TraceEvent[] | null {
@@ -31,22 +39,28 @@ export function parseEvents(trace: unknown): TraceEvent[] | null {
   return events.filter((e): e is TraceEvent => e !== null && typeof e === 'object');
 }
 
-// eventTitle renders one event's human title.
-export function eventTitle(ev: TraceEvent): string {
-  const arrow = (a?: string, b?: string): string => `${a || '—'} → ${b || '—'}`;
+// eventTitle renders one event's human title. names maps a raw account id to
+// its display name (absent → the raw id, so an unrecognised ref is still
+// shown rather than blanked).
+export function eventTitle(ev: TraceEvent, names?: Map<string, string>): string {
+  const n = (id?: string): string => {
+    if (!id) return '';
+    return names?.get(id) ?? id;
+  };
+  const arrow = (a?: string, b?: string): string => `${n(a) || '—'} → ${n(b) || '—'}`;
   switch (ev.type) {
     case 'alias':
       return `Alias ${arrow(ev.from, ev.to)}`;
     case 'model_resolved':
       return `Resolved ${arrow(ev.from, ev.to)}`;
     case 'attempt':
-      return `Attempt ${ev.provider_id || ev.model || '—'}`;
+      return `Attempt ${n(ev.provider_id) || ev.model || '—'}`;
     case 'failed':
-      return `Failed ${ev.provider_id || '—'}${ev.http_status ? ` (${ev.http_status})` : ''}`;
+      return `Failed ${n(ev.provider_id) || '—'}${ev.http_status ? ` (${ev.http_status})` : ''}`;
     case 'failover':
       return `Failover ${arrow(ev.from, ev.to)}`;
     case 'retry':
-      return `Retry ${ev.provider_id || '—'}`;
+      return `Retry ${n(ev.provider_id) || '—'}`;
     case 'compat_policy':
       return `Compat ${ev.from || '—'} = ${ev.to || '—'}`;
     case 'expand':
@@ -116,14 +130,14 @@ function chainProviders(events: TraceEvent[]): string[] {
 // ChainSummary renders the attempted provider chain as pills, highlighting
 // the serving (last-attempted) provider. Renders nothing when no attempt
 // was made (a rejected request — the timeline carries that story).
-export function ChainSummary({ events }: { events: TraceEvent[] }) {
+export function ChainSummary({ events, names }: { events: TraceEvent[]; names?: Map<string, string> }) {
   const chain = chainProviders(events);
   if (chain.length === 0) return null;
   return (
     <div className="chain-summary">
       {chain.map((p, i) => (
-        <span key={`${p}-${i}`} className={`chain-pill${i === chain.length - 1 ? ' serving' : ''}`}>
-          {p}
+        <span key={`${p}-${i}`} className={`chain-pill${i === chain.length - 1 ? ' serving' : ''}`} title={p}>
+          {names?.get(p) ?? p}
         </span>
       ))}
     </div>
@@ -131,7 +145,7 @@ export function ChainSummary({ events }: { events: TraceEvent[] }) {
 }
 
 // TraceTimeline renders every event as a feed item, in order.
-export function TraceTimeline({ events }: { events: TraceEvent[] }) {
+export function TraceTimeline({ events, names }: { events: TraceEvent[]; names?: Map<string, string> }) {
   if (events.length === 0) return <p className="hint">No routing decisions recorded.</p>;
   return (
     <div className="feed">
@@ -139,7 +153,7 @@ export function TraceTimeline({ events }: { events: TraceEvent[] }) {
         <div key={i} className={`feed-item ${eventSeverity(ev)}`}>
           <span className="f-ic" aria-hidden="true" />
           <div className="f-main">
-            <p className="f-title">{eventTitle(ev)}</p>
+            <p className="f-title">{eventTitle(ev, names)}</p>
             {eventMeta(ev) !== '' && <p className="f-meta">{eventMeta(ev)}</p>}
           </div>
         </div>
@@ -165,13 +179,11 @@ export function RawTrace({ trace }: { trace: unknown }) {
 export function childTitle(c: ChildLog): string {
   switch (c.kind) {
     case 'failover':
-      return `Failover ${c.from_ref || '—'} → ${c.to_ref || '—'}`;
+      return `Fallback ${refName(c.from_name, c.from_ref) || '—'} → ${refName(c.to_name, c.to_ref) || '—'}`;
     case 'capability_fallback':
       return `Capability fallback: ${c.detail || 'unknown'}`;
     case 'emulated_tool':
-      return `Emulated ${c.to_ref || 'tool'}`;
-    case 'retry':
-      return `Retry ${c.provider_id || c.model || ''}`.trim();
+      return `Web tool: ${c.to_ref || '—'}`;
     default:
       return c.kind;
   }

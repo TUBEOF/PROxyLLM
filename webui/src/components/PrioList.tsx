@@ -22,9 +22,13 @@ interface PrioListProps {
   // Available entries the picker offers (id + display label); entries
   // already on the list are filtered out.
   options: { id: string; label: string }[];
+  // resolveLabel maps a stored entry to its display label. Without it a
+  // configured list would show raw ids even though the picker that added
+  // them showed names.
+  resolveLabel?: (id: string) => string;
 }
 
-export default function PrioList({ items, onChange, label, emptyHint, addLabel, options }: PrioListProps) {
+export default function PrioList({ items, onChange, label, emptyHint, addLabel, options, resolveLabel }: PrioListProps) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
 
@@ -97,7 +101,7 @@ export default function PrioList({ items, onChange, label, emptyHint, addLabel, 
             }}
           >
             <span aria-hidden="true" style={{ opacity: 0.5, fontSize: 'var(--fs-xs)' }}>⠿</span>
-            <span className="mono">{`${i + 1}. ${entry}`}</span>
+            <span className="mono" title={entry}>{`${i + 1}. ${resolveLabel ? resolveLabel(entry) : entry}`}</span>
             <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 4 }}>
               <button
                 type="button"

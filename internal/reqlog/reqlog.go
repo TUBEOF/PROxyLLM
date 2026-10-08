@@ -46,6 +46,16 @@ type LogRow struct {
 	Protocol       string          `json:"protocol,omitempty"`
 	Features       json.RawMessage `json:"features,omitempty"`
 	ErrorRedacted  string          `json:"error_redacted,omitempty"`
+
+	// Display projections, filled by the admin SSE handler (which owns the
+	// store). They mirror the page DTO's fields of the same name so a row
+	// arriving live renders exactly like the same row after the next page
+	// fetch — without them a live row would show raw ids next to named
+	// rows. reqlog itself stays storage-agnostic and leaves them empty.
+	KeyName      string `json:"key_name,omitempty"`
+	KeyPrefix    string `json:"key_prefix,omitempty"`
+	ProviderName string `json:"provider_name,omitempty"`
+	ProviderKind string `json:"provider_kind,omitempty"`
 }
 
 // EventKind discriminates Stream events.

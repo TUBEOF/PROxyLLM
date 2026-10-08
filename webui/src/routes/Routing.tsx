@@ -9,7 +9,8 @@ import type {
   RulesResponse,
   Strategy,
 } from '../types';
-import { EmptyState, ErrorNote, PageHead, useAdminData, useMutation } from '../hooks';
+import { EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation } from '../hooks';
+import { LiveBadge } from '../components/LiveBadge';
 import { Drawer } from '../components/Overlays';
 import PrioList from '../components/PrioList';
 import { IconPlus } from '../icons';
@@ -40,8 +41,9 @@ const STRATEGIES: { value: Strategy; label: string; desc: string }[] = [
 // accounts (today: firecrawl) the emulator pool tries in order. One save
 // writes all three.
 function CapabilityFallbacksCard() {
-  const { data, loading, error, reload } = useAdminData<CapabilityFallbacks>(
+  const { data, loading, error, reload, updatedAt } = useLiveData<CapabilityFallbacks>(
     (signal) => apiCall<CapabilityFallbacks>('GET', '/api/admin/capability-fallbacks', undefined, signal),
+    LIVE_MS,
   );
   // Models (for the vision picker) + web-tool accounts (for the web pickers).
   const { data: modelsData } = useAdminData<ModelsResponse>(
@@ -81,6 +83,8 @@ function CapabilityFallbacksCard() {
       .filter((p) => webTypes.has(p.type))
       .map((p) => ({ id: p.id, label: `${p.name} (${p.type})` }));
   }, [catalog, providersData]);
+  const modelLabels = useMemo(() => new Map(modelOptions.map((o) => [o.id, o.label])), [modelOptions]);
+  const webToolLabels = useMemo(() => new Map(webToolOptions.map((o) => [o.id, o.label])), [webToolOptions]);
 
   const submit = useCallback(async () => {
     if (form === null) return;
@@ -104,7 +108,12 @@ function CapabilityFallbacksCard() {
   return (
     <div className="w-full" style={{ marginBottom: 8 }}>
       <fieldset className="fieldset">
-        <legend>Capability fallbacks</legend>
+        <legend>
+          Capability fallbacks
+          <span style={{ marginLeft: 8, verticalAlign: 'middle' }}>
+            <LiveBadge updatedAt={updatedAt} intervalMs={LIVE_MS} />
+          </span>
+        </legend>
         <p className="hint" style={{ marginTop: 0 }}>
           Priority lists consulted when the routed chain cannot serve a
           request. Vision: models tried when the routed model rejected the
@@ -128,6 +137,7 @@ function CapabilityFallbacksCard() {
                 items={form.vision}
                 onChange={(vision) => setForm((f) => (f === null ? f : { ...f, vision }))}
                 options={modelOptions}
+                resolveLabel={(id) => modelLabels.get(id) ?? id}
                 addLabel="Add model to vision fallback"
                 emptyHint="No vision fallback — requests the routed model cannot serve fail with the upstream error."
               />
@@ -139,6 +149,7 @@ function CapabilityFallbacksCard() {
                 items={form.web_search}
                 onChange={(web_search) => setForm((f) => (f === null ? f : { ...f, web_search }))}
                 options={webToolOptions}
+                resolveLabel={(id) => webToolLabels.get(id) ?? id}
                 addLabel="Add web-tool account to search fallback"
                 emptyHint="No web search fallback — emulated search uses the single configured emulator."
               />
@@ -150,6 +161,7 @@ function CapabilityFallbacksCard() {
                 items={form.web_fetch}
                 onChange={(web_fetch) => setForm((f) => (f === null ? f : { ...f, web_fetch }))}
                 options={webToolOptions}
+                resolveLabel={(id) => webToolLabels.get(id) ?? id}
                 addLabel="Add web-tool account to fetch fallback"
                 emptyHint="No web fetch fallback — emulated fetch uses the single configured emulator."
               />
@@ -172,19 +184,42 @@ interface ProvidersResponseLike {
   providers: { id: string; type: string; name: string }[];
 }
 
+// LIVE_MS is the config pages' light refresh — they change rarely, so a
+// slow poll keeps the LIVE badge honest without churn.
+const LIVE_MS = 15000;
+
 export default function Routing() {
-  const { data, loading, error, reload } = useAdminData<RulesResponse>(
+  const { data, loading, error, reload, updatedAt } = useLiveData<RulesResponse>(
     (signal) => apiCall<RulesResponse>('GET', '/api/admin/routing', undefined, signal),
+    LIVE_MS,
   );
   const { data: modelsData } = useAdminData<ModelsResponse>(
     (signal) => apiCall<ModelsResponse>('GET', '/api/admin/models', undefined, signal),
+  );
+  const { data: providersData } = useAdminData<ProvidersResponseLike>(
+    (signal) => apiCall<ProvidersResponseLike>('GET', '/api/admin/providers', undefined, signal),
   );
   const { data: strategyData, reload: reloadStrategy } = useAdminData<RoutingStrategyResponse>(
     (signal) => apiCall<RoutingStrategyResponse>('GET', '/api/admin/routing-strategy', undefined, signal),
   );
   const rules = useMemo(() => data?.rules ?? [], [data]);
   const models = useMemo(() => modelsData?.models ?? [], [modelsData]);
-  const modelIDs = useMemo(() => models.map((m) => m.id), [models]);
+  // Display labels for chain entries: a chain stores MODEL ids, and an
+  // operator picking one should see the provider it belongs to rather than
+  // the bare id.
+  const chainProviderLabel = useMemo(
+    () => new Map((providersData?.providers ?? []).map((p) => [p.id, p.name])),
+    [providersData],
+  );
+  const chainOptions = useMemo(
+    () =>
+      models.map((m) => {
+        const prov = chainProviderLabel.get(m.provider_id);
+        return { id: m.id, label: `${m.id}${prov ? ` — ${prov}` : ''}` };
+      }),
+    [models, chainProviderLabel],
+  );
+  const chainLabels = useMemo(() => new Map(chainOptions.map((o) => [o.id, o.label])), [chainOptions]);
   const globalStrategy = strategyData?.strategy ?? 'round_robin';
 
   const [editing, setEditing] = useState<RoutingRule | null>(null);
@@ -293,10 +328,13 @@ export default function Routing() {
         title="Routing"
         sub="Fallback chains per model pattern. Every transition at request time is traced in the logs — fallbacks are never silent."
         actions={
-          <button type="button" className="btn btn-primary" onClick={openCreate}>
-            <IconPlus width="16" height="16" />
-            Add rule
-          </button>
+          <>
+            <LiveBadge updatedAt={updatedAt} intervalMs={LIVE_MS} />
+            <button type="button" className="btn btn-primary" onClick={openCreate}>
+              <IconPlus width="16" height="16" />
+              Add rule
+            </button>
+          </>
         }
       />
       <div className="canvas">
@@ -386,7 +424,7 @@ export default function Routing() {
                           {rule.chain.length === 0 ? (
                             <span className="badge down">empty chain</span>
                           ) : (
-                            <span className="mono">{rule.chain.join(' → ')}</span>
+                            <span className="mono">{rule.chain.map((id) => chainLabels.get(id) ?? id).join(' → ')}</span>
                           )}
                         </td>
                         <td className="num">{rule.priority}</td>
@@ -543,7 +581,8 @@ export default function Routing() {
                 label="Fallback chain priority list"
                 items={form.chain}
                 onChange={(chain) => setForm((f) => ({ ...f, chain }))}
-                options={modelIDs.map((id) => ({ id, label: id }))}
+                options={chainOptions}
+                resolveLabel={(id) => chainLabels.get(id) ?? id}
                 addLabel="Append model to chain"
                 emptyHint="Empty chain — no request can be routed under this rule."
               />

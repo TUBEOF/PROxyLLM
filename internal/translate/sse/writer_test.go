@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/tubeof/proxyllm/internal/translate/sse"
@@ -254,5 +255,40 @@ func TestSSEWriter_BareWriter(t *testing.T) {
 	}
 	if got := buf.String(); got != ": ok\n\ndata: {}\n\n" {
 		t.Errorf("wire = %q", got)
+	}
+}
+
+// TestSSEWriter_EventStreamContentType pins the response headers: an SSE
+// response MUST declare text/event-stream. A browser's native EventSource
+// fails the connection on any other Content-Type (WHATWG SSE), which turns
+// a live feed into a dead one with no server-side error — the exact silent
+// failure this writer prevents. The cache guards accompany it: an
+// intermediary that buffers frames defeats the point of streaming.
+func TestSSEWriter_EventStreamContentType(t *testing.T) {
+	rec := httptest.NewRecorder()
+	w := sse.NewWriter(rec)
+	w.WriteHeader(http.StatusOK)
+
+	if got := rec.Header().Get("Content-Type"); got != "text/event-stream" {
+		t.Errorf("Content-Type = %q, want text/event-stream (EventSource rejects anything else)", got)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Errorf("Cache-Control = %q, want no-cache", got)
+	}
+	if got := rec.Header().Get("X-Accel-Buffering"); got != "no" {
+		t.Errorf("X-Accel-Buffering = %q, want no (nginx buffers SSE otherwise)", got)
+	}
+}
+
+// TestSSEWriter_RespectsExplicitContentType: a caller that set its own
+// Content-Type keeps it — the writer fills the default, it does not
+// overrule an explicit choice.
+func TestSSEWriter_RespectsExplicitContentType(t *testing.T) {
+	rec := httptest.NewRecorder()
+	rec.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	sse.NewWriter(rec).WriteHeader(http.StatusOK)
+
+	if got := rec.Header().Get("Content-Type"); got != "text/event-stream; charset=utf-8" {
+		t.Errorf("Content-Type = %q, want the caller's value preserved", got)
 	}
 }

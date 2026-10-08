@@ -120,6 +120,10 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 // keep HTTP 200 (the SSE stream already started) and surface as
 // `event: error` with a normalized error type (A13).
 func (a *api) streamMessages(w http.ResponseWriter, r *http.Request, keyID string, req ir.Request, chain []routing.ChainEntry, traces ...*routing.Trace) {
+	// Declare the event-stream response up front, before any dispatch
+	// (a pre-stream failure below still substitutes a real error).
+	writeSSEHeaders(w)
+
 	ew := anthropicErrorWriter()
 
 	ctx := r.Context()

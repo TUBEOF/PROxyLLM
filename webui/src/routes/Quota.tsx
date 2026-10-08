@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { apiCall } from '../api';
 import type { AccountUsage, AccountUsageResponse } from '../types';
 import { EmptyState, ErrorNote, PageHead, useLiveData, useMutation } from '../hooks';
+import { LiveBadge } from '../components/LiveBadge';
 import { IconGauge, IconPlug } from '../icons';
 
 // Quota (ADR-012): per-account usage/limit cards — the OmniRoute-style
@@ -82,7 +83,7 @@ export default function Quota() {
         sub="Per-account usage and limits — live windows when the provider offers them, local counting otherwise."
         actions={
           <>
-            {updatedAt !== null && <span className="badge info">live</span>}
+            <LiveBadge updatedAt={updatedAt} intervalMs={POLL_MS} />
             <button type="button" className="btn btn-ghost btn-sm" onClick={refreshAll} disabled={refresh.pending}>
               Refresh all
             </button>
@@ -160,7 +161,6 @@ export default function Quota() {
                         ) : (
                           <span className="badge paused" style={{ marginLeft: 6 }}>local</span>
                         )}
-                        <span className="mono hint" style={{ marginLeft: 8, fontSize: 'var(--fs-xs)' }}>{a.account_id}</span>
                       </h3>
                     </div>
                     {a.live !== null && a.live !== undefined ? (

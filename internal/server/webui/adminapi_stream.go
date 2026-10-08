@@ -77,6 +77,11 @@ func (a *AdminAPI) streamLogs(w http.ResponseWriter, r *http.Request) {
 			}
 			fl.Flush()
 		case <-a.stream.Wait():
+			// Display projections for this wake. Built once per wake rather
+			// than per row: an account renamed while the stream is open is
+			// picked up on the next event, without paying two config-table
+			// reads for every row a busy proxy emits.
+			names := a.logNameProjection(r.Context())
 			// Drain the store tail first (durable rows — loss-tolerant:
 			// a missed wake only delays them).
 			for {
@@ -88,13 +93,13 @@ func (a *AdminAPI) streamLogs(w http.ResponseWriter, r *http.Request) {
 					if row.ID > cursor {
 						cursor = row.ID
 					}
-					if err := sendLog(swr, reqlog.LogRow{
+					if err := sendLog(swr, enrichLogRow(names, reqlog.LogRow{
 						ID: row.ID, Timestamp: row.Timestamp, ClientKeyID: row.ClientKeyID,
 						ProviderID: row.ProviderID, Model: row.Model, Status: row.Status,
 						LatencyMS: row.LatencyMS, Usage: row.Usage, RouteTrace: row.RouteTrace,
 						ConversationID: row.ConversationID, Protocol: row.Protocol,
 						Features: row.Features, ErrorRedacted: row.ErrorRedacted,
-					}); err != nil {
+					})); err != nil {
 						return
 					}
 				}
@@ -105,7 +110,7 @@ func (a *AdminAPI) streamLogs(w http.ResponseWriter, r *http.Request) {
 			fl.Flush()
 			// Hub events (running snapshots + finished rows published since
 			// the last wake).
-			if err := a.drainHub(swr, events); err != nil {
+			if err := a.drainHub(swr, names, events); err != nil {
 				return
 			}
 			fl.Flush()
@@ -113,13 +118,28 @@ func (a *AdminAPI) streamLogs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// enrichLogRow fills a row's display projections, so a row delivered live
+// renders exactly like the same row after the next page fetch (a raw
+// reqlog.LogRow carries none).
+func enrichLogRow(names logNames, row reqlog.LogRow) reqlog.LogRow {
+	row.KeyName, row.KeyPrefix = names.keyDisplay(row.ClientKeyID)
+	row.ProviderName = names.providerDisplay(row.ProviderID)
+	row.ProviderKind = names.providerKind(row.ProviderID)
+	return row
+}
+
 // drainHub pipes buffered hub events onto the wire (non-blocking — the
 // Subscribe channel keeps the buffer; a full buffer means the hub will
-// drop this subscriber per its own policy).
-func (a *AdminAPI) drainHub(swr *sse.Writer, events <-chan reqlog.Event) error {
+// drop this subscriber per its own policy). A finished row is enriched
+// with its display projections first (raw LogRows carry none).
+func (a *AdminAPI) drainHub(swr *sse.Writer, names logNames, events <-chan reqlog.Event) error {
 	for {
 		select {
 		case ev := <-events:
+			if ev.Kind == reqlog.EventLog && ev.Row != nil {
+				row := enrichLogRow(names, *ev.Row)
+				ev.Row = &row
+			}
 			if err := sendEvent(swr, ev); err != nil {
 				return err
 			}

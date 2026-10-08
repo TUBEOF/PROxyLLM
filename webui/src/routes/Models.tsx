@@ -10,7 +10,8 @@ import type {
   ProvidersResponse,
   SettingsResponse,
 } from '../types';
-import { EmptyState, ErrorNote, PageHead, useAdminData, useMutation } from '../hooks';
+import { EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation } from '../hooks';
+import { LiveBadge } from '../components/LiveBadge';
 
 // The relocated Settings-editor keys (2026-10-06): model-surface policy,
 // not compat knobs.
@@ -63,15 +64,27 @@ function parsePositiveInt(s: string): number | null {
   return n;
 }
 
+// LIVE_MS is the config pages' light refresh — they change rarely, so a
+// slow poll keeps the LIVE badge honest without churn.
+const LIVE_MS = 15000;
+
 export default function Models() {
-  const { data, loading, error, reload } = useAdminData<ModelsResponse>(
+  const { data, loading, error, reload, updatedAt } = useLiveData<ModelsResponse>(
     (signal) => apiCall<ModelsResponse>('GET', '/api/admin/models', undefined, signal),
+    LIVE_MS,
   );
-  const { data: providersData } = useAdminData<ProvidersResponse>(
+  const { data: providersData } = useLiveData<ProvidersResponse>(
     (signal) => apiCall<ProvidersResponse>('GET', '/api/admin/providers', undefined, signal),
+    LIVE_MS,
   );
   const models = useMemo(() => data?.models ?? [], [data]);
   const providers = useMemo(() => providersData?.providers ?? [], [providersData]);
+  // providerNames: the sync summary names the accounts it touched; a
+  // provider that has since been deleted falls back to its id.
+  const providerNames = useMemo(
+    () => new Map(providers.map((p) => [p.id, p.name])),
+    [providers],
+  );
 
   const [editing, setEditing] = useState<Model | null>(null);
   const [creating, setCreating] = useState(false);
@@ -322,7 +335,10 @@ export default function Models() {
     const known = new Set(providers.map((p) => p.id));
     for (const [pid, list] of byProvider) {
       if (!known.has(pid)) {
-        out.push({ provider: { id: pid, type: '', name: pid, config: null }, models: list });
+        // A dangling group: the provider row is gone (deleted, or a
+        // renamed id), so the id is all that remains. Named as such so the
+        // header does not read like a real account name.
+        out.push({ provider: { id: pid, type: '', name: `${pid} (unknown provider)`, config: null }, models: list });
       }
     }
     return out;
@@ -338,6 +354,7 @@ export default function Models() {
         sub="Every model's routing identity, capabilities and compatibility policy — the single place non-Claude routing on the Anthropic surface is configured."
         actions={
           <>
+            <LiveBadge updatedAt={updatedAt} intervalMs={LIVE_MS} />
             <button
               type="button"
               className="btn btn-secondary"
@@ -384,7 +401,9 @@ export default function Models() {
             </span>
             {lastRun !== null && lastRun.providers !== undefined && (
               <span className="hint" style={{ margin: 0 }}>
-                {lastRun.providers.map((p) => `${p.provider_id.slice(0, 12)}: +${p.added} ~${p.updated} −${p.removed}`).join(' · ')}
+                {lastRun.providers
+                  .map((p) => `${providerNames.get(p.provider_id) ?? p.provider_id.slice(0, 12)}: +${p.added} ~${p.updated} −${p.removed}`)
+                  .join(' · ')}
               </span>
             )}
             {syncRun.error !== null && (

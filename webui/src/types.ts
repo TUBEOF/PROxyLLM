@@ -106,6 +106,10 @@ export interface UsageRow {
   cache_read_tokens: number;
   requests: number;
   failures: number;
+  // Display projections (raw ids stay the fallback).
+  key_name?: string;
+  provider_name?: string;
+  provider_kind?: string;
 }
 
 export interface RequestLog {
@@ -127,6 +131,10 @@ export interface RequestLog {
   key_name?: string;
   key_prefix?: string;
   provider_name?: string;
+  // provider_kind is the provider TYPE's human label (e.g. "Ollama Cloud")
+  // — the PROVIDER column; provider_name is the account name the operator
+  // set — the ACCOUNT column.
+  provider_kind?: string;
 }
 
 // RunningRequest is one in-flight request on the SSE stream (a pseudo-row
@@ -146,18 +154,23 @@ export interface RunningRequest {
 
 // ChildLog is one sub-operation of a request (GET /api/admin/logs →
 // `children`, keyed by parent row id): a chain failover, a capability
-// (vision) fallback model walk, an emulated web-tool call, or a retry.
-// Rendered as its own nested row under the parent request.
+// (vision) fallback model walk, or an emulated web-tool call. Rendered as
+// its own nested row under the parent request.
 export interface ChildLog {
   id: number;
   parent_id: number;
   ts: number;
-  kind: 'failover' | 'capability_fallback' | 'emulated_tool' | 'retry' | string;
+  kind: 'failover' | 'capability_fallback' | 'emulated_tool' | string;
   provider_id?: string;
   model?: string;
   from_ref?: string;
   to_ref?: string;
   detail?: string;
+  // Display projections of the refs above (raw refs stay the fallback).
+  provider_name?: string;
+  provider_kind?: string;
+  from_name?: string;
+  to_name?: string;
 }
 
 export interface SettingsEntry {
