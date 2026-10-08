@@ -390,6 +390,7 @@ function LogDetail({ selected, subOps, names }: { selected: RequestLog; subOps: 
               {subOps.map((c) => (
                 <li key={c.id}>
                   <span className={childCls(c.kind)}>{childTitle(c)}</span>
+                  {(c.model ?? '') !== '' && <span className="mono">{c.model}</span>}
                   {childMeta(c) !== '' && <span className="child-op-detail mono">{childMeta(c)}</span>}
                 </li>
               ))}
