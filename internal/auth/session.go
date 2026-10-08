@@ -93,6 +93,17 @@ func AdminIDFromContext(ctx context.Context) string {
 	return id
 }
 
+type sessionIDHashCtxKey struct{}
+
+// SessionIDHashFromContext returns the hashed session id of the request
+// that passed RequireAdmin ("" otherwise). The password-change handler
+// uses it to keep the requesting session while revoking the admin's
+// others — the hash never leaves the server process except here.
+func SessionIDHashFromContext(ctx context.Context) string {
+	h, _ := ctx.Value(sessionIDHashCtxKey{}).(string)
+	return h
+}
+
 type rawSessionCtxKey struct{}
 
 // rawSessionIDFromContext exposes the raw (unhashed) session id to the
@@ -263,6 +274,7 @@ func (sm *SessionManager) RequireAdmin(next http.Handler) http.Handler {
 		}
 
 		ctx := context.WithValue(r.Context(), adminCtxKey{}, sess.AdminID)
+		ctx = context.WithValue(ctx, sessionIDHashCtxKey{}, idHash)
 		ctx = context.WithValue(ctx, rawSessionCtxKey{}, raw)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

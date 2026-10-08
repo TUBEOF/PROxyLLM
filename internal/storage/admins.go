@@ -65,6 +65,23 @@ func (s *Store) EnsureFirstAdmin(ctx context.Context, id, username, passwordHash
 	return tx.Commit()
 }
 
+// GetAdminByID resolves one admin row by id (the WebUI /me + password
+// change path; the session middleware resolves the row the same way
+// GetAdminByUsername does for login). Unknown ids are ErrNotFound.
+func (s *Store) GetAdminByID(ctx context.Context, id string) (*Admin, error) {
+	var a Admin
+	err := s.db.QueryRowContext(ctx,
+		`SELECT id, username, password_hash FROM webui_admins WHERE id = ?`, id).
+		Scan(&a.ID, &a.Username, &a.PasswordHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
 // GetAdminByUsername resolves the login lookup. Unknown usernames are
 // ErrNotFound — a single not-found shape the auth layer maps to a generic
 // 401 that never reveals whether the username exists.

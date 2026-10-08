@@ -70,6 +70,7 @@ admin account when none exists.
 | Group | Endpoints |
 |---|---|
 | Sessions | `POST /bootstrap`, `POST /login`, `POST /logout` |
+| Account | `GET /me` (the session admin's `{username}` — the avatar menu's identity), `PUT /password` (`{"current_password","new_password"}`; verifies Argon2id, enforces min. 8 chars, revokes every OTHER session of the admin — the requesting session stays; a wrong current password or a too-short new one is the uniform 400) |
 | Provider types (ADR-009) | `GET /provider-types` (catalog: labels, form field descriptors, auth kind), `GET /provider-types/{type}` (settings + accounts), `PUT /provider-types/{type}/settings`, `POST /provider-types/{type}/accounts` (server-minted id; api keys sealed in the token store; oauth drafts validate against the type settings' issuer) |
 | Providers | `GET /providers`, `PUT /providers/{id}`, `DELETE /providers/{id}`, `POST /providers/{id}/oauth/start`, `POST /providers/{id}/oauth/poll` |
 | Models | `GET /models`, `PUT /models/{id}`, `DELETE /models/{id}` (compat settings per model; rows carry the ADR-010 `origin` provenance) |

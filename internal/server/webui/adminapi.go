@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/tubeof/proxyllm/internal/auth"
 	"github.com/tubeof/proxyllm/internal/provider/codex"
@@ -211,6 +212,15 @@ func (a *AdminAPI) Handler() http.Handler {
 	mux.Handle("PUT /api/admin/settings", a.sessions.RequireAdmin(http.HandlerFunc(a.putSetting)))
 	mux.Handle("DELETE /api/admin/settings/{key}", a.sessions.RequireAdmin(http.HandlerFunc(a.deleteSetting)))
 
+	// Account (the Shell avatar menu): /me names the session's admin (the
+	// honest username the UI shows after a refresh), the password change
+	// verifies the current password (Argon2id, dummy-hash timing
+	// equalization like HandleLogin), then revokes every OTHER session of
+	// this admin (S-8 server-side revocation; this session survives so the
+	// operator is not logged out of the very tab that changed it).
+	mux.Handle("GET /api/admin/me", a.sessions.RequireAdmin(http.HandlerFunc(a.getMe)))
+	mux.Handle("PUT /api/admin/password", a.sessions.RequireAdmin(http.HandlerFunc(a.putPassword)))
+
 	return mux
 }
 
@@ -275,6 +285,114 @@ func newAdminID() string {
 		panic("webui: rand.Read failed: " + err.Error())
 	}
 	return "adm-" + hex.EncodeToString(raw)
+}
+
+// ---------------------------------------------------------------------------
+// Account (me / password change)
+// ---------------------------------------------------------------------------
+
+// minPasswordRunes is the WebUI password policy floor (the
+// handleBootstrap body's implicit floor was "" — never enforced there
+// because bootstrap is the only unauthenticated surface; this one is
+// session-gated and enforces it).
+const minPasswordRunes = 8
+
+// dummyArgon2PHC2 is the well-formed never-matching Argon2id PHC used to
+// equalize verification timing on the reject paths (same shape the auth
+// package's login dummy uses; duplicated here so the webui package does
+// not export/import a test-only constant).
+const dummyArgon2PHC2 = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA"
+
+// getMe answers the session's admin identity: the username the Shell
+// avatar menu renders (the honest-UI rule — never a fabricated name). The
+// admin id is the ONLY identity element the session context carries; the
+// store resolves the row.
+func (a *AdminAPI) getMe(w http.ResponseWriter, r *http.Request) {
+	username, err := a.currentAdminUsername(r)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"username": username})
+}
+
+// putPassword changes the session admin's password: current-password
+// verification (Argon2id + timing equalization), then the hash update and
+// the S-8 revocation of every OTHER session of this admin — stolen or
+// forgotten tabs die with the old password, the requesting session stays.
+func (a *AdminAPI) putPassword(w http.ResponseWriter, r *http.Request) {
+	adminID := auth.AdminIDFromContext(r.Context())
+	if adminID == "" {
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10) // Analysis G: bounded input
+	var req struct {
+		Current string `json:"current_password"`
+		New     string `json:"new_password"`
+	}
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+
+	admin, err := a.store.GetAdminByID(r.Context(), adminID)
+	if errors.Is(err, storage.ErrNotFound) {
+		// A session whose admin row vanished is dead state — uniform 401.
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	// Timing-equalized verification (the HandleLogin posture): a wrong
+	// current password and a too-short new one take the same argon2 path
+	// before the uniform error, so latency carries no decision.
+	newLen := utf8.RuneCountInString(req.New)
+	tooShort := newLen < minPasswordRunes
+	verified := storage.NewArgon2Hasher().Verify(admin.PasswordHash, req.Current)
+	if !tooShort && !verified {
+		// Equalize the too-short/no-verify branch's argon2 work.
+		storage.NewArgon2Hasher().Verify(dummyArgon2PHC2, req.Current)
+	}
+	if tooShort || !verified {
+		// Uniform "invalid request" for both — 400 vs 403 would confirm
+		// which part failed to a client probing the endpoint; the body's
+		// own message stays generic.
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	newHash, err := storage.NewArgon2Hasher().Hash(req.New)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if err := a.store.UpdateAdminPassword(r.Context(), adminID, newHash); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	// S-8 revocation: every OTHER session of this admin dies with the old
+	// password. This session's own row survives.
+	_, _ = a.store.DeleteOtherSessionsForAdmin(r.Context(), adminID, auth.SessionIDHashFromContext(r.Context()))
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// currentAdminUsername resolves the row the session context's admin id
+// names ("", never fabricated, when the row is gone).
+func (a *AdminAPI) currentAdminUsername(r *http.Request) (string, error) {
+	adminID := auth.AdminIDFromContext(r.Context())
+	if adminID == "" {
+		return "", storage.ErrNotFound
+	}
+	ad, err := a.store.GetAdminByID(r.Context(), adminID)
+	if err != nil {
+		return "", err
+	}
+	return ad.Username, nil
 }
 
 // ---------------------------------------------------------------------------

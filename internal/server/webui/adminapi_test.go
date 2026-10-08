@@ -1215,3 +1215,79 @@ func TestOAuthResponses_NeverEchoTokens(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Account: GET /api/admin/me + PUT /api/admin/password
+// (the Shell avatar menu: honest identity + password change; contract added
+// 2026-10-08 — spec: /me names the session admin, the password change
+// verifies the current password, enforces the length floor, and revokes
+// every OTHER session of this admin while the requesting session survives.)
+// ---------------------------------------------------------------------------
+
+func TestMe_NamesSessionAdmin(t *testing.T) {
+	env := newAdminEnv(t)
+	s := env.bootstrap(t, "operator")
+
+	w := env.authedCall(t, http.MethodGet, "/api/admin/me", "", s)
+	assertStatus(t, w, http.StatusOK, "me")
+	var res struct {
+		Username string `json:"username"`
+	}
+	decodeJSON(t, w, &res)
+	if res.Username != "operator" {
+		t.Errorf("me.username = %q, want operator", res.Username)
+	}
+
+	// Unauthenticated: uniform 401.
+	w = env.call(t, http.MethodGet, "/api/admin/me", "", "")
+	assertStatus(t, w, http.StatusUnauthorized, "me without session")
+}
+
+func TestPassword_ChangeRoundTrip(t *testing.T) {
+	env := newAdminEnv(t)
+	s := env.bootstrap(t, "operator")
+
+	// Wrong current password: uniform 400, password unchanged.
+	w := env.authedCall(t, http.MethodPut, "/api/admin/password",
+		`{"current_password":"wrong","new_password":"new-password-123"}`, s)
+	assertStatus(t, w, http.StatusBadRequest, "wrong current password")
+
+	// Old password still logs in.
+	s2 := env.login(t, "operator", testPassword)
+	if s2.sessionCookie == "" {
+		t.Fatal("old password login lost")
+	}
+
+	// Too-short new password: same uniform 400.
+	w = env.authedCall(t, http.MethodPut, "/api/admin/password",
+		fmt.Sprintf(`{"current_password":%q,"new_password":"short"}`, testPassword), s)
+	assertStatus(t, w, http.StatusBadRequest, "too short")
+
+	// The change.
+	w = env.authedCall(t, http.MethodPut, "/api/admin/password",
+		fmt.Sprintf(`{"current_password":%q,"new_password":"brand-new-password-9"}`, testPassword), s)
+	assertStatus(t, w, http.StatusOK, "password change")
+
+	// New password logs in; old one is dead.
+	assertStatus(t, w, http.StatusOK, "probe")
+	env.login(t, "operator", "brand-new-password-9")
+	w = env.call(t, http.MethodPost, "/api/admin/login",
+		fmt.Sprintf(`{"username":"operator","password":%q}`, testPassword), "")
+	assertStatus(t, w, http.StatusUnauthorized, "old password after change")
+}
+
+func TestPassword_OtherSessionsRevoked(t *testing.T) {
+	env := newAdminEnv(t)
+	s := env.bootstrap(t, "operator")
+	other := env.login(t, "operator", testPassword)
+
+	w := env.authedCall(t, http.MethodPut, "/api/admin/password",
+		fmt.Sprintf(`{"current_password":%q,"new_password":"brand-new-password-9"}`, testPassword), s)
+	assertStatus(t, w, http.StatusOK, "password change")
+
+	// The OTHER session (same admin) is dead; the requesting one lives.
+	w = env.call(t, http.MethodGet, "/api/admin/providers", "", other.cookieHeader())
+	assertStatus(t, w, http.StatusUnauthorized, "other session after change")
+	w = env.call(t, http.MethodGet, "/api/admin/me", "", s.cookieHeader())
+	assertStatus(t, w, http.StatusOK, "requesting session survives")
+}

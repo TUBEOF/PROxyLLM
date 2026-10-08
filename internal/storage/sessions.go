@@ -74,6 +74,19 @@ func (s *Store) DeleteSessionsForAdmin(ctx context.Context, adminID string) (int
 	return res.RowsAffected()
 }
 
+// DeleteOtherSessionsForAdmin removes every session of one admin EXCEPT
+// the id hash named keep — the password-change revocation: stolen or
+// forgotten tabs die with the old password while the tab that changed it
+// stays logged in.
+func (s *Store) DeleteOtherSessionsForAdmin(ctx context.Context, adminID, keepIDHash string) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM webui_sessions WHERE admin_id = ? AND id_hash != ?`, adminID, keepIDHash)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // PurgeExpiredSessions removes rows whose absolute expiry has passed and
 // returns the number removed — the housekeeping sweep that keeps abandoned
 // sessions (and stolen cookies) from outliving their window.
