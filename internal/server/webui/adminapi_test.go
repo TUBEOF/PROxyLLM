@@ -1291,3 +1291,22 @@ func TestPassword_OtherSessionsRevoked(t *testing.T) {
 	w = env.call(t, http.MethodGet, "/api/admin/me", "", s.cookieHeader())
 	assertStatus(t, w, http.StatusOK, "requesting session survives")
 }
+
+// contract added with the account endpoints (2026-10-08, round-2 review): a
+// session whose admin row vanished is dead state — /me answers the uniform
+// 401 (the shape putPassword answers), never a 404 that would distinguish
+// "row gone" from "session invalid".
+func TestMe_GoneAdminRowIsUniform401(t *testing.T) {
+	env := newAdminEnv(t)
+	s := env.bootstrap(t, "operator")
+	// Simulate the vanished row: drop the admins table row behind the
+	// session (the store offers no DeleteAdmin — the SQL is direct).
+	if err := env.st.DeleteAdminByUsername(context.Background(), "operator"); err != nil {
+		t.Fatalf("delete admin: %v", err)
+	}
+	w := env.authedCall(t, http.MethodGet, "/api/admin/me", "", s)
+	assertStatus(t, w, http.StatusUnauthorized, "me with vanished admin row")
+	w = env.authedCall(t, http.MethodPut, "/api/admin/password",
+		`{"current_password":"whatever-1","new_password":"whatever-2"}`, s)
+	assertStatus(t, w, http.StatusUnauthorized, "password with vanished admin row")
+}

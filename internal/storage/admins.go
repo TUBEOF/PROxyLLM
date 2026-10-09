@@ -116,3 +116,22 @@ func (s *Store) UpdateAdminPassword(ctx context.Context, id, passwordHash string
 	}
 	return nil
 }
+
+// DeleteAdminByUsername removes one admin row. There is NO admin-API path
+// to it — it exists for the dead-state test (a session whose admin row
+// vanished must answer the uniform 401) and the future account-delete
+// path; a live instance never calls it on the request path.
+func (s *Store) DeleteAdminByUsername(ctx context.Context, username string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM webui_admins WHERE username = ?`, username)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
