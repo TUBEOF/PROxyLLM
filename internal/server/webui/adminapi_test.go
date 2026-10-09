@@ -1296,11 +1296,16 @@ func TestPassword_OtherSessionsRevoked(t *testing.T) {
 // session whose admin row vanished is dead state — /me answers the uniform
 // 401 (the shape putPassword answers), never a 404 that would distinguish
 // "row gone" from "session invalid".
+// (the test name stays: the observable contract IS the uniform 401; the
+// comment above says what it pins it through.)
 func TestMe_GoneAdminRowIsUniform401(t *testing.T) {
 	env := newAdminEnv(t)
 	s := env.bootstrap(t, "operator")
 	// Simulate the vanished row: drop the admins table row behind the
-	// session (the store offers no DeleteAdmin — the SQL is direct).
+	// session (DeleteAdminByUsername — test-only, no request path). The
+	// FK cascade (webui_sessions.admin_id ON DELETE CASCADE) takes the
+	// session with it, so RequireAdmin answers the uniform 401 first;
+	// that IS the observable contract pinned here (dead session ⇒ 401).
 	if err := env.st.DeleteAdminByUsername(context.Background(), "operator"); err != nil {
 		t.Fatalf("delete admin: %v", err)
 	}

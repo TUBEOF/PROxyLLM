@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from './AuthContext';
 import { apiCall } from '../api';
@@ -71,8 +71,11 @@ export default function UserMenu() {
 
   // Live position: the menu re-anchors on resize/scroll while open (the
   // snapshot-at-open form detached it from the avatar on viewport changes).
+  // useLayoutEffect measures BEFORE the first paint — with useEffect the
+  // portal's first frame painted at the fallback corner and snapped under
+  // the avatar (a visible flash on every open).
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) {
       setPos(null);
       return;
