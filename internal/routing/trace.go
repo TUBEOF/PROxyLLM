@@ -27,7 +27,9 @@ const (
 	EventAlias EventType = "alias"
 
 	// EventSkipped: a chain entry was skipped (capability gap, health
-	// cooldown, provider not registered).
+	// cooldown, provider not registered) — or, for a capability fallback,
+	// because its declared context window cannot hold the request
+	// (ADR-013).
 	EventSkipped EventType = "skipped"
 
 	// EventAttempt: an upstream attempt started.

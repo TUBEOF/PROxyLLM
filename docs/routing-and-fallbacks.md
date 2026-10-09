@@ -92,7 +92,28 @@ REALLY rejected the request at the upstream (HTTP 400 naming the input
 modality — image, multimodal, unsupported content), never to rescue an
 unresolvable chain (that stays the no-route error).
 
-**Automatic capability learning**: every `capability_gap` rejection
+**Context-window gate (ADR-013, 2026-10-09)**: the vision fallback re-sends
+the WHOLE conversation, so a fallback model smaller than the request can
+never serve it. Each fallback entry therefore carries its model row's
+declared `context_window` (written by the model sync from provider
+discovery, `models.compat.context_window`); before the walk the executor
+drops every entry whose window cannot hold the request's estimated input
+tokens and records a `skipped` event naming both numbers. An **undeclared**
+window (`0`) is never a reason to skip — the entry is attempted, and a real
+overflow fails over to the next one. If every entry is too small, the
+request ends with the ORIGINAL `capability_gap` error, so the operator sees
+why the fallback was consulted at all.
+
+**Context-window rejections fail over (ADR-013, 2026-10-09)**: a 400 whose
+body code (`context_length_exceeded`) or message says the input exceeds the
+model's window is its own class, `context_window_exceeded`, and **fails
+over** — it is not a client error. The request is well-formed; only a
+larger target can serve it. Vendors word this differently ("prompt is too
+long", "maximum context length", "input length exceeds the context length",
+…), so the matcher consults the body code and the message. Before this
+class existed such a 400 was terminal, which meant the fallback walk died
+on its first model instead of reaching a larger one further down the list.
+
 **Wiring note (2026-10-06)**: the two web-tool lists are now CONSUMED —
 until this fix the pool was assembled in registry account order and the
 stored lists were validated but ignored. Pool assembly resolves each

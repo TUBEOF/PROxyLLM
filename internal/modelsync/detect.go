@@ -48,22 +48,6 @@ func detectedCompat(info provider.ModelInfo) json.RawMessage {
 	return blob
 }
 
-// compatContextWindow extracts a non-zero context_window pin from a
-// compat blob; malformed blobs read as unpinned (store noise: the write
-// boundary enforces the shape; degrade here like every read does).
-func compatContextWindow(compat json.RawMessage) int {
-	if len(compat) == 0 {
-		return 0
-	}
-	var blob struct {
-		ContextWindow int `json:"context_window"`
-	}
-	if err := json.Unmarshal(compat, &blob); err != nil {
-		return 0
-	}
-	return blob.ContextWindow
-}
-
 // blobIsEmpty reports whether a stored JSON blob carries no content —
 // missing, null, or the empty object the write boundary normalizes empty
 // values to. An empty blob is operator-unset: detection may fill it.
@@ -92,7 +76,7 @@ func mergeDetected(row storage.Model, info provider.ModelInfo) (storage.Model, b
 		row.Capabilities = detectedCaps(info)
 		changed = true
 	}
-	pinned := compatContextWindow(row.Compat) > 0
+	pinned := storage.ContextWindowFromCompat(row.Compat) > 0
 	emptyCompat := blobIsEmpty(row.Compat)
 	if info.ContextLength > 0 && !pinned {
 		// Merge into the existing blob so other operator keys survive;

@@ -185,7 +185,7 @@ func (a *api) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 	// (no upstream dispatch to trace).
 	r = a.beginRequest(r, protocolAnthropic, raw, req)
 
-	estimate := countTokensHeuristic(req)
+	estimate := req.EstimateTokens()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"input_tokens":` + strconv.Itoa(estimate) +
@@ -195,39 +195,7 @@ func (a *api) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		req.Model, "", http.StatusOK, 0, nil, nil, "")
 }
 
-// countTokensHeuristic estimates input tokens as chars/4 over system +
-// messages + tool schemas (Analysis D, calibrated against the observed
-// ~4 chars/token ratio; C1 mandates the heuristic marking).
-func countTokensHeuristic(req ir.Request) int {
-	chars := 0
-	for _, sp := range req.System {
-		chars += len(sp.Text)
-	}
-	for _, msg := range req.Messages {
-		for _, part := range msg.Parts {
-			switch p := part.(type) {
-			case ir.TextPart:
-				chars += len(p.Text)
-			case ir.ToolCallPart:
-				chars += len(p.Input)
-			case ir.ToolResultPart:
-				for _, sub := range p.Content {
-					if t, ok := sub.(ir.TextPart); ok {
-						chars += len(t.Text)
-					}
-				}
-			case ir.ImagePart:
-				// Images are not char-countable; a flat image allowance.
-				chars += 1024
-			}
-		}
-	}
-	for _, tool := range req.Tools {
-		chars += len(tool.Name) + len(tool.Description) + len(tool.InputSchema)
-	}
-	tokens := chars / 4
-	if tokens < 1 {
-		tokens = 1
-	}
-	return tokens
-}
+// The estimator itself lives in the IR package (ir.Request.EstimateTokens,
+// moved there 2026-10-09): the routing executor's capability-fallback
+// context gate compares the same figure against a fallback model's declared
+// window, and two copies of a heuristic drift apart silently.

@@ -1,0 +1,7 @@
+{
+  "fixture": "context-length-exceeded.json",
+  "source": "https://docs.anthropic.com/en/api/errors",
+  "accessed": "2026-10-09",
+  "facts": ["FO-6"],
+  "notes": "400 invalid_request_error, message \"prompt is too long: N tokens > M maximum\". The Anthropic surface returns NO distinct error.code for this case — the message text is the only vendor signal, so the matcher must consult the message (LiteLLM matches \"prompt is too long\" / \"prompt: length\" too, read 2026-10-09)."
+}

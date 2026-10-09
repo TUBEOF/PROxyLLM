@@ -3,6 +3,7 @@ package routing
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync"
 	"time"
 
@@ -252,11 +253,48 @@ func (e *Executor) walkChain(ctx context.Context, chain []ChainEntry, req ir.Req
 	if gapOnly && attempted > 0 && allowFallback {
 		fallbacks := e.currentCapabilityFallbacks()
 		if len(fallbacks) > 0 {
-			e.traceCapabilityFallback(trace, lastProviderOf(chain), fallbacks)
-			return e.walkChain(ctx, fallbacks, req, trace, false)
+			eligible := e.gateFallbacks(req, fallbacks, trace)
+			if len(eligible) > 0 {
+				e.traceCapabilityFallback(trace, lastProviderOf(chain), eligible)
+				return e.walkChain(ctx, eligible, req, trace, false)
+			}
+			// Every fallback model cannot hold the request: the walk would
+			// dispatch nothing and return an empty exhaustion. Record the
+			// consultation (never silent) and fall through to return the
+			// ORIGINAL gap error — the operator must see that the primary
+			// model could not serve the modality, not a side effect of the
+			// rescue that never happened.
+			trace.CapabilityFallback("vision",
+				"chain exhausted on capability gaps; every capability fallback model is too small for the request context")
 		}
 	}
 	return ir.Response{}, &exhaustedError{last: lastErr}
+}
+
+// gateFallbacks drops capability-fallback entries whose DECLARED context
+// window cannot hold the request (FO-6 companion, 2026-10-09), recording
+// each skip. The fallback re-sends the whole conversation, so an entry
+// smaller than the request can never serve it: dispatching it burns an
+// attempt and, before FO-6, was terminal — which is what made a long
+// session's vision fallback die on the first fallback model instead of
+// reaching a larger one.
+//
+// An unknown window (MaxContext 0) is never a reason to skip: the estimate
+// is a lower bound (images are flat-charged) and silently dropping a
+// fallback that might work is worse than one wasted attempt the FO-6 class
+// fails over.
+func (e *Executor) gateFallbacks(req ir.Request, fallbacks []ChainEntry, trace *Trace) []ChainEntry {
+	need := req.EstimateTokens()
+	out := make([]ChainEntry, 0, len(fallbacks))
+	for _, fb := range fallbacks {
+		if fb.MaxContext > 0 && need > fb.MaxContext {
+			trace.Skip(fb.ProviderID, "capability fallback model context window too small: request needs ~"+
+				strconv.Itoa(need)+" tokens, model holds "+strconv.Itoa(fb.MaxContext))
+			continue
+		}
+		out = append(out, fb)
+	}
+	return out
 }
 
 // traceCapabilityFallback records the capability-fallback consultation and
@@ -574,8 +612,15 @@ func (e *Executor) walkChainStream(ctx context.Context, chain []ChainEntry, req 
 	if gapOnly && attempted > 0 && allowFallback {
 		fallbacks := e.currentCapabilityFallbacks()
 		if len(fallbacks) > 0 {
-			e.traceCapabilityFallback(trace, lastProviderOf(chain), fallbacks)
-			return e.walkChainStream(ctx, fallbacks, req, trace, false)
+			eligible := e.gateFallbacks(req, fallbacks, trace)
+			if len(eligible) > 0 {
+				e.traceCapabilityFallback(trace, lastProviderOf(chain), eligible)
+				return e.walkChainStream(ctx, eligible, req, trace, false)
+			}
+			// Same contract as the complete path: record the consultation
+			// and let the original gap error surface.
+			trace.CapabilityFallback("vision",
+				"chain exhausted on capability gaps; every capability fallback model is too small for the request context")
 		}
 	}
 	return nil, func() {}, &exhaustedError{last: lastErr}

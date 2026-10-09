@@ -16,8 +16,11 @@ resolution, per-model compatibility policies (Analysis E).
 1. **Key scope** — client key's allowed model patterns.
 2. **Model match** — exact, wildcard, alias map (Claude Code aliases →
    configured primary models).
-3. **Capability filter** — from request content: vision, web_search,
-   web_fetch, code_execution, streaming, max_context.
+3. **Capability filter** — from request content: web_search, web_fetch,
+   code_execution, streaming, thinking. Vision is deliberately NOT gated
+   here (2026-09-21): a vision request goes out, and a real upstream
+   rejection fails over. The context window is likewise not gated on the
+   rule chain — the fallback walk gates on it instead (ADR-013).
 4. **Chain resolution** — ordered provider/model fallback chain; providers
    failing the capability filter are skipped with a logged reason.
 5. **Health gate** — circuit breaker (consecutive failures), exponential

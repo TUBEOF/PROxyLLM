@@ -350,3 +350,116 @@ func TestServer_FallbackWriteLiveSwapsModels(t *testing.T) {
 		t.Fatalf("after swap: status %d, body %s (fb-two must serve — live swap failed)", status, body)
 	}
 }
+
+// visionFallbackChat issues one image-bearing chat request whose text body
+// is sized to exceed the smaller fallback model's declared window.
+func visionFallbackChat(t *testing.T, ts *httptest.Server, key string, textChars int) (int, string) {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{
+		"model": "ollamacloud/chat-model",
+		"messages": []map[string]any{{
+			"role": "user",
+			"content": []map[string]any{
+				{"type": "text", "text": strings.Repeat("a", textChars)},
+				{"type": "image_url", "image_url": map[string]string{"url": "data:image/png;base64,x"}},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions", strings.NewReader(string(payload)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := ensureBodyClosed(t, resp)
+	return resp.StatusCode, body
+}
+
+// TestServer_VisionFallbackSkipsTooSmallModel is the regression for the
+// 2026-10-09 report: a long session (larger than a fallback model's window)
+// that grows an image. The primary rejects the modality; the FIRST fallback
+// model declares a window smaller than the conversation and must be skipped
+// BEFORE dispatch, so the second (large enough) model serves it.
+//
+// Before FO-6 the walk dispatched the too-small model, got a context-length
+// 400, classified it terminal, and died there — the client saw a 400 it had
+// not caused, and the model that could actually serve it was never tried.
+func TestServer_VisionFallbackSkipsTooSmallModel(t *testing.T) {
+	ctx := context.Background()
+	cfg := newConfig(t)
+
+	st, err := storage.Open(cfg.Storage)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+
+	for _, id := range []string{"mock-main", "mock-small", "mock-big"} {
+		if err := st.EnsureProvider(ctx, id, "custom", id); err != nil {
+			t.Fatalf("ensure provider: %v", err)
+		}
+	}
+	for _, m := range []storage.Model{
+		{ID: "ollamacloud/chat-model", ProviderID: "mock-main", Name: "chat-model"},
+		// small-vision declares a 128000-token window; big-vision a 1M one.
+		{ID: "ollamacloud/small-vision", ProviderID: "mock-small", Name: "small-vision",
+			Compat: json.RawMessage(`{"context_window":128000}`)},
+		{ID: "ollamacloud/big-vision", ProviderID: "mock-big", Name: "big-vision",
+			Compat: json.RawMessage(`{"context_window":1000000}`)},
+	} {
+		if err := st.PutModel(ctx, m); err != nil {
+			t.Fatalf("put model %s: %v", m.ID, err)
+		}
+	}
+	if err := st.PutRoutingRule(ctx, storage.RoutingRule{
+		ID: "r1", MatchModel: "ollamacloud/chat-model", Chain: []string{"mock-main"}, Priority: 100, Enabled: true,
+	}); err != nil {
+		t.Fatalf("put rule: %v", err)
+	}
+	if err := st.PutVisionFallback(ctx, []string{"ollamacloud/small-vision", "ollamacloud/big-vision"}); err != nil {
+		t.Fatalf("put vision fallback: %v", err)
+	}
+
+	main := mockprovider.New(t)
+	small := mockprovider.New(t)
+	big := mockprovider.New(t)
+	srv, err := New(&cfg, st, nil,
+		WithProvider(main.Provider("mock-main", providerAllCaps())),
+		WithProvider(small.Provider("mock-small", providerAllCaps())),
+		WithProvider(big.Provider("mock-big", providerAllCaps())),
+		WithMasterKey(wiringMasterKey(t)),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	_, key, err := authCreateKey(ctx, st)
+	if err != nil {
+		t.Fatalf("create key: %v", err)
+	}
+
+	// The primary rejects the image; `small` is deliberately left with NO
+	// script — if the gate let it through, its (empty-queue) 500 would still
+	// let `big` answer, so the Requests() assertion below is the real check.
+	main.Enqueue(gapRejectedScript())
+	big.Enqueue(mockprovider.NewScript().JSONResponse(http.StatusOK,
+		`{"id":"c","object":"chat.completion","model":"big-vision","choices":[{"index":0,"message":{"role":"assistant","content":"from-big-vision"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`, nil))
+
+	// 600000 chars ≈ 150000 tokens > small-vision's declared 128000.
+	status, body := visionFallbackChat(t, ts, key, 600000)
+	if status != http.StatusOK || !strings.Contains(body, "from-big-vision") {
+		t.Fatalf("long-session vision fallback: status %d, body %s (the large model must serve)", status, body)
+	}
+	if got := len(small.Requests()); got != 0 {
+		t.Errorf("the too-small fallback model received %d request(s), want 0 — the gate must skip it before dispatch", got)
+	}
+	if got := len(big.Requests()); got != 1 {
+		t.Errorf("the large fallback model received %d request(s), want 1", got)
+	}
+}

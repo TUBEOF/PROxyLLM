@@ -46,6 +46,15 @@ type Rule struct {
 type ChainEntry struct {
 	ProviderID string
 	Model      string
+
+	// MaxContext is the target model's declared context window in tokens
+	// (0 = unknown). Only the capability-fallback entries carry it (the
+	// httpapi resolver reads each fallback model row's compat blob); the
+	// rule chain leaves it 0 and relies on the FO-6 context-window class to
+	// fail over instead. The executor's fallback gate skips an entry whose
+	// window cannot hold the request, so a 200k fallback model is never
+	// handed a 400k conversation.
+	MaxContext int
 }
 
 // Router resolves requests to deterministic fallback chains (plan

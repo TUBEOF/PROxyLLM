@@ -1,0 +1,7 @@
+{
+  "fixture": "context-length-exceeded.json",
+  "source": "https://developers.openai.com/api/docs/guides/error-codes",
+  "accessed": "2026-10-09",
+  "facts": ["FO-6"],
+  "notes": "400 invalid_request_error with code context_length_exceeded: the request is well-formed, the target model's window is too small. Same shape as the 400 tier of openai/error.json; only the code distinguishes it. Sibling wording in the wild (LiteLLM is_error_str_context_window_exceeded, read 2026-10-09): \"maximum context limit\", \"exceed context limit\", \"input tokens exceed the configured limit\"."
+}

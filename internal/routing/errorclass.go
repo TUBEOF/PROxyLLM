@@ -86,6 +86,16 @@ const (
 	// when the whole chain failed this way.
 	ClassCapabilityGap Class = "capability_gap"
 
+	// ClassContextWindow: a 400 whose body code or message says the input
+	// exceeds the target model's context window — the request is valid, the
+	// model is too small. Fail over pre-stream (FO-6, 2026-10-09): another
+	// chain entry, or a capability fallback model with a larger window, may
+	// serve it. This class reaches the capability-fallback walk with a live
+	// request, so classifying it terminal is exactly what made a vision
+	// fallback die on the first (too small) fallback model instead of trying
+	// the next.
+	ClassContextWindow Class = "context_window_exceeded"
+
 	// ClassTransport: no HTTP response at all (connection refused, TLS
 	// reset, timeout) — retryable/failover pre-stream (FO-1).
 	ClassTransport Class = "transport"
@@ -115,6 +125,7 @@ type Classification struct {
 //	  content_filter /
 //	  content_policy_violation     → content_filter → NEVER fail over
 //	  insufficient_quota           → insufficient_quota → failover immediately
+//	  context_length_exceeded      → context_window → failover (FO-6; the model is too small, the request is fine)
 //	Tier 1 (HTTP status, when no known body code):
 //	  429                          → rate_limit    → retry same
 //	  408, 5xx, 529                → server_error  → failover fast
@@ -163,6 +174,14 @@ func classifyPreStream(err error) Classification {
 		// not a capability statement.
 		if status == 400 && capabilityGapSignal(code, err) {
 			return Classification{Class: ClassCapabilityGap, Action: ActionFailOver}
+		}
+		// Context-window tier (FO-6, 2026-10-09): the same shape as the gap
+		// tier — a 400 the request cannot fix, only a different target can.
+		// Consulted AFTER the modality tier so a rejection that names both
+		// (a vision-less model that also overflows) stays a capability gap:
+		// the modality is the fact the operator configured a fallback for.
+		if status == 400 && contextWindowSignal(code, err) {
+			return Classification{Class: ClassContextWindow, Action: ActionFailOver}
 		}
 		// No known body code (or none at all): fall through to tier 1.
 		return classifyByStatus(status)
@@ -229,6 +248,51 @@ func capabilityGapSignal(bodyCode string, err error) bool {
 	// ("image input", "images are not supported"; not "imagesque").
 	for _, stem := range []string{"image", "images", "multimodal"} {
 		if wordBounded(msg, stem) {
+			return true
+		}
+	}
+	return false
+}
+
+// contextWindowSignal reports whether the body code or the message text
+// says the INPUT is larger than the target model's context window (FO-6,
+// 2026-10-09). Like the modality heuristic this is necessarily textual:
+// only OpenAI and OpenRouter ship a stable body code
+// ("context_length_exceeded"); Anthropic, Gemini, Mistral, llama.cpp and
+// Bedrock state the overflow in prose only, in mutually different words.
+// The substring list below is LiteLLM's
+// ExceptionCheckers.is_error_str_context_window_exceeded (read 2026-10-09),
+// the broadest published fingerprint set, restricted to the phrasings that
+// cannot be produced by an unrelated 400 (a bare "token" or "length" test
+// would swallow validation errors such as "max_tokens must be greater than
+// 0", which must stay terminal).
+func contextWindowSignal(bodyCode string, err error) bool {
+	if bodyCode == "context_length_exceeded" || bodyCode == "context_window_exceeded" {
+		return true
+	}
+	var ue *provider.UpstreamError
+	if !errors.As(err, &ue) {
+		return false
+	}
+	msg := strings.ToLower(ue.Message)
+	for _, marker := range []string{
+		"maximum context length",                       // OpenAI, Azure, Mistral, OpenRouter
+		"maximum context limit",                        // OpenAI siblings
+		"exceeds the model's maximum context",          // Azure
+		"longer than the model's context",              // provider-neutral wording
+		"exceed context limit",                         // LiteLLM list
+		"exceeds the available context size",           // llama.cpp / Lemonade
+		"input tokens exceed the configured limit",     // LiteLLM list
+		"exceeds the maximum number of tokens allowed", // Gemini
+		"maximum input length",                         // Cerebras
+		"prompt is too long",                           // Anthropic
+		"prompt: length",                               // Anthropic siblings
+		"input length exceeds the context length",      // llama.cpp
+		"too many input tokens",                        // Bedrock
+		"too many tokens",                              // Bedrock
+		"input is too long",                            // Bedrock
+	} {
+		if strings.Contains(msg, marker) {
 			return true
 		}
 	}
