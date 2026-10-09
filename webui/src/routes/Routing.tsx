@@ -250,6 +250,11 @@ function AliasCard() {
     }
   }, [aliases, save, reloadSettings]);
 
+  // Features degrade explicitly, never silently: a failed save renders the
+  // server's message (the useMutation error carries it; save.run returned
+  // null) — the operator must never believe a save that did not happen.
+  const submitError = save.error ?? saveError;
+
   const dirty = useMemo(() => {
     if (settingsData === null || aliases === null) return false;
     const raw = settingsData.entries.find((e) => e.key === ALIASES_KEY)?.value ?? '{}';
@@ -271,8 +276,8 @@ function AliasCard() {
           Claude Code&apos;s <span className="mono">sonnet</span>/<span className="mono">haiku</span> family names map onto
           whatever model serves them here.
         </p>
-        {saveError !== null && (
-          <p role="alert" className="form-note">{saveError}</p>
+        {submitError !== null && (
+          <p role="alert" className="form-note">{submitError}</p>
         )}
         {aliases === null ? (
           <p className="hint">Loading aliases…</p>

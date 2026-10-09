@@ -158,6 +158,9 @@ function LogRowInner({
         </td>
         <td className="primary child-model" title={c.model || meta || undefined}>
           {c.model || <span className="txt-muted">{meta || '—'}</span>}
+          {c.model !== '' && meta !== '' && (
+            <span className="cell-sub mono child-meta">{meta}</span>
+          )}
         </td>
         <td>
           {c.provider_kind || c.provider_name ? (

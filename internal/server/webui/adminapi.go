@@ -309,8 +309,14 @@ const dummyArgon2PHC2 = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA"
 // store resolves the row.
 func (a *AdminAPI) getMe(w http.ResponseWriter, r *http.Request) {
 	username, err := a.currentAdminUsername(r)
+	if errors.Is(err, storage.ErrNotFound) {
+		// Dead-session state (admin row gone / no id in ctx): uniform 401,
+		// the same shape putPassword answers — never a 404.
+		writeError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
 	if err != nil {
-		writeStoreError(w, err)
+		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"username": username})
@@ -349,20 +355,18 @@ func (a *AdminAPI) putPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Timing-equalized verification (the HandleLogin posture): a wrong
-	// current password and a too-short new one take the same argon2 path
-	// before the uniform error, so latency carries no decision.
-	newLen := utf8.RuneCountInString(req.New)
-	tooShort := newLen < minPasswordRunes
+	// Timing-equalized verification: EVERY reject path costs two argon2
+	// verifies (the real hash + the never-matching dummy), so latency on a
+	// 400 cannot distinguish "wrong current password" from "too short" —
+	// a stolen-session attacker probing the endpoint must not be able to
+	// confirm a password guess by latency (the same posture HandleLogin
+	// has against username probes).
+	tooShort := utf8.RuneCountInString(req.New) < minPasswordRunes
 	verified := storage.NewArgon2Hasher().Verify(admin.PasswordHash, req.Current)
-	if !tooShort && !verified {
-		// Equalize the too-short/no-verify branch's argon2 work.
-		storage.NewArgon2Hasher().Verify(dummyArgon2PHC2, req.Current)
-	}
+	storage.NewArgon2Hasher().Verify(dummyArgon2PHC2, req.Current)
 	if tooShort || !verified {
-		// Uniform "invalid request" for both — 400 vs 403 would confirm
-		// which part failed to a client probing the endpoint; the body's
-		// own message stays generic.
+		// Uniform "invalid request" for both — the body's message never
+		// says which of the two checks failed.
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
@@ -382,7 +386,9 @@ func (a *AdminAPI) putPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 // currentAdminUsername resolves the row the session context's admin id
-// names ("", never fabricated, when the row is gone).
+// names. A session whose admin row vanished is dead state — the same
+// uniform 401 shape putPassword answers (never a 404: it would tell the
+// caller the row is gone rather than the session no longer being valid).
 func (a *AdminAPI) currentAdminUsername(r *http.Request) (string, error) {
 	adminID := auth.AdminIDFromContext(r.Context())
 	if adminID == "" {

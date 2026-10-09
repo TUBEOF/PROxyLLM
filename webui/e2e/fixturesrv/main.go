@@ -311,7 +311,7 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 			Timestamp: base - 300, ClientKeyID: "ckey-claude-code", ProviderID: "prv-ollama",
 			Model: "llama3.3-70b", Status: 200, LatencyMS: 1930,
 			Usage:          json.RawMessage(`{"input_tokens":1204,"output_tokens":502}`),
-			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"llama3.3-70b","to":"llama3.3-70b","provider_id":"prv-ollama"},{"type":"attempt","provider_id":"prv-openai","model":"claude-sonnet-5"},{"type":"failover","from":"prv-openai/claude-sonnet-5","to":"prv-ollama/llama3.3-70b","reason":"upstream 503"},{"type":"attempt","provider_id":"prv-ollama","model":"llama3.3-70b"},{"type":"compat_policy","policy":"thinking_handling","applied":"map-to-reasoning-effort"}]}`),
+			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"llama3.3-70b","to":"llama3.3-70b","provider_id":"prv-ollama"},{"type":"attempt","provider_id":"prv-openai","model":"claude-sonnet-5"},{"type":"failover","from":"prv-openai","to":"prv-ollama","reason":"upstream 503"},{"type":"attempt","provider_id":"prv-ollama","model":"llama3.3-70b"},{"type":"compat_policy","policy":"thinking_handling","applied":"map-to-reasoning-effort"}]}`),
 			ConversationID: "conv_a1b2c3d4", ConvKey: "sess:11223344-5566-7788-99aa-bbccddeeff00",
 			Protocol: "anthropic", Features: json.RawMessage(`{"streaming":true,"tools":true,"thinking":true,"web_search":false,"web_fetch":false,"vision":false}`),
 		},
