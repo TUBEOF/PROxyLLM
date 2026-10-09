@@ -215,7 +215,6 @@ function AliasCard() {
 
   const [aliases, setAliases] = useState<Record<string, string> | null>(null);
   const [seeded, setSeeded] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const save = useMutation();
 
   useEffect(() => {
@@ -241,19 +240,15 @@ function AliasCard() {
 
   const submit = useCallback(async () => {
     if (aliases === null) return;
+    // run() resolves the value on success, null on failure — the thrown
+    // path's error lands in save.error, which the render shows directly
+    // (reading save.error HERE would see the previous run's state — the
+    // v1.0.2 stale-mutation lesson; branch on the ok return instead).
     const ok = await save.run(() =>
       apiCall('PUT', '/api/admin/settings', { key: ALIASES_KEY, value: JSON.stringify(aliases) }),
     );
-    if (ok !== null) {
-      setSaveError(null);
-      reloadSettings();
-    }
+    if (ok !== null) reloadSettings();
   }, [aliases, save, reloadSettings]);
-
-  // Features degrade explicitly, never silently: a failed save renders the
-  // server's message (the useMutation error carries it; save.run returned
-  // null) — the operator must never believe a save that did not happen.
-  const submitError = save.error ?? saveError;
 
   const dirty = useMemo(() => {
     if (settingsData === null || aliases === null) return false;
@@ -276,8 +271,8 @@ function AliasCard() {
           Claude Code&apos;s <span className="mono">sonnet</span>/<span className="mono">haiku</span> family names map onto
           whatever model serves them here.
         </p>
-        {submitError !== null && (
-          <p role="alert" className="form-note">{submitError}</p>
+        {save.error !== null && (
+          <p role="alert" className="form-note">{save.error}</p>
         )}
         {aliases === null ? (
           <p className="hint">Loading aliases…</p>
