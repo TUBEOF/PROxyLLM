@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from './AuthContext';
 import { apiCall } from '../api';
@@ -70,6 +69,27 @@ export default function UserMenu() {
     };
   }, [open]);
 
+  // Live position: the menu re-anchors on resize/scroll while open (the
+  // snapshot-at-open form detached it from the avatar on viewport changes).
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  useEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const measure = () => {
+      const rect = avatarRef.current?.getBoundingClientRect();
+      if (rect) setPos({ top: rect.bottom + 8, left: Math.max(rect.right - 210, 8) });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    window.addEventListener('scroll', measure, true);
+    return () => {
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('scroll', measure, true);
+    };
+  }, [open]);
+
   return (
     <div ref={rootRef} style={{ position: 'relative' }}>
       <button
@@ -87,40 +107,42 @@ export default function UserMenu() {
       </button>
       {open &&
         createPortal(
-          (() => {
-            const rect = avatarRef.current?.getBoundingClientRect();
-            const style: CSSProperties = rect
-              ? { position: 'fixed', top: rect.bottom + 8, left: Math.max(rect.right - 210, 8) }
-              : { position: 'fixed', right: 24, top: 64 };
-            return (
-              <div ref={menuRef} className="user-menu" role="menu" aria-label="Account" style={style}>
-                <div className="user-menu-head">
-                  <span className="user-menu-name">{username ?? 'Admin'}</span>
-                  <span className="hint">signed in</span>
-                </div>
-                <button
-                  type="button"
-                  className="user-menu-item"
-                  role="menuitem"
-                  onClick={() => {
-                    setOpen(false);
-                    setSettingsOpen(true);
-                  }}
-                >
-                  Account settings
-                </button>
-                <button
-                  type="button"
-                  className="user-menu-item user-menu-signout"
-                  role="menuitem"
-                  onClick={() => void signOut()}
-                >
-                  <IconLogout width="15" height="15" />
-                  Sign out
-                </button>
-              </div>
-            );
-          })(),
+          <div
+            ref={menuRef}
+            className="user-menu"
+            role="menu"
+            aria-label="Account"
+            style={
+              pos
+                ? { position: 'fixed', top: pos.top, left: pos.left }
+                : { position: 'fixed', right: 24, top: 64 }
+            }
+          >
+            <div className="user-menu-head">
+              <span className="user-menu-name">{username ?? 'Admin'}</span>
+              <span className="hint">signed in</span>
+            </div>
+            <button
+              type="button"
+              className="user-menu-item"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                setSettingsOpen(true);
+              }}
+            >
+              Account settings
+            </button>
+            <button
+              type="button"
+              className="user-menu-item user-menu-signout"
+              role="menuitem"
+              onClick={() => void signOut()}
+            >
+              <IconLogout width="15" height="15" />
+              Sign out
+            </button>
+          </div>,
           document.body,
         )}
       {settingsOpen &&
