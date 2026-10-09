@@ -521,7 +521,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 .num-to{color:var(--status-up)}
 .num-cr{color:var(--status-info)}
 .log-row{cursor:pointer}
-.log-row:hover{background:var(--surface-raised)}
+.log-row:hover{background:var(--row-hover)}
 /* Running-row spinner dot */
 .b-dot-spin{animation:b-dot-pulse 1.2s ease-in-out infinite}
 @keyframes b-dot-pulse{0%,100%{opacity:.35}50%{opacity:1}}
