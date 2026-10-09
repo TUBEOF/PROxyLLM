@@ -455,7 +455,13 @@ func priorContextURLs(req ir.Request) map[string]struct{} {
 					add(p.Text)
 				}
 			case ir.ImagePart:
-				add(p.URL)
+				// Assistant-side images: an upstream echo of a prior user
+				// image or a generated one — its URL is model-generatable
+				// output, so only NON-assistant image sources count (same
+				// security rule as TextPart above).
+				if msg.Role != ir.RoleAssistant {
+					add(p.URL)
+				}
 			case ir.ToolResultPart:
 				for _, sub := range p.Content {
 					if tp, ok := sub.(ir.TextPart); ok {
