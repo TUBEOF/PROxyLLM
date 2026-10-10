@@ -121,6 +121,33 @@ func privateReason(addr net.IP) string {
 // body). 30s matches the firecrawl emulation budget.
 const defaultTimeout = 30 * time.Second
 
+// newTransport is the tuned base for every guarded client (2026-10-10).
+//
+// http.DefaultTransport's MaxIdleConnsPerHost is 2 — beyond two in-flight
+// requests to one upstream, connections are not pooled at all, so a proxy
+// running hundreds of concurrent requests to the same provider re-dials TLS for
+// most of them. ResponseHeaderTimeout is the other half: without it an upstream
+// that accepts a connection and then says nothing holds the goroutine (and,
+// for a streaming client with no total timeout, holds it indefinitely).
+//
+// MaxConnsPerHost is deliberately left unset: a cap turns upstream slowness into
+// queueing at our end, and the per-provider concurrency limits already bound the
+// fan-out deliberately.
+func newTransport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.MaxIdleConns = 200
+	t.MaxIdleConnsPerHost = 32
+	t.IdleConnTimeout = 90 * time.Second
+	t.TLSHandshakeTimeout = 10 * time.Second
+	t.ResponseHeaderTimeout = 30 * time.Second
+	t.ExpectContinueTimeout = 1 * time.Second
+	t.DialContext = (&net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext
+	return t
+}
+
 // NewClient builds an http.Client whose redirect policy re-validates
 // every redirect Location through the private-address guard. timeout is
 // the TOTAL request budget (http.Client.Timeout covers dial + response
@@ -128,9 +155,13 @@ const defaultTimeout = 30 * time.Second
 // timeout to build a streaming client (no total budget — long-lived
 // streaming responses must not be cut off mid-body — while dial, TLS
 // handshake, and response-header deadlines stay bounded through the
-// copied transport).
+// tuned transport).
+//
+// Every client built here gets its OWN transport, so each caller has its own
+// connection pool. Callers that should share a pool must share the client
+// (see firecrawl's emulator client).
 func NewClient(timeout time.Duration) *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := newTransport()
 	if timeout < 0 {
 		// Streaming: no total budget, but every phase still bounded.
 		client := &http.Client{

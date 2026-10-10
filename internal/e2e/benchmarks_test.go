@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"runtime"
 	"strings"
@@ -33,19 +32,22 @@ import (
 )
 
 // benchEnv is an env plus the raw-HTTP pieces the benchmarks need: the
-// literal client key (the env's SDK clients embed it internally), the
-// golden non-streaming upstream body (built once at creation), and an
-// uninstrumented HTTP client, so measured overhead is the proxy's own, not
-// an SDK's. openURL is an auth-disabled mirror of the same handler stack —
-// the latency/first-byte budgets measure "proxy-added latency" (plan §8),
-// and Argon2id key verification (~20 ms per request, deliberately slow by
-// design) is authentication cost, not translation/routing overhead.
+// literal client key (the env's SDK clients embed it internally), the golden
+// non-streaming upstream body (built once at creation), and an uninstrumented
+// HTTP client, so measured overhead is the proxy's own, not an SDK's.
+//
+// The measured path is the PRODUCTION one, key check included (2026-10-10). It
+// used to measure an auth-disabled mirror of the same handler, because key
+// verification was Argon2id — ~20 ms per request, deliberately slow, and
+// authentication cost rather than proxy overhead. Client keys now verify with a
+// keyed MAC, and the gap between the two paths is within measurement noise
+// (internal/e2e/scalability_test.go asserts exactly that), so excluding the
+// auth path would only mean measuring something nobody runs.
 type benchEnv struct {
 	*env
 	client     *http.Client
 	goldenBody string
-	// openURL is the auth-disabled variant of the harness server.
-	openURL string
+	key        string
 }
 
 // benchChatBody routes by the harness default rule (gpt-5 → mock-main).
@@ -61,20 +63,12 @@ const benchStreamBody = `{"model":"gpt-5","messages":[{"role":"user","content":"
 func newBenchEnv(t *testing.T) *benchEnv {
 	t.Helper()
 	e := newEnv(t)
-	// The bench key exists only so the auth-on path has a valid client
-	// key registered; the raw-HTTP helpers below use the auth-disabled
-	// mirror (openURL), so the literal key never needs to be kept.
-	if _, _, err := auth.CreateClientKey(context.Background(), e.store, "bench"); err != nil {
+	// Key verification is part of every real request, so the bench keeps the
+	// literal key and sends it.
+	_, key, err := auth.CreateClientKey(context.Background(), e.store, "bench")
+	if err != nil {
 		t.Fatalf("create bench key: %v", err)
 	}
-	// Auth-disabled variant of the same harness handler: the measurement
-	// target for plan §8's "proxy-added latency" (translation + routing +
-	// relay, no Argon2id — which is auth cost, not proxy overhead). The
-	// harness env does not expose the raw handler, so the variant re-wraps
-	// the same httpapi handler with auth off; the auth-on server measures
-	// the full production path alongside it.
-	openSrv := httptest.NewServer(auth.NewMiddleware(e.store, auth.WithAuthDisabled()).Wrap(e.h))
-	t.Cleanup(openSrv.Close)
 
 	return &benchEnv{
 		env: e,
@@ -90,7 +84,7 @@ func newBenchEnv(t *testing.T) *benchEnv {
 			},
 		},
 		goldenBody: chatResponseBody(t),
-		openURL:    openSrv.URL,
+		key:        key,
 	}
 }
 
@@ -102,15 +96,16 @@ func newEnvForBench(b *testing.B) *benchEnv {
 	return newBenchEnv(t)
 }
 
-// postChatOpen hits the auth-disabled mirror (proxy path only, no Argon2id):
-// the measurement target for the plan §8 latency budgets.
-func (b *benchEnv) postChatOpen(body string) (*http.Response, error) {
-	req, err := http.NewRequest(http.MethodPost, b.openURL+"/v1/chat/completions",
+// postChat sends one authenticated request down the production path — the same
+// key check a client's request pays.
+func (b *benchEnv) postChat(body string) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodPost, b.srv.URL+"/v1/chat/completions",
 		bytes.NewReader([]byte(body)))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+b.key)
 	return b.client.Do(req)
 }
 
@@ -164,7 +159,7 @@ func BenchmarkProxyChatLatency(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		resp, err := bEnv.postChatOpen(benchChatBody)
+		resp, err := bEnv.postChat(benchChatBody)
 		if err != nil {
 			b.Fatalf("post: %v", err)
 		}
@@ -184,7 +179,7 @@ func BenchmarkProxyStreamFirstByte(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		resp, err := bEnv.postChatOpen(benchStreamBody)
+		resp, err := bEnv.postChat(benchStreamBody)
 		if err != nil {
 			b.Fatalf("post: %v", err)
 		}
@@ -214,7 +209,7 @@ func BenchmarkProxy100Streams(b *testing.B) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				resp, err := bEnv.postChatOpen(benchStreamBody)
+				resp, err := bEnv.postChat(benchStreamBody)
 				if err != nil {
 					errCh <- err
 					return
@@ -273,7 +268,7 @@ func TestPerfBudgets(t *testing.T) {
 	// before the measured window.
 	bench.nonStreamingScripts(t, 20)
 	for i := 0; i < 20; i++ {
-		resp, err := bench.postChatOpen(benchChatBody)
+		resp, err := bench.postChat(benchChatBody)
 		if err != nil {
 			t.Fatalf("warmup post: %v", err)
 		}
@@ -290,7 +285,7 @@ func TestPerfBudgets(t *testing.T) {
 		lat = lat[:0]
 		for i := 0; i < samples; i++ {
 			start := time.Now()
-			resp, err := bench.postChatOpen(benchChatBody)
+			resp, err := bench.postChat(benchChatBody)
 			if err != nil {
 				t.Fatalf("post: %v", err)
 			}
@@ -318,6 +313,16 @@ func TestPerfBudgets(t *testing.T) {
 	// pipeline runs the default hard mode as its gate.
 	reportOnly := os.Getenv("PROXYLLM_PERF_BUDGETS") == "report"
 
+	// The ceiling is unchanged, and it is the one number here this environment
+	// cannot calibrate: this container measures an auth-ON p99 of ~11-16 ms
+	// (best of five batches) for code the release runner historically measured at
+	// 2.6-5.9 ms, so a threshold set from here would encode this box's noise.
+	// The measurement itself now covers the production path (see benchEnv), and
+	// the claim that made the old auth-disabled mirror defensible — that
+	// verification cost a KDF per request — is gone: scalability_test.go asserts
+	// the auth-on/auth-off gap is within noise. Recalibrating the number needs a
+	// quiet-runner pass on the release job; CI's main-branch run is report mode,
+	// and the release gate is where it bites.
 	t.Logf("non-streaming latency p99 (best of %d batches) = %.2f ms (budget 10 ms)", batches, p99)
 	if p99 > 10.0 {
 		if reportOnly {
@@ -330,7 +335,7 @@ func TestPerfBudgets(t *testing.T) {
 	bench.streamingScripts(samples)
 	var maxFirst time.Duration
 	for i := 0; i < samples; i++ {
-		resp, err := bench.postChatOpen(benchStreamBody)
+		resp, err := bench.postChat(benchStreamBody)
 		if err != nil {
 			t.Fatalf("post: %v", err)
 		}

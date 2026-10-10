@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // stubLookup replaces the resolver seam with fixed answers for the named
@@ -189,5 +192,60 @@ func TestIsPrivateAddr(t *testing.T) {
 		if IsPrivateAddr(net.ParseIP(s)) {
 			t.Errorf("%s must classify as public", s)
 		}
+	}
+}
+
+// Connection reuse across bursts (2026-10-10). Behavioral, not a knob
+// assertion: the tuned transport exists so that a burst-heavy proxy does not
+// re-dial TLS for every request, and the observable fact is how many TCP
+// connections a two-burst sequence opens.
+//
+// Sequential requests would prove nothing — http.DefaultTransport's
+// MaxIdleConnsPerHost of 2 already covers a single-at-a-time walk. The case that
+// distinguishes is a burst WIDER than that pool: the second burst can reuse only
+// as many connections as the pool held, and dials the rest.
+func TestNewClient_ReusesConnectionsAcrossBursts(t *testing.T) {
+	const burst = 8
+
+	var mu sync.Mutex
+	seen := map[string]struct{}{}
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen[r.RemoteAddr] = struct{}{}
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	client := NewClient(5 * time.Second)
+	oneBurst := func(n int) {
+		t.Helper()
+		var wg sync.WaitGroup
+		for i := 0; i < n; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				resp, err := client.Get(ts.URL)
+				if err != nil {
+					t.Errorf("burst request: %v", err)
+					return
+				}
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+			}()
+		}
+		wg.Wait()
+	}
+
+	oneBurst(burst)
+	oneBurst(burst)
+
+	mu.Lock()
+	defer mu.Unlock()
+	// A burst of 8 needs 8 connections the first time. The second burst must ride
+	// the idle pool, so the total stays at 8 (one spare allowed for timing).
+	if len(seen) > burst+1 {
+		t.Errorf("connections opened = %d after two bursts of %d, want <= %d — the idle pool must carry a burst wider than it",
+			len(seen), burst, burst+1)
 	}
 }

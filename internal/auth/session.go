@@ -134,7 +134,7 @@ func (sm *SessionManager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	admin, err := sm.st.GetAdminByUsername(r.Context(), creds.Username)
 	if errors.Is(err, storage.ErrNotFound) {
 		// Equalize timing with the password-verify path.
-		hasher().Verify(dummyArgon2PHC, creds.Password)
+		passwordHasher().Verify(dummyArgon2PHC, creds.Password)
 		writeAdminUnauthorized(w)
 		return
 	}
@@ -142,7 +142,7 @@ func (sm *SessionManager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		writeAdminError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	if !hasher().Verify(admin.PasswordHash, creds.Password) {
+	if !passwordHasher().Verify(admin.PasswordHash, creds.Password) {
 		writeAdminUnauthorized(w)
 		return
 	}

@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/tubeof/proxyllm/internal/provider"
 )
@@ -71,7 +72,10 @@ type Router struct {
 	// KeyScopes stay startup-fixed: only rules are DB-editable today.
 	mu         sync.RWMutex
 	rules      []Rule
-	rrCounters map[string]uint64
+	// rrCounters holds one atomic counter per rule, keyed by rule id. A
+	// sync.Map rather than a map+mutex: rotation is per request, and the
+	// counter is the only mutable state the resolve path touches.
+	rrCounters sync.Map
 }
 
 // Config carries the routing inputs.
@@ -120,7 +124,7 @@ func WithModelLookup(lookup func(ctx context.Context, modelID string) (providerI
 
 // NewRouter returns a Router for cfg.
 func NewRouter(cfg Config, opts ...Option) *Router {
-	r := &Router{cfg: cfg, rules: cfg.Rules, rrCounters: make(map[string]uint64)}
+	r := &Router{cfg: cfg, rules: cfg.Rules}
 	for _, opt := range opts {
 		opt(r)
 	}
@@ -412,10 +416,11 @@ func (r *Router) accountsOfType(typ string) (accounts, excluded []string) {
 // the increment and the rotation must not interleave with a concurrent
 // SetRules swap.
 func (r *Router) rotate(rule Rule, entries []string, trace *Trace) []string {
-	r.mu.Lock()
-	offset := r.rrCounters[rule.ID]
-	r.rrCounters[rule.ID] = offset + 1
-	r.mu.Unlock()
+	// An atomic per-rule counter, not the rule mutex: rotation happens on every
+	// round-robin request, and taking the router's write lock there serialized
+	// every concurrent resolve behind one counter increment (2026-10-10).
+	counter, _ := r.rrCounters.LoadOrStore(rule.ID, new(atomic.Uint64))
+	offset := counter.(*atomic.Uint64).Add(1) - 1
 
 	// Work in uint64 space: mod bounds the offset by the chain length, so
 	// the slice math below is always in range. The single uint64→int

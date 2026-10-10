@@ -126,6 +126,16 @@ func (s *Store) TouchClientKey(ctx context.Context, id string) error {
 	return err
 }
 
+// UpdateClientKeyHash rewrites one row's stored hash — the transparent upgrade
+// of a legacy Argon2id hash to the keyed-MAC scheme, done on the first
+// successful verify of that key (2026-10-10). The secret is never stored, so a
+// row that is never used again simply stays on the scheme it was written with;
+// both schemes verify (see VerifyClientKeyHash).
+func (s *Store) UpdateClientKeyHash(ctx context.Context, id, keyHash string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE client_keys SET key_hash = ? WHERE id = ?`, keyHash, id)
+	return err
+}
+
 // RevokeClientKey flips revoked to 1 — display-once secrets mean there is
 // nothing to delete; the hash stays for audit. Missing rows are ErrNotFound.
 func (s *Store) RevokeClientKey(ctx context.Context, id string) error {

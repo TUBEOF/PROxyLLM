@@ -141,6 +141,11 @@ func run() error {
 		return err
 	}
 	store.SetEnvelope(envelope)
+	// Client keys hash under the same master key (keyhash.go): a keyed MAC
+	// instead of Argon2id, because a 256-bit random secret has nothing to
+	// brute-force and the KDF cost was paid on every request. Set together with
+	// the envelope — a store with neither is a store that cannot create keys.
+	store.SetKeyHasher(storage.NewKeyHasher(masterKey))
 
 	// Web-tool emulation state (plan §6.2 + ADR-010) is loud in both
 	// directions: the ENV key is the legacy configuration path (no

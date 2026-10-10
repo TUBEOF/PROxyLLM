@@ -24,7 +24,7 @@ func NewLiveRegistry() *LiveRegistry {
 
 // LiveRegistry is the runtime-mutable Registry.
 type LiveRegistry struct {
-	mu sync.Mutex
+	mu sync.RWMutex
 
 	// providers is the full set (static + dynamic). The order slice keeps
 	// List() deterministic (insertion order).
@@ -100,16 +100,16 @@ func (r *LiveRegistry) ReplaceDynamics(replacements []Provider) {
 
 // Get returns the provider registered under id.
 func (r *LiveRegistry) Get(id string) (Provider, bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	p, ok := r.providers[id]
 	return p, ok
 }
 
 // List returns all registered providers in insertion order.
 func (r *LiveRegistry) List() []Provider {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	out := make([]Provider, 0, len(r.order))
 	for _, id := range r.order {
 		out = append(out, r.providers[id])

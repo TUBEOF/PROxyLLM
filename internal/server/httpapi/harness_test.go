@@ -1,5 +1,4 @@
 package httpapi
-
 // Test harness for the client-facing API surfaces (plan §5.1): a full
 // client → auth → httpapi → Router → Executor → mock-upstream round trip
 // over real HTTP (Analysis F streaming-harness doctrine). RED tests derive
@@ -25,6 +24,11 @@ import (
 	"github.com/tubeof/proxyllm/internal/testutil/mockprovider"
 	ttestutil "github.com/tubeof/proxyllm/internal/translate/testutil"
 )
+
+// testMasterKey is a fixed master key for the keyed-MAC client-key hasher in
+// tests: production generates or reads one, and these tests need the production
+// WIRING, not production key material.
+const testMasterKey = "master-key-material-for-tests"
 
 // env is one assembled proxy-under-test: store, mock upstreams, router,
 // executor, and an httptest server serving the httpapi handler behind the
@@ -127,6 +131,11 @@ func newEnvWithAuthOpts(t *testing.T, authOpts []auth.Option, rules ...routing.R
 
 	h := New(Params{Store: st, Router: router, Executor: exec})
 
+	// Production parity (2026-10-10): main derives the client-key hasher from
+	// the master key; without it this store would issue legacy Argon2id rows and
+	// every request in this suite would pay a KDF that no production request
+	// pays.
+	st.SetKeyHasher(storage.NewKeyHasher([]byte(testMasterKey)))
 	keyID, key, err := auth.CreateClientKey(ctx, st, "httpapi-test")
 	if err != nil {
 		t.Fatalf("create client key: %v", err)

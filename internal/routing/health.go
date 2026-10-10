@@ -16,7 +16,7 @@ import (
 // recovery is passive — the next chain position that reaches the provider
 // acts as the probe (no active health-check traffic against paid APIs).
 type HealthTracker struct {
-	mu      sync.Mutex
+	mu      sync.RWMutex
 	entries map[string]*healthEntry
 
 	// Threshold is the consecutive-failure count that opens the breaker.
@@ -132,8 +132,8 @@ func (h *HealthTracker) ReportQuotaExhausted(providerID string, until time.Time)
 // Reason names the active cooldown for the Quota page badge
 // ("quota_exhausted" | "breaker"; "" = healthy).
 func (h *HealthTracker) Reason(providerID string) string {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	e := h.entries[providerID]
 	if e == nil || !h.cooling(e) {
 		return ""
@@ -147,8 +147,8 @@ func (h *HealthTracker) Reason(providerID string) string {
 // Cooldown reports whether providerID is currently in cooldown (breaker
 // open or quota exhausted — the health gate skips it).
 func (h *HealthTracker) Cooldown(providerID string) bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	e := h.entries[providerID]
 	if e == nil {
 		return false

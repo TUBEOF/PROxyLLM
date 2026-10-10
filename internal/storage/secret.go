@@ -92,6 +92,10 @@ func (e *Envelope) Open(envelope []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
+// argon2HashPrefix is the scheme marker of a legacy Argon2id hash row — the
+// admin password columns, and any client key stored before keyhash.go landed.
+const argon2HashPrefix = "$argon2id$"
+
 // Argon2Hasher hashes client keys and admin passwords per the OWASP
 // Password Storage Cheat Sheet (accessed 2026-09-10): Argon2id with
 // m=19 MiB, t=2, p=1 as the minimum parameter set, PHC string storage.

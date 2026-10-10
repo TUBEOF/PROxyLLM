@@ -1,15 +1,19 @@
 package storage
 
 import (
+	"context"
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/tubeof/proxyllm/internal/config"
 )
 
 // Spec: ADR-003 — SQLite via modernc.org/sqlite, WAL journal mode, foreign
-// keys ON, single connection; migrations are ordered, append-only, and
-// run exactly once (tracked in schema_migrations).
+// keys ON; migrations are ordered, append-only, and run exactly once (tracked
+// in schema_migrations). ADR-016 replaced ADR-003's single connection with a
+// small pool (see TestOpen_ConnectionPoolHandlesConcurrency).
 
 func TestOpen_MigrationsApplied(t *testing.T) {
 	dir := t.TempDir()
@@ -91,16 +95,72 @@ func TestOpen_WALAndForeignKeys(t *testing.T) {
 	}
 }
 
-func TestOpen_SingleConnection(t *testing.T) {
+// TestOpen_ConnectionPoolHandlesConcurrency (2026-10-10, ADR-016): the single
+// connection ADR-003 chose was a SQLITE_BUSY mitigation. ADR-016 replaced it with
+// a small pool plus the pragmas that make a pool safe, so the property to pin is
+// not the number but the behaviour — concurrent readers and writers must all
+// succeed, which is exactly what a mis-sized pool or a missing busy timeout would
+// break.
+func TestOpen_ConnectionPoolHandlesConcurrency(t *testing.T) {
 	dir := t.TempDir()
 	s, err := Open(testCfg(filepath.Join(dir, "test.db")))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 	defer func() { _ = s.Close() }()
-	// Enforced via SetMaxOpenConns(1) against SQLITE_BUSY per ADR-003.
-	if s.db.Stats().MaxOpenConnections != 1 {
-		t.Errorf("MaxOpenConnections: got %d want 1", s.db.Stats().MaxOpenConnections)
+
+	// The pool size is part of the contract (a future edit that quietly drops it
+	// back to one connection would serialize every read).
+	if got := s.db.Stats().MaxOpenConnections; got != maxOpenConns {
+		t.Errorf("MaxOpenConnections: got %d want %d", got, maxOpenConns)
+	}
+
+	ctx := context.Background()
+	if err := s.EnsureProvider(ctx, "p1", "custom", "P1"); err != nil {
+		t.Fatalf("ensure provider: %v", err)
+	}
+
+	const writers, readers, each = 6, 6, 25
+	var wg sync.WaitGroup
+	errs := make(chan error, (writers+readers)*each)
+	for w := 0; w < writers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < each; i++ {
+				if _, err := s.InsertRequestLog(ctx, RequestLog{
+					Timestamp: int64(1760000000 + w*100 + i), ProviderID: "p1", Model: "m", Status: 200,
+				}); err != nil {
+					errs <- fmt.Errorf("writer %d: %w", w, err)
+					return
+				}
+			}
+		}(w)
+	}
+	for r := 0; r < readers; r++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < each; i++ {
+				if _, err := s.ListRequestLogs(ctx, 10); err != nil {
+					errs <- fmt.Errorf("reader: %w", err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("concurrent access failed (a SQLITE_BUSY or a too-small pool would surface here): %v", err)
+	}
+
+	rows, err := s.ListRequestLogs(ctx, writers*each+1)
+	if err != nil {
+		t.Fatalf("ListRequestLogs: %v", err)
+	}
+	if len(rows) != writers*each {
+		t.Errorf("persisted rows = %d, want %d — every concurrent write must land", len(rows), writers*each)
 	}
 }
 

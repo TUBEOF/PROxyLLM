@@ -1,5 +1,4 @@
 package e2e
-
 // End-to-end acceptance harness (Phase 1 DoD, Task #19): the OFFICIAL
 // client SDKs — openai-go v3 and anthropic-sdk-go — drive a fully
 // assembled proxy (auth middleware, httpapi, router, executor) over real
@@ -42,6 +41,11 @@ import (
 	"github.com/tubeof/proxyllm/internal/testutil/mockprovider"
 	ttestutil "github.com/tubeof/proxyllm/internal/translate/testutil"
 )
+
+// testMasterKey is a fixed master key for the keyed-MAC client-key hasher in
+// tests: production generates or reads one, and these tests only need the
+// production WIRING, not production key material.
+const testMasterKey = "master-key-material-for-tests"
 
 // env is one assembled proxy-under-test plus the two official SDK clients
 // aimed at it. mock-main (OpenAI chat wire, all capabilities) is the sole
@@ -101,6 +105,12 @@ func newEnv(t *testing.T, rules ...routing.Rule) *env {
 
 	h := httpapi.New(httpapi.Params{Store: st, Router: router, Executor: exec})
 
+	// Production parity (2026-10-10): main derives the client-key hasher from
+	// the master key, so a store without one would write legacy Argon2id rows and
+	// every authenticated request in this suite would pay the KDF — a cost no
+	// production request pays, and one that made the latency budgets measure the
+	// wrong thing entirely.
+	st.SetKeyHasher(storage.NewKeyHasher([]byte(testMasterKey)))
 	_, key, err := auth.CreateClientKey(ctx, st, "e2e-test")
 	if err != nil {
 		t.Fatalf("create client key: %v", err)
