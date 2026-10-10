@@ -38,33 +38,50 @@ type ChildLog struct {
 }
 
 // InsertChildLogs appends a request's sub-operation rows, all under one
-// parent request-log id. A no-op (no INSERT) when ops is empty, so the
-// common case — a request with no failover/emulation/retry — costs nothing.
-func (s *Store) InsertChildLogs(ctx context.Context, parentID int64, ops []ChildLog) error {
+// parent request-log id, and returns the ids it allocated in insertion order.
+// A no-op (no INSERT) when ops is empty, so the common case — a request with
+// no failover/emulation/retry — costs nothing.
+//
+// The ids come back because a sub-operation's own payload is addressed by its
+// row id (request_payloads owner_kind "child"): a detail view needs to know
+// which row it is showing, and deriving that from a second query would re-read
+// what this call already knows.
+func (s *Store) InsertChildLogs(ctx context.Context, parentID int64, ops []ChildLog) ([]int64, error) {
+	ids := make([]int64, 0, len(ops))
 	if len(ops) == 0 {
-		return nil
+		return ids, nil
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// RETURNING id (SQLite ≥ 3.35) rather than LastInsertId: one statement per
+	// op either way, and the allocated id arrives with the row it belongs to
+	// instead of being read back off a shared connection (wrong if anything
+	// else wrote in between).
 	stmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO request_child_logs (parent_id, ts, kind, provider_id, model, from_ref, to_ref, detail)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		RETURNING id`)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = stmt.Close() }()
 
 	for _, op := range ops {
-		if _, err := stmt.ExecContext(ctx, parentID, op.TS, op.Kind,
-			op.ProviderID, op.Model, op.FromRef, op.ToRef, op.Detail); err != nil {
-			return err
+		var id int64
+		if err := stmt.QueryRowContext(ctx, parentID, op.TS, op.Kind,
+			op.ProviderID, op.Model, op.FromRef, op.ToRef, op.Detail).Scan(&id); err != nil {
+			return nil, err
 		}
+		ids = append(ids, id)
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 // ListChildLogsForParents returns each parent's sub-operations, keyed by

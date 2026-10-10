@@ -96,7 +96,7 @@ func seedLogWithChildren(t *testing.T, e *adminEnv, i int, ops []storage.ChildLo
 	if err != nil {
 		t.Fatalf("insert parent: %v", err)
 	}
-	if err := e.st.InsertChildLogs(ctx, parent, ops); err != nil {
+	if _, err := e.st.InsertChildLogs(ctx, parent, ops); err != nil {
 		t.Fatalf("insert children: %v", err)
 	}
 	return parent

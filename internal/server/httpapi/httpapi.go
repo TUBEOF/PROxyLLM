@@ -439,7 +439,7 @@ func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID stri
 	// posture as the row above: a failed child write is a server defect,
 	// not a client error.
 	if ops := ChildOpsFromTrace(trace); len(ops) > 0 {
-		_ = a.store.InsertChildLogs(ctx, rowID, ops)
+		_, _ = a.store.InsertChildLogs(ctx, rowID, ops)
 	}
 
 	// Live stream: finish the in-flight entry (idempotent; its broadcast

@@ -345,7 +345,7 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 		// / capability-fallback / emulated-tool event get their child rows by
 		// the same derivation the server uses, so the fixture exercises the
 		// real parent→sub-op rendering (nested table rows + drawer list).
-		if err := store.InsertChildLogs(ctx, id, fixtureChildren(l.RouteTrace)); err != nil {
+		if _, err := store.InsertChildLogs(ctx, id, fixtureChildren(l.RouteTrace)); err != nil {
 			return fmt.Errorf("seed child logs: %w", err)
 		}
 	}

@@ -34,7 +34,7 @@ func TestChildLog_InsertAndReadBack(t *testing.T) {
 		{Kind: "emulated_tool", ToRef: "web_search", Detail: `query "golang" → 5 result(s)`, TS: 1760000003},
 		{Kind: "retry", ProviderID: "acc-b", Model: "glm-5.3", Detail: "retry after 503", TS: 1760000004},
 	}
-	if err := s.InsertChildLogs(ctx, parent, ops); err != nil {
+	if _, err := s.InsertChildLogs(ctx, parent, ops); err != nil {
 		t.Fatalf("InsertChildLogs: %v", err)
 	}
 
@@ -62,6 +62,53 @@ func TestChildLog_InsertAndReadBack(t *testing.T) {
 	}
 }
 
+// Spec: a sub-operation's own detail view addresses the row it belongs to
+// (2026-10-10 Logs page — per-sub-op payloads). The insert therefore returns
+// the ids it allocated, in insertion order, so the write path can attach a
+// payload to exactly the row it came from. The empty case stays a no-op that
+// allocates nothing.
+func TestChildLog_InsertReturnsIDs(t *testing.T) {
+	s := openTokenStore(t)
+	ctx := context.Background()
+	parent := seedRequestLog(t, s, 1760000010)
+
+	ops := []ChildLog{
+		{Kind: "image_caption", Model: "glm-5.3", TS: 1760000011},
+		{Kind: "emulated_tool", ToRef: "web_search", TS: 1760000012},
+	}
+	ids, err := s.InsertChildLogs(ctx, parent, ops)
+	if err != nil {
+		t.Fatalf("InsertChildLogs: %v", err)
+	}
+	if len(ids) != len(ops) {
+		t.Fatalf("ids = %d, want one per op (%d)", len(ids), len(ops))
+	}
+	byParent, err := s.ListChildLogsForParents(ctx, []int64{parent})
+	if err != nil {
+		t.Fatalf("ListChildLogsForParents: %v", err)
+	}
+	got := byParent[parent]
+	if len(got) != len(ops) {
+		t.Fatalf("children = %d, want %d", len(got), len(ops))
+	}
+	for i := range ids {
+		if ids[i] <= 0 {
+			t.Errorf("ids[%d] = %d, want a positive autoincrement id", i, ids[i])
+		}
+		if ids[i] != got[i].ID {
+			t.Errorf("ids[%d] = %d, want the persisted row %d (insertion order)", i, ids[i], got[i].ID)
+		}
+	}
+
+	none, err := s.InsertChildLogs(ctx, parent, nil)
+	if err != nil {
+		t.Fatalf("InsertChildLogs(nil): %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("ids for no ops = %v, want empty", none)
+	}
+}
+
 // TestChildLog_OrderedByInsertion: the frontend renders the ops as a
 // sequence, so the read order must follow insertion order even when two ops
 // share a timestamp.
@@ -70,7 +117,7 @@ func TestChildLog_OrderedByInsertion(t *testing.T) {
 	ctx := context.Background()
 	parent := seedRequestLog(t, s, 1760000000)
 
-	if err := s.InsertChildLogs(ctx, parent, []ChildLog{
+	if _, err := s.InsertChildLogs(ctx, parent, []ChildLog{
 		{Kind: "failover", Detail: "first", TS: 1760000001},
 		{Kind: "retry", Detail: "second", TS: 1760000001},
 		{Kind: "emulated_tool", Detail: "third", TS: 1760000001},
@@ -95,10 +142,10 @@ func TestChildLog_BatchedReadForManyParents(t *testing.T) {
 	p2 := seedRequestLog(t, s, 1760000200)
 	p3 := seedRequestLog(t, s, 1760000300)
 
-	if err := s.InsertChildLogs(ctx, p1, []ChildLog{{Kind: "failover", Detail: "p1 a"}}); err != nil {
+	if _, err := s.InsertChildLogs(ctx, p1, []ChildLog{{Kind: "failover", Detail: "p1 a"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.InsertChildLogs(ctx, p2, []ChildLog{
+	if _, err := s.InsertChildLogs(ctx, p2, []ChildLog{
 		{Kind: "retry", Detail: "p2 a"}, {Kind: "retry", Detail: "p2 b"},
 	}); err != nil {
 		t.Fatal(err)
@@ -137,7 +184,7 @@ func TestChildLog_AbsentFromRequestLogsPage(t *testing.T) {
 	s := openTokenStore(t)
 	ctx := context.Background()
 	parent := seedRequestLog(t, s, 1760000000)
-	if err := s.InsertChildLogs(ctx, parent, []ChildLog{
+	if _, err := s.InsertChildLogs(ctx, parent, []ChildLog{
 		{Kind: "failover", Detail: "a"}, {Kind: "emulated_tool", Detail: "b"},
 	}); err != nil {
 		t.Fatal(err)
@@ -163,10 +210,10 @@ func TestChildLog_FilteredParentStillGetsChildren(t *testing.T) {
 	ctx := context.Background()
 	pOld := seedRequestLog(t, s, 1760000000)
 	pNew := seedRequestLog(t, s, 1760000900)
-	if err := s.InsertChildLogs(ctx, pOld, []ChildLog{{Kind: "retry", Detail: "old"}}); err != nil {
+	if _, err := s.InsertChildLogs(ctx, pOld, []ChildLog{{Kind: "retry", Detail: "old"}}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.InsertChildLogs(ctx, pNew, []ChildLog{{Kind: "retry", Detail: "new"}}); err != nil {
+	if _, err := s.InsertChildLogs(ctx, pNew, []ChildLog{{Kind: "retry", Detail: "new"}}); err != nil {
 		t.Fatal(err)
 	}
 
