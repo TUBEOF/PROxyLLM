@@ -140,6 +140,25 @@ var migrations = []string{
 		detail      TEXT
 	);`,
 	`CREATE INDEX IF NOT EXISTS idx_request_child_logs_parent ON request_child_logs(parent_id);`,
+
+	// v7: request payloads (2026-10-10 Logs page). The conversation a request
+	// carried and the answer it produced, so the log can be read rather than
+	// only counted. A table of its own, not columns on request_logs: the list
+	// query runs on every page poll and must not drag megabytes of prompt text
+	// out of disk with it. Redacted and size-capped before they land here (see
+	// PutRequestPayload), and pruned on a retention window — nothing bounded
+	// them before, which is why they did not exist.
+	`CREATE TABLE IF NOT EXISTS request_payloads (
+		owner_kind  TEXT NOT NULL,
+		owner_id    INTEGER NOT NULL,
+		ts          INTEGER NOT NULL,
+		client_request  TEXT,
+		client_response TEXT,
+		payload_bytes   INTEGER NOT NULL DEFAULT 0,
+		truncated       INTEGER NOT NULL DEFAULT 0,
+		PRIMARY KEY (owner_kind, owner_id)
+	);`,
+	`CREATE INDEX IF NOT EXISTS idx_request_payloads_ts ON request_payloads(ts);`,
 }
 
 func (s *Store) migrate() error {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiCall } from '../api';
-import type { ChildLog, LogsResponse, RequestLog, RunningRequest } from '../types';
-import { EmptyState, ErrorNote, PageHead, useLiveData } from '../hooks';
+import type { ChildLog, LogPayload, LogsResponse, RequestLog, RunningRequest, SettingsResponse } from '../types';
+import { EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation } from '../hooks';
 import { useLogStream } from '../hooks/useLogStream';
 import { Drawer } from '../components/Overlays';
 import { LiveBadge } from '../components/LiveBadge';
@@ -17,6 +17,11 @@ import {
   childMeta,
 } from '../components/RouteTrace';
 
+// CAPTURE_KEY is the KV the request path reads on every request to decide
+// whether to store the conversation and the answer beside the log row; the
+// same key the admin payload endpoint reports on.
+const CAPTURE_KEY = 'request_logging_enabled';
+
 // Logs (Logs-page redesign, 2026-10-06): the dense request log — status /
 // model / requested / provider / protocol / account / api key / tokens /
 // tps / duration / time ↓ / conversation, chained rows in the gutter,
@@ -26,7 +31,11 @@ import {
 // running pseudo-rows and prepends finished rows; any page fetch (poll or
 // manual Refresh) resets that merge — the fetched page is the truth.
 
-const PAGE_SIZE = 50;
+const DEFAULT_PAGE_SIZE = 50;
+
+// PAGE_SIZE_OPTIONS are the rows-per-page the operator can pick. The backend
+// takes any positive limit, so this list is a UI affordance, not a bound.
+const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
 
 // POLL_MS is the fallback poll interval (the SSE stream is the live feed;
 // the poll re-syncs the page and keeps the 401/session-loss probe).
@@ -45,14 +54,15 @@ function statusBadge(status: number): { label: string; cls: string } {
 
 export default function Logs() {
   const [offset, setOffset] = useState(0);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [selected, setSelected] = useState<RequestLog | null>(null);
   const [running, setRunning] = useState<RunningRequest[]>([]);
 
   const { data, loading, error, reload } = useLiveData<LogsResponse>(
     (signal) =>
-      apiCall<LogsResponse>('GET', `/api/admin/logs?limit=${PAGE_SIZE}&offset=${offset}`, undefined, signal),
+      apiCall<LogsResponse>('GET', `/api/admin/logs?limit=${pageSize}&offset=${offset}`, undefined, signal),
     POLL_MS,
-    [offset],
+    [offset, pageSize],
   );
 
   // merged: the page-1 SSE overlay (finished rows prepended since the last
@@ -73,9 +83,9 @@ export default function Logs() {
       const base = cur ?? dataRef.current;
       if (base === null) return base;
       const logs = [row, ...base.filter((l) => l.id !== row.id)];
-      return logs.slice(0, PAGE_SIZE);
+      return logs.slice(0, pageSize);
     });
-  }, [offset]);
+  }, [offset, pageSize]);
   const dataRef = useRef<RequestLog[] | null>(null);
   dataRef.current = merged ?? data?.logs ?? null;
   const { connected } = useLogStream({ onRunning, onLog }, offset === 0);
@@ -85,10 +95,10 @@ export default function Logs() {
     return merged ?? data?.logs ?? [];
   }, [data, merged, offset]);
   const total = data?.total ?? 0;
-  const page = Math.floor(offset / PAGE_SIZE) + 1;
-  const pages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
+  const page = Math.floor(offset / pageSize) + 1;
+  const pages = Math.max(Math.ceil(total / pageSize), 1);
   const canPrev = offset > 0;
-  const canNext = offset + PAGE_SIZE < total;
+  const canNext = offset + pageSize < total;
 
   // Render shapes: children expand inline directly under their parent
   // request as nested `child` shapes (2026-10-07). Chain marks are GONE
@@ -148,6 +158,28 @@ export default function Logs() {
   const openTraceRef = useRef(openTrace);
   openTraceRef.current = openTrace;
 
+  // Capture switch (2026-10-10): the same KV the request path reads per
+  // request, so a flip takes effect on the next request with no restart. It
+  // writes through the generic settings API — no bespoke endpoint for one
+  // boolean.
+  const { data: settingsData, reload: reloadSettings } = useAdminData<SettingsResponse>(
+    (signal) => apiCall<SettingsResponse>('GET', '/api/admin/settings', undefined, signal),
+  );
+  const captureEnabled = useMemo(() => {
+    const raw = settingsData?.entries.find((e) => e.key === CAPTURE_KEY)?.value ?? '';
+    return raw !== '0';
+  }, [settingsData]);
+  const saveCapture = useMutation();
+  const toggleCapture = useCallback(
+    async (enabled: boolean) => {
+      const ok = await saveCapture.run(() =>
+        apiCall('PUT', '/api/admin/settings', { key: CAPTURE_KEY, value: enabled ? '1' : '0' }),
+      );
+      if (ok !== null) reloadSettings();
+    },
+    [saveCapture, reloadSettings],
+  );
+
   return (
     <>
       <PageHead
@@ -155,6 +187,19 @@ export default function Logs() {
         sub="Every request with its routing trace — fallback transitions and compatibility degradations are always visible here."
         actions={
           <>
+            <label
+              className="toggle"
+              title="Store each request's conversation and answer beside its log row. Turning it off keeps the log; only the captured text stops."
+            >
+              <input
+                type="checkbox"
+                checked={captureEnabled}
+                onChange={(e) => void toggleCapture(e.target.checked)}
+                disabled={saveCapture.pending}
+              />
+              <span className="tswitch" />
+              capture bodies
+            </label>
             <LiveBadge connected={connected} />
             {data?.children_unavailable === true && (
               <span className="badge warn" title="The sub-operation read failed — fallback/emulation rows are missing from this page">
@@ -185,6 +230,50 @@ export default function Logs() {
           </div>
         ) : (
           <div className="w-full">
+            {/* List controls at the top of the list they control: how many
+                rows, and which page. The page fetch is the paging source, so
+                both drive the same offset/limit the query already takes. */}
+            <div className="table-toolbar">
+              <span className="count">
+                {total.toLocaleString('en-US')} requests — page {page} of {pages}
+              </span>
+              <div className="pg-nav">
+                <label className="hint" htmlFor="log-page-size">Rows</label>
+                <span className="select">
+                  <select
+                    id="log-page-size"
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      // A new page size invalidates the current offset.
+                      setOffset(0);
+                    }}
+                  >
+                    {PAGE_SIZE_OPTIONS.map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setOffset(Math.max(offset - pageSize, 0))}
+                  disabled={!canPrev}
+                >
+                  <IconChevronLeft width="14" height="14" />
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setOffset(offset + pageSize)}
+                  disabled={!canNext}
+                >
+                  Next
+                  <IconChevronRight width="14" height="14" />
+                </button>
+              </div>
+            </div>
             <div className="table-wrap">
               <div className="table-scroll">
                 <table className="table logs-table">
@@ -227,31 +316,6 @@ export default function Logs() {
                   </tbody>
                 </table>
               </div>
-              <div className="pagination">
-                <span className="pg-info">
-                  {total.toLocaleString('en-US')} requests — page {page} of {pages}
-                </span>
-                <div className="pg-nav">
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setOffset(Math.max(offset - PAGE_SIZE, 0))}
-                    disabled={!canPrev}
-                  >
-                    <IconChevronLeft width="14" height="14" />
-                    Previous
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    onClick={() => setOffset(offset + PAGE_SIZE)}
-                    disabled={!canNext}
-                  >
-                    Next
-                    <IconChevronRight width="14" height="14" />
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
         )}
@@ -290,6 +354,80 @@ function intraRowHealed(row: RequestLog): boolean {
       typeof ev === 'object' &&
       typeof ev.type === 'string' &&
       ['failed', 'failover', 'retry', 'capability_fallback'].includes(ev.type),
+  );
+}
+
+// PayloadSection renders the conversation a request carried and the answer it
+// produced (2026-10-10). Fetched when the drawer opens rather than shipped with
+// the row: a payload is prompt-sized, and the list is polled every few seconds.
+//
+// The states are kept distinct on purpose — capture off, nothing captured for
+// this row, or captured — so an empty viewer is never read as an empty request.
+function PayloadSection({ id }: { id: number }) {
+  const { data, loading } = useAdminData<LogPayload>(
+    (signal) =>
+      apiCall<LogPayload>('GET', `/api/admin/log-payload?owner=request&id=${id}`, undefined, signal),
+  );
+
+  if (loading) {
+    return (
+      <div className="fieldset">
+        <legend>Context &amp; answer</legend>
+        <p className="hint">Loading the captured conversation…</p>
+      </div>
+    );
+  }
+  if (data === null || !data.found) {
+    return (
+      <div className="fieldset">
+        <legend>Context &amp; answer</legend>
+        <p className="hint">
+          {data !== null && data.capture_enabled === false
+            ? 'Body capture is off, so only the metadata was recorded. Turn it on above to capture from the next request on.'
+            : 'Nothing was captured for this request.'}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <>
+      {(data.client_request !== undefined || data.client_response !== undefined) && (
+        <div className="fieldset">
+          <legend>Context &amp; answer</legend>
+          {data.truncated === true && (
+            <p className="hint">
+              Truncated at 64 KB per side — the preview is the start of what was stored.
+            </p>
+          )}
+          {data.client_request !== undefined && <CapturedBlock title="Context" body={data.client_request} />}
+          {data.client_response !== undefined && <CapturedBlock title="Answer" body={data.client_response} />}
+        </div>
+      )}
+    </>
+  );
+}
+
+// CapturedBlock renders one captured payload. The stored shape is a display
+// projection — part kinds, tool names, image media types and sizes, never image
+// bytes — so it is shown as JSON rather than reassembled into a transcript: a
+// projection read as a transcript would misrepresent what the model received.
+function CapturedBlock({ title, body }: { title: string; body: string }) {
+  let pretty = body;
+  try {
+    pretty = JSON.stringify(JSON.parse(body), null, 2);
+  } catch {
+    // A truncation envelope or an unexpected value: show it as it was stored.
+  }
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>{title}</div>
+      <pre
+        className="mono"
+        style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, maxHeight: 260, overflow: 'auto' }}
+      >
+        {pretty}
+      </pre>
+    </div>
   );
 }
 
@@ -355,6 +493,9 @@ function LogDetail({ selected, subOps, names }: { selected: RequestLog; subOps: 
           </div>
         )}
       </div>
+      {/* The conversation and the answer, before the derived views: what was
+          actually said is what an operator opens a log entry to read. */}
+      <PayloadSection id={selected.id} />
       {(selected.error_redacted ?? '') !== '' && (
         <div className="fieldset">
           <legend>Error (redacted)</legend>

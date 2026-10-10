@@ -345,6 +345,10 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		s.syncCancel = cancel
 		syncer := modelsync.New(store, reg, logger)
 		go modelsync.NewScheduler(syncer, store, logger).Run(ctx)
+		// Captured payloads ride the same opt-in: their retention sweep is
+		// wall-clock work, and a deterministic test/fixture assembly must not
+		// start background timers any more than it must make live calls.
+		go runPayloadRetention(ctx, store, logger)
 	}
 
 	return s, nil

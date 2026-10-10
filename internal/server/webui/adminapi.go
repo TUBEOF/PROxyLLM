@@ -196,6 +196,10 @@ func (a *AdminAPI) Handler() http.Handler {
 
 	mux.Handle("GET /api/admin/usage", a.sessions.RequireAdmin(http.HandlerFunc(a.getUsage)))
 	mux.Handle("GET /api/admin/logs", a.sessions.RequireAdmin(http.HandlerFunc(a.getLogs)))
+	// Captured conversation + answer for one log row (2026-10-10): fetched on
+	// demand when the drawer opens, never as part of the list — the list is
+	// polled and must not carry payloads with it.
+	mux.Handle("GET /api/admin/log-payload", a.sessions.RequireAdmin(http.HandlerFunc(a.getLogPayload)))
 	// Live log stream (Logs-page redesign): SSE hub feed. GET — the CSRF
 	// layer only guards mutations, so the native EventSource works.
 	mux.Handle("GET /api/admin/logs/stream", a.sessions.RequireAdmin(http.HandlerFunc(a.streamLogs)))
@@ -1321,6 +1325,64 @@ func (a *AdminAPI) getLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, a.logsEnvelope(r.Context(), logs, total))
+}
+
+// logPayloadDTO is the captured conversation and answer of one log row
+// (2026-10-10). found=false means nothing was stored for that row — either
+// capture was off when it ran, or the row predates the feature; the UI says
+// which, so an empty viewer is never mistaken for an empty request.
+type logPayloadDTO struct {
+	Found          bool   `json:"found"`
+	CaptureEnabled bool   `json:"capture_enabled"`
+	ClientRequest  string `json:"client_request,omitempty"`
+	ClientResponse string `json:"client_response,omitempty"`
+	Bytes          int64  `json:"bytes,omitempty"`
+	Truncated      bool   `json:"truncated,omitempty"`
+}
+
+// getLogPayload serves one row's captured payload, on demand. The list endpoint
+// deliberately does not carry these: it is polled every few seconds, and
+// dragging prompt-sized text along with it would tax every page view to serve
+// the one row an operator opened.
+func (a *AdminAPI) getLogPayload(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	owner := q.Get("owner")
+	if owner != storage.PayloadOwnerRequest && owner != storage.PayloadOwnerChild {
+		writeError(w, http.StatusBadRequest, "invalid owner (request|child)")
+		return
+	}
+	id, err := atoiDefault(q.Get("id"), 0)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	out := logPayloadDTO{CaptureEnabled: a.payloadCaptureEnabled(r.Context())}
+	p, found, err := a.store.GetRequestPayload(r.Context(), owner, int64(id))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if !found {
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	out.Found = true
+	out.ClientRequest = p.ClientRequest
+	out.ClientResponse = p.ClientResponse
+	out.Bytes = p.Bytes
+	out.Truncated = p.Truncated
+	writeJSON(w, http.StatusOK, out)
+}
+
+// payloadCaptureEnabled mirrors the request-path switch, so the drawer can tell
+// "capture is off" from "this row captured nothing".
+func (a *AdminAPI) payloadCaptureEnabled(ctx context.Context) bool {
+	v, ok, err := a.store.GetConfigValue(ctx, storage.RequestPayloadLoggingKey)
+	if err != nil || !ok {
+		return true
+	}
+	return strings.TrimSpace(v) != "0"
 }
 
 // logsEnvelope builds the getLogs response: the projected rows plus their

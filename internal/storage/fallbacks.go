@@ -36,6 +36,17 @@ const (
 	modelSyncStateKey = "model_sync_state"
 )
 
+// RequestPayloadLoggingKey is the switch for capturing each request's
+// conversation and answer beside its log row (2026-10-10 Logs page). "0"
+// disables it; absent means on — being able to read what a request said is the
+// point of the capture, and the switch exists so an operator can turn it off
+// rather than have to live without it.
+//
+// Exported because two packages read it: the request path decides whether to
+// capture, and the admin API reports whether capture is on so the log drawer can
+// tell "off" from "nothing captured here".
+const RequestPayloadLoggingKey = "request_logging_enabled"
+
 // DefaultModelSyncIntervalHours is the sync cadence when no override
 // exists.
 const DefaultModelSyncIntervalHours = 24

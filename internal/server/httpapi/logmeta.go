@@ -19,6 +19,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/auth"
 	"github.com/tubeof/proxyllm/internal/provider"
 	"github.com/tubeof/proxyllm/internal/reqlog"
+	"github.com/tubeof/proxyllm/internal/storage"
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
@@ -29,11 +30,29 @@ const (
 	protocolOpenAIResponses = "openai-responses"
 )
 
+// settingKeyCapturePayloads is the operator's switch for storing the
+// conversation and the answer beside each log row (the storage package owns the
+// key; the admin API reads the same constant).
+const settingKeyCapturePayloads = storage.RequestPayloadLoggingKey
+
 type logMeta struct {
 	Protocol string // one of the protocol* constants
 	Features provider.Capabilities
 	ConvKey  string // deterministic conversation derivation input
 	RunID    string // "" until beginRequest registered an in-flight entry
+
+	// Payload capture (2026-10-10 Logs page): the conversation the request
+	// carried and the answer it produced, held as IR values until the log row
+	// is written. Holding the values — rather than encoded text — is the point:
+	// encoding and redaction are real work, and they belong off the request path
+	// (see capturePayload), where no client is waiting on them.
+	//
+	// Pointers to the setter's own copies, never to a caller's local: the
+	// capture runs on its own goroutine, after the handler has returned.
+	//
+	// Either may be nil (capture off, or nothing to capture).
+	capturedReq  *ir.Request
+	capturedResp *ir.Response
 
 	// finish deregisters the in-flight entry (nil without a Stream wired).
 	// It lives here so writeRequestLog — every terminal path's single
@@ -88,7 +107,11 @@ func (a *api) beginRequest(r *http.Request, protocol string, raw []byte, req ir.
 		meta.finish, runID = a.stream.Start(in)
 		meta.RunID = runID
 	}
-	return r.WithContext(context.WithValue(r.Context(), logMetaCtxKey{}, meta))
+	r = r.WithContext(context.WithValue(r.Context(), logMetaCtxKey{}, meta))
+	// The conversation is known here and nowhere else as cheaply. Only the
+	// reference is taken; encoding it is deferred to the payload write.
+	a.captureRequest(r.Context(), req)
+	return r
 }
 
 // finishInflight hands the terminal row to the in-flight tracker (never

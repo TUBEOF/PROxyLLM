@@ -83,6 +83,8 @@ restart:
 | `model_sync_enabled` | `1` (default) / `0` | Automatic model import (ADR-010): when on, every provider exposing model discovery mirrors its upstream list at startup and on the configured cadence |
 | `model_sync_interval_hours` | integer ≥ 1 (default 24) | Sync cadence; effective at the next tick without restart |
 | `model_sync_state` | JSON (read-only — written by the sync) | Last-run summary: per-provider added/updated/removed counts and skip reasons; rendered on the Models page |
+| `request_logging_enabled` | `1` (default) / `0` | Capture each request's conversation and answer beside its log row, readable in the Logs drawer (2026-10-10). On by default — reading what a request said is the point of the log. Turning it off keeps every metadata row; only the captured text stops. Written by the Logs page's "capture bodies" switch. Payloads are redacted, capped at 64 KB per side, and pruned |
+| `request_payload_retention_days` | integer ≥ 1 (default 7) | How long captured payloads are kept. A sweep prunes older ones hourly (and once at startup) alongside the model-sync scheduler; pruning never removes the request_logs row itself |
 
 ### Context & capability auto-detection (2026-10-06)
 

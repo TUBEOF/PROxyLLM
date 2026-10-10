@@ -220,6 +220,23 @@ export interface SettingsResponse {
   entries: SettingsEntry[];
 }
 
+/**
+ * Captured conversation and answer for one log row
+ * (GET /api/admin/log-payload?owner=request|child&id=N).
+ *
+ * found=false means nothing was stored for that row — either it predates the
+ * capture or capture was off; capture_enabled tells the two apart, so an empty
+ * viewer is never mistaken for an empty request.
+ */
+export interface LogPayload {
+  found: boolean;
+  capture_enabled: boolean;
+  client_request?: string;
+  client_response?: string;
+  bytes?: number;
+  truncated?: boolean;
+}
+
 // ADR-010 capability fallback lists (GET/PUT /api/admin/capability-fallbacks).
 export interface CapabilityFallbacks {
   vision: string[];

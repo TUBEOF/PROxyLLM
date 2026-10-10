@@ -9,6 +9,7 @@ package httpapi
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/auth"
@@ -96,6 +97,9 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 	// never the upstream-internal one (alias/routed model names stay
 	// invisible to the client).
 	resp.Model = req.Model
+	// Capture the answer the client is about to receive, under the same model
+	// name it sees.
+	captureResponse(ctx, resp)
 	out, err := anthropic.Codec{}.EncodeResponse(resp)
 	if err != nil {
 		_, msg := a.writeRouteError(w, ew, err)
@@ -142,7 +146,10 @@ func (a *api) streamMessages(w http.ResponseWriter, r *http.Request, keyID strin
 	enc := anthropic.NewStreamEncoder(w)
 	var terminalUsage *ir.Usage
 	var streamErr *ir.UpstreamError
-	relayStream(ctx, ch, enc, &terminalUsage, &streamErr, req.Model)
+	var answer strings.Builder
+	relayStream(ctx, ch, enc, &terminalUsage, &streamErr, req.Model, &answer)
+	// Capture the answer the client streamed (see capture.go).
+	captureResponseText(ctx, req.Model, answer.String())
 	// Mid-stream outcome correction (4a): dispatch success was reported
 	// at ExecuteStream; a stream that failed mid-stream still counts as
 	// a breaker failure.

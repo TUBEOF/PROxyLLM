@@ -7,6 +7,7 @@ package httpapi
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/auth"
@@ -79,6 +80,8 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 
 	// OP-2: echo the requested model name (see messages.go).
 	resp.Model = req.Model
+	// Capture the answer the client is about to receive (see capture.go).
+	captureResponse(ctx, resp)
 	out, err := openai.ResponsesCodec{}.EncodeResponse(resp)
 	if err != nil {
 		_, msg := a.writeRouteError(w, ew, err)
@@ -124,7 +127,10 @@ func (a *api) streamResponses(w http.ResponseWriter, r *http.Request, keyID stri
 	enc := openai.NewResponsesStreamEncoder(w)
 	var terminalUsage *ir.Usage
 	var streamErr *ir.UpstreamError
-	relayStream(ctx, ch, enc, &terminalUsage, &streamErr, req.Model)
+	var answer strings.Builder
+	relayStream(ctx, ch, enc, &terminalUsage, &streamErr, req.Model, &answer)
+	// Capture the answer the client streamed (see capture.go).
+	captureResponseText(ctx, req.Model, answer.String())
 	// Mid-stream outcome correction (4a): dispatch success was reported
 	// at ExecuteStream; a stream that failed mid-stream still counts as
 	// a breaker failure.

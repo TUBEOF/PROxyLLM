@@ -424,6 +424,12 @@ func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID stri
 	// client; a failed audit row is a server defect, not a client error.
 	rowID, _ := a.store.InsertRequestLog(ctx, row)
 
+	// Payload capture (2026-10-10 Logs page): the conversation and the answer
+	// beside the metadata row, so a log entry can be READ rather than only
+	// counted. Off the request path — the client already has its answer (see
+	// capture.go). Same swallow-failure posture as the row above.
+	a.capturePayload(meta, rowID, row.Timestamp)
+
 	// Sub-operations (2026-10-07 Logs page): the trace's separable upstream
 	// operations — failovers, capability (vision) fallback walks, emulated
 	// web-tool calls — persist as their own rows under this request's id,

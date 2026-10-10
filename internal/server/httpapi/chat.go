@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/auth"
@@ -114,6 +115,8 @@ func (a *api) runChat(w http.ResponseWriter, r *http.Request, raw []byte, req ir
 
 	// OP-2: echo the requested model name (see messages.go).
 	resp.Model = req.Model
+	// Capture the answer the client is about to receive (see capture.go).
+	captureResponse(ctx, resp)
 	out, err := openai.Codec{}.EncodeResponse(resp)
 	if err != nil {
 		_, msg := a.writeRouteError(w, ew, err)
@@ -159,7 +162,10 @@ func (a *api) streamChat(w http.ResponseWriter, r *http.Request, keyID string, r
 	enc := openai.NewStreamEncoder(w)
 	var terminalUsage *ir.Usage
 	var streamErr *ir.UpstreamError
-	relayStream(ctx, ch, enc, &terminalUsage, &streamErr, req.Model)
+	var answer strings.Builder
+	relayStream(ctx, ch, enc, &terminalUsage, &streamErr, req.Model, &answer)
+	// Capture the answer the client streamed (see capture.go).
+	captureResponseText(ctx, req.Model, answer.String())
 	// Mid-stream outcome correction (4a): dispatch success was reported
 	// at ExecuteStream; a stream that failed mid-stream still counts as
 	// a breaker failure.
@@ -210,7 +216,11 @@ const maxBodyBytes = 32 << 20
 // body-read failures with the message only). The Start event's model is
 // rewritten to clientModel: the client's requested model name is echoed
 // (OP-2 alias routing), never the upstream-internal name.
-func relayStream(ctx context.Context, ch <-chan ir.StreamEvent, enc translate.StreamEncoder, terminalUsage **ir.Usage, streamErr **ir.UpstreamError, clientModel string) {
+//
+// answer accumulates the streamed text for the log's payload capture; a nil
+// builder skips the accumulation (the caller that does not want the answer
+// pays nothing for it).
+func relayStream(ctx context.Context, ch <-chan ir.StreamEvent, enc translate.StreamEncoder, terminalUsage **ir.Usage, streamErr **ir.UpstreamError, clientModel string, answer *strings.Builder) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -241,6 +251,9 @@ func relayStream(ctx context.Context, ch <-chan ir.StreamEvent, enc translate.St
 			if ev.Type == ir.MessageDelta && ev.MessageDelta != nil {
 				u := ev.MessageDelta.Usage
 				*terminalUsage = &u
+			}
+			if answer != nil && ev.Type == ir.Delta && ev.Delta.Kind == ir.DeltaText {
+				answer.WriteString(ev.Delta.Text)
 			}
 			// B1: a failed client write (disconnect) must stop the pump —
 			// keep relaying only while the client is actually receiving.
