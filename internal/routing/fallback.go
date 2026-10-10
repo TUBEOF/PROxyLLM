@@ -2,6 +2,7 @@ package routing
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	"github.com/tubeof/proxyllm/internal/translate/ir"
@@ -74,10 +75,15 @@ func (p *EmulatorPool) Search(ctx context.Context, query string, st ir.ServerToo
 	list := p.search
 	p.mu.RUnlock()
 	var out []ir.WebSearchResultItem
-	err := walkPool(list, func(e Emulator) error {
-		var err error
-		out, err = e.Search(ctx, query, st)
-		return err
+	err := walkPool(list, func(e Emulator) (bool, error) {
+		found, err := e.Search(ctx, query, st)
+		if err != nil {
+			// Leave out as it is: a failed attempt has no answer to offer.
+			return false, err
+		}
+		out = found
+		// An empty result set is a successful answer with nothing in it.
+		return len(found) == 0, nil
 	})
 	return out, err
 }
@@ -88,28 +94,53 @@ func (p *EmulatorPool) Fetch(ctx context.Context, url string, st ir.ServerToolCo
 	list := p.fetch
 	p.mu.RUnlock()
 	var out *ir.WebFetchContent
-	err := walkPool(list, func(e Emulator) error {
-		var err error
-		out, err = e.Fetch(ctx, url, st)
-		return err
+	err := walkPool(list, func(e Emulator) (bool, error) {
+		page, err := e.Fetch(ctx, url, st)
+		if err != nil {
+			return false, err
+		}
+		out = page
+		// A page with no content — including one Firecrawl answered 200 for but
+		// could not serve — is empty, not an answer.
+		return page == nil || strings.TrimSpace(page.Data) == "", nil
 	})
 	return out, err
 }
 
-// walkPool tries each emulator in order; the first nil error wins. All
-// failed → the last attempt's error (nil list → nil error, the no-emulator
-// degrade state the executor's availability check covers).
-func walkPool(list []Emulator, try func(Emulator) error) error {
+// walkPool tries each emulator in order with a three-way outcome (2026-10-10):
+//
+//   - a NON-EMPTY success returns immediately — an answer that settles it,
+//   - an EMPTY success is remembered and the walk continues, because another
+//     account may answer where this one found nothing,
+//   - a failure moves on, its error kept only in case nothing answers at all.
+//
+// An empty answer therefore outranks a later error: the request earned
+// "nothing found", and reporting another account's failure instead would be
+// wrong (and would tell the model the tool is broken when it is not). Only when
+// every account failed is the LAST error surfaced — the pre-existing contract.
+//
+// try reports emptiness so the pool decides what empty means per family (an
+// empty result set, a page with no content); the Emulator interface stays two
+// methods, so every existing implementation and fake is unaffected.
+func walkPool(list []Emulator, try func(Emulator) (empty bool, err error)) error {
 	var last error
+	answeredEmpty := false
 	for _, e := range list {
 		if e == nil {
 			continue
 		}
-		if err := try(e); err == nil {
-			return nil
-		} else {
+		empty, err := try(e)
+		if err != nil {
 			last = err
+			continue
 		}
+		if !empty {
+			return nil
+		}
+		answeredEmpty = true
+	}
+	if answeredEmpty {
+		return nil
 	}
 	return last
 }
