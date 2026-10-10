@@ -216,7 +216,7 @@ export default function Models() {
 
   // Surface policy (relocated from the removed Settings page, 2026-10-06):
   // the non-Claude gate — model-surface policy, not compat knobs. The
-  // Claude Code alias map moved to Routing (2026-10-08): it rewrites the
+  // model alias map moved to Routing (2026-10-08): it rewrites the
   // client-requested name BEFORE any rule matches, which is routing
   // configuration, not model policy.
   const { data: settingsData, reload: reloadSettings } = useAdminData<SettingsResponse>(

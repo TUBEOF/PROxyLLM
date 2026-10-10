@@ -439,12 +439,9 @@ func partsFromContent(c wireContent) []ir.Part {
 			if p.ImageURL == nil {
 				continue
 			}
-			img := ir.ImagePart{Source: "url", URL: p.ImageURL.URL, Detail: p.ImageURL.Detail}
-			if len(img.URL) > 5 && img.URL[:5] == "data:" {
-				// data: URIs carry base64 payload inline (O11).
-				img.Source = "base64"
-			}
-			parts = append(parts, img)
+			// A data: URI is split into payload + media type here; keeping
+			// the whole URI in URL would lose the bytes on re-encode (O11).
+			parts = append(parts, imagePartFromURL(p.ImageURL.URL, p.ImageURL.Detail))
 		}
 	}
 	return parts

@@ -17,13 +17,13 @@ import PrioList from '../components/PrioList';
 import AliasEditor from '../components/AliasEditor';
 import { IconPlus } from '../icons';
 
-// The Claude Code alias map's settings key (the KV the router loads; the
+// The model alias map's settings key (the KV the router loads; the
 // interactive editor writes the same JSON object the old textarea did).
 const ALIASES_KEY = 'model_aliases';
 
 // Routing (plan §9 + ADR-009 + ADR-010): the global strategy (Round Robin
 // default / Fill-First), rules with per-rule strategy overrides, the
-// capability fallback lists, and the Claude Code alias map (2026-10-08,
+// capability fallback lists, and the model alias map (2026-10-08,
 // relocated here from Models — it IS routing configuration: it rewrites
 // the client-requested name before any rule matches; the interactive
 // AliasEditor replaced the raw-JSON textarea). The admin API's rule model
@@ -193,7 +193,7 @@ interface ProvidersResponseLike {
   providers: { id: string; type: string; name: string }[];
 }
 
-// AliasCard (2026-10-08): the Claude Code alias map, relocated here from
+// AliasCard (2026-10-08): the model alias map, relocated here from
 // Models — it IS routing configuration (it rewrites the client-requested
 // name before any rule matches). The interactive AliasEditor (rows of
 // alias → target picker) replaced the raw-JSON textarea; writes ride the
@@ -264,11 +264,11 @@ function AliasCard() {
     <div className="w-full" style={{ marginBottom: 8 }}>
       <fieldset className="fieldset">
         <legend>
-          Claude Code aliases
+          Model Aliases
         </legend>
         <p className="hint" style={{ marginTop: 0 }}>
           Client-requested names rewritten to registered models before routing —
-          Claude Code&apos;s <span className="mono">sonnet</span>/<span className="mono">haiku</span> family names map onto
+          a client&apos;s <span className="mono">sonnet</span>/<span className="mono">haiku</span> family names map onto
           whatever model serves them here.
         </p>
         {save.error !== null && (
@@ -490,7 +490,7 @@ export default function Routing() {
         </div>
         {/* ADR-010: the three global capability fallback lists. */}
         <CapabilityFallbacksCard />
-        {/* The Claude Code alias map — relocated from Models (2026-10-08). */}
+        {/* The model alias map — relocated from Models (2026-10-08). */}
         <AliasCard />
         {error !== null ? (
           <div className="w-full">
@@ -649,7 +649,7 @@ export default function Routing() {
                   placeholder="exact-model or prefix*"
                   required
                 />
-                <span className="hint">Exact name, wildcard, or a Claude Code alias from the alias map.</span>
+                <span className="hint">Exact name, wildcard, or an alias from the alias map.</span>
               </div>
             </div>
             <div className="field">

@@ -1,15 +1,18 @@
 package routing_test
 
-// Streaming capability-fallback contract tests (2026-09-21 automatic
-// capabilities): the executor-side model fallback applies to STREAMS the
-// same way as completes — a chain whose every DISPATCH failed with a
-// capability_gap (a 400 image rejection happens before the first byte)
-// gets one walk over the configured fallback models via p.Stream. FO-1 is
-// untouched: a dispatch success is never re-routed, and a mid-stream
-// failure rides the channel terminally.
+// Streaming image-to-text rescue contract (ADR-014). The rescue applies to
+// streams exactly as to completes: a chain whose every DISPATCH failed with a
+// capability_gap (an image rejection is a 400 before the first byte) gets its
+// images described, and the chain is dispatched again with the text in place.
+//
+// FO-1/FO-5 are untouched. The caption calls run before anything is sent to the
+// client, and the re-dispatch either streams or fails — a successful dispatch
+// is never re-routed, and a mid-stream failure still rides the channel
+// terminally.
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -23,121 +26,151 @@ func streamGapErr() error {
 	return &provider.UpstreamError{HTTPStatus: 400, Message: "image input is not supported by this model"}
 }
 
-func TestExecutor_CapabilityFallback_StreamRescuesGapExhaustedChain(t *testing.T) {
-	main := &scriptedProvider{id: "main", streamErr: []error{streamGapErr()}}
-	fallback := &scriptedProvider{id: "fbm"}
+func TestExecutor_Caption_StreamDescribesImageAndRetriesTheChain(t *testing.T) {
+	main := &recordingProvider{id: "main", streamErrs: []error{streamGapErr()}}
+	vision := &recordingProvider{id: "vision", text: "a red pipeline with a failing test step"}
 
 	e := routing.NewExecutor(routing.ExecutorConfig{
-		Registry:     regOf(main, fallback),
+		Registry:     regOf(main, vision),
 		Health:       routing.NewHealthTracker(),
 		RetrySleeper: func(time.Duration) {},
 		CapabilityFallbacks: []routing.ChainEntry{
-			{ProviderID: "fbm", Model: "fbm"},
+			{ProviderID: "vision", Model: "vl-1"},
 		},
 	})
 
+	req := imageRequest("why is the build red?")
+	req.Stream = true
+
 	ch, cancel, trace, err := e.ExecuteStream(context.Background(),
-		[]routing.ChainEntry{{ProviderID: "main", Model: "m"}}, ir.Request{Model: "m", Stream: true})
+		[]routing.ChainEntry{{ProviderID: "main", Model: "m"}}, req)
 	if err != nil {
-		t.Fatalf("ExecuteStream: %v (the fallback model must rescue the gap)", err)
+		t.Fatalf("ExecuteStream: %v (the captioned retry must dispatch)", err)
 	}
 	defer cancel()
+
 	var events []ir.StreamEvent
 	for ev := range ch {
 		events = append(events, ev)
 	}
 	if len(events) == 0 || events[0].Type != ir.Start {
-		t.Fatalf("stream events = %+v, want the fallback model's start event", events)
+		t.Fatalf("stream events = %+v, want the retried dispatch's start event", events)
 	}
-	if fallback.calls == 0 {
-		t.Error("fallback model was never attempted")
+	if vision.calls != 1 {
+		t.Errorf("vision calls = %d, want 1", vision.calls)
 	}
-	// Never silent: the consultation and the failover are traced.
-	sawFallback, sawFailover := false, false
-	for _, ev := range trace.Events() {
-		if ev.Type == routing.EventCapabilityFallback && ev.Capability == "vision" {
-			sawFallback = true
-		}
-		if ev.Type == routing.EventFailover && ev.To == "fbm" {
-			sawFailover = true
-		}
+	if main.calls != 2 {
+		t.Fatalf("routed dispatches = %d, want 2 (rejected, then served the retry)", main.calls)
 	}
-	if !sawFallback || !sawFailover {
-		t.Errorf("trace missing fallback consultation/failover: fallback=%v failover=%v", sawFallback, sawFailover)
+	if len(main.seen) < 2 {
+		t.Fatalf("routed dispatches recorded = %d, want 2", len(main.seen))
+	}
+	got := partStrings(main.seen[1].Messages[0].Parts)
+	want := []string{"text:why is the build red?", "text:a red pipeline with a failing test step"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("retried stream parts = %q, want %q", got, want)
+	}
+	if len(eventsOf(trace, routing.EventImageCaption)) != 1 {
+		t.Error("the caption was not traced on the stream path")
 	}
 }
 
-func TestExecutor_CapabilityFallback_StreamOtherFailuresDoNotTrigger(t *testing.T) {
-	// A 401 dispatch failure is the credentials' problem — no model
-	// fallback (identical contract to the complete path).
-	main := &scriptedProvider{id: "main", streamErr: []error{
-		&provider.UpstreamError{HTTPStatus: 401, Message: "bad key"},
-	}}
-	fallback := &scriptedProvider{id: "fbm"}
+// The caption spend is billed to the request that needed it: the terminal
+// usage carries it, so the client's accounting does not under-report.
+func TestExecutor_Caption_StreamAddsCaptionUsage(t *testing.T) {
+	main := &recordingProvider{id: "main", streamErrs: []error{streamGapErr()}}
+	vision := &recordingProvider{id: "vision", text: "a screenshot"}
 
 	e := routing.NewExecutor(routing.ExecutorConfig{
-		Registry:     regOf(main, fallback),
+		Registry:     regOf(main, vision),
 		Health:       routing.NewHealthTracker(),
 		RetrySleeper: func(time.Duration) {},
 		CapabilityFallbacks: []routing.ChainEntry{
-			{ProviderID: "fbm", Model: "fbm"},
+			{ProviderID: "vision", Model: "vl-1"},
 		},
 	})
 
+	req := imageRequest("read this")
+	req.Stream = true
+
+	ch, cancel, _, err := e.ExecuteStream(context.Background(),
+		[]routing.ChainEntry{{ProviderID: "main", Model: "m"}}, req)
+	if err != nil {
+		t.Fatalf("ExecuteStream: %v", err)
+	}
+	defer cancel()
+	for range ch {
+	}
+	// The stub reports no usage, so this pins the plumbing rather than a
+	// number: the wrapper must pass every event through unchanged.
+	if main.calls != 2 {
+		t.Errorf("routed dispatches = %d, want 2", main.calls)
+	}
+}
+
+// A chain that rejects the transcript too ends the request: exactly one
+// caption round, no recursion.
+func TestExecutor_Caption_StreamOnePassOnly(t *testing.T) {
+	main := &recordingProvider{id: "main", streamErrs: []error{streamGapErr(), streamGapErr(), streamGapErr()}}
+	vision := &recordingProvider{id: "vision"}
+
+	e := routing.NewExecutor(routing.ExecutorConfig{
+		Registry:     regOf(main, vision),
+		Health:       routing.NewHealthTracker(),
+		RetrySleeper: func(time.Duration) {},
+		CapabilityFallbacks: []routing.ChainEntry{
+			{ProviderID: "vision", Model: "vl-1"},
+		},
+	})
+
+	req := imageRequest("read this")
+	req.Stream = true
+
+	_, _, _, err := e.ExecuteStream(context.Background(),
+		[]routing.ChainEntry{{ProviderID: "main", Model: "m"}}, req)
+	if err == nil {
+		t.Fatal("a chain that keeps rejecting must fail")
+	}
+	var up *provider.UpstreamError
+	if !errors.As(err, &up) || up.HTTPStatus != 400 {
+		t.Errorf("terminal error = %v, want the typed 400 gap error", err)
+	}
+	if vision.calls != 1 {
+		t.Errorf("vision calls = %d, want exactly 1 — the rescue runs once", vision.calls)
+	}
+}
+
+// A 401 dispatch failure is the credentials' problem — no rescue, images or
+// not (identical contract to the complete path).
+func TestExecutor_Caption_StreamOtherFailuresDoNotTrigger(t *testing.T) {
+	main := &recordingProvider{id: "main", streamErrs: []error{
+		&provider.UpstreamError{HTTPStatus: 401, Message: "bad key"},
+	}}
+	vision := &recordingProvider{id: "vision"}
+
+	e := routing.NewExecutor(routing.ExecutorConfig{
+		Registry:     regOf(main, vision),
+		Health:       routing.NewHealthTracker(),
+		RetrySleeper: func(time.Duration) {},
+		CapabilityFallbacks: []routing.ChainEntry{
+			{ProviderID: "vision", Model: "vl-1"},
+		},
+	})
+
+	req := imageRequest("read this")
+	req.Stream = true
+
 	_, _, trace, err := e.ExecuteStream(context.Background(),
-		[]routing.ChainEntry{{ProviderID: "main", Model: "m"}}, ir.Request{Model: "m", Stream: true})
+		[]routing.ChainEntry{{ProviderID: "main", Model: "m"}}, req)
 	if err == nil {
 		t.Fatal("a 401 stream chain must fail, not be rescued")
 	}
-	if fallback.calls != 0 {
-		t.Error("fallback must not be consulted for non-gap stream failures")
+	if vision.calls != 0 {
+		t.Error("vision models must not be consulted for a non-gap stream failure")
 	}
 	for _, ev := range trace.Events() {
-		if ev.Type == routing.EventCapabilityFallback {
-			t.Error("capability_fallback event recorded for a 401 stream chain")
+		if ev.Type == routing.EventCapabilityFallback || ev.Type == routing.EventImageCaption {
+			t.Errorf("fallback event recorded for a 401 stream chain: %+v", ev)
 		}
 	}
-}
-
-func TestExecutor_CapabilityFallback_StreamFallbackAlsoGapFailsTerminal(t *testing.T) {
-	// Chain and fallback model both reject the modality at dispatch: the
-	// stream terminates with the last (typed) error — no recursion, no
-	// infinite fallback chains.
-	main := &scriptedProvider{id: "main", streamErr: []error{streamGapErr()}}
-	fallback := &scriptedProvider{id: "fbm", streamErr: []error{streamGapErr()}}
-
-	e := routing.NewExecutor(routing.ExecutorConfig{
-		Registry:     regOf(main, fallback),
-		Health:       routing.NewHealthTracker(),
-		RetrySleeper: func(time.Duration) {},
-		CapabilityFallbacks: []routing.ChainEntry{
-			{ProviderID: "fbm", Model: "fbm"},
-		},
-	})
-
-	_, _, _, err := e.ExecuteStream(context.Background(),
-		[]routing.ChainEntry{{ProviderID: "main", Model: "m"}}, ir.Request{Model: "m", Stream: true})
-	if err == nil {
-		t.Fatal("gap-exhausted fallback stream must fail")
-	}
-	var up *provider.UpstreamError
-	if !errorsAs(err, &up) || up.HTTPStatus != 400 {
-		t.Errorf("terminal error = %v, want the typed 400 gap error", err)
-	}
-}
-
-// errorsAs is errors.As (local alias to keep the import surface minimal).
-func errorsAs(err error, target **provider.UpstreamError) bool {
-	for err != nil {
-		if ue, ok := err.(*provider.UpstreamError); ok {
-			*target = ue
-			return true
-		}
-		unwrapper, ok := err.(interface{ Unwrap() error })
-		if !ok {
-			return false
-		}
-		err = unwrapper.Unwrap()
-	}
-	return false
 }

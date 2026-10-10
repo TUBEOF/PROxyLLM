@@ -79,7 +79,7 @@ saved in one write):
 
 | List | Entries | Semantics |
 |---|---|---|
-| **Vision fallback** | MODEL IDs (routing identities, e.g. `ollamacloud/glm-5.3`) | After a chain exhausted on `capability_gap` rejections, the executor walks these models (each its provider's wire name); every use traced as `capability_fallback` |
+| **Vision fallback** | MODEL IDs (routing identities, e.g. `ollamacloud/glm-5.3`) | After a chain exhausted on `capability_gap` rejections, these models DESCRIBE each image (they never receive the conversation); the descriptions replace the images and the routed chain is dispatched again (ADR-014) |
 | **Web search fallback** | Web-tool account IDs (firecrawl today) | The emulator pool tries accounts in order on emulated `web_search`; a failing account fails over to the next |
 | **Web fetch fallback** | Web-tool account IDs | Same as above for `web_fetch` |
 
@@ -92,17 +92,38 @@ REALLY rejected the request at the upstream (HTTP 400 naming the input
 modality — image, multimodal, unsupported content), never to rescue an
 unresolvable chain (that stays the no-route error).
 
-**Context-window gate (ADR-013, 2026-10-09)**: the vision fallback re-sends
-the WHOLE conversation, so a fallback model smaller than the request can
-never serve it. Each fallback entry therefore carries its model row's
-declared `context_window` (written by the model sync from provider
-discovery, `models.compat.context_window`); before the walk the executor
-drops every entry whose window cannot hold the request's estimated input
-tokens and records a `skipped` event naming both numbers. An **undeclared**
-window (`0`) is never a reason to skip — the entry is attempted, and a real
-overflow fails over to the next one. If every entry is too small, the
-request ends with the ORIGINAL `capability_gap` error, so the operator sees
-why the fallback was consulted at all.
+**Image-to-text fallback (ADR-014, 2026-10-10 — replaces the whole-conversation
+resend)**: the vision list names the models that **describe** an image; they
+never receive the request. When a chain exhausts on `capability_gap`
+rejections, the executor finds every image part (descending into tool-result
+content, which may carry images too), asks the configured vision models in
+order to describe each one — a model gets the image and the instruction, no
+history, no tools — and substitutes each description for its image. The routed
+chain is then dispatched again, so the model that answers is the one the
+operator routed to. Because the describer only ever sees an image, **its
+context window is irrelevant**, which is the point: the rescue used to
+re-send the conversation and was therefore unusable precisely in the long
+session it exists for.
+
+Details that matter in operation:
+
+- The instruction is task-aware by default: the client's most recent text turn
+  is appended (settings `vision_caption_prompt`, `vision_caption_task_aware`,
+  `vision_caption_timeout_ms`), and visible-text transcription is called out.
+- A remote image (URL source) is downloaded and inlined first, through the
+  guarded HTTP client. Wire encoders differ, and one drops a URL-sourced image
+  outright — which would leave the describer commenting on something it never
+  received. If the fetch is refused, the image stays in place and the refusal is
+  traced.
+- A description that cannot be produced for one image leaves **that image in
+  place** — no placeholder, no dropped input. If no image could be described at
+  all, the request ends with the ORIGINAL `capability_gap` error.
+- The rescue runs **once**: the re-dispatch has the fallback disabled, so a model
+  that rejects the transcript too ends the request instead of describing again.
+- Every use is traced (`image_caption`, plus `capability_fallback` for the
+  consultation and for any image left in place), and `image_caption` is its own
+  log row: the operator can see what the answering model was told the image
+  showed. Caption token spend is folded into the request's usage.
 
 **Context-window rejections fail over (ADR-013, 2026-10-09)**: a 400 whose
 body code (`context_length_exceeded`) or message says the input exceeds the
@@ -111,8 +132,8 @@ over** — it is not a client error. The request is well-formed; only a
 larger target can serve it. Vendors word this differently ("prompt is too
 long", "maximum context length", "input length exceeds the context length",
 …), so the matcher consults the body code and the message. Before this
-class existed such a 400 was terminal, which meant the fallback walk died
-on its first model instead of reaching a larger one further down the list.
+class existed such a 400 was terminal, which meant a chain died on its first
+too-small model instead of reaching a larger one further down.
 
 **Wiring note (2026-10-06)**: the two web-tool lists are now CONSUMED —
 until this fix the pool was assembled in registry account order and the

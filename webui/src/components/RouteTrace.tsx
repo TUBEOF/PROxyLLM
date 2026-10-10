@@ -73,6 +73,8 @@ export function eventTitle(ev: TraceEvent, names?: Map<string, string>): string 
       return 'Rejected';
     case 'capability_fallback':
       return `Capability fallback: ${ev.capability || '—'}`;
+    case 'image_caption':
+      return `Image caption ${ev.model || n(ev.provider_id) || '—'}`;
     case 'implicit_route':
       return `Implicit route ${arrow(ev.from, ev.to)}`;
     case 'context_override':
@@ -182,6 +184,9 @@ export function childTitle(c: ChildLog): string {
       return `Fallback ${refName(c.from_name, c.from_ref) || '—'} → ${refName(c.to_name, c.to_ref) || '—'}`;
     case 'capability_fallback':
       return `Capability fallback: ${c.detail || 'unknown'}`;
+    case 'image_caption':
+      // The MODEL column names the describer; the chip names the operation.
+      return 'Image caption';
     case 'emulated_tool':
       return `Web tool: ${c.to_ref || '—'}`;
     default:

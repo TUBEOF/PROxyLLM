@@ -4,8 +4,7 @@ package server
 // amendment): the stored vision_fallback KV holds MODEL IDs (routing
 // identities, "ollamacloud/glm-5.3"); the executor needs fully resolved
 // (provider, wire-model) chain entries. This file owns that translation:
-// store.GetModel per ID → ChainEntry{ProviderID, Model: row.Name,
-// MaxContext: row.ContextWindow()}, with
+// store.GetModel per ID → ChainEntry{ProviderID, Model: row.Name}, with
 // last-known-good semantics — unknown IDs are skipped with a log line
 // (v1.0.2 lists of provider IDs/Types do not resolve as model rows and are
 // dropped until the operator re-saves), a store read failure leaves the
@@ -16,23 +15,55 @@ package server
 import (
 	"context"
 	"log/slog"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/routing"
 	"github.com/tubeof/proxyllm/internal/storage"
 )
 
+// Image-caption settings keys (ADR-014). They live in the same config KV as
+// every other operator setting, so the generic settings API can write them
+// without a bespoke endpoint.
+const (
+	captionPromptKey    = "vision_caption_prompt"
+	captionTaskAwareKey = "vision_caption_task_aware"
+	captionTimeoutMSKey = "vision_caption_timeout_ms"
+)
+
+// resolveCaptionConfig reads the caption settings, keeping the built-in default
+// for anything absent or malformed. Store noise must never change how a request
+// is described — the same contract as every other settings read here.
+func resolveCaptionConfig(ctx context.Context, store *storage.Store) routing.CaptionConfig {
+	var cfg routing.CaptionConfig
+
+	if v, ok, err := store.GetConfigValue(ctx, captionPromptKey); err == nil && ok && strings.TrimSpace(v) != "" {
+		cfg.Prompt = v
+	}
+	// Absent keeps the default (task-aware on), so only an explicit "0" turns
+	// the question hint off.
+	if v, ok, err := store.GetConfigValue(ctx, captionTaskAwareKey); err == nil && ok {
+		on := strings.TrimSpace(v) != "0"
+		cfg.TaskAware = &on
+	}
+	if v, ok, err := store.GetConfigValue(ctx, captionTimeoutMSKey); err == nil && ok {
+		if ms, perr := strconv.Atoi(strings.TrimSpace(v)); perr == nil && ms > 0 {
+			cfg.Timeout = time.Duration(ms) * time.Millisecond
+		}
+	}
+	return cfg
+}
+
 // resolveCapabilityFallbacks translates the stored vision_fallback model
 // IDs into executor chain entries. Unknown model IDs are skipped with a
 // log line (never a de-route of the whole list); the store read failure is
 // returned for the caller's last-known-good policy.
 //
-// Each entry carries the model row's DECLARED context window (0 =
-// undeclared), read from the same compat blob the model sync writes it to
-// (2026-10-09): the fallback re-sends the whole conversation, so the
-// executor's gate needs the window to skip a model that cannot hold it.
-// Resolving it here — next to the row lookup we already pay for — keeps the
-// executor free of store access.
+// Since ADR-014 these entries name the models that DESCRIBE an image; they
+// never receive the conversation, so nothing about their context window
+// belongs here. The model row's declared window stays a property of the row
+// (the model sync keeps writing it) — it simply no longer gates the rescue.
 func resolveCapabilityFallbacks(ctx context.Context, store *storage.Store, logger *slog.Logger) ([]routing.ChainEntry, error) {
 	ids, err := store.GetVisionFallback(ctx)
 	if err != nil {
@@ -52,7 +83,6 @@ func resolveCapabilityFallbacks(ctx context.Context, store *storage.Store, logge
 		entries = append(entries, routing.ChainEntry{
 			ProviderID: row.ProviderID,
 			Model:      row.Name,
-			MaxContext: row.ContextWindow(),
 		})
 	}
 	return entries, nil

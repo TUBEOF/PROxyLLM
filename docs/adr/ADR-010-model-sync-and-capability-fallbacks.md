@@ -93,6 +93,14 @@ Three gaps surfaced operating the WebUI:
    the operator pinned the flag (manual selection in the Models editor);
    the row's sync origin is preserved.
 
+   **Amendment (2026-10-10, ADR-014 — supersedes "one walk of their own"):**
+   the fallback models no longer receive the request. Each image is
+   DESCRIBED by them — the model sees one image and the instruction, never
+   the conversation — and the description replaces the image before the
+   routed chain is dispatched again. The entries are therefore describers,
+   not alternative servers, and the list semantics above (MODEL IDs,
+   validation, learning) are unchanged. See ADR-014.
+
 ## Consequences
 
 - The route_trace schema gains the `capability_fallback` event type

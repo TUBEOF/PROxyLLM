@@ -168,19 +168,15 @@ func (s *Store) DeleteModel(ctx context.Context, id string) error {
 	return nil
 }
 
-// ContextWindow reads the model row's declared context window in tokens
-// from its compat blob (0 = undeclared/undetected). The key is the same
-// "context_window" the model sync writes from provider discovery; malformed
-// blobs read as undeclared (store noise never de-routes — the read
-// contract shared with every compat reader).
-func (m Model) ContextWindow() int {
-	return ContextWindowFromCompat(m.Compat)
-}
-
 // ContextWindowFromCompat extracts a non-zero context_window from a compat
-// blob; missing or malformed blobs read as 0 (undeclared). Single source
-// for the compat blob's context_window key — the routing fallback gate and
-// the model sync's pin check must agree on what "declared" means.
+// blob; missing or malformed blobs read as 0 (undeclared). Single source for
+// the compat blob's context_window key — the model sync's pin check reads it
+// through here.
+//
+// The window is detected and persisted as a fact about the model row. It no
+// longer gates the vision rescue: since ADR-014 the fallback models describe
+// an image rather than holding the conversation, so a small window cannot
+// disqualify a describer.
 func ContextWindowFromCompat(compat json.RawMessage) int {
 	if len(compat) == 0 {
 		return 0

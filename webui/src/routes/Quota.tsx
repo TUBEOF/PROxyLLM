@@ -3,7 +3,7 @@ import { apiCall } from '../api';
 import type { AccountUsage, AccountUsageResponse } from '../types';
 import { EmptyState, ErrorNote, PageHead, useLiveData, useMutation } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
-import { IconGauge, IconPlug } from '../icons';
+import { IconBoxes, IconPlug, IconRefresh } from '../icons';
 
 // Quota (ADR-012): per-account usage/limit cards — the OmniRoute-style
 // view. Live source (the ollama.com settings scrape) renders the session/
@@ -113,33 +113,44 @@ export default function Quota() {
           </div>
         ) : (
           <div className="w-full">
-            {/* Honest summary tiles (kit .kpi; values masked in e2e). */}
-            <div className="kpis" style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              <div className="widget w-1" style={{ padding: '10px 14px' }}>
+            {/* Honest summary tiles (kit .kpi; values masked in e2e). Three
+                equal columns, and the icon rides the label line — the kit's
+                kpi-label is built to carry it there. As a bare flex child of
+                .kpi (a column) it used to wrap onto its own line under the
+                value. Labels are title-case here; .kpi-label uppercases them. */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+                gap: 8,
+                marginBottom: 12,
+              }}
+            >
+              <div className="widget" style={{ padding: '10px 14px' }}>
                 <div className="kpi">
-                  <div>
-                    <span className="hint">TOTAL</span>
-                    <div className="kpi-value">{accounts.length}</div>
+                  <div className="kpi-label">
+                    <span className="ic"><IconBoxes width="14" height="14" /></span>
+                    Total
                   </div>
-                  <span className="ic"><IconGauge width="18" height="18" /></span>
+                  <div className="kpi-value">{accounts.length}</div>
                 </div>
               </div>
-              <div className="widget w-1" style={{ padding: '10px 14px' }}>
+              <div className="widget" style={{ padding: '10px 14px' }}>
                 <div className="kpi">
-                  <div>
-                    <span className="hint">HEALTHY</span>
-                    <div className="kpi-value">{healthy}</div>
+                  <div className="kpi-label">
+                    <span className="ic"><IconPlug width="14" height="14" /></span>
+                    Healthy
                   </div>
-                  <span className="ic"><IconPlug width="18" height="18" /></span>
+                  <div className="kpi-value">{healthy}</div>
                 </div>
               </div>
-              <div className="widget w-1" style={{ padding: '10px 14px' }}>
+              <div className="widget" style={{ padding: '10px 14px' }}>
                 <div className="kpi">
-                  <div>
-                    <span className="hint">COOLING</span>
-                    <div className="kpi-value">{cooling}</div>
+                  <div className="kpi-label">
+                    <span className="ic"><IconRefresh width="14" height="14" /></span>
+                    Cooling
                   </div>
-                  <span className="ic"><IconGauge width="18" height="18" /></span>
+                  <div className="kpi-value">{cooling}</div>
                 </div>
               </div>
             </div>

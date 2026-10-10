@@ -28,12 +28,23 @@ func gapRejectedScript() *mockprovider.Script {
 		`{"error":{"code":"unsupported_content","message":"image input is not supported by this model"}}`, nil)
 }
 
+// chatOKScript scripts one successful OpenAI-compatible completion.
+func chatOKScript(model, content string) *mockprovider.Script {
+	return mockprovider.NewScript().JSONResponse(http.StatusOK,
+		fmt.Sprintf(`{"id":"c","object":"chat.completion","model":%q,"choices":[{"index":0,"message":{"role":"assistant","content":%q},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`,
+			model, content), nil)
+}
+
 // capabilityFallbackChat issues one image-bearing chat request through the
-// proxy surface.
+// proxy surface. The conversation carries earlier turns with distinctive
+// markers, so a test can prove what the vision model did NOT receive.
 func capabilityFallbackChat(t *testing.T, ts *httptest.Server, key string) (int, string) {
 	t.Helper()
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/v1/chat/completions",
-		strings.NewReader(`{"model":"ollamacloud/chat-model","messages":[{"role":"user","content":[`+
+		strings.NewReader(`{"model":"ollamacloud/chat-model","messages":[`+
+			`{"role":"user","content":"EARLIER-TURN-MARKER"},`+
+			`{"role":"assistant","content":"EARLIER-REPLY-MARKER"},`+
+			`{"role":"user","content":[`+
 			`{"type":"text","text":"hi"},{"type":"image_url","image_url":{"url":"data:image/png;base64,x"}}]}]}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+key)
@@ -57,11 +68,13 @@ func saveFallbacks(t *testing.T, ts *httptest.Server, vision string, login wirin
 	_ = ensureBodyClosed(t, resp)
 }
 
-// TestServer_CapabilityFallbackServesModelIDs: the stored vision_fallback
-// list names a MODEL; a real image-rejection on the primary chain is
-// rescued by that model (executor-side fallback), and the gap is learned
+// TestServer_CapabilityFallbackCaptionsImageAndRetriesTheChain: the stored
+// vision_fallback list names a MODEL that DESCRIBES images (ADR-014). A real
+// image rejection on the routed chain is rescued by that model's description,
+// and — the point of the design — the request is answered by the ROUTED model.
+// The vision model is never handed the conversation, and the gap is learned
 // into the primary model's row.
-func TestServer_CapabilityFallbackServesModelIDs(t *testing.T) {
+func TestServer_CapabilityFallbackCaptionsImageAndRetriesTheChain(t *testing.T) {
 	ctx := context.Background()
 	cfg := newConfig(t)
 
@@ -120,14 +133,15 @@ func TestServer_CapabilityFallbackServesModelIDs(t *testing.T) {
 		t.Fatalf("create key: %v", err)
 	}
 
-	// Primary rejects the image (capability_gap); the fallback model serves.
+	// The routed model rejects the image, then serves the captioned retry;
+	// the vision model answers with a description.
 	main.Enqueue(gapRejectedScript())
-	fallback.Enqueue(mockprovider.NewScript().JSONResponse(http.StatusOK,
-		`{"id":"c","object":"chat.completion","model":"fallback-vision","choices":[{"index":0,"message":{"role":"assistant","content":"vision-answer"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`, nil))
+	main.Enqueue(chatOKScript("chat-model", "main-answer"))
+	fallback.Enqueue(chatOKScript("fallback-vision", "a terminal showing a nil-pointer stack trace"))
 
 	status, body := capabilityFallbackChat(t, ts, key)
 	if status != http.StatusOK {
-		t.Fatalf("chat: status %d, body %s (the fallback model must rescue the gap)", status, body)
+		t.Fatalf("chat: status %d, body %s (the captioned retry must be served)", status, body)
 	}
 	var parsed struct {
 		Choices []struct {
@@ -139,8 +153,24 @@ func TestServer_CapabilityFallbackServesModelIDs(t *testing.T) {
 	if err := json.Unmarshal([]byte(body), &parsed); err != nil {
 		t.Fatalf("chat body: %v", err)
 	}
-	if len(parsed.Choices) != 1 || parsed.Choices[0].Message.Content != "vision-answer" {
-		t.Fatalf("chat body: %s", body)
+	// The ROUTED model answered — not the vision model. That is the whole
+	// design: the rescue restores the operator's routing, it does not replace it.
+	if len(parsed.Choices) != 1 || parsed.Choices[0].Message.Content != "main-answer" {
+		t.Fatalf("chat body: %s (want the routed model's answer)", body)
+	}
+
+	// The vision model received the image and the instruction — never the
+	// conversation. The earlier turns must not appear in what it was sent.
+	visionReqs := fallback.Requests()
+	if len(visionReqs) != 1 {
+		t.Fatalf("vision model requests = %d, want 1", len(visionReqs))
+	}
+	if strings.Contains(visionReqs[0].Body, "EARLIER-TURN-MARKER") ||
+		strings.Contains(visionReqs[0].Body, "EARLIER-REPLY-MARKER") {
+		t.Error("the conversation was forwarded to the vision model")
+	}
+	if !strings.Contains(visionReqs[0].Body, "image/png") {
+		t.Errorf("the vision model received no image: %s", visionReqs[0].Body)
 	}
 
 	// The gap is learned into the primary model's row (async write — poll
@@ -328,26 +358,31 @@ func TestServer_FallbackWriteLiveSwapsModels(t *testing.T) {
 		t.Fatalf("create key: %v", err)
 	}
 
-	// Admin write: fb-one is the fallback model (live swap into the executor).
+	// Admin write: fb-one describes images (live swap into the executor).
 	saveFallbacks(t, ts, `["ollamacloud/fb-one"]`, login)
 
-	// Gap → fb-one answers.
 	main.Enqueue(gapRejectedScript())
-	fb1.Enqueue(mockprovider.NewScript().JSONResponse(http.StatusOK,
-		`{"id":"c","object":"chat.completion","model":"fb-one","choices":[{"index":0,"message":{"role":"assistant","content":"from-fb-one"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`, nil))
+	main.Enqueue(chatOKScript("chat-model", "main-answer"))
+	fb1.Enqueue(chatOKScript("fb-one", "described by fb-one"))
 	status, body := capabilityFallbackChat(t, ts, key)
-	if status != http.StatusOK || !strings.Contains(body, "from-fb-one") {
-		t.Fatalf("after write: status %d, body %s (fb-one must serve)", status, body)
+	if status != http.StatusOK || !strings.Contains(body, "main-answer") {
+		t.Fatalf("after write: status %d, body %s (the routed model must answer the captioned retry)", status, body)
+	}
+	if got := len(fb1.Requests()); got != 1 {
+		t.Fatalf("fb-one requests = %d, want 1 (the written fallback was not consulted)", got)
 	}
 
-	// Admin write swaps to fb-two — the next gap is served by fb-two.
+	// Admin write swaps to fb-two — the next image is described by fb-two.
 	saveFallbacks(t, ts, `["ollamacloud/fb-two"]`, login)
 	main.Enqueue(gapRejectedScript())
-	fb2.Enqueue(mockprovider.NewScript().JSONResponse(http.StatusOK,
-		`{"id":"c","object":"chat.completion","model":"fb-two","choices":[{"index":0,"message":{"role":"assistant","content":"from-fb-two"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`, nil))
+	main.Enqueue(chatOKScript("chat-model", "main-answer"))
+	fb2.Enqueue(chatOKScript("fb-two", "described by fb-two"))
 	status, body = capabilityFallbackChat(t, ts, key)
-	if status != http.StatusOK || !strings.Contains(body, "from-fb-two") {
-		t.Fatalf("after swap: status %d, body %s (fb-two must serve — live swap failed)", status, body)
+	if status != http.StatusOK || !strings.Contains(body, "main-answer") {
+		t.Fatalf("after swap: status %d, body %s", status, body)
+	}
+	if got := len(fb2.Requests()); got != 1 {
+		t.Fatalf("fb-two requests = %d, want 1 (live swap failed)", got)
 	}
 }
 
@@ -379,16 +414,18 @@ func visionFallbackChat(t *testing.T, ts *httptest.Server, key string, textChars
 	return resp.StatusCode, body
 }
 
-// TestServer_VisionFallbackSkipsTooSmallModel is the regression for the
-// 2026-10-09 report: a long session (larger than a fallback model's window)
-// that grows an image. The primary rejects the modality; the FIRST fallback
-// model declares a window smaller than the conversation and must be skipped
-// BEFORE dispatch, so the second (large enough) model serves it.
+// TestServer_VisionFallbackIgnoresTheVisionModelsContextWindow is the
+// regression for the reported scenario: a long agentic session that grows a
+// screenshot mid-conversation, while every configured vision model is far
+// smaller than the conversation.
 //
-// Before FO-6 the walk dispatched the too-small model, got a context-length
-// 400, classified it terminal, and died there — the client saw a 400 it had
-// not caused, and the model that could actually serve it was never tried.
-func TestServer_VisionFallbackSkipsTooSmallModel(t *testing.T) {
+// The vision model only ever receives the image and the instruction, so its
+// declared window cannot disqualify it. The description comes back, and the
+// model that answers is still the ROUTED one. This is the property the
+// previous whole-conversation resend could not offer — that design had to
+// re-send the history, so a smaller vision model was structurally unusable
+// exactly when the rescue was needed.
+func TestServer_VisionFallbackIgnoresTheVisionModelsContextWindow(t *testing.T) {
 	ctx := context.Background()
 	cfg := newConfig(t)
 
@@ -405,7 +442,8 @@ func TestServer_VisionFallbackSkipsTooSmallModel(t *testing.T) {
 	}
 	for _, m := range []storage.Model{
 		{ID: "ollamacloud/chat-model", ProviderID: "mock-main", Name: "chat-model"},
-		// small-vision declares a 128000-token window; big-vision a 1M one.
+		// small-vision declares a 128000-token window — far below the
+		// conversation below; big-vision a 1M one.
 		{ID: "ollamacloud/small-vision", ProviderID: "mock-small", Name: "small-vision",
 			Compat: json.RawMessage(`{"context_window":128000}`)},
 		{ID: "ollamacloud/big-vision", ProviderID: "mock-big", Name: "big-vision",
@@ -444,22 +482,24 @@ func TestServer_VisionFallbackSkipsTooSmallModel(t *testing.T) {
 		t.Fatalf("create key: %v", err)
 	}
 
-	// The primary rejects the image; `small` is deliberately left with NO
-	// script — if the gate let it through, its (empty-queue) 500 would still
-	// let `big` answer, so the Requests() assertion below is the real check.
 	main.Enqueue(gapRejectedScript())
-	big.Enqueue(mockprovider.NewScript().JSONResponse(http.StatusOK,
-		`{"id":"c","object":"chat.completion","model":"big-vision","choices":[{"index":0,"message":{"role":"assistant","content":"from-big-vision"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`, nil))
+	main.Enqueue(chatOKScript("chat-model", "main-answer"))
+	small.Enqueue(chatOKScript("small-vision", "a screenshot of a failing test run"))
 
-	// 600000 chars ≈ 150000 tokens > small-vision's declared 128000.
+	// 600000 chars ≈ 150000 tokens — larger than small-vision's declared
+	// window, and it must not matter: the vision model never sees the history.
 	status, body := visionFallbackChat(t, ts, key, 600000)
-	if status != http.StatusOK || !strings.Contains(body, "from-big-vision") {
-		t.Fatalf("long-session vision fallback: status %d, body %s (the large model must serve)", status, body)
+	if status != http.StatusOK || !strings.Contains(body, "main-answer") {
+		t.Fatalf("long-session vision fallback: status %d, body %s (the routed model must answer the captioned retry)", status, body)
 	}
-	if got := len(small.Requests()); got != 0 {
-		t.Errorf("the too-small fallback model received %d request(s), want 0 — the gate must skip it before dispatch", got)
+	if got := len(small.Requests()); got != 1 {
+		t.Errorf("the first vision model received %d request(s), want 1 — its declared window must not disqualify it", got)
 	}
-	if got := len(big.Requests()); got != 1 {
-		t.Errorf("the large fallback model received %d request(s), want 1", got)
+	if got := len(big.Requests()); got != 0 {
+		t.Errorf("the second vision model received %d request(s), want 0 — the first one answered", got)
+	}
+	// And the vision model was not handed the conversation it cannot hold.
+	if got := small.Requests(); len(got) == 1 && strings.Contains(got[0].Body, strings.Repeat("a", 1000)) {
+		t.Error("the conversation body was forwarded to the vision model")
 	}
 }

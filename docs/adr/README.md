@@ -18,6 +18,7 @@ consequences.
 | [ADR-010](ADR-010-model-sync-and-capability-fallbacks.md) | Model sync + capability fallback lists | Accepted |
 | [ADR-011](ADR-011-implicit-model-routes.md) | Implicit model routes when no rule matches | Accepted |
 | [ADR-012](ADR-012-account-usage-quota-page.md) | Per-account usage snapshot (Quota page): scrape-or-local KV blob, usage-cookie token kind | Accepted |
-| [ADR-013](ADR-013-context-window-aware-fallbacks.md) | Context-window-aware fallbacks: `context_window_exceeded` class + pre-dispatch gate on the fallback walk | Accepted |
+| [ADR-013](ADR-013-context-window-aware-fallbacks.md) | Context-window-aware fallbacks: `context_window_exceeded` class + pre-dispatch gate on the fallback walk | Accepted (gate superseded by ADR-014) |
+| [ADR-014](ADR-014-image-to-text-vision-fallback.md) | Image-to-text vision fallback: vision models describe the image, the routed model answers | Accepted |
 
 ADR template: [TEMPLATE.md](TEMPLATE.md)

@@ -540,12 +540,9 @@ func responsesPartsFromContent(c *responsesWireContent) []ir.Part {
 		case "input_text", "output_text", "summary_text", "refusal":
 			parts = append(parts, ir.TextPart{Text: p.Text})
 		case "input_image":
-			img := ir.ImagePart{Source: "url", URL: p.ImageURL, Detail: p.Detail}
-			if len(p.ImageURL) > 5 && p.ImageURL[:5] == "data:" {
-				// data: URIs carry the base64 payload inline (O11).
-				img.Source = "base64"
-			}
-			parts = append(parts, img)
+			// Same data:-URI split as the chat decoder — the whole URI must
+			// not ride in URL, or the payload is lost on re-encode (O11).
+			parts = append(parts, imagePartFromURL(p.ImageURL, p.Detail))
 		}
 	}
 	return parts

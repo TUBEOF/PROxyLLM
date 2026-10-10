@@ -3,8 +3,11 @@
 // pseudo-row render through this component (running = the `…`-badge row
 // with em-dash cells). Sub-operations (2026-10-07) render as their own
 // rows hanging under their parent: a failover, a capability (vision)
-// fallback walk, or an emulated web-tool call, each aligned to the SAME
-// columns as its parent so the eye can compare them line by line.
+// fallback walk, or an emulated web-tool call. A sub-row keeps the parent's
+// column count so the eye can read down the table, but fills only the
+// columns the op owns — the request-scoped ones (endpoint, credentials,
+// tokens, rates) stay empty, because repeating the parent's values there
+// would attribute them to the wrong thing.
 // Pure render: all derivation (chain marks, healed, row click) arrives via
 // the props.
 import { memo } from 'react';
@@ -58,33 +61,6 @@ function requestedModel(l: RequestLog): string {
     }
   }
   return l.model;
-}
-
-// servedModel: the model THAT ACTUALLY SERVED the request, shown only when
-// it DIFFERS from the routed primary — a failover moved to another
-// provider, or a capability-fallback walk served the request (2026-10-08:
-// the Logs page must say which model ran). '' when the primary served or
-// nothing was attributed: the normal wire-name resolution is not worth a
-// second label (the model_resolved event already carries it).
-function servedModel(l: RequestLog): string {
-  const trace = l.route_trace as { events?: Array<TraceEvent & { model?: string; provider_id?: string }> } | null;
-  if (trace === null || trace === undefined || !Array.isArray(trace.events)) return '';
-  let firstProvider = '';
-  let lastProvider = '';
-  let model = '';
-  let fallbackConsulted = false;
-  for (const ev of trace.events) {
-    if (ev === null || typeof ev !== 'object') continue;
-    if (ev.type === 'capability_fallback') fallbackConsulted = true;
-    if (ev.type === 'attempt' && typeof ev.provider_id === 'string' && ev.provider_id !== '') {
-      if (firstProvider === '') firstProvider = ev.provider_id;
-      lastProvider = ev.provider_id;
-      if (typeof ev.model === 'string') model = ev.model;
-    }
-  }
-  if (model === '') return '';
-  const moved = fallbackConsulted || (firstProvider !== '' && firstProvider !== lastProvider);
-  return moved ? model : '';
 }
 
 // tokensCell parses the usage JSON into the TI/TO/CR triple (CR % =
@@ -162,19 +138,17 @@ function LogRowInner({
             <span className="cell-sub mono child-meta">{meta}</span>
           )}
         </td>
-        <td>
-          {c.provider_kind || c.provider_name ? (
-            <span className="pill">{c.provider_kind ?? c.provider_name}</span>
-          ) : (
-            <span className="pill">—</span>
-          )}
-        </td>
-        <td className="txt-muted">—</td>
-        <td className="txt-muted">{c.provider_name ?? '—'}</td>
-        <td className="mono txt-muted">—</td>
-        <td className="mono txt-muted">—</td>
-        <td className="mono num txt-muted">—</td>
-        <td className="mono num txt-muted">—</td>
+        {/* A sub-operation carries only what it owns. The columns that
+            describe a request's endpoint, credentials and token spend have
+            no meaning on a fallback/emulation op, so they stay empty rather
+            than padded with an em-dash placeholder. */}
+        <td />
+        <td />
+        <td />
+        <td />
+        <td />
+        <td />
+        <td />
         <td className="mono col-time">{fmtTime(c.ts)}</td>
       </tr>
     );
@@ -216,7 +190,6 @@ function LogRowInner({
   const provider = l.provider_kind ?? l.provider_id;
   const account = l.provider_name ?? l.provider_id;
   const requested = requestedModel(l);
-  const served = servedModel(l);
   const conv = convShort(l.conversation_id);
 
   return (
@@ -230,20 +203,10 @@ function LogRowInner({
       <td>
         <span className={`badge ${st.cls}`}><span className="b-dot" />{st.label}</span>
         {shape.healed && <span className="chip chip-healed">healed</span>}
-        {(shape.childCount ?? 0) > 0 && (
-          <span className="chip chip-childops" title={`${shape.childCount} sub-operation(s)`}>
-            ↳ {shape.childCount} op{(shape.childCount ?? 0) === 1 ? '' : 's'}
-          </span>
-        )}
       </td>
       <td className="primary">
         {l.model}
         {requested !== l.model && <span className="cell-sub mono">{requested}</span>}
-        {served !== '' && (
-          <span className="cell-sub mono cell-served" title="model that actually served the request (after fallback)">
-            ↳ {served}
-          </span>
-        )}
       </td>
       <td><span className="pill">{provider}</span></td>
       <td><span className="pill pill-warm">{protocolLabel(l.protocol)}</span></td>

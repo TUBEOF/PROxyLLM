@@ -12,13 +12,13 @@ test.beforeEach(async ({ page }) => {
 });
 
 // The seeded failover row (llama3.3-70b) recorded a failover event, so it
-// carries a sub-operation chip and nests one child row beneath it, drawn as
-// a tree so the branch reads as belonging to the parent above it.
+// nests one child row beneath it, drawn as a tree so the branch reads as
+// belonging to the parent above it. The parent is marked by the tree stub in
+// its gutter, not by a badge: the ops count repeated nothing the nesting does
+// not already say.
 test('log rows nest their sub-operations', async ({ page }) => {
   await page.goto('/logs');
   await readyForCapture(page);
-
-  await expect(page.locator('.chip-childops').first()).toBeVisible();
 
   // By content, not by position: more than one row has children. The parent
   // drops a tree stub into the gutter; the child continues the line.
@@ -31,11 +31,23 @@ test('log rows nest their sub-operations', async ({ page }) => {
   await expect(page.locator('tr.log-row-child[data-child-last]').first()).toBeAttached();
 });
 
-// The parent row's chip counts its sub-operations.
-test('the parent chip counts its sub-operations', async ({ page }) => {
+// A sub-row owns only its own facts. The parent's endpoint, credential and
+// token columns have no meaning on a fallback op, so they render empty rather
+// than echoing the parent's values or padding with a placeholder dash.
+test('a sub-row leaves the request-scoped columns empty', async ({ page }) => {
   await page.goto('/logs');
   await readyForCapture(page);
-  await expect(page.locator('.chip-childops').first()).toContainText('1 op');
+
+  const child = page.locator('tr.log-row-child', { hasText: 'Fallback' }).first();
+  const cells = child.locator('td');
+  // Columns: gutter | status | model | provider | protocol | account | key |
+  // tokens | tps | duration | time. Indices 3..9 are the request-scoped ones.
+  for (const i of [3, 4, 5, 6, 7, 8, 9]) {
+    await expect(cells.nth(i)).toHaveText('');
+  }
+  // The op's own columns still carry content.
+  await expect(cells.nth(1)).not.toHaveText('');
+  await expect(cells.nth(10)).not.toHaveText('');
 });
 
 // The seeded emulated-tool detail carries a token-shaped value; the child

@@ -2,9 +2,9 @@ package routing
 
 // Child operations (2026-10-07 Logs page): the upstream operations the
 // operator needs as their own log rows rather than as trace-only detail —
-// a chain failover, a capability (vision) fallback model walk, and an
-// emulated web-tool call. This mapper is the single source of truth for
-// that mapping; the persist path (httpapi.writeRequestLog →
+// a chain failover, an image description produced by a vision fallback model
+// (ADR-014), and an emulated web-tool call. This mapper is the single source
+// of truth for that mapping; the persist path (httpapi.writeRequestLog →
 // storage.InsertChildLogs) consumes it.
 //
 // A same-provider retry is deliberately NOT a row: it is one attempt of the
@@ -32,6 +32,12 @@ const (
 	// (the model's tool call answered via the Firecrawl fallback). To carries
 	// the tool name, Detail the invocation summary (query/url, outcome).
 	OpEmulatedTool OpKind = "emulated_tool"
+
+	// OpImageCaption: a vision fallback model DESCRIBED an image and the
+	// description replaced it in the request (ADR-014). ProviderID/Model name
+	// the describer, Detail the description's length. This is the row that
+	// answers "what was the answering model told the image showed?".
+	OpImageCaption OpKind = "image_caption"
 )
 
 // ChildOp is one separable sub-operation of a request, derived from its
@@ -61,7 +67,7 @@ type ChildOp struct {
 }
 
 // ChildOps maps a request's recorded trace events to its child operations,
-// in trace order. Only the three op kinds above are selected; a request that
+// in trace order. Only the op kinds above are selected; a request that
 // succeeded through its primary provider yields no ops.
 //
 // Model attribution (2026-10-08 Logs fix): attempt events carry the
@@ -91,6 +97,15 @@ func ChildOps(events []Event) []ChildOp {
 				Detail: ev.Capability,
 				// The fallback model the walk then served.
 				Model: nextAttemptModel(events, i, ""),
+			})
+		case EventImageCaption:
+			ops = append(ops, ChildOp{
+				Kind:   OpImageCaption,
+				Detail: ev.Reason,
+				// The vision model that produced the description — the
+				// event names it directly, unlike the walk-derived ops.
+				ProviderID: ev.ProviderID,
+				Model:      ev.Model,
 			})
 		case EventEmulatedTool:
 			ops = append(ops, ChildOp{

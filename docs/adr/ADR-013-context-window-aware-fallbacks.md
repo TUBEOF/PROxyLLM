@@ -1,7 +1,17 @@
 # ADR-013: Context-window-aware fallbacks
 
-- **Status**: Accepted
+- **Status**: Accepted — **superseded in part by ADR-014** (2026-10-10)
 - **Date**: 2026-10-09
+
+> **Superseding note (ADR-014).** The context-window **gate** described here
+> (`gateFallbacks`, `ChainEntry.MaxContext`) is gone. It existed only because the
+> capability fallback re-sent the whole conversation to a fallback model, which
+> made that model's window a precondition of the rescue. ADR-014 replaces the
+> resend with image description, so the vision model receives one image and the
+> window no longer decides anything. What survives from this ADR is the
+> **`context_window_exceeded` error class**: a 400 naming an over-long input is
+> still a valid request against too small a model, and still fails over rather
+> than terminating.
 
 ## Context
 

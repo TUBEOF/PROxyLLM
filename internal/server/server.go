@@ -176,6 +176,7 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		Health:              health,
 		Emulator:            buildEmulatorPool(context.Background(), dbEmulators, o.emulator, store, logger),
 		CapabilityFallbacks: capabilityFallbacks,
+		Caption:             resolveCaptionConfig(context.Background(), store),
 		OnCapabilityGap:     s.learnCapabilityGap,
 	})
 
@@ -260,8 +261,8 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 				// until-deleted entry, and the walk would Skip it on every
 				// gap-exhausted request). A failed re-resolve keeps the live
 				// list (last-known-good, same contract as the write path);
-				// the walk's own registry check then skips the dead account
-				// (traceCapabilityFallback), so this is belt and braces.
+				// the caption walk's own registry check then skips the dead
+				// account, so this is belt and braces.
 				if entries, rerr := resolveCapabilityFallbacks(context.Background(), store, logger); rerr == nil {
 					exec.SetCapabilityFallbacks(entries)
 				}
@@ -273,6 +274,10 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 				// only a successfully read alias map swaps in (SetAliases,
 				// same last-known-good contract as SetRules above).
 				router.SetAliases(loadModelAliases(context.Background(), store, logger))
+				// The image-caption settings ride the same hook (ADR-014):
+				// a prompt or timeout write applies to the next rescued
+				// request, with the built-in defaults for anything unreadable.
+				exec.SetCaptionConfig(resolveCaptionConfig(context.Background(), store))
 			},
 			ReloadStrategy: func() {
 				// ADR-009: the routing_strategy KV write swaps the live

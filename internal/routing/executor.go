@@ -3,7 +3,6 @@ package routing
 import (
 	"context"
 	"errors"
-	"strconv"
 	"sync"
 	"time"
 
@@ -77,13 +76,21 @@ type ExecutorConfig struct {
 	Emulator Emulator
 
 	// CapabilityFallbacks are the model-level fallback chain entries
-	// (2026-09-21 automatic capabilities): consulted when the rule chain
-	// exhausted with capability_gap failures only. Each entry is a fully
-	// resolved (provider, wire-model) pair — the httpapi layer resolves
-	// the stored model IDs before Execute. Nil/empty disables the model
-	// fallback (the request terminates with the last gap error). Swappable
-	// at runtime via SetCapabilityFallbacks.
+	// (2026-09-21 automatic capabilities, ADR-014): the vision models used
+	// to DESCRIBE an image when the rule chain exhausted with capability_gap
+	// failures only. Each entry is a fully resolved (provider, wire-model)
+	// pair — the httpapi layer resolves the stored model IDs before Execute.
+	// Nil/empty disables image captioning (the request terminates with the
+	// last gap error). Swappable at runtime via SetCapabilityFallbacks.
+	//
+	// Since ADR-014 these models never receive the conversation, only the
+	// image and the caption instruction, so their own context window is
+	// irrelevant to whether they can serve.
 	CapabilityFallbacks []ChainEntry
+
+	// Caption tunes the image-captioning step (ADR-014). The zero value is
+	// valid and yields the documented defaults.
+	Caption CaptionConfig
 
 	// OnCapabilityGap is invoked once per chain entry whose attempt failed
 	// with the capability_gap class (2026-09-21 learning): the wiring layer
@@ -243,105 +250,25 @@ func (e *Executor) walkChain(ctx context.Context, chain []ChainEntry, req ir.Req
 		}
 	}
 
-	// Capability fallback (2026-09-21): only a gap-exhausted chain (every
-	// attempt a capability_gap, at least one attempt made) consults the
-	// fallback models — a 401 or content_filter must not be "rescued" by
-	// another model. The fallback walk is a fresh walk over the fallback
-	// entries with the fallback itself disabled (no recursion: fallback
-	// models that reject the modality too terminate the request), so it
-	// inherits the full retry/failover discipline.
+	// Image-to-text rescue (ADR-014): only a gap-exhausted chain (every
+	// attempt a capability_gap, at least one attempt made) is rescued — a 401
+	// or a content_filter must not be "rescued" by another model. The vision
+	// model describes each image, the descriptions take the images' place, and
+	// the SAME chain runs again: the model that answers is the one the operator
+	// routed to, and whether the rescue works never depends on a fallback
+	// model's context window — the vision model only ever sees one image.
+	//
+	// One pass only: the re-dispatch runs with the fallback disabled, so a
+	// model that rejects the transcript too ends the request rather than
+	// starting a second caption round.
 	if gapOnly && attempted > 0 && allowFallback {
-		fallbacks := e.currentCapabilityFallbacks()
-		if len(fallbacks) > 0 {
-			eligible := e.gateFallbacks(req, fallbacks, trace)
-			if len(eligible) > 0 {
-				e.traceCapabilityFallback(trace, lastProviderOf(chain), eligible)
-				return e.walkChain(ctx, eligible, req, trace, false)
-			}
-			// Every fallback model cannot hold the request: the walk would
-			// dispatch nothing and return an empty exhaustion. Record the
-			// consultation (never silent) and fall through to return the
-			// ORIGINAL gap error — the operator must see that the primary
-			// model could not serve the modality, not a side effect of the
-			// rescue that never happened.
-			trace.CapabilityFallback("vision",
-				"chain exhausted on capability gaps; every capability fallback model is too small for the request context")
+		if described, captionUsage, ok := e.captionImages(ctx, req, trace); ok {
+			resp, err := e.walkChain(ctx, chain, described, trace, false)
+			resp.Usage = addUsage(resp.Usage, captionUsage)
+			return resp, err
 		}
 	}
 	return ir.Response{}, &exhaustedError{last: lastErr}
-}
-
-// gateFallbacks drops capability-fallback entries whose DECLARED context
-// window cannot hold the request (FO-6 companion, 2026-10-09), recording
-// each skip. The fallback re-sends the whole conversation, so an entry
-// smaller than the request can never serve it: dispatching it burns an
-// attempt and, before FO-6, was terminal — which is what made a long
-// session's vision fallback die on the first fallback model instead of
-// reaching a larger one.
-//
-// An unknown window (MaxContext 0) is never a reason to skip: the estimate
-// is a lower bound (images are flat-charged) and silently dropping a
-// fallback that might work is worse than one wasted attempt the FO-6 class
-// fails over.
-func (e *Executor) gateFallbacks(req ir.Request, fallbacks []ChainEntry, trace *Trace) []ChainEntry {
-	need := req.EstimateTokens()
-	out := make([]ChainEntry, 0, len(fallbacks))
-	for _, fb := range fallbacks {
-		if fb.MaxContext > 0 && need > fb.MaxContext {
-			trace.Skip(fb.ProviderID, "capability fallback model context window too small: request needs ~"+
-				strconv.Itoa(need)+" tokens, model holds "+strconv.Itoa(fb.MaxContext))
-			continue
-		}
-		out = append(out, fb)
-	}
-	return out
-}
-
-// traceCapabilityFallback records the capability-fallback consultation and
-// the resulting fallback-model walk, for both the complete and the stream
-// path.
-//
-// One consultation event, then exactly ONE failover edge onto the first
-// fallback model actually about to be tried: the walk visits the fallback
-// entries in order and traces its own per-entry failovers, so emitting an
-// edge per configured fallback here would report models that are never
-// reached. The edge is also suppressed when it would be a self-edge — the
-// exhausted chain's last provider frequently IS the first fallback account,
-// and "A → A" tells the operator nothing.
-func (e *Executor) traceCapabilityFallback(trace *Trace, from string, fallbacks []ChainEntry) {
-	trace.CapabilityFallback("vision",
-		"chain exhausted on capability gaps; trying the capability fallback models")
-	if len(fallbacks) == 0 {
-		return
-	}
-	// The edge names an account the walk actually reaches: the first
-	// REGISTERED fallback entry. A list can hold a since-deleted account
-	// (provider deletion cascade-deletes its model rows, but a stale live
-	// list is refreshed only on the next fallback write) — the walk would
-	// Skip it, so the edge goes past it instead of onto it, and an edge to
-	// an account the walk never attempts would re-create the very
-	// "fallbacks that are never reached" defect this trace shape exists to
-	// prevent.
-	var to string
-	for _, fb := range fallbacks {
-		if _, ok := e.cfg.Registry.Get(fb.ProviderID); ok {
-			to = fb.ProviderID
-			break
-		}
-	}
-	if to == "" || to == from {
-		return
-	}
-	trace.Failover(from, to, "capability fallback model")
-}
-
-// lastProviderOf returns the last chain entry's provider ID for the
-// failover event (empty chain → "" — the trace omits empty From fields).
-func lastProviderOf(chain []ChainEntry) string {
-	if len(chain) == 0 {
-		return ""
-	}
-	return chain[len(chain)-1].ProviderID
 }
 
 // SetCapabilityFallbacks atomically replaces the live capability fallback
@@ -360,6 +287,22 @@ func (e *Executor) currentCapabilityFallbacks() []ChainEntry {
 	e.emuMu.RLock()
 	defer e.emuMu.RUnlock()
 	return e.cfg.CapabilityFallbacks
+}
+
+// SetCaptionConfig atomically replaces the live image-caption settings
+// (ADR-014). Same last-known-good live-swap contract as the other setters:
+// a settings write reaches the running executor without a restart.
+func (e *Executor) SetCaptionConfig(cfg CaptionConfig) {
+	e.emuMu.Lock()
+	defer e.emuMu.Unlock()
+	e.cfg.Caption = cfg
+}
+
+// currentCaptionConfig reads the live caption settings under the swap lock.
+func (e *Executor) currentCaptionConfig() CaptionConfig {
+	e.emuMu.RLock()
+	defer e.emuMu.RUnlock()
+	return e.cfg.Caption
 }
 
 // SetEmulator atomically replaces the live web-tool emulator (ADR-010:
@@ -607,20 +550,18 @@ func (e *Executor) walkChainStream(ctx context.Context, chain []ChainEntry, req 
 		}
 	}
 
-	// Capability fallback (2026-09-21): identical gate to the complete
-	// path — only a gap-exhausted chain consults the fallback models.
+	// Image-to-text rescue (ADR-014): identical gate to the complete path.
+	// The caption calls happen before the first byte of the retry, so the
+	// stream discipline (FO-1/FO-5) is untouched: nothing has been sent to the
+	// client yet, and the re-dispatch is a fresh dispatch that either streams
+	// or fails.
 	if gapOnly && attempted > 0 && allowFallback {
-		fallbacks := e.currentCapabilityFallbacks()
-		if len(fallbacks) > 0 {
-			eligible := e.gateFallbacks(req, fallbacks, trace)
-			if len(eligible) > 0 {
-				e.traceCapabilityFallback(trace, lastProviderOf(chain), eligible)
-				return e.walkChainStream(ctx, eligible, req, trace, false)
+		if described, captionUsage, ok := e.captionImages(ctx, req, trace); ok {
+			ch, cancel, err := e.walkChainStream(ctx, chain, described, trace, false)
+			if err != nil {
+				return ch, cancel, err
 			}
-			// Same contract as the complete path: record the consultation
-			// and let the original gap error surface.
-			trace.CapabilityFallback("vision",
-				"chain exhausted on capability gaps; every capability fallback model is too small for the request context")
+			return addUsageToStream(ctx, ch, captionUsage), cancel, nil
 		}
 	}
 	return nil, func() {}, &exhaustedError{last: lastErr}

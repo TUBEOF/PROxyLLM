@@ -154,6 +154,10 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 
 .kpi{display:flex;flex-direction:column;gap:8px}
 .kpi .kpi-label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;gap:8px}
+/* The label's leading icon. .ic carries no rule of its own, so outside the
+   three scoped contexts it renders bare; inside a kpi label it takes the
+   accent like the widget-head icon does. */
+.kpi .kpi-label .ic{color:var(--accent);display:inline-flex;align-items:center}
 .kpi .kpi-value{font-family:var(--font-display);font-size:34px;font-weight:var(--fw-semibold);line-height:1;color:var(--fg)}
 .kpi .kpi-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}
 .delta{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:var(--fw-semibold);font-family:var(--font-mono);padding:2px 8px;border-radius:var(--radius-full)}
@@ -480,9 +484,9 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 /* Model cell: the resolved model with the client-requested id as a muted
    sub-line, shown only when the two differ. */
 .cell-sub{display:block;font-size:10px;color:var(--muted);margin-top:1px}
-.chip-childops{color:var(--status-info);background:oklch(72% 0.09 230 / 12%);border:1px solid oklch(72% 0.09 230 / 25%)}
 .child-failover{color:var(--status-warn);background:oklch(78% 0.15 75 / 12%);border:1px solid oklch(78% 0.15 75 / 25%)}
 .child-capability-fallback{color:var(--status-info);background:oklch(72% 0.09 230 / 12%);border:1px solid oklch(72% 0.09 230 / 25%)}
+.child-image-caption{color:var(--status-info);background:oklch(72% 0.09 230 / 12%);border:1px solid oklch(72% 0.09 230 / 25%)}
 .child-emulated-tool{color:var(--status-up);background:var(--accent-dim);border:1px solid oklch(78% 0.20 144 / 25%)}
 .child-retry{color:var(--status-warn);background:oklch(78% 0.15 75 / 12%);border:1px solid oklch(78% 0.15 75 / 25%)}
 .link-chip{background:none;border:none;padding:0;color:var(--status-info);font-family:var(--font-mono);font-size:12px;cursor:pointer}

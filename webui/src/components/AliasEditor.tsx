@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-// AliasEditor (2026-10-08): the interactive Claude Code alias map — rows of
+// AliasEditor (2026-10-08): the interactive model alias map — rows of
 // alias → model-target pairs instead of the raw JSON textarea. Every alias
 // is one row: a text input (the alias clients send, e.g. "sonnet") and a
 // model picker (the registered model it routes to) with a free-text escape
@@ -71,7 +71,7 @@ export default function AliasEditor({ value, onChange, options, disabled = false
     <div className="alias-editor" role="group" aria-label="Model aliases">
       {rows.length === 0 && draftTarget === '' && draftAlias === '' && (
         <p className="hint" style={{ margin: 0 }}>
-          No aliases — Claude Code model names route as-is. An alias maps one
+          No aliases — client model names route as-is. An alias maps one
           client-requested name (e.g. <span className="mono">sonnet</span>) onto a registered model.
         </p>
       )}

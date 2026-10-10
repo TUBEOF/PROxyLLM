@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"strconv"
 	"sync"
 	"time"
 )
@@ -72,6 +73,13 @@ const (
 	// (ADR-010) was consulted — Capability names the family (e.g.
 	// "vision"). Consultations are never silent.
 	EventCapabilityFallback EventType = "capability_fallback"
+
+	// EventImageCaption: a vision fallback model described an image and the
+	// description replaced it in the request (ADR-014). Model/ProviderID name
+	// the model that produced the description, LatencyMS the call, and Reason
+	// carries its length — the operator must be able to see what the
+	// answering model was told the image showed.
+	EventImageCaption EventType = "image_caption"
 
 	// EventModelResolved: the requested model ID (a prefixed routing
 	// identity, e.g. "ollamacloud/glm-5.3") resolved to the upstream wire
@@ -201,6 +209,13 @@ func (t *Trace) CompatPolicy(setting, value, reason string) {
 // named by capability, and the configured fallback models were tried.
 func (t *Trace) CapabilityFallback(capability, reason string) {
 	t.add(Event{Type: EventCapabilityFallback, Capability: capability, Reason: reason})
+}
+
+// ImageCaption records that a vision fallback model described an image and the
+// description was substituted into the request (ADR-014, never silent).
+func (t *Trace) ImageCaption(providerID, model string, chars int) {
+	t.add(Event{Type: EventImageCaption, ProviderID: providerID, Model: model,
+		Reason: strconv.Itoa(chars) + " character(s) described"})
 }
 
 // EmulatedTool records a server-tool substitution by the §6.2 emulation
