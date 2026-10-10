@@ -115,6 +115,36 @@ The raw refs remain on the wire — a ref naming something that is not a
 configured account (a model id, or a since-deleted row) projects no name
 and its raw value stays authoritative.
 
+### Sub-operation payloads (2026-10-10)
+
+A sub-operation has a captured body of its own, so a row can be opened and
+read instead of only counted:
+
+```
+GET /api/admin/log-payload?owner=child&id=<child row id>
+```
+
+Same response shape as the request payload (`found`, `capture_enabled`,
+`client_request`, `client_response`, `bytes`, `truncated`). The two sides are
+the display projection of what that step sent and received:
+
+- `emulated_tool` — the tool call (`{"tool", "input"}`) and the result the model
+  was handed (`{"result": ...}`), re-embedded as JSON rather than an escaped
+  string.
+- `image_caption` — the instruction the describer received and the image it was
+  given by media type and decoded size (`{"instruction", "image": {"media_type",
+  "bytes"}}`), and the caption text. **Never** the image bytes: an image is
+  recorded by type and size, exactly as in the request payload.
+- `failover` — no body (a failover names its reason and does nothing else).
+
+Both sides pass through the same redactor every other log site uses, and each is
+capped at 64 KB. A caption is model output derived from an image, and an image is
+often a screenshot of a terminal, so a transcribed credential is masked before it
+is stored. Payloads are stored only while body capture is on (see
+`request_logging_enabled` below) and are dropped, not queued, under write
+backpressure. The `image_caption` row's `detail` is a short excerpt of the
+caption — the full text is the payload.
+
 ### Live log stream (2026-10-06)
 
 `GET /api/admin/logs/stream` is an SSE feed over the request log: the wire
