@@ -317,11 +317,27 @@ type chainTrace struct {
 // renders route_trace as raw JSON, so bumps are additive.
 const routeTraceVersion = 6
 
+// traceField is a request's marshalled route_trace plus the in-memory
+// sub-operation payloads that must never enter it (2026-10-10 Logs page).
+//
+// One type rather than a second parameter: every call site already passes either
+// nil or a routeTrace(...) call, so the write path receives the payloads without
+// a single call site changing — and no surface can forget to pass them.
+type traceField struct {
+	raw           json.RawMessage
+	childPayloads []routing.ChildPayload
+}
+
 // routeTrace marshals the trace object from collected traces. Trace
 // embeds a mutex, so events are appended from the Events() copies — the
 // Trace itself is never copied.
-func routeTrace(traces ...*routing.Trace) json.RawMessage {
+//
+// The collected sub-operation payloads ride back alongside the JSON: they are
+// the child rows' bodies, and they deliberately stay out of the marshalled
+// schema (see routing.Trace's payloads field).
+func routeTrace(traces ...*routing.Trace) *traceField {
 	t := &chainTrace{Version: routeTraceVersion, Events: make([]json.RawMessage, 0, 8)}
+	tf := &traceField{}
 	for _, tr := range traces {
 		if tr == nil {
 			continue
@@ -332,12 +348,15 @@ func routeTrace(traces ...*routing.Trace) json.RawMessage {
 				t.Events = append(t.Events, raw)
 			}
 		}
+		tf.childPayloads = append(tf.childPayloads, tr.Payloads()...)
 	}
 	out, err := json.Marshal(t)
 	if err != nil {
-		return json.RawMessage(`{"version":5,"events":[]}`)
+		tf.raw = json.RawMessage(`{"version":5,"events":[]}`)
+		return tf
 	}
-	return out
+	tf.raw = out
+	return tf
 }
 
 // lastProvider extracts the provider that actually served the request from
@@ -370,8 +389,18 @@ const rollingConversationWindow = int64(1800) // 30 min, see conversation.go
 // where the outcome is known, from fields captured at decode time. The
 // in-flight entry (if any) is finished here, exactly once, carrying the
 // real rowid to the live stream.
-func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID string, status int, latencyMS int64, usage *ir.Usage, trace json.RawMessage, errMsg string) {
+func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID string, status int, latencyMS int64, usage *ir.Usage, tf *traceField, errMsg string) {
 	meta := metaFromCtx(ctx)
+
+	// The trace field carries both halves: the marshalled route_trace the row
+	// stores, and the sub-operation payloads that must never enter it. A request
+	// that never reached routing has neither.
+	var trace json.RawMessage
+	var childPayloads []routing.ChildPayload
+	if tf != nil {
+		trace = tf.raw
+		childPayloads = tf.childPayloads
+	}
 
 	// Conversation identity (rolling window): same key + conv_key within
 	// the window reuses the prior conversation_id; a store error falls
@@ -438,8 +467,21 @@ func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID stri
 	// event). Derived from the same trace just stored. Same swallow-failure
 	// posture as the row above: a failed child write is a server defect,
 	// not a client error.
+	//
+	// Each row also gets its own payload (2026-10-10): what that step sent and
+	// received, so the row opens a detail view instead of a character count.
+	// The insert returns the ids it allocated, which is what a payload is keyed
+	// by — hence the write happening here rather than in the payload path.
 	if ops := ChildOpsFromTrace(trace); len(ops) > 0 {
-		_, _ = a.store.InsertChildLogs(ctx, rowID, ops)
+		rows, bodies := attachChildPayloads(ops, childPayloads)
+		if ids, cerr := a.store.InsertChildLogs(ctx, rowID, rows); cerr == nil {
+			for i := range bodies {
+				if i < len(ids) {
+					bodies[i].id = ids[i]
+				}
+			}
+			a.captureChildPayloads(bodies, row.Timestamp)
+		}
 	}
 
 	// Live stream: finish the in-flight entry (idempotent; its broadcast
