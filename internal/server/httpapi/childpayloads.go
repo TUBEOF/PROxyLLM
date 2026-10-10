@@ -64,11 +64,30 @@ func attachChildPayloads(ops []storage.ChildLog, payloads []routing.ChildPayload
 			continue
 		}
 		rows[i] = childPayloadRow{request: req, response: resp}
-		if routing.OpKind(ops[i].Kind) == routing.OpImageCaption && p.Output != "" {
-			ops[i].Detail = childRedactor.Redact(excerptRunes(p.Output, captionExcerptRunes))
-		}
+		ops[i] = ChildOpWithPayload(ops[i], p)
 	}
 	return ops, rows
+}
+
+// ChildOpWithPayload returns the row as the log shows it once its payload is
+// known: a caption's detail becomes an excerpt of what the describer wrote,
+// instead of the character count the trace records (the operator's complaint —
+// "the chars are useless"). Every other kind keeps its trace detail.
+//
+// Exported for the visual-regression fixture server, which seeds a log page and
+// must render what production renders. A hand-written approximation there would
+// drift from this and quietly make the baselines a lie.
+func ChildOpWithPayload(op storage.ChildLog, p routing.ChildPayload) storage.ChildLog {
+	if routing.OpKind(op.Kind) == routing.OpImageCaption && p.Output != "" {
+		op.Detail = childRedactor.Redact(excerptRunes(p.Output, captionExcerptRunes))
+	}
+	return op
+}
+
+// RenderChildPayload exposes the renderer to the fixture server (see
+// ChildOpWithPayload). ok is false for a kind that carries no body.
+func RenderChildPayload(p routing.ChildPayload) (request, response string, ok bool) {
+	return renderChildPayload(p)
 }
 
 // matchPayload finds the first unused payload of this kind that names the same

@@ -63,6 +63,63 @@ test('an emulated web-tool child masks its credential-shaped detail', async ({ p
   await expect(emulated).not.toContainText('sk-live-e2efixture1234');
 });
 
+// The row OPENS (2026-10-10). A sub-row used to be inert, so the tool exchange
+// that answered a call inside the request was unreachable from the log — the
+// operator could see that a web tool ran but not what it said.
+test('a sub-row opens its own view with what the step sent and received', async ({ page }) => {
+  await page.goto('/logs');
+  await readyForCapture(page);
+
+  await page.locator('tr.log-row-child', { hasText: 'Web tool: web_search' }).first().click();
+
+  const drawer = page.locator('.drawer');
+  await expect(drawer).toBeVisible();
+  await expect(drawer.locator('legend', { hasText: 'Step' })).toBeVisible();
+  // The step's own body, labelled as what it sent and received (never as the
+  // parent's conversation).
+  await expect(drawer.locator('legend', { hasText: 'Sent & received' })).toBeVisible();
+  await expect(drawer.locator('pre', { hasText: 'sqlite wal busy_timeout' }).first()).toBeVisible();
+  await expect(drawer.locator('pre', { hasText: 'sqlite.org/wal.html' }).first()).toBeVisible();
+  // The parent request is one button away.
+  await expect(drawer.locator('button', { hasText: 'Open request #' })).toBeVisible();
+});
+
+// The operator's report, pinned end to end: a vision-fallback sub-row must say
+// WHAT was described, not how many characters it took.
+test('a vision-fallback sub-row shows the description, not a character count', async ({ page }) => {
+  await page.goto('/logs');
+  await readyForCapture(page);
+
+  const caption = page.locator('tr.log-row-child', { hasText: 'Image caption' }).first();
+  await expect(caption).toBeVisible();
+  await expect(caption).not.toContainText('character(s) described');
+  await expect(caption).toContainText('failing Go test');
+
+  await caption.click();
+  const drawer = page.locator('.drawer');
+  await expect(drawer.locator('pre', { hasText: 'terminal window' }).first()).toBeVisible();
+  // The described image by media type and size — never its bytes.
+  await expect(drawer.locator('pre', { hasText: 'image/png' }).first()).toBeVisible();
+  await expect(drawer.locator('pre', { hasText: '48213' }).first()).toBeVisible();
+});
+
+// A step and its request are two views of the same request, linked both ways:
+// the row opens the step, the step's button opens the request.
+test('a sub-op view links back to its request', async ({ page }) => {
+  await page.goto('/logs');
+  await readyForCapture(page);
+
+  await page.locator('tr.log-row-child', { hasText: 'Image caption' }).first().click();
+  const drawer = page.locator('.drawer');
+  await drawer.locator('button', { hasText: 'Open request #' }).click();
+
+  // The request view: its own fields and the structured trace.
+  await expect(drawer.locator('legend', { hasText: 'Request' })).toBeVisible();
+  await expect(drawer).toContainText('Route trace');
+  // And the step is one click away again, from the drawer's own list.
+  await expect(drawer.locator('.child-op-open').first()).toBeVisible();
+});
+
 // The detail drawer replaces the raw JSON dump with a chain summary and a
 // routing timeline, and keeps the raw trace available as a disclosure.
 test('detail drawer renders the structured trace with a raw fallback', async ({ page }) => {
