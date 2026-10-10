@@ -5,8 +5,8 @@ import { EmptyState, ErrorNote, PageHead, useLiveData, useMutation } from '../ho
 import { LiveBadge } from '../components/LiveBadge';
 import { IconBoxes, IconPlug, IconRefresh } from '../icons';
 
-// Quota (ADR-012): per-account usage/limit cards — the OmniRoute-style
-// view. Live source (the ollama.com settings scrape) renders the session/
+// Quota (ADR-012): per-account usage/limit cards.
+// Live source (the ollama.com settings scrape) renders the session/
 // weekly bars with reset timers + plan tier; accounts without a scrape
 // render the LOCAL month window (labeled) — never fabricated metrics.
 // Live updates (2026-10-06): the card list polls itself (POLL_MS).

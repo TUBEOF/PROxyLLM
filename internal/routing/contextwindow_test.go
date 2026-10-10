@@ -9,10 +9,9 @@ package routing_test
 //     context_length_exceeded, accessed 2026-10-09)
 //   - testdata/golden/anthropic/context-length-exceeded.json (message only,
 //     accessed 2026-10-09)
-//   - the vendor wording list in LiteLLM's
-//     ExceptionCheckers.is_error_str_context_window_exceeded (read
-//     2026-10-09) for the vendors PROxyLLM reaches through OpenAI-compatible
-//     endpoints (Gemini, Mistral, OpenRouter, llama.cpp).
+//   - the collected vendor wordings (read 2026-10-09) for the vendors
+//     PROxyLLM reaches through OpenAI-compatible endpoints (Gemini, Mistral,
+//     OpenRouter, llama.cpp).
 //
 // It must fail over, not terminate: another chain entry — or a capability
 // fallback model with a larger window — may serve the request. This is the

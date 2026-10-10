@@ -7,7 +7,7 @@ package server
 // the cookie and the page body are never logged (redactor + no log call
 // here at all).
 //
-// Parser shape per OmniRoute's opencodeOllamaUsage.ts (accessed
+// Parser shape pinned from the served page (accessed
 // 2026-10-06): the settings page carries `data-usage-track` blocks —
 // percent from the aria-label ("X% used" / "$X of $Y used") or the
 // width style; reset timestamps from a `.local-time` element's
@@ -76,7 +76,7 @@ func (p *usageProber) Probe(ctx context.Context, sessionCookie string) (*storage
 	}
 	req.Header.Set("Cookie", "__Secure-session="+sessionCookie)
 	// A browser-shaped UA: the settings page serves signed-in HTML only
-	// to browsers (the OmniRoute precedent sends one).
+	// to browsers (the page serves signed-in HTML only to browser-shaped clients).
 	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) proxyllm-usage-probe")
 
 	resp, err := p.http.Do(req)
@@ -103,7 +103,7 @@ func (p *usageProber) Probe(ctx context.Context, sessionCookie string) (*storage
 	return usage, nil
 }
 
-// percentFromAria extracts X from "X% used" (OmniRoute's direct match).
+// percentFromAria extracts X from "X% used" (the page's own phrasing).
 var percentFromAria = regexp.MustCompile(`(\d+(?:\.\d+)?)%\s*used`)
 
 // dollarsFromAria extracts "$X of $Y used" (pro accounts with dollar

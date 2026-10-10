@@ -2,8 +2,8 @@ package server
 
 // Usage prober tests (ADR-012). The parser is a pure function over the
 // ollama.com/settings HTML — fixture-pinned (testdata/golden/ollama/
-// settings-usage.html, shape per OmniRoute's opencodeOllamaUsage.ts
-// parser, accessed 2026-10-06). The fetch layer is injectable; the
+// settings-usage.html, shape pinned from the served page,
+// accessed 2026-10-06). The fetch layer is injectable; the
 // production client hits a FIXED host (no SSRF surface) with the
 // account's usage cookie, cookie and body never logged.
 

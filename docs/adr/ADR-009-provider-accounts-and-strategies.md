@@ -10,7 +10,7 @@ The WebUI provider page is alpha-state: it edits a raw JSON config blob in a
 textarea, cannot represent multiple accounts per provider type (several
 Ollama Cloud API keys, several Codex OAuth logins), and the routing engine
 has no strategy concept — the chain order is the whole story. Users expect
-an OmniRoute-like experience: provider cards, pooled accounts per
+a pooled-account experience: provider cards, pooled accounts per
 provider, and strategies (round robin, fill-first) that spread requests
 over all accounts automatically, with automatic inclusion of newly added
 accounts and fallback when an account is exhausted.

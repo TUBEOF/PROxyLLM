@@ -9,7 +9,7 @@ package server
 //   - A provider-type settings PUT reaches live construction: a stored
 //     account row with no own base_url constructs against the type
 //     settings' base_url after the write.
-//   - The OmniRoute core behavior: an account created through the type
+//   - The type-entry core behavior: an account created through the type
 //     surface routes live traffic with no rule edit and no restart, and a
 //     second account of the same type joins the rotation the same way.
 
@@ -218,7 +218,7 @@ func TestServer_TypeSettingsWriteReachesLiveConstruction(t *testing.T) {
 	}
 }
 
-// 3. The OmniRoute core behavior (ADR-009 decision 2): a NEW account of a
+// 3. The type-entry core behavior (ADR-009 decision 2): a NEW account of a
 // type joins a type-entry rule's rotation with no rule edit — created
 // through the admin API, routing on the very next request.
 func TestServer_NewAccountJoinsTypeRotationLive(t *testing.T) {

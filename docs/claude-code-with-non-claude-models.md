@@ -82,7 +82,7 @@ upstream.
 
 Anthropic's own docs do not support routing Claude Code to non-Claude
 models via a gateway (plan fact C8). Market practice does it anyway —
-LiteLLM documents it as a tutorial (plan facts M1/M2), and community
-proxies (claude-code-router, …) make it their core feature (M3). The
+translating gateways document it as a supported setup (plan facts M1/M2),
+and community proxies make it their core feature (M3). The
 uniform reported degradation is extended thinking on non-Claude targets,
 which the compat policy handles explicitly and visibly.

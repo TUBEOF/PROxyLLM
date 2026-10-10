@@ -260,12 +260,11 @@ func capabilityGapSignal(bodyCode string, err error) bool {
 // only OpenAI and OpenRouter ship a stable body code
 // ("context_length_exceeded"); Anthropic, Gemini, Mistral, llama.cpp and
 // Bedrock state the overflow in prose only, in mutually different words.
-// The substring list below is LiteLLM's
-// ExceptionCheckers.is_error_str_context_window_exceeded (read 2026-10-09),
-// the broadest published fingerprint set, restricted to the phrasings that
-// cannot be produced by an unrelated 400 (a bare "token" or "length" test
-// would swallow validation errors such as "max_tokens must be greater than
-// 0", which must stay terminal).
+// The substring list below is the collected set of vendor wordings (read
+// 2026-10-09) for the vendors PROxyLLM reaches, restricted to the phrasings
+// that cannot be produced by an unrelated 400 (a bare "token" or "length"
+// test would swallow validation errors such as "max_tokens must be greater
+// than 0", which must stay terminal).
 func contextWindowSignal(bodyCode string, err error) bool {
 	if bodyCode == "context_length_exceeded" || bodyCode == "context_window_exceeded" {
 		return true
@@ -280,9 +279,9 @@ func contextWindowSignal(bodyCode string, err error) bool {
 		"maximum context limit",                        // OpenAI siblings
 		"exceeds the model's maximum context",          // Azure
 		"longer than the model's context",              // provider-neutral wording
-		"exceed context limit",                         // LiteLLM list
+		"exceed context limit",                         // shared wording
 		"exceeds the available context size",           // llama.cpp / Lemonade
-		"input tokens exceed the configured limit",     // LiteLLM list
+		"input tokens exceed the configured limit",     // shared wording
 		"exceeds the maximum number of tokens allowed", // Gemini
 		"maximum input length",                         // Cerebras
 		"prompt is too long",                           // Anthropic

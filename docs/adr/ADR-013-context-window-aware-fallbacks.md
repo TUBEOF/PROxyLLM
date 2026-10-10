@@ -49,21 +49,21 @@ Two independent defects then compounded:
 The net effect was a rescue path that converted a recoverable request into a
 hard failure precisely in the scenario it was built for.
 
-How other gateways handle this (surveyed 2026-10-09):
+How other gateways handle this (surveyed 2026-10-09), grouped by approach:
 
-| Gateway | Approach |
+| Approach | What it does |
 |---|---|
-| LiteLLM | `context_window_fallbacks` as a list of its own, keyed on `ContextWindowExceededError` (a substring matcher); `enable_pre_call_checks` drops deployments whose `max_input_tokens` cannot hold the counted input and raises the same error when all are dropped. No automatic trimming (`trim_messages` / context compaction are opt-in). |
-| OpenRouter | Endpoint routing filters providers by `context_length` before dispatch; its lossy `middle-out` transform is an explicit, opt-in plugin. |
-| Portkey | Fallback keyed on HTTP status only (any non-2xx by default), no size check. |
-| Bifrost | Fallback only for provider-level retryable errors; 400/404/422 are "request validation" → no failover at all. |
-| Envoy AI Gateway | L7 retry on status/connect-failure; no body inspection. |
-| one-api / new-api | Retry on 429/5xx only; a 400 passes straight through to the client. |
+| Context-window fallback list keyed on the error | A list of its own, selected by a substring match on the error; pre-call checks drop candidates whose counted input exceeds their declared input limit, and raise the same error when every candidate is dropped. No automatic trimming — context compaction is opt-in. |
+| Endpoint filtering by declared context length | Providers are filtered before dispatch by their advertised window; the lossy middle-out transform is an explicit, opt-in plugin. |
+| Status-keyed fallback only | Any non-2xx by default, no size check. |
+| Retryable-provider-errors only | 400/404/422 count as "request validation" — no failover at all. |
+| L7 retry | Retry on status/connect-failure; no body inspection. |
+| 429/5xx retry only | A 400 passes straight through to the client. |
 
 Two patterns emerge: **A** — a status-keyed static fallback list that re-sends
-the request untouched (LiteLLM, OpenRouter, Portkey, Bifrost, Envoy) — and
+the request untouched (most of the surveyed gateways) — and
 **B** — a pre-dispatch filter that drops candidates which cannot serve the
-request (LiteLLM's pre-call checks, OpenRouter's endpoint filtering). Pattern
+request (counted-input pre-checks, endpoint filtering by declared length). Pattern
 B is the one that keeps a long conversation off a small model; pattern A
 alone, applied to images, is the least defensible combination, because the
 constraint it ignores (the conversation may exceed the fallback's window) is
@@ -87,7 +87,7 @@ structural.
 | Option | Strengths | Weaknesses |
 |---|---|---|
 | Status quo (pattern A) | No code change | Structurally cannot serve a long session; converts recoverable requests into hard failures |
-| Trim the conversation for the fallback (pattern C) | Makes any fallback model usable; matches the "analyse this screenshot" intent | Lossy and silent by nature — violates P0/P1; LiteLLM's own compaction explicitly refuses to strip to the latest turn because it changes the request's meaning |
+| Trim the conversation for the fallback (pattern C) | Makes any fallback model usable; matches the "analyse this screenshot" intent | Lossy and silent by nature — violates P0/P1; the opt-in compaction available elsewhere explicitly refuses to strip to the latest turn, because it changes the request's meaning |
 | Image-to-text substitution (vision model describes the image, text model answers) | Localises the vision call to the image, so history size stops mattering; the most complete answer | A second upstream call, a synthesised prompt with its own semantics, and a new class of "what the model saw" to record — too large to land safely in this change |
 | Classify context overflow as its own class; gate the fallback walk by the declared window (patterns B, minimal) | Uses only facts already stored; no data loss; every decision traced; makes the walk reach a model that can serve it | Only as good as the detected window (providers that report none stay ungated) |
 

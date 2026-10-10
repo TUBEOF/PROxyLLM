@@ -7,11 +7,10 @@
 
 Anthropic's own gateway documentation does not support routing Claude Code
 to non-Claude models (fact C8, verified live 2026-09-10). Market practice
-differs: LiteLLM ships a documented tutorial routing Claude Code to
-OpenAI/Gemini/Bedrock via `/v1/messages` translation
-(docs.litellm.ai/docs/tutorials/claude_non_anthropic_models), and the
-community-proxy ecosystem (claude-code-router, UniClaudeProxy,
-claude-code-ollama-proxy) treats it as the core feature. The user decision
+differs: gateways that translate the Anthropic `/v1/messages` surface to
+OpenAI-compatible, Gemini and Bedrock upstreams document the combination as
+a supported setup, and the community-proxy ecosystem treats it as the core
+feature. The user decision
 (2026-09-10, OP-2): this must work "nahezu reibungslos mit allen Models" —
 near-seamless with all models — and be configurable in a dedicated WebUI
 area.
@@ -36,7 +35,7 @@ never silent.
 ## Consequences
 
 - PROxyLLM deliberately goes beyond Anthropic's "not supported" stance,
-  matching LiteLLM's documented practice.
+  matching the documented practice of the translating gateways.
 - Thinking-signature semantics are the one real gap: signatures cannot be
   fabricated for non-Claude targets, hence the explicit strip/map/block
   policy instead of silent corruption.

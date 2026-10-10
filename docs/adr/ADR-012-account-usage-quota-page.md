@@ -5,11 +5,11 @@ Amends: ADR-010 (capability fallbacks), complements ADR-009 (accounts/strategies
 
 ## Context
 
-The Quota page needs per-account usage/limit state. OmniRoute (the owner's
-reference) obtains ollama-cloud usage by scraping `https://ollama.com/settings`
-with the account's browser session cookie (`__Secure-session`), parsing the
-`data-usage-track` blocks (session %, weekly %, reset timestamps, plan tier) —
-ollama.com has no quota API. Chat-usage accounting already exists
+The Quota page needs per-account usage/limit state. ollama.com has no quota
+API, so the only source for live usage is its settings page: scraping
+`https://ollama.com/settings` with the account's browser session cookie
+(`__Secure-session`) and parsing the `data-usage-track` blocks (session %,
+weekly %, reset timestamps, plan tier). Chat-usage accounting already exists
 (`usage_daily`, day granularity) but knows nothing about windows per account.
 
 ## Decisions
