@@ -45,10 +45,14 @@ PRs are reviewed against this checklist — reviewers reject on:
 ## Development setup
 
 ```bash
-go build ./cmd/proxyllm
-go test ./...
-golangci-lint run
+make build          # go build -trimpath -o proxyllm ./cmd/proxyllm
+make test           # go test $(GO_PKGS) — never ./..., see the Makefile note
+make lint           # golangci-lint
 ```
+
+The Go package list is always the Makefile's `GO_PKGS` (`./cmd/... ./internal/...
+./webui`). `./...` descends into `webui/node_modules` and breaks vet/test/lint —
+use the targets, or the explicit list.
 
 ## Commit style
 
