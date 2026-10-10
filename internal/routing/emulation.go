@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
@@ -73,6 +75,15 @@ func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry,
 		return resp, nil
 	}
 
+	// From here the request is an emulation loop, and it gets one time budget:
+	// the round cap bounds how many times a model may call tools, this bounds
+	// how long the request may spend doing it (ExecutorConfig
+	// .EmulationTotalBudget). Set AFTER the early return, so an ordinary
+	// request is never subject to an emulation deadline.
+	loopCtx, cancelLoop := context.WithTimeout(ctx, e.cfg.EmulationTotalBudget)
+	defer cancelLoop()
+	ctx = loopCtx
+
 	var synth []ir.Part      // client-facing blocks synthesized across rounds
 	var usage ir.Usage       // honest cross-round token accounting
 	uses := map[string]int{} // invocations per tool family (max_uses budget)
@@ -92,6 +103,16 @@ func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry,
 		if round >= maxEmulationRounds {
 			trace.EmulatedTool("emulation_loop",
 				fmt.Sprintf("round cap %d reached; returning last upstream response", maxEmulationRounds))
+			return finishEmulated(resp, synth, usage), nil
+		}
+		// The other half of the safety net: the loop's own deadline (set when the
+		// loop started). Everything synthesized so far is honest output, so the
+		// request ends with it rather than with an error — the same posture the
+		// round cap takes.
+		if ctx.Err() != nil {
+			trace.EmulatedTool("emulation_loop",
+				"emulation budget exhausted ("+e.cfg.EmulationTotalBudget.String()+
+					"); returning what the tools answered so far")
 			return finishEmulated(resp, synth, usage), nil
 		}
 
@@ -164,6 +185,13 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 		return fail(errCodeEmulatorUnavailable, "web-tool emulation unavailable: no emulator configured")
 	}
 
+	// One budget for the whole invocation, however many accounts are configured:
+	// the pool walks its accounts internally, so this bounds the walk — without
+	// it, N accounts meant N × the client timeout inline on the request path
+	// (ExecutorConfig.EmulationCallBudget).
+	callCtx, cancelCall := context.WithTimeout(ctx, e.cfg.EmulationCallBudget)
+	defer cancelCall()
+
 	// max_uses budget (A10): exceeded calls get the protocol-conform
 	// error result, never an upstream error, and the loop continues so
 	// the model can recover.
@@ -181,9 +209,9 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 		if strings.TrimSpace(in.Query) == "" {
 			return fail(errCodeInvalidToolInput, "missing query")
 		}
-		items, err := emu.Search(ctx, in.Query, st)
+		items, err := emu.Search(callCtx, in.Query, st)
 		if err != nil {
-			return fail(errCodeEmulatorUnavailable, "emulator search failed: "+err.Error())
+			return fail(errCodeEmulatorUnavailable, "emulator search failed: "+callErrReason(callCtx, err, e.cfg.EmulationCallBudget))
 		}
 		res.Search = items
 		uses[call.Name]++
@@ -203,9 +231,9 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 		if !allowed {
 			return fail(code, "url rejected by domain filters")
 		}
-		fc, err := emu.Fetch(ctx, in.URL, st)
+		fc, err := emu.Fetch(callCtx, in.URL, st)
 		if err != nil {
-			return fail(errCodeEmulatorUnavailable, "emulator fetch failed: "+err.Error())
+			return fail(errCodeEmulatorUnavailable, "emulator fetch failed: "+callErrReason(callCtx, err, e.cfg.EmulationCallBudget))
 		}
 		res.Fetch = fc
 		uses[call.Name]++
@@ -227,6 +255,16 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 	tr := ir.ToolResultPart{ToolUseID: call.ID,
 		Content: []ir.Part{ir.TextPart{Text: payload}}}
 	return use, res, tr
+}
+
+// callErrReason names a budget exhaustion for what it is. A bare
+// "context deadline exceeded" in the log reads like an upstream failure, when in
+// fact this proxy stopped waiting — the operator needs to tell those apart.
+func callErrReason(ctx context.Context, err error, budget time.Duration) string {
+	if errors.Is(err, context.DeadlineExceeded) || ctx.Err() != nil {
+		return "web-tool call budget exhausted (" + budget.String() + "): " + err.Error()
+	}
+	return err.Error()
 }
 
 // resultPayloadForModel renders the result block the MODEL sees on the

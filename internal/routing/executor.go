@@ -75,6 +75,20 @@ type ExecutorConfig struct {
 	// documented unavailable errors), then re-dispatched.
 	Emulator Emulator
 
+	// EmulationCallBudget bounds ONE emulated tool invocation across the whole
+	// account walk. The pool is a single Emulator that walks its list
+	// internally, so this is a per-invocation budget no matter how many
+	// accounts are configured — without it, N accounts meant N × the client
+	// timeout inline on the request path. Zero means the default (30 s).
+	EmulationCallBudget time.Duration
+
+	// EmulationTotalBudget bounds the entire emulation loop for one request:
+	// every round trip and every web-tool call together. A safety net for a
+	// model that keeps issuing tool calls (the round cap bounds the count, this
+	// bounds the time); operators bound invocations per tool with max_uses.
+	// Zero means the default (5 min).
+	EmulationTotalBudget time.Duration
+
 	// CapabilityFallbacks are the model-level fallback chain entries
 	// (2026-09-21 automatic capabilities, ADR-014): the vision models used
 	// to DESCRIBE an image when the rule chain exhausted with capability_gap
@@ -114,6 +128,14 @@ const (
 	defaultMaxProviders          = 3
 	defaultBackoffCeiling        = 3 * time.Second
 	defaultRetryBackoff          = 250 * time.Millisecond
+
+	// defaultEmulationCallBudget bounds one emulated tool invocation across the
+	// account walk (see ExecutorConfig.EmulationCallBudget).
+	defaultEmulationCallBudget = 30 * time.Second
+
+	// defaultEmulationTotalBudget bounds the whole emulation loop for a request
+	// (see ExecutorConfig.EmulationTotalBudget).
+	defaultEmulationTotalBudget = 5 * time.Minute
 )
 
 // ErrChainExhausted is the terminal error when every attempt in the chain
@@ -122,11 +144,23 @@ var ErrChainExhausted = errors.New("routing: chain exhausted")
 
 // exhaustedError carries the last attempt's error for callers that need
 // the upstream cause (error surfacing per §5.3).
+//
+// last can be nil: a walk where no attempt ever ran (every chain entry skipped
+// as unregistered, or the chain arrived already cancelled) reaches the same exit
+// as a walk whose attempts all failed. That case used to panic in Error() — an
+// error value that crashes when formatted crashes in the log path, which is
+// exactly where the least is recoverable.
 type exhaustedError struct {
 	last error
 }
 
-func (e *exhaustedError) Error() string { return ErrChainExhausted.Error() + ": " + e.last.Error() }
+func (e *exhaustedError) Error() string {
+	if e.last == nil {
+		return ErrChainExhausted.Error() + ": no attempt was made"
+	}
+	return ErrChainExhausted.Error() + ": " + e.last.Error()
+}
+
 func (e *exhaustedError) Unwrap() error { return e.last }
 
 // NewExecutor returns an Executor for cfg, filling FO-3 defaults.
@@ -142,6 +176,12 @@ func NewExecutor(cfg ExecutorConfig) *Executor {
 	}
 	if cfg.RetryBackoff == 0 {
 		cfg.RetryBackoff = defaultRetryBackoff
+	}
+	if cfg.EmulationCallBudget <= 0 {
+		cfg.EmulationCallBudget = defaultEmulationCallBudget
+	}
+	if cfg.EmulationTotalBudget <= 0 {
+		cfg.EmulationTotalBudget = defaultEmulationTotalBudget
 	}
 	if cfg.RetrySleeper == nil {
 		cfg.RetrySleeper = time.Sleep
