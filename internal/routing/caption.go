@@ -160,8 +160,12 @@ func (e *Executor) captionImages(ctx context.Context, req ir.Request, trace *Tra
 		descs[i] = &text
 		captioned++
 		// The operator must be able to see what the answering model was told
-		// the image showed — this event is how.
+		// the image showed (ADR-014): the trace event is the timeline entry,
+		// the payload is the detail view — the instruction, the image's type
+		// and size, and the caption itself.
 		trace.ImageCaption(entry.ProviderID, entry.Model, len(text))
+		trace.CaptionPayload(entry.ProviderID, entry.Model, prompt,
+			inline.MediaType, inline.DecodedBytes(), text)
 	}
 
 	if captioned == 0 {

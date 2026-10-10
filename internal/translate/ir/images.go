@@ -1,5 +1,7 @@
 package ir
 
+import "strings"
+
 // Image extraction and substitution (image-to-text fallback): a model that
 // cannot take image input can still answer if something describes the image
 // first. These two helpers are the pair that makes that possible — find every
@@ -21,6 +23,22 @@ package ir
 type ImageRef struct {
 	Path  []int
 	Image ImagePart
+}
+
+// DecodedBytes is the size of the part's base64 payload once decoded — the fact
+// worth keeping about an image that is not going to be stored (a log records an
+// image by media type and size, never its bytes). 0 for a URL-sourced part,
+// whose payload was never carried.
+func (p ImagePart) DecodedBytes() int {
+	if p.Data == "" {
+		return 0
+	}
+	// 4 base64 characters carry 3 bytes, minus the padding.
+	n := len(p.Data) / 4 * 3
+	if pad := strings.Count(p.Data, "="); pad > 0 && pad <= 2 {
+		n -= pad
+	}
+	return n
 }
 
 // ImageRefs returns every image part in the request, in document order across
