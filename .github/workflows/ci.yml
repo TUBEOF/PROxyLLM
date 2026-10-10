@@ -47,7 +47,11 @@ jobs:
       - name: gofmt check
         run: test -z "$(gofmt -l cmd internal webui/embed.go)"
       - name: go vet
-        run: go vet $GO_PKGS
+        run: |
+          # $GO_PKGS is a deliberate word-split: it expands to three package
+          # patterns, and quoting it would pass them as one bogus argument.
+          # shellcheck disable=SC2086
+          go vet $GO_PKGS
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
@@ -63,7 +67,10 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
       - name: go test -race
-        run: go test -race $GO_PKGS
+        run: |
+          # Same deliberate word-split as the vet step above.
+          # shellcheck disable=SC2086
+          go test -race $GO_PKGS
       - name: govulncheck
         uses: golang/govulncheck-action@v1
         with:
@@ -209,15 +216,15 @@ jobs:
       - name: Smoke test container
         run: |
           docker run -d --rm --name proxyllm-ci -p 18080:8080 proxyllm:ci
-          for i in $(seq 1 30); do
+          for attempt in $(seq 1 30); do
             if curl -fsS http://localhost:18080/healthz >/dev/null 2>&1; then
-              echo "health check passed"
+              echo "health check passed (attempt ${attempt})"
               docker stop proxyllm-ci
               exit 0
             fi
             sleep 1
           done
-          echo "health check FAILED"
+          echo "health check FAILED after 30 attempts"
           docker logs proxyllm-ci
           docker stop proxyllm-ci || true
           exit 1
