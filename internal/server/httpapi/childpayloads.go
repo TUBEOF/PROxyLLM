@@ -41,16 +41,26 @@ type childPayloadRow struct {
 const captionExcerptRunes = 120
 
 // attachChildPayloads pairs the trace-derived child rows with the payloads the
-// routing layer collected, and upgrades a caption row's detail from its
-// character count to an excerpt of what the describer actually wrote — the
-// operator reads "what was the answering model told the image showed?" on the
-// row, not a number.
+// routing layer collected, and — when body capture is on — upgrades a caption
+// row's detail from its character count to an excerpt of what the describer
+// actually wrote: the operator reads "what was the answering model told the
+// image showed?" on the row, not a number.
+//
+// withBodies is the capture switch, and it gates the excerpt too. The excerpt is
+// caption text, and a caption is model output derived from an image — so with
+// capture off the row keeps the trace's character count rather than storing text
+// the operator asked not to keep. The payload table is gated further down
+// (captureChildPayloads), but the detail column is written by InsertChildLogs
+// before that point, so the decision has to be made here.
 //
 // Pairing is by kind in collection order: both lists come from the same event
 // sequence in the same order, so the nth emulated-tool op takes the nth
 // emulated-tool payload. Nothing else about the rows changes.
-func attachChildPayloads(ops []storage.ChildLog, payloads []routing.ChildPayload) ([]storage.ChildLog, []childPayloadRow) {
+func attachChildPayloads(ops []storage.ChildLog, payloads []routing.ChildPayload, withBodies bool) ([]storage.ChildLog, []childPayloadRow) {
 	rows := make([]childPayloadRow, len(ops))
+	if !withBodies {
+		return ops, rows
+	}
 	used := make([]bool, len(payloads))
 	for i := range ops {
 		j := matchPayload(payloads, used, routing.OpKind(ops[i].Kind), ops[i])
@@ -79,7 +89,10 @@ func attachChildPayloads(ops []storage.ChildLog, payloads []routing.ChildPayload
 // drift from this and quietly make the baselines a lie.
 func ChildOpWithPayload(op storage.ChildLog, p routing.ChildPayload) storage.ChildLog {
 	if routing.OpKind(op.Kind) == routing.OpImageCaption && p.Output != "" {
-		op.Detail = childRedactor.Redact(excerptRunes(p.Output, captionExcerptRunes))
+		// Redact BEFORE truncating: the other order can leave an unmasked
+		// prefix of a credential that straddles the cut, and a cut mask marker
+		// costs nothing but looks like what it is.
+		op.Detail = excerptRunes(childRedactor.Redact(p.Output), captionExcerptRunes)
 	}
 	return op
 }

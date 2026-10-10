@@ -473,7 +473,10 @@ func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID stri
 	// The insert returns the ids it allocated, which is what a payload is keyed
 	// by — hence the write happening here rather than in the payload path.
 	if ops := ChildOpsFromTrace(trace); len(ops) > 0 {
-		rows, bodies := attachChildPayloads(ops, childPayloads)
+		// Body capture gates the caption row's excerpt as well as its payload:
+		// the excerpt IS caption text, and the row's detail is persisted by the
+		// insert below, before the payload write's own gate can apply.
+		rows, bodies := attachChildPayloads(ops, childPayloads, a.captureEnabled(ctx))
 		if ids, cerr := a.store.InsertChildLogs(ctx, rowID, rows); cerr == nil {
 			for i := range bodies {
 				if i < len(ids) {

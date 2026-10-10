@@ -29,7 +29,7 @@ func TestAttachChildPayloads_EmulatedToolRowsCarryTheirOwnExchange(t *testing.T)
 			Output: `{"url":"https://example.com/a","content":"the page"}`},
 	}
 
-	rows, bodies := attachChildPayloads(ops, payloads)
+	rows, bodies := attachChildPayloads(ops, payloads, true)
 	if len(bodies) != 2 {
 		t.Fatalf("bodies = %d, want one per call", len(bodies))
 	}
@@ -78,7 +78,7 @@ func TestAttachChildPayloads_CaptionRowShowsTheDescriptionNotACount(t *testing.T
 			Output: caption},
 	}
 
-	rows, bodies := attachChildPayloads(ops, payloads)
+	rows, bodies := attachChildPayloads(ops, payloads, true)
 
 	if strings.Contains(rows[0].Detail, "character(s)") {
 		t.Errorf("row detail still carries the character count: %q", rows[0].Detail)
@@ -121,7 +121,7 @@ func TestAttachChildPayloads_RedactsASecretTranscribedInACaption(t *testing.T) {
 		Output: "a terminal showing `export OPENAI_API_KEY=" + secret + "` and a passing test run",
 	}}
 
-	rows, bodies := attachChildPayloads(ops, payloads)
+	rows, bodies := attachChildPayloads(ops, payloads, true)
 
 	if strings.Contains(bodies[0].response, secret) {
 		t.Errorf("caption body leaks the transcribed credential: %q", bodies[0].response)
@@ -142,7 +142,7 @@ func TestAttachChildPayloads_OpWithoutAPayloadKeepsItsDetail(t *testing.T) {
 		{Kind: string(routing.OpCapabilityFallback), Detail: "vision"},
 	}
 
-	rows, bodies := attachChildPayloads(ops, nil)
+	rows, bodies := attachChildPayloads(ops, nil, true)
 
 	if rows[0].Detail != "chain failover after rate_limit" || rows[1].Detail != "vision" {
 		t.Errorf("details were rewritten for ops with no payload: %+v", rows)
@@ -154,6 +154,39 @@ func TestAttachChildPayloads_OpWithoutAPayloadKeepsItsDetail(t *testing.T) {
 	}
 }
 
+// The capture switch covers the caption excerpt too. The excerpt IS caption
+// text — model output derived from an image — and the row's detail is written by
+// InsertChildLogs before the payload write's own gate runs, so an operator who
+// turned body capture off must not still get image content in request_child_logs.
+func TestAttachChildPayloads_CaptureOffStoresNoCaptionText(t *testing.T) {
+	const caption = "a terminal window showing an internal hostname and a session cookie"
+	ops := []storage.ChildLog{
+		{Kind: string(routing.OpImageCaption), Detail: "71 character(s) described"},
+		{Kind: string(routing.OpEmulatedTool), ToRef: "web_search", Detail: `query "x" → 1 result(s)`},
+	}
+	payloads := []routing.ChildPayload{
+		{Kind: routing.OpImageCaption, Output: caption},
+		{Kind: routing.OpEmulatedTool, Tool: "web_search", Input: `{"query":"x"}`, Output: `{"results":[]}`},
+	}
+
+	rows, bodies := attachChildPayloads(ops, payloads, false)
+
+	if rows[0].Detail != "71 character(s) described" {
+		t.Errorf("caption detail = %q, want the trace's character count when capture is off", rows[0].Detail)
+	}
+	if strings.Contains(rows[0].Detail, "session cookie") {
+		t.Error("caption text reached the row detail with body capture disabled")
+	}
+	if rows[1].Detail != `query "x" → 1 result(s)` {
+		t.Errorf("emulated-tool detail = %q, want the trace's summary untouched", rows[1].Detail)
+	}
+	for i, b := range bodies {
+		if b.request != "" || b.response != "" {
+			t.Errorf("bodies[%d] = %+v, want nothing rendered when capture is off", i, b)
+		}
+	}
+}
+
 // A caption longer than the row's allowance is cut for the ROW only; the payload
 // keeps the whole thing, which is the point of opening the detail view.
 func TestAttachChildPayloads_LongCaptionIsExcerptedOnTheRowOnly(t *testing.T) {
@@ -161,7 +194,7 @@ func TestAttachChildPayloads_LongCaptionIsExcerptedOnTheRowOnly(t *testing.T) {
 	ops := []storage.ChildLog{{Kind: string(routing.OpImageCaption)}}
 	payloads := []routing.ChildPayload{{Kind: routing.OpImageCaption, Output: long}}
 
-	rows, bodies := attachChildPayloads(ops, payloads)
+	rows, bodies := attachChildPayloads(ops, payloads, true)
 
 	if len([]rune(rows[0].Detail)) > captionExcerptRunes+1 {
 		t.Errorf("row detail = %d runes, want the excerpt cap (%d)", len([]rune(rows[0].Detail)), captionExcerptRunes)
