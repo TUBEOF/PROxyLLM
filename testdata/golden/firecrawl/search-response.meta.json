@@ -1,7 +1,7 @@
 {
   "fixture": "search-response.json",
   "source": "https://docs.firecrawl.dev/api-reference/endpoint/search",
-  "accessed": "2026-09-10",
+  "accessed": "2026-10-10",
   "facts": ["F2"],
-  "notes": "Response: web[] array with title, url, description, optional markdown. 429 on plan limits (F5)."
+  "notes": "Response: success, data.web[] (title, url, description, nullable markdown), top-level nullable `warning` (string), id, creditsUsed. RE-READ 2026-10-10: the earlier capture of this fixture carried `\"warning\": []`, but the reference types warning as a nullable STRING — the fixture was corrected and the decoder made tolerant of both (see firecrawl.WarningText)."
 }

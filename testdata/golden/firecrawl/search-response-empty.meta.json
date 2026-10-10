@@ -1,0 +1,7 @@
+{
+  "fixture": "search-response-empty.json",
+  "source": "https://docs.firecrawl.dev/api-reference/endpoint/search",
+  "accessed": "2026-10-10",
+  "facts": ["F2"],
+  "notes": "A successful search with no matches: data.web is an empty array and success stays true (the schema imposes no minimum length on data.web). Grounds the contract that an empty result is an ANSWER, not an error — the account walk must continue to the next account instead of stopping."
+}

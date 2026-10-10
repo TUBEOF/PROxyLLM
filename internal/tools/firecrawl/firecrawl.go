@@ -62,14 +62,53 @@ type ScrapeRequest struct {
 	Formats []string `json:"formats,omitempty"`
 }
 
-// SearchResponse mirrors the golden search-response fixture shape (F2):
-// data.web[] with title/url/description and optional markdown.
+// SearchResponse mirrors the documented /v2/search 200 body (F2, re-read
+// 2026-10-10): success, data.web[], and a nullable top-level warning. The
+// arrays present depend on the sources asked for; web is the default.
 type SearchResponse struct {
 	Success bool `json:"success"`
 	Data    struct {
 		Web []WebResult `json:"web"`
 	} `json:"data"`
-	Warning []string `json:"warning"`
+
+	// Warning is informational (partial source degradation with success:true),
+	// never a failure. See WarningText for why it is not a plain string.
+	Warning WarningText `json:"warning"`
+}
+
+// WarningText is Firecrawl's `warning` (and `metadata.error`) field. The v2
+// reference types both as a nullable string — search's warning at the top
+// level, scrape's under data — while the fixture this repo captured earlier
+// carried an empty array instead. Decoding is therefore tolerant of a string,
+// an array of strings, and null:
+//
+// a warning is a soft signal about an otherwise successful answer, and a type
+// mismatch on it must not turn that answer into a decode error (which is how a
+// non-empty warning would have failed a whole scrape, since an unparseable body
+// is a transport-level failure to the caller).
+type WarningText string
+
+// UnmarshalJSON accepts string | []string | null | anything else, because the
+// field is informational and its shape has differed between the docs and the
+// wire. An unrecognised shape is kept as its raw text rather than dropped.
+func (w *WarningText) UnmarshalJSON(b []byte) error {
+	trimmed := strings.TrimSpace(string(b))
+	if trimmed == "" || trimmed == "null" {
+		*w = ""
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*w = WarningText(s)
+		return nil
+	}
+	var list []string
+	if err := json.Unmarshal(b, &list); err == nil {
+		*w = WarningText(strings.Join(list, "; "))
+		return nil
+	}
+	*w = WarningText(strings.Trim(trimmed, `"`))
+	return nil
 }
 
 // WebResult is one entry of data.web[] (F2). Markdown is present only when
@@ -81,15 +120,23 @@ type WebResult struct {
 	Markdown    string `json:"markdown"`
 }
 
-// ScrapeResponse mirrors the golden scrape-response fixture shape (F3).
+// ScrapeResponse mirrors the documented /v2/scrape 200 body (F3, re-read
+// 2026-10-10): success, data.markdown, and metadata carrying the page's own
+// status code and error note. There is no top-level warning here — scrape's
+// warning rides under data.
 type ScrapeResponse struct {
 	Success bool `json:"success"`
 	Data    struct {
-		Markdown string `json:"markdown"`
+		Markdown string      `json:"markdown"`
+		Warning  WarningText `json:"warning"`
 		Metadata struct {
 			Title      string `json:"title"`
 			URL        string `json:"url"`
+			SourceURL  string `json:"sourceURL"`
 			StatusCode int    `json:"statusCode"`
+			// Error is the page's own error ("The error message of the page"),
+			// which is how a 200 response reports a page it could not serve.
+			Error WarningText `json:"error"`
 		} `json:"metadata"`
 	} `json:"data"`
 }

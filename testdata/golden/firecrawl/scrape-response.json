@@ -5,8 +5,8 @@
     "metadata": {
       "title": "Downloads - The Go Programming Language",
       "url": "https://go.dev/dl/",
+      "sourceURL": "https://go.dev/dl/",
       "statusCode": 200
     }
-  },
-  "warning": []
+  }
 }
