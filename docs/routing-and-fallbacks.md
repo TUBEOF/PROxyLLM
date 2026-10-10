@@ -222,6 +222,43 @@ emulated: a model that really rejects image input at the upstream fails
 over within the chain, then to the configured vision fallback MODELS —
 see above.
 
+### How a web-tool account walk decides (2026-10-10)
+
+The pool walks its accounts in the configured priority order, and each
+attempt has one of three outcomes:
+
+| Outcome | What happens |
+|---|---|
+| **An answer with results** | The walk stops there. That is the answer. |
+| **An empty answer** (a search with no matches, a page the service could not serve) | Remembered, and the walk CONTINUES — the next account may well have the results. An empty answer still outranks a later account's *failure*: the model is told "nothing found", never "the tool is broken". |
+| **A failure** | The walk moves on; the error is surfaced only when no account answered at all. |
+
+A search result of `data.web: []` and a page whose `metadata.statusCode` is
+not 2xx are both *empty*, not errors — the reference reports the second one
+inside an HTTP 200 body, so the transport succeeding says nothing about
+whether there is content.
+
+Three bounds keep a slow or broken account from holding the request:
+
+- **Per-invocation budget** — one tool call (across all accounts) gets
+  `EmulationCallBudget`, default 30 s. Without it, N accounts meant N × the
+  client timeout inline on the request path. The pool's HTTP client uses a
+  20 s timeout, deliberately below it, so a stalled account gives up in time
+  for the next one to be tried inside the same budget.
+- **Per-account circuit** — three consecutive hard failures cool an account
+  down (30 s, doubling to a 5-minute ceiling); a success resets it. Cooling
+  accounts are skipped, and when EVERY account is cooling the list is walked
+  anyway as a probe, so a family that had a bad minute recovers by itself.
+- **Loop budget** — `EmulationTotalBudget`, default 5 min, bounds the whole
+  round-trip loop (the round count is capped separately at 32). On expiry the
+  request ends with what the tools answered so far, the same posture the round
+  cap takes.
+
+Every attempt is recorded in `route_trace` as an `emulated_tool_attempt`
+event (route_trace v7) naming the account and its outcome, and the
+substitution event names the account that answered — so "the web tool found
+nothing" is answerable from the log instead of being a dead end.
+
 ## Model sync (ADR-010)
 
 Providers exposing model discovery (custom OpenAI-compatible `GET

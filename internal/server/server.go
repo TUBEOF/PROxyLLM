@@ -380,21 +380,27 @@ func buildEmulatorPool(ctx context.Context, accounts []NamedEmulator, envEmulato
 		logger.Error("web-tool fallback read failed — pool in registry order", "error", err)
 		search, fetch = accounts, accounts
 	}
-	searchEmus := namedToEmulators(search)
-	fetchEmus := namedToEmulators(fetch)
+	searchEntries := namedToEmulatorEntries(search)
+	fetchEntries := namedToEmulatorEntries(fetch)
 	if envEmulator != nil {
-		// The legacy ENV path joins both families as the final entry.
-		searchEmus = append(searchEmus, envEmulator)
-		fetchEmus = append(fetchEmus, envEmulator)
+		// The legacy ENV path joins both families as the final entry. No account
+		// id: an env-configured emulator has no provider row to name, so the
+		// trace cannot attribute an attempt to it and the per-account circuit
+		// never gates it (see EmulatorPool.attemptOrder).
+		searchEntries = append(searchEntries, routing.EmulatorEntry{Emulator: envEmulator})
+		fetchEntries = append(fetchEntries, routing.EmulatorEntry{Emulator: envEmulator})
 	}
-	return routing.NewEmulatorPool(searchEmus, fetchEmus)
+	return routing.NewEmulatorPoolEntries(searchEntries, fetchEntries)
 }
 
-// namedToEmulators strips the ID pairing for the pool lists.
-func namedToEmulators(named []NamedEmulator) []routing.Emulator {
-	out := make([]routing.Emulator, 0, len(named))
+// namedToEmulatorEntries keeps the account ids: they are what the pool's trace
+// events name and what its per-account circuit is keyed by (2026-10-10). A
+// position-keyed circuit would forget a cooling account as soon as the operator
+// reordered the list.
+func namedToEmulatorEntries(named []NamedEmulator) []routing.EmulatorEntry {
+	out := make([]routing.EmulatorEntry, 0, len(named))
 	for _, e := range named {
-		out = append(out, e.Emulator)
+		out = append(out, routing.EmulatorEntry{ID: e.ID, Emulator: e.Emulator})
 	}
 	return out
 }

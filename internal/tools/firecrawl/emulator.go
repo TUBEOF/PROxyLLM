@@ -10,8 +10,10 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/tubeof/proxyllm/internal/httpguard"
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
@@ -23,9 +25,28 @@ type Emulator struct {
 	client *Client
 }
 
-// NewEmulator builds the adapter. An empty baseURL or nil httpClient
-// delegates to the client defaults.
+// emulatorClient is the HTTP client shared by every emulator account.
+//
+// Accounts are built per provider row, and a nil client used to mean "clone a
+// fresh transport per account" — so one pool walk dialled a different connection
+// pool for each account, and an idle connection was never reused across a
+// failover. One client, one pool, which is what makes the per-host idle settings
+// in httpguard mean anything here.
+//
+// The 20 s client timeout is deliberately below the executor's per-invocation
+// emulation budget (30 s): a stalled account has to give up in time for the next
+// account to get a window inside that same budget.
+var emulatorClient = sync.OnceValue(func() *http.Client {
+	return httpguard.NewClient(20 * time.Second)
+})
+
+// NewEmulator builds the adapter. An empty baseURL delegates to the client
+// default; a nil httpClient selects the shared emulator client (see
+// emulatorClient) rather than a private transport per account.
 func NewEmulator(baseURL, apiKey string, httpClient *http.Client) *Emulator {
+	if httpClient == nil {
+		httpClient = emulatorClient()
+	}
 	return &Emulator{client: New(baseURL, apiKey, httpClient)}
 }
 

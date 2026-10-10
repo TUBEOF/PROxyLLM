@@ -64,6 +64,13 @@ const (
 	// substitutions are never silent.
 	EventEmulatedTool EventType = "emulated_tool"
 
+	// EventEmulatedToolAttempt: one ACCOUNT's outcome inside an emulated tool
+	// invocation (2026-10-10) — ProviderID names the account, Reason the
+	// outcome (answered / empty / failed). The account walk is otherwise
+	// invisible: without this the log can say a web tool ran but not why it
+	// found nothing.
+	EventEmulatedToolAttempt EventType = "emulated_tool_attempt"
+
 	// EventRejected: the request ended without an upstream attempt (no
 	// route, key scope, or empty chain after filtering).
 	EventRejected EventType = "rejected"
@@ -223,6 +230,15 @@ func (t *Trace) ImageCaption(providerID, model string, chars int) {
 // query/url, outcome).
 func (t *Trace) EmulatedTool(toolName, detail string) {
 	t.add(Event{Type: EventEmulatedTool, Reason: detail, To: toolName})
+}
+
+// EmulatedToolAttempt records one account's outcome inside an emulated tool
+// invocation (2026-10-10): which account was asked, and whether it answered,
+// came back empty, or failed. The account walk happens inside the pool, so this
+// is the only place the operator can see WHY a web tool found nothing — and
+// which account to look at when one of several is misconfigured.
+func (t *Trace) EmulatedToolAttempt(toolName, providerID, outcome string) {
+	t.add(Event{Type: EventEmulatedToolAttempt, To: toolName, ProviderID: providerID, Reason: outcome})
 }
 
 // Reject records a terminal no-upstream outcome.

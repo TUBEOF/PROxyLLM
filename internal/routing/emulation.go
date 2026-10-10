@@ -209,13 +209,13 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 		if strings.TrimSpace(in.Query) == "" {
 			return fail(errCodeInvalidToolInput, "missing query")
 		}
-		items, err := emu.Search(callCtx, in.Query, st)
+		items, by, err := searchVia(callCtx, emu, in.Query, st, trace)
 		if err != nil {
 			return fail(errCodeEmulatorUnavailable, "emulator search failed: "+callErrReason(callCtx, err, e.cfg.EmulationCallBudget))
 		}
 		res.Search = items
 		uses[call.Name]++
-		trace.EmulatedTool(call.Name, fmt.Sprintf("query %q → %d result(s)", in.Query, len(items)))
+		trace.EmulatedTool(call.Name, emuSummary(fmt.Sprintf("query %q → %d result(s)", in.Query, len(items)), by))
 
 	case "web_fetch":
 		if strings.TrimSpace(in.URL) == "" {
@@ -231,13 +231,13 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 		if !allowed {
 			return fail(code, "url rejected by domain filters")
 		}
-		fc, err := emu.Fetch(callCtx, in.URL, st)
+		fc, by, err := fetchVia(callCtx, emu, in.URL, st, trace)
 		if err != nil {
 			return fail(errCodeEmulatorUnavailable, "emulator fetch failed: "+callErrReason(callCtx, err, e.cfg.EmulationCallBudget))
 		}
 		res.Fetch = fc
 		uses[call.Name]++
-		trace.EmulatedTool(call.Name, "fetched "+in.URL)
+		trace.EmulatedTool(call.Name, emuSummary("fetched "+in.URL, by))
 
 	default:
 		return fail(errCodeInvalidToolInput, "unknown emulated tool "+call.Name)
@@ -255,6 +255,36 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 	tr := ir.ToolResultPart{ToolUseID: call.ID,
 		Content: []ir.Part{ir.TextPart{Text: payload}}}
 	return use, res, tr
+}
+
+// searchVia and fetchVia call the emulator, using the pool's traced variants
+// when the configured emulator IS a pool. The interface stays two methods (a
+// single emulator has no account walk to report), and the pool records each
+// account's outcome in the trace while telling the caller which one answered.
+func searchVia(ctx context.Context, emu Emulator, query string, st ir.ServerToolConfig, trace *Trace) ([]ir.WebSearchResultItem, string, error) {
+	if p, ok := emu.(*EmulatorPool); ok {
+		return p.SearchTraced(ctx, query, st, trace)
+	}
+	items, err := emu.Search(ctx, query, st)
+	return items, "", err
+}
+
+func fetchVia(ctx context.Context, emu Emulator, url string, st ir.ServerToolConfig, trace *Trace) (*ir.WebFetchContent, string, error) {
+	if p, ok := emu.(*EmulatorPool); ok {
+		return p.FetchTraced(ctx, url, st, trace)
+	}
+	page, err := emu.Fetch(ctx, url, st)
+	return page, "", err
+}
+
+// emuSummary appends the account that answered, when the walk named one. The
+// operator's question about a web tool is usually "why did it find nothing" —
+// and WHICH account was asked is half of that answer.
+func emuSummary(summary, account string) string {
+	if account == "" {
+		return summary
+	}
+	return summary + " via " + account
 }
 
 // callErrReason names a budget exhaustion for what it is. A bare
