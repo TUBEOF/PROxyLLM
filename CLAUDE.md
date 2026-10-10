@@ -42,11 +42,10 @@ make webui-install webui-build   # npm ci && npm run build, then `make build` to
 make webui-lint webui-typecheck
 
 # Visual regression (Playwright) — baselines captured in CI only, never locally.
-# Local one-time setup (Ubuntu 26.04 is newer than Playwright 1.55 supports):
-#   PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64 npx playwright install chromium webkit
-#   # if the download stalls during extraction, unzip manually:
-#   unzip /tmp/playwright-download-<browser>-ubuntu24.04-x64-1187.zip \
-#     -d ~/.cache/ms-playwright/<browser>-1187
+# Local one-time setup. Playwright 1.64 knows the host platform, so the browser
+# download needs no override (the 1.55-era PLAYWRIGHT_HOST_PLATFORM_OVERRIDE and
+# the manual-unzip fallback are gone):
+#   npx playwright install chromium webkit
 # Build the fixture server first (the webServer config expects it):
 #   go build -o webui/e2e/fixturesrv-bin ./webui/e2e/fixturesrv
 # Locally green by design: the assertion-only suite (no baselines involved):

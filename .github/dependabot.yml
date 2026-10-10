@@ -1,0 +1,69 @@
+# Dependabot coverage for every dependency surface this repo has.
+#
+# Before this file only an account-level default watched npm, so Go modules,
+# the workflow actions and the container images were never bumped and drifted
+# (the actions had fallen onto deprecated Node 20 runtimes). Minor and patch
+# updates are grouped per ecosystem to keep the PR list short; majors stay
+# individual on purpose, because a major is where the breaking changes live
+# and each deserves its own review.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /webui
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      webui:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      go:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: docker
+    directory: /docker
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      docker:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch

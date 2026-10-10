@@ -22,7 +22,7 @@ jobs:
   perf-budgets:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -33,7 +33,7 @@ jobs:
     needs: [perf-budgets]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -42,16 +42,16 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: webui/package-lock.json
 
       # QEMU + buildx for the arm64 image leg (research R-2); login before
       # GoReleaser because its publish phase pushes during the run.
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
 
       # The binary embeds the SPA (go:embed webui/dist) — build the real
       # bundle before GoReleaser compiles, never the committed placeholder.
@@ -63,7 +63,7 @@ jobs:
       # phase pushes during the GoReleaser run and needs the credentials
       # already present.
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -79,7 +79,7 @@ jobs:
       - name: ignore dist placeholder churn
         run: git update-index --assume-unchanged webui/dist/index.html
       - name: run GoReleaser
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: latest

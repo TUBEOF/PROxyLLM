@@ -7,8 +7,8 @@ import react from '@vitejs/plugin-react';
 //   same origin as /api/admin — connect-src 'self' (P-5).
 // - assetsInlineLimit 0: no data: URIs in HTML/CSS (P-2) so the CSP keeps
 //   img-src/font-src at 'self' and self-hosted fonts ship as real files.
-// - manualChunks: one vendor chunk (react + react-dom + react-router) per
-//   B-2; route-level splitting happens via React.lazy in the app.
+// - one vendor chunk (react + react-dom + react-router) per B-2; route-level
+//   splitting happens via React.lazy in the app.
 // - reportCompressedSize: Vite prints gzip sizes at build; the CI bundle
 //   budget gate parses them (B-3, ≤ 200 KB gzip initial).
 export default defineConfig({
@@ -18,8 +18,17 @@ export default defineConfig({
     reportCompressedSize: true,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
+        // The bundler's group form lives under `codeSplitting.groups`
+        // (`manualChunks` accepts a function only, and the group-shaped
+        // `advancedChunks` is deprecated). `[\\/]` matches either path
+        // separator; the framework trio lands in one chunk named `vendor`.
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor',
+              test: /[\\/]node_modules[\\/]react(-dom|-router(-dom)?)?[\\/]/,
+            },
+          ],
         },
       },
     },
