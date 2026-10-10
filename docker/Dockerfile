@@ -3,7 +3,7 @@
 # WebUI stage: build the SPA so every built image embeds the real bundle,
 # not the committed dist placeholder. Pinned to the same node major CI
 # uses (24 LTS); deps from the lockfile only (npm ci, never npm install).
-FROM node:24-alpine AS webui
+FROM node:25-alpine AS webui
 
 WORKDIR /src/webui
 COPY webui/package.json webui/package-lock.json ./
