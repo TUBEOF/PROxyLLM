@@ -139,6 +139,13 @@ func newEnv(t *testing.T, rules ...routing.Rule) *env {
 	srv := httptest.NewServer(auth.NewMiddleware(st).Wrap(h))
 	t.Cleanup(srv.Close)
 
+	// Payload capture runs OFF the request path, so it can outlive the request
+	// that triggered it — and cleanups are LIFO, so registering this last makes it
+	// run FIRST, before the store closes and before TempDir removes the directory
+	// the database lives in. Without it a slow runner can fail the cleanup with
+	// "directory not empty" (observed on CI).
+	t.Cleanup(func() { httpapi.WaitForPendingCaptures(5 * time.Second) })
+
 	e := &env{
 		store: st, mock: mock, srv: srv, h: h,
 		// OpenAI SDK: base URL carries /v1; retries pinned 0 (default 2

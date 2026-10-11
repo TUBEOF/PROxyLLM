@@ -23,6 +23,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/observability"
@@ -106,6 +107,28 @@ const captureConcurrency = 8
 // captureSlots is the bounded semaphore for capturePayload.
 var captureSlots = make(chan struct{}, captureConcurrency)
 
+// capturesInFlight counts the payload-capture goroutines currently running.
+// They are off the request path by design, so nothing on that path can know when
+// they are done — a test harness tearing down its store (and the temp directory
+// holding it) needs to be able to wait for them, or it can delete the database
+// from under a capture that is still writing to it. That is not theoretical: it
+// showed up as "TempDir RemoveAll cleanup: directory not empty" on CI, where the
+// runner is slow enough for the window to open.
+var capturesInFlight atomic.Int64
+
+// WaitForPendingCaptures blocks until no payload capture is in flight, or the
+// timeout expires. Exported for test harnesses (see capturesInFlight); a no-op
+// outside tests with nothing in flight.
+func WaitForPendingCaptures(timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if capturesInFlight.Load() == 0 {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // capturePayload writes the captured conversation and answer beside the row that
 // was just inserted.
 //
@@ -124,7 +147,9 @@ func (a *api) capturePayload(meta *logMeta, rowID int64, ts int64) {
 	default:
 		return // capture backlogged — shed this one (see captureConcurrency)
 	}
+	capturesInFlight.Add(1)
 	go func() {
+		defer capturesInFlight.Add(-1)
 		defer func() { <-captureSlots }()
 		ctx, cancel := context.WithTimeout(context.Background(), captureTimeout)
 		defer cancel()

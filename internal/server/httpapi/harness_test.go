@@ -145,6 +145,11 @@ func newEnvWithAuthOpts(t *testing.T, authOpts []auth.Option, rules ...routing.R
 	srv := httptest.NewServer(auth.NewMiddleware(st, authOpts...).Wrap(h))
 	t.Cleanup(srv.Close)
 
+	// Payload capture runs OFF the request path (see capturesInFlight), so it can
+	// outlive the request; cleanups are LIFO, so registering this last makes it run
+	// first — before the store closes and before TempDir removes its directory.
+	t.Cleanup(func() { WaitForPendingCaptures(5 * time.Second) })
+
 	return &env{
 		t: t, store: st, mock: mock, reg: reg,
 		router: router, exec: exec, health: health,
