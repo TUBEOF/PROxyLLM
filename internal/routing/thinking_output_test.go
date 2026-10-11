@@ -269,6 +269,63 @@ func TestExecuteStream_RequestedThinkingIsKept(t *testing.T) {
 	}
 }
 
+// A nonconforming target that reuses the index of the block it just closed:
+// the drop verdict belonged to the dropped block, so the reused index must be
+// cleared or the new block's deltas and stop would be swallowed silently.
+func TestExecuteStream_ReusedBlockIndexIsNotSwallowed(t *testing.T) {
+	p := &reuseIndexProvider{}
+	e := thinkingExecutor(p)
+
+	ch, cancel, _, err := e.ExecuteStream(context.Background(),
+		[]routing.ChainEntry{{ProviderID: "reuse"}}, plainReq())
+	if err != nil {
+		t.Fatalf("ExecuteStream: %v", err)
+	}
+	defer cancel()
+
+	events := drainStream(t, ch)
+	var text string
+	for _, ev := range events {
+		if ev.Type == ir.Delta && ev.Delta.Kind == ir.DeltaText {
+			text += ev.Delta.Text
+		}
+		if ev.Type == ir.Delta && ev.Delta.Kind == ir.DeltaThinking {
+			t.Errorf("thinking delta reached the client: %+v", ev)
+		}
+	}
+	if text != "the answer" {
+		t.Errorf("answer text = %q, want %q (a reused index must not be dropped)", text, "the answer")
+	}
+}
+
+// reuseIndexProvider streams a thinking block at index 0 and then the text
+// block ALSO at index 0 — a shape a nonconforming upstream can produce.
+type reuseIndexProvider struct{}
+
+func (p *reuseIndexProvider) ID() string { return "reuse" }
+func (p *reuseIndexProvider) Capabilities() provider.Capabilities {
+	return provider.Capabilities{Tools: true, Thinking: true}
+}
+func (p *reuseIndexProvider) RefreshCredentials(_ context.Context) error { return nil }
+func (p *reuseIndexProvider) Complete(_ context.Context, _ ir.Request) (ir.Response, error) {
+	return ir.Response{ID: "m1", StopReason: ir.StopEndTurn,
+		Content: []ir.Part{ir.TextPart{Text: "the answer"}}}, nil
+}
+
+func (p *reuseIndexProvider) Stream(_ context.Context, _ ir.Request) (<-chan ir.StreamEvent, func(), error) {
+	ch := make(chan ir.StreamEvent, 16)
+	ch <- ir.StreamEvent{Type: ir.Start}
+	ch <- ir.StreamEvent{Type: ir.BlockStart, Index: 0, Part: ir.ThinkingPart{}}
+	ch <- ir.StreamEvent{Type: ir.Delta, Index: 0, Delta: ir.DeltaPayload{Kind: ir.DeltaThinking, Text: "thinking"}}
+	ch <- ir.StreamEvent{Type: ir.BlockStop, Index: 0}
+	ch <- ir.StreamEvent{Type: ir.BlockStart, Index: 0, Part: ir.TextPart{}}
+	ch <- ir.StreamEvent{Type: ir.Delta, Index: 0, Delta: ir.DeltaPayload{Kind: ir.DeltaText, Text: "the answer"}}
+	ch <- ir.StreamEvent{Type: ir.BlockStop, Index: 0}
+	ch <- ir.StreamEvent{Type: ir.Done}
+	close(ch)
+	return ch, func() {}, nil
+}
+
 // hasCompatPolicy reports whether the trace records a compat policy
 // application for the given setting.
 func hasCompatPolicy(trace *routing.Trace, setting string) bool {

@@ -253,6 +253,11 @@ func applyResponseThinkingStream(ctx context.Context, req ir.Request, in <-chan 
 						continue
 					}
 					if len(dropped) > 0 {
+						// A new block may reuse an index a previous block had —
+						// the drop verdict belonged to THAT block, so clear it
+						// before renumbering, or the new block's deltas and stop
+						// would be swallowed by the dropped-index check below.
+						delete(dropped, ev.Index)
 						remap[ev.Index] = kept
 						ev.Index = kept
 					}
