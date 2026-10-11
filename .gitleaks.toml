@@ -1,0 +1,21 @@
+# Gitleaks configuration.
+#
+# One allowance, and it is deliberately narrow. gitleaks' generic-api-key rule is
+# an ENTROPY heuristic: it cannot tell a real credential from a synthetic one, and
+# this repository's tests carry credential-SHAPED values on purpose — the
+# redaction tests exist to prove those shapes are masked before they reach a log,
+# and the key-hash tests round-trip a made-up key. The scanner flagged exactly
+# that: a fixture, twice, on pull requests whose subject was log redaction.
+#
+# What stays in force:
+#   - every provider-prefixed rule (sk-, fc-, pk_, AKIA/ASIA, JWTs, Authorization
+#     headers) still scans test files — a REAL key pasted into a test looks like a
+#     real key, and those rules are how it is caught;
+#   - the entropy heuristic still scans everything that is not a Go test.
+#
+# Referenced explicitly from ci.yml via GITLEAKS_CONFIG rather than relying on the
+# action's auto-detection, so this file's effect does not depend on the action's
+# version.
+[allowlist]
+description = "synthetic credential-shaped fixtures in Go tests (entropy heuristic only; all provider-prefixed rules stay active)"
+paths = ['''^internal/.*_test\.go$''']
