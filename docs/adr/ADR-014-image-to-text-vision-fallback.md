@@ -105,3 +105,51 @@ is usually attached for the text in it.
   the client re-sends, so an agentic session pays one description per image per
   request. A caption cache is the obvious next step if that cost matters; it is
   not needed for correctness.
+
+## Addendum 2026-10-11: the learning gets a reader, and the operator gets a veto
+
+The operator reported: "as soon as an image is in the context, it is carried
+along on every new request and permanently triggers a vision fallback". The
+cause was that the learning described above was **write-only**. The executor
+wrote `vision:false` on every `capability_gap` into the model row — correctly,
+transactionally, honoring `pinned` — and **no production path ever read it
+back**. `GetModelByProviderAndName`, the lookup authored for exactly this, had
+no caller outside its own tests. So every turn re-sent the image, the upstream
+rejected it again, and the description walk ran again. The consequences note
+above ("one description per image per request") was describing the symptom.
+
+**The gate.** Resolution now drops a candidate when its model row *knows* it
+cannot see images and the request carries one. Two properties keep it from
+being a bigger decision than it is:
+
+- A row with no opinion is **permissive**. This is what preserves the
+  original no-pre-stream-gate design, and its stated reason — provider-level
+  capabilities cannot know which model accepts images — is exactly what
+  changed: a *model row* can know, because it learned it.
+- It **never empties a chain**, and it only runs when there is a choice to
+  make. Every candidate being known-blind is precisely the case this ADR's
+  description walk exists for; that request must still be dispatched and
+  rejected for the rescue to fire. Emptying the chain there would have turned
+  a rescue into a hard no-route.
+
+So it is a preference among survivors, applied last, not a filter.
+
+**The veto.** `pinned` was honored by the learning but written by nothing, so
+the operator had no reset path: setting `vision: true` in the Models editor was
+overwritten by the next rejected request. Saving a model there now pins every
+capability it declares, which is the same statement the editor already made.
+
+**Also fixed on the way through:** the model row's capability blob carries the
+`pinned` **object** beside its boolean flags, and two readers decoded it
+straight into `map[string]bool` — which fails outright on that object. Both
+therefore read as "no capabilities" for every row that had ever learned
+anything, i.e. exactly the rows in active use. `capabilityFlags` silently
+stripped thinking handling from them; the new vision lookup would have been
+blind in the same way. Both now parse in two steps and treat only a real
+boolean as a flag.
+
+**Still not cached.** A conversation whose *whole* chain is known-blind still
+pays one description per turn: with nothing better to route to, the rescue is
+the only way to serve the request at all. A caption cache keyed by image
+content is the step that would remove that cost; it is deliberately not in this
+change.

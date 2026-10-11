@@ -120,7 +120,9 @@ a gate, not a preference).
 `internal/routing` resolves, per request: client-key scope → model match
 (exact/wildcard/alias map for Claude Code aliases) → capability filter
 (web_search, web_fetch, code_execution, streaming, thinking — derived from
-request content; vision is NOT gated, and neither is the context window: a real
+request content; vision is gated **only** on a model row that has *learned* it
+cannot see images, so an unclassified model stays permissive and the gate can
+never empty a chain — and neither is the context window: a real
 upstream rejection classifies as `capability_gap` (unsupported modality) or
 `context_window_exceeded` (input longer than the model's window, ADR-013) and
 fails over — when the whole chain failed on `capability_gap`, the executor walks
@@ -128,8 +130,9 @@ the configured fallback MODELS to **describe each image** (ADR-014: they receive
 the image and the instruction, never the conversation, so their own context
 window cannot disqualify them), substitutes the descriptions for the images, and
 dispatches the routed chain again; `vision:false` is learned into the model row
-unless pinned) → ordered fallback chain → health gate (circuit breaker, backoff,
-probe recovery).
+unless pinned, and — since 2026-10-11 — actually read back, because a learning
+nothing consumes means the image is re-sent and re-rejected on every turn) →
+ordered fallback chain → health gate (circuit breaker, backoff, probe recovery).
 
 **Failover only before the first streamed byte** — no mid-stream provider swap;
 an upstream failure during streaming terminates with a protocol-conform error

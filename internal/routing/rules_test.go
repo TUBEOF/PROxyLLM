@@ -191,6 +191,120 @@ func TestResolveChain_CapabilityFilter(t *testing.T) {
 	}
 }
 
+// The vision gate (owner decision 2026-10-11) narrows the no-pre-stream-gate
+// decision above, and the reason the comment above gives for gating being
+// impossible is exactly what changed: static provider caps cannot know which
+// MODEL accepts images, but a MODEL ROW can — it LEARNS vision:false from a
+// real rejection. A candidate whose row knows it cannot see images is dropped
+// when the request carries one, so the request goes straight to a model that
+// can, instead of paying an upstream rejection plus an image caption on every
+// single turn of the conversation.
+//
+// It is a preference among candidates, never a veto — see the three guards
+// below.
+func TestResolveChain_KnownBlindModelIsSkippedForImages(t *testing.T) {
+	reg := provider.NewRegistry()
+	reg.Register(&stubProvider{id: "blind", caps: provider.Capabilities{Streaming: true}})
+	reg.Register(&stubProvider{id: "seeing", caps: provider.Capabilities{Streaming: true}})
+
+	r := routing.NewRouter(routing.Config{
+		Rules: []routing.Rule{rule("claude-*", []string{"blind", "seeing"}, true)},
+	}, routing.WithRegistry(reg),
+		routing.WithModelVisionLookup(func(_ context.Context, providerID, _ string) (bool, bool) {
+			return providerID != "blind", true
+		}))
+
+	got, trace, err := r.ResolveChainFor("claude-opus-5", provider.Capabilities{Vision: true})
+	if err != nil {
+		t.Fatalf("ResolveChainFor: %v", err)
+	}
+	if len(got) != 1 || got[0].ProviderID != "seeing" {
+		t.Fatalf("chain = %v, want [seeing] (the blind model drops out when the request carries an image)", got)
+	}
+	// Fallbacks are never silent.
+	found := false
+	for _, ev := range trace.Events() {
+		if ev.Type == routing.EventSkipped && ev.ProviderID == "blind" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("trace = %+v, want a skip event naming the blind model", trace.Events())
+	}
+}
+
+// Guard 1: an UNKNOWN vision capability is permissive. Most rows have no
+// opinion, and treating "unknown" as "blind" would route around every model
+// the sync has not classified yet.
+func TestResolveChain_UnknownVisionKeepsEveryCandidate(t *testing.T) {
+	reg := provider.NewRegistry()
+	reg.Register(&stubProvider{id: "a", caps: provider.Capabilities{Streaming: true}})
+	reg.Register(&stubProvider{id: "b", caps: provider.Capabilities{Streaming: true}})
+
+	r := routing.NewRouter(routing.Config{
+		Rules: []routing.Rule{rule("claude-*", []string{"a", "b"}, true)},
+	}, routing.WithRegistry(reg),
+		routing.WithModelVisionLookup(func(context.Context, string, string) (bool, bool) {
+			return false, false // no row / no opinion
+		}))
+
+	got, _, err := r.ResolveChainFor("claude-opus-5", provider.Capabilities{Vision: true})
+	if err != nil {
+		t.Fatalf("ResolveChainFor: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("chain = %v, want both candidates (unknown vision is not blind)", got)
+	}
+}
+
+// Guard 2: the gate may never EMPTY a chain. Every candidate being known-blind
+// is exactly the case the image-caption rescue exists for — the request has to
+// go out, be rejected with capability_gap, and be rescued. Turning that into a
+// hard no-route would be a regression dressed as an optimisation.
+func TestResolveChain_AllCandidatesBlindKeepsTheChain(t *testing.T) {
+	reg := provider.NewRegistry()
+	reg.Register(&stubProvider{id: "blind-a", caps: provider.Capabilities{Streaming: true}})
+	reg.Register(&stubProvider{id: "blind-b", caps: provider.Capabilities{Streaming: true}})
+
+	r := routing.NewRouter(routing.Config{
+		Rules: []routing.Rule{rule("claude-*", []string{"blind-a", "blind-b"}, true)},
+	}, routing.WithRegistry(reg),
+		routing.WithModelVisionLookup(func(context.Context, string, string) (bool, bool) {
+			return false, true
+		}))
+
+	got, _, err := r.ResolveChainFor("claude-opus-5", provider.Capabilities{Vision: true})
+	if err != nil {
+		t.Fatalf("ResolveChainFor: %v (the caption rescue must stay reachable)", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("chain = %v, want both candidates kept (the gate never empties a chain)", got)
+	}
+}
+
+// Guard 3: a request with no image is unaffected — the gate is about image
+// input, not about the model's general ability.
+func TestResolveChain_NoImageKeepsEveryCandidate(t *testing.T) {
+	reg := provider.NewRegistry()
+	reg.Register(&stubProvider{id: "blind", caps: provider.Capabilities{Streaming: true}})
+	reg.Register(&stubProvider{id: "seeing", caps: provider.Capabilities{Streaming: true}})
+
+	r := routing.NewRouter(routing.Config{
+		Rules: []routing.Rule{rule("claude-*", []string{"blind", "seeing"}, true)},
+	}, routing.WithRegistry(reg),
+		routing.WithModelVisionLookup(func(context.Context, string, string) (bool, bool) {
+			return false, true
+		}))
+
+	got, _, err := r.ResolveChainFor("claude-opus-5", provider.Capabilities{})
+	if err != nil {
+		t.Fatalf("ResolveChainFor: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("chain = %v, want both candidates (no image, no gate)", got)
+	}
+}
+
 // Health gate (Analysis E step 5): providers whose breaker is open are
 // skipped, again with the skip recorded. The breaker opens after the
 // configured consecutive-failure threshold (circuit breaker), and recovery

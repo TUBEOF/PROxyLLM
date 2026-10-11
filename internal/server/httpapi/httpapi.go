@@ -159,17 +159,25 @@ func defaultThinkingFor(capsJSON json.RawMessage, stored string) string {
 
 // capabilityFlags parses the model row's capability blob's true-valued
 // flags; a corrupted blob reads as empty (never a routing failure).
+//
+// Two-step on purpose: the blob carries a `pinned` OBJECT beside the boolean
+// flags (ADR-014's operator-override map), so decoding straight into
+// map[string]bool failed on every row that had ever LEARNED a capability —
+// which silently read as "no capabilities" and stripped thinking handling from
+// exactly the rows that had been in use. Unknown shapes are skipped, not
+// fatal: only a real boolean counts as a flag.
 func capabilityFlags(capsJSON json.RawMessage) []string {
 	if len(capsJSON) == 0 {
 		return nil
 	}
-	var flags map[string]bool
-	if err := json.Unmarshal(capsJSON, &flags); err != nil {
+	var blob map[string]json.RawMessage
+	if err := json.Unmarshal(capsJSON, &blob); err != nil {
 		return nil
 	}
-	present := make([]string, 0, len(flags))
-	for name, on := range flags {
-		if on {
+	present := make([]string, 0, len(blob))
+	for name, raw := range blob {
+		var on bool
+		if err := json.Unmarshal(raw, &on); err == nil && on {
 			present = append(present, name)
 		}
 	}

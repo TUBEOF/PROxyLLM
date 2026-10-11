@@ -156,7 +156,23 @@ persists the observed gap into the model row's capabilities (e.g.
 `"vision": false`) — asynchronously, never on the request path. A pinned
 flag (the operator's manual selection in the Models editor, written as
 `"pinned": {"vision": true}`) stops the learning for exactly that
-capability; the row's sync origin is preserved.
+capability; the row's sync origin is preserved. Saving a model in that
+editor always records the capabilities it declares as pinned, because
+declaring one there *is* the override — without that the operator's
+`"vision": true` was clobbered by the very next rejected request.
+
+**The learned vision gap is read back** (spec change 2026-10-11). Learning
+that nothing consumes is just a write: a model row that had learned
+`vision:false` was still sent the image on every turn, so an image in a
+conversation cost one upstream rejection — and one image description — per
+request, for the rest of the session. Resolution now drops a candidate
+whose row *knows* it cannot see images when the request carries one, so a
+chain with an alternative goes straight to the model that can serve it.
+Two limits keep this honest: a row with **no opinion** is permissive (most
+rows are unclassified, and treating "unknown" as "blind" would route around
+them all), and the gate **never empties a chain** — every candidate being
+known-blind is exactly the case the description walk exists for, and that
+request still has to go out and be rejected for the rescue to fire.
 
 The web lists refine the executor's emulator pool: with exactly one
 account the behavior is identical to the pre-ADR-010 single emulator; with

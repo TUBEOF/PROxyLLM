@@ -68,6 +68,160 @@ func saveFallbacks(t *testing.T, ts *httptest.Server, vision string, login wirin
 	_ = ensureBodyClosed(t, resp)
 }
 
+// TestServer_LearnedVisionGapStopsRetryingTheBlindModel — the operator's
+// report, pinned end to end: "as soon as an image is in the context it is
+// carried along on every request and permanently triggers a vision fallback".
+//
+// The cause was that ADR-014's learning was write-only: the executor wrote
+// vision:false on a capability_gap and NOTHING ever read it back, so the blind
+// model was dispatched the image again on every single turn. Now the router
+// consumes what the learning produces.
+//
+// Turn 1 walks the chain, the blind entry rejects the image (which teaches its
+// row) and the next entry serves the request. Turn 2 must not dispatch to the
+// blind entry at all.
+func TestServer_LearnedVisionGapStopsRetryingTheBlindModel(t *testing.T) {
+	ctx := context.Background()
+	cfg := newConfig(t)
+
+	st, err := storage.Open(cfg.Storage)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+
+	for _, id := range []string{"mock-blind", "mock-seeing"} {
+		if err := st.EnsureProvider(ctx, id, "custom", id); err != nil {
+			t.Fatalf("ensure provider %s: %v", id, err)
+		}
+	}
+	// One row PER PROVIDER: the models table is keyed by the routing ID, so two
+	// rows cannot share one — but the learning and the gate both look a row up
+	// by (provider_id, wire name), which is what has to match.
+	for _, p := range []string{"mock-blind", "mock-seeing"} {
+		if err := st.PutModel(ctx, storage.Model{
+			ID: p + "/chat-model", ProviderID: p, Name: "chat-model",
+		}); err != nil {
+			t.Fatalf("put model %s: %v", p, err)
+		}
+	}
+	if err := st.PutRoutingRule(ctx, storage.RoutingRule{
+		ID: "r1", MatchModel: "ollamacloud/chat-model",
+		Chain: []string{"mock-blind", "mock-seeing"}, Priority: 100, Enabled: true,
+	}); err != nil {
+		t.Fatalf("put rule: %v", err)
+	}
+
+	blind := mockprovider.New(t)
+	seeing := mockprovider.New(t)
+	srv, err := New(&cfg, st, nil,
+		WithProvider(blind.Provider("mock-blind", providerAllCaps())),
+		WithProvider(seeing.Provider("mock-seeing", providerAllCaps())),
+		WithMasterKey(wiringMasterKey(t)),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	_, key, err := authCreateKey(ctx, st)
+	if err != nil {
+		t.Fatalf("create key: %v", err)
+	}
+
+	// Turn 1: the blind entry rejects the image, the chain fails over.
+	blind.Enqueue(gapRejectedScript())
+	seeing.Enqueue(chatOKScript("chat-model", "turn-1"))
+	if status, body := capabilityFallbackChat(t, ts, key); status != http.StatusOK {
+		t.Fatalf("turn 1: status %d, body %s", status, body)
+	}
+
+	// The gap is learned into the blind model's row — the write half.
+	row, err := st.GetModel(ctx, "mock-blind/chat-model")
+	if err != nil {
+		t.Fatalf("get model: %v", err)
+	}
+	if !strings.Contains(string(row.Capabilities), `"vision":false`) {
+		t.Fatalf("capabilities = %s, want the learned vision:false", row.Capabilities)
+	}
+
+	// Turn 2: same conversation, same image.
+	blindReqsBefore := len(blind.Requests())
+	seeingReqsBefore := len(seeing.Requests())
+	seeing.Enqueue(chatOKScript("chat-model", "turn-2"))
+	status, body := capabilityFallbackChat(t, ts, key)
+	if status != http.StatusOK {
+		t.Fatalf("turn 2: status %d, body %s", status, body)
+	}
+	if !strings.Contains(body, "turn-2") {
+		t.Fatalf("turn 2: body %s (want the serving model's answer)", body)
+	}
+	// The blind model must not be asked again: that is the whole point.
+	if got := len(blind.Requests()) - blindReqsBefore; got != 0 {
+		t.Errorf("the blind model received %d image request(s) on turn 2, want 0 (the learned gap must be read back)", got)
+	}
+	if n := len(seeing.Requests()) - seeingReqsBefore; n != 1 {
+		t.Errorf("the serving model received %d request(s) on turn 2, want 1", n)
+	}
+}
+
+// TestServer_OperatorOverrideSurvivesLearning — the reset path. Learning honors
+// a `pinned` entry and nothing ever wrote one, so an operator who cleared a
+// learned vision:false through the model editor had it clobbered by the next
+// rejected request. Declaring a capability in that editor IS the override, and
+// the save now records it as one.
+func TestServer_OperatorOverrideSurvivesLearning(t *testing.T) {
+	ctx := context.Background()
+	cfg := newConfig(t)
+
+	st, err := storage.Open(cfg.Storage)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+
+	if err := st.EnsureProvider(ctx, "mock-main", "custom", "Mock Main"); err != nil {
+		t.Fatalf("ensure provider: %v", err)
+	}
+	if err := st.PutModel(ctx, storage.Model{
+		ID: "ollamacloud/chat-model", ProviderID: "mock-main", Name: "chat-model",
+	}); err != nil {
+		t.Fatalf("put model: %v", err)
+	}
+
+	srv, err := New(&cfg, st, nil,
+		WithProvider(mockprovider.New(t).Provider("mock-main", providerAllCaps())),
+		WithMasterKey(wiringMasterKey(t)),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	login := bootstrapAdmin(t, ts)
+	// The operator declares the model CAN see images.
+	resp := adminCall(t, ts, http.MethodPut, "/api/admin/models/ollamacloud/chat-model",
+		`{"provider_id":"mock-main","name":"chat-model","capabilities":{"vision":true},"priority":0}`, login)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("save model: status %d, body %s", resp.StatusCode, ensureBodyClosed(t, resp))
+	}
+	_ = ensureBodyClosed(t, resp)
+
+	// A later rejection must not overwrite the declaration.
+	if err := st.MergeLearnedCapability(ctx, "mock-main", "chat-model", "vision", false); err != nil {
+		t.Fatalf("MergeLearnedCapability: %v", err)
+	}
+	row, err := st.GetModel(ctx, "ollamacloud/chat-model")
+	if err != nil {
+		t.Fatalf("get model: %v", err)
+	}
+	if !strings.Contains(string(row.Capabilities), `"vision":true`) {
+		t.Errorf("capabilities = %s, want the operator's vision:true to survive learning", row.Capabilities)
+	}
+}
+
 // TestServer_CapabilityFallbackCaptionsImageAndRetriesTheChain: the stored
 // vision_fallback list names a MODEL that DESCRIBES images (ADR-014). A real
 // image rejection on the routed chain is rescued by that model's description,

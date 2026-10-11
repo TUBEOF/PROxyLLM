@@ -53,6 +53,35 @@ func TestCompatFor_ThinkingCapabilitydrivesDefault(t *testing.T) {
 	}
 }
 
+// capabilityFlags must tolerate the `pinned` OBJECT that ADR-014's learning
+// writes beside the boolean flags. Decoding straight into map[string]bool
+// failed on every row that had ever learned anything, which read as "no
+// capabilities" — so exactly the rows in active use silently lost their
+// thinking mapping. Only a real boolean counts as a flag.
+func TestCapabilityFlags_ToleratesThePinnedObject(t *testing.T) {
+	learned := json.RawMessage(`{"streaming":true,"tools":true,"thinking":true,"vision":false,"pinned":{"vision":true}}`)
+	got := capabilityFlags(learned)
+	want := map[string]bool{"streaming": true, "tools": true, "thinking": true}
+	seen := map[string]bool{}
+	for _, f := range got {
+		seen[f] = true
+	}
+	for name := range want {
+		if !seen[name] {
+			t.Errorf("capabilityFlags dropped %q from %s", name, learned)
+		}
+	}
+	for name := range seen {
+		if _, ok := want[name]; !ok {
+			t.Errorf("capabilityFlags invented %q from %s (a false flag or the pinned map)", name, learned)
+		}
+	}
+	// And the mapping it feeds still fires for such a row.
+	if got := defaultThinkingFor(learned, ""); got != routing.ThinkingMapToEffort {
+		t.Errorf("thinking default for a learned row = %q, want %q", got, routing.ThinkingMapToEffort)
+	}
+}
+
 func TestCompatFor_EmulationDefaultFollowsAccounts(t *testing.T) {
 	if got := emulationFor(true, ""); got != routing.EmulationEmulateFirecrawl {
 		t.Fatalf("with web-tool accounts = %q, want %q", got, routing.EmulationEmulateFirecrawl)
