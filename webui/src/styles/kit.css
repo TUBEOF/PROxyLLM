@@ -463,13 +463,18 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
    gutter renders ONLY the parent→sub-op tree: how requests relate.) */
 
 /* --- Sub-operations (2026-10-07) --- */
-/* A child row hangs under its parent: dimmed, non-clickable, and drawn as
-   a tree — a continuous line down the gutter with an elbow into each child,
-   so a fallback reads as belonging to the request above it instead of
-   floating in a list. The child keeps its parent's column count, so its
-   cells line up under the parent's for a line-by-line comparison. */
-.log-row-child{cursor:default;background:oklch(14% 0.013 250 / 45%)}
-.log-row-child:hover{background:oklch(14% 0.013 250 / 45%)}
+/* A child row hangs under its parent and is drawn as a tree — a continuous
+   line down the gutter with an elbow into each child, so a fallback reads as
+   belonging to the request above it instead of floating in a list. The child
+   keeps its parent's column count, so its cells line up under the parent's for
+   a line-by-line comparison.
+   It OPENS (2026-10-10): the row is a button — a sub-operation has its own
+   detail view, because what it sent and received lives in a payload of its own.
+   Hence a pointer cursor, a hover that is visibly different from the resting
+   state, and a keyboard focus ring. */
+.log-row-child{cursor:pointer;background:oklch(14% 0.013 250 / 45%)}
+.log-row-child:hover{background:oklch(20% 0.015 250 / 55%)}
+.log-row-child:focus-visible{outline:2px solid var(--status-info);outline-offset:-2px}
 /* The parent drops a stub into the tree; the last child's line stops at its
    own elbow so the branch terminates cleanly. */
 .logs-table tr.log-row[data-has-children] .td-gutter::after{
@@ -504,6 +509,12 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 .child-op-list{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
 .child-op-list li{display:block}
 .child-op-detail{display:block;margin-top:2px;font-size:11px;color:var(--muted)}
+/* The drawer's sub-op entries are buttons too (2026-10-10): same destination
+   as the nested table row, so they get the same affordances. */
+.child-op-open{display:block;width:100%;text-align:left;background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;border-radius:4px}
+.child-op-open:disabled{cursor:default}
+.child-op-open:hover .child-op-detail{color:var(--fg)}
+.child-op-open:focus-visible{outline:2px solid var(--status-info);outline-offset:2px}
 .raw-trace{margin-top:12px}
 .raw-trace>summary{cursor:pointer;font-size:var(--fs-sm);color:var(--muted)}
 .raw-trace>pre{margin-top:8px}

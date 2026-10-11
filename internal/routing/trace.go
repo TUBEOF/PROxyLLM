@@ -16,6 +16,25 @@ import (
 type Trace struct {
 	mu     sync.Mutex
 	events []Event
+
+	// payloads are the in-memory-only per-sub-operation payloads: what a
+	// failover/emulation/caption step actually sent and received. They ride the
+	// Trace because the Trace is what already reaches the log writer, but they
+	// are deliberately NOT serialized: route_trace is a versioned wire schema
+	// the WebUI renders, and bodies do not belong in it. Payloads() is how the
+	// write path collects them.
+	payloads []ChildPayload
+}
+
+// Payloads returns the collected sub-operation payloads in collection order.
+// A copy, so a caller on another goroutine (the log writer) cannot race the
+// routing goroutines still appending.
+func (t *Trace) Payloads() []ChildPayload {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := make([]ChildPayload, len(t.payloads))
+	copy(out, t.payloads)
+	return out
 }
 
 // EventType enumerates observable routing transitions (fallbacks are never

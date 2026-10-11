@@ -74,6 +74,14 @@ full `route_trace` (routing decisions, never credentials).
   fallback, emulated web-tool call) carry provider/model identity
   and tool-invocation summaries only — never request bodies, headers, or
   credentials; the live in-flight feed likewise holds no secret material.
+- A sub-operation's own captured body (the tool exchange it answered, or the
+  caption it produced) is stored in the payload table under `owner_kind`
+  `child`, and passes the **same redactor** as every other log site before it is
+  written. That matters most for a caption: it is model output derived from an
+  image, and an image is often a screenshot of a terminal — a transcribed
+  credential is masked rather than stored. An image is recorded by media type and
+  decoded size, never by its bytes. Payload writes are off the request path,
+  bounded in flight, and dropped rather than queued under load.
 
 ## Container hardening
 

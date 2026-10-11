@@ -131,7 +131,7 @@ export default function Logs() {
             kind: 'child',
             child,
             last: ci === kids.length - 1,
-            onOpenParent: () => openTraceRef.current(parent),
+            onOpenChild: () => openChildRef.current(child, parent),
           });
         });
       }
@@ -153,10 +153,28 @@ export default function Logs() {
     return m;
   }, [logs, data]);
 
-  const openTrace = useCallback((l: RequestLog) => setSelected(l), []);
+  // Exactly one drawer at a time: the two views are a step and the request it
+  // belongs to, and each links to the other (2026-10-10).
+  const openTrace = useCallback((l: RequestLog) => {
+    setSelectedChild(null);
+    setSelected(l);
+  }, []);
   const closeTrace = useCallback(() => setSelected(null), []);
   const openTraceRef = useRef(openTrace);
   openTraceRef.current = openTrace;
+
+  // A sub-operation opens its OWN detail view: what that step sent and received
+  // is a payload of its own, and the parent's conversation cannot answer it.
+  // Plain functions, not useCallback: both reach the render tree through a ref
+  // that is refreshed every render, so a stable identity buys nothing.
+  const [selectedChild, setSelectedChild] = useState<{ child: ChildLog; parent: RequestLog } | null>(null);
+  const openChild = (child: ChildLog, parent: RequestLog) => {
+    setSelected(null);
+    setSelectedChild({ child, parent });
+  };
+  const closeChild = () => setSelectedChild(null);
+  const openChildRef = useRef(openChild);
+  openChildRef.current = openChild;
 
   // Capture switch (2026-10-10): the same KV the request path reads per
   // request, so a flip takes effect on the next request with no restart. It
@@ -327,6 +345,18 @@ export default function Logs() {
             selected={selected}
             subOps={data?.children?.[String(selected.id)] ?? []}
             names={names}
+            onOpenChild={(c) => openChild(c, selected)}
+          />
+        </Drawer>
+      )}
+
+      {selectedChild !== null && (
+        <Drawer title={childTitle(selectedChild.child)} onClose={closeChild}>
+          <ChildDetail
+            child={selectedChild.child}
+            parent={selectedChild.parent}
+            names={names}
+            onOpenParent={() => openTrace(selectedChild.parent)}
           />
         </Drawer>
       )}
@@ -357,34 +387,44 @@ function intraRowHealed(row: RequestLog): boolean {
   );
 }
 
-// PayloadSection renders the conversation a request carried and the answer it
-// produced (2026-10-10). Fetched when the drawer opens rather than shipped with
-// the row: a payload is prompt-sized, and the list is polled every few seconds.
+// PayloadSection renders a captured body — the conversation a request carried
+// and the answer it produced, or, with owner="child", what one sub-operation
+// sent and received (2026-10-10). Fetched when the drawer opens rather than
+// shipped with the row: a payload is prompt-sized, and the list is polled every
+// few seconds.
 //
 // The states are kept distinct on purpose — capture off, nothing captured for
 // this row, or captured — so an empty viewer is never read as an empty request.
-function PayloadSection({ id }: { id: number }) {
+function PayloadSection({ id, owner = 'request' }: { id: number; owner?: 'request' | 'child' }) {
   const { data, loading } = useAdminData<LogPayload>(
     (signal) =>
-      apiCall<LogPayload>('GET', `/api/admin/log-payload?owner=request&id=${id}`, undefined, signal),
+      apiCall<LogPayload>('GET', `/api/admin/log-payload?owner=${owner}&id=${id}`, undefined, signal),
   );
+  const what = owner === 'child' ? 'this step' : 'this request';
+  // A step's payload is what it sent and received; a request's is the
+  // conversation and the answer. Same viewer, honest labels.
+  const legend = owner === 'child' ? 'Sent & received' : 'Context & answer';
+  const firstTitle = owner === 'child' ? 'Sent' : 'Context';
+  const secondTitle = owner === 'child' ? 'Received' : 'Answer';
 
   if (loading) {
     return (
       <div className="fieldset">
-        <legend>Context &amp; answer</legend>
-        <p className="hint">Loading the captured conversation…</p>
+        <legend>{legend}</legend>
+        <p className="hint">Loading the captured {owner === 'child' ? 'exchange' : 'conversation'}…</p>
       </div>
     );
   }
   if (data === null || !data.found) {
     return (
       <div className="fieldset">
-        <legend>Context &amp; answer</legend>
+        <legend>{legend}</legend>
         <p className="hint">
           {data !== null && data.capture_enabled === false
-            ? 'Body capture is off, so only the metadata was recorded. Turn it on above to capture from the next request on.'
-            : 'Nothing was captured for this request.'}
+            ? owner === 'request'
+              ? 'Body capture is off, so only the metadata was recorded. Turn it on above to capture from the next request on.'
+              : 'Body capture is off, so only the metadata was recorded — nothing was stored for this step either.'
+            : `Nothing was captured for ${what}.`}
         </p>
       </div>
     );
@@ -393,14 +433,14 @@ function PayloadSection({ id }: { id: number }) {
     <>
       {(data.client_request !== undefined || data.client_response !== undefined) && (
         <div className="fieldset">
-          <legend>Context &amp; answer</legend>
+          <legend>{legend}</legend>
           {data.truncated === true && (
             <p className="hint">
               Truncated at 64 KB per side — the preview is the start of what was stored.
             </p>
           )}
-          {data.client_request !== undefined && <CapturedBlock title="Context" body={data.client_request} />}
-          {data.client_response !== undefined && <CapturedBlock title="Answer" body={data.client_response} />}
+          {data.client_request !== undefined && <CapturedBlock title={firstTitle} body={data.client_request} />}
+          {data.client_response !== undefined && <CapturedBlock title={secondTitle} body={data.client_response} />}
         </div>
       )}
     </>
@@ -431,7 +471,63 @@ function CapturedBlock({ title, body }: { title: string; body: string }) {
   );
 }
 
-function LogDetail({ selected, subOps, names }: { selected: RequestLog; subOps: ChildLog[]; names: Map<string, string> }) {
+// ChildDetail is one sub-operation's own view (2026-10-10): what the step was
+// (kind, model, account), when it ran, and — the reason the row opens at all —
+// what it sent and received. The parent request is one button away: the step
+// answers "what did this do", the request answers "what was said".
+function ChildDetail({
+  child,
+  parent,
+  names,
+  onOpenParent,
+}: {
+  child: ChildLog;
+  parent: RequestLog;
+  names: Map<string, string>;
+  onOpenParent: () => void;
+}) {
+  const account = child.provider_name ?? (child.provider_id ? names.get(child.provider_id) : undefined);
+  return (
+    <div className="form">
+      <div className="fieldset">
+        <legend>Step</legend>
+        <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 16px', margin: 0, fontSize: 'var(--fs-sm)' }}>
+          <dt className="muted">Kind</dt>
+          <dd style={{ margin: 0 }}>
+            <span className={childCls(child.kind)}>{childTitle(child)}</span>
+          </dd>
+          <dt className="muted">Model</dt>
+          <dd style={{ margin: 0 }}>{child.model ?? '—'}</dd>
+          <dt className="muted">Provider</dt>
+          <dd style={{ margin: 0 }}>{child.provider_kind ?? child.provider_id ?? '—'}</dd>
+          <dt className="muted">Account</dt>
+          <dd className="mono" style={{ margin: 0 }} title={child.provider_id ?? undefined}>
+            {account ?? child.provider_id ?? '—'}
+          </dd>
+          <dt className="muted">When</dt>
+          <dd className="mono" style={{ margin: 0 }}>{fmtTime(child.ts)}</dd>
+          <dt className="muted">Request</dt>
+          <dd className="mono" style={{ margin: 0 }}>#{parent.id} · {parent.model}</dd>
+        </dl>
+      </div>
+      {/* The step's own body: the tool exchange it answered, or the caption it
+          produced. This is what the row could never show. */}
+      <PayloadSection id={child.id} owner="child" />
+      <div className="fieldset">
+        <legend>Parent request</legend>
+        <button type="button" className="btn btn-secondary" onClick={onOpenParent}>
+          Open request #{parent.id}
+        </button>
+        <p className="hint">
+          The body of this step is above. The request holds the conversation and the answer it
+          belongs to.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function LogDetail({ selected, subOps, names, onOpenChild }: { selected: RequestLog; subOps: ChildLog[]; names: Map<string, string>; onOpenChild?: (c: ChildLog) => void }) {
   const features = (selected.features ?? {}) as Record<string, boolean | undefined>;
   const featureKeys = ['streaming', 'tools', 'thinking', 'web_search', 'web_fetch', 'vision'] as const;
   const active = featureKeys.filter((k) => features[k] === true);
@@ -530,9 +626,19 @@ function LogDetail({ selected, subOps, names }: { selected: RequestLog; subOps: 
             <ul className="child-op-list">
               {subOps.map((c) => (
                 <li key={c.id}>
-                  <span className={childCls(c.kind)}>{childTitle(c)}</span>
-                  {(c.model ?? '') !== '' && <span className="mono">{c.model}</span>}
-                  {childMeta(c) !== '' && <span className="child-op-detail mono">{childMeta(c)}</span>}
+                  {/* Each entry opens that step's own view (2026-10-10) — the
+                      same destination as its nested row in the table. */}
+                  <button
+                    type="button"
+                    className="child-op-open"
+                    onClick={onOpenChild ? () => onOpenChild(c) : undefined}
+                    disabled={!onOpenChild}
+                    title="Show what this step sent and received"
+                  >
+                    <span className={childCls(c.kind)}>{childTitle(c)}</span>
+                    {(c.model ?? '') !== '' && <span className="mono">{c.model}</span>}
+                    {childMeta(c) !== '' && <span className="child-op-detail mono">{childMeta(c)}</span>}
+                  </button>
                 </li>
               ))}
             </ul>

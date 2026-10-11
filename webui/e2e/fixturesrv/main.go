@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/config"
+	"github.com/tubeof/proxyllm/internal/routing"
 	"github.com/tubeof/proxyllm/internal/server"
 	"github.com/tubeof/proxyllm/internal/server/httpapi"
 	"github.com/tubeof/proxyllm/internal/storage"
@@ -331,7 +332,13 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 			Timestamp: base - 895, ClientKeyID: "ckey-ci", ProviderID: "prv-ollama",
 			Model: "glm-5.3-flash", Status: 200, LatencyMS: 1180,
 			Usage:          json.RawMessage(`{"input_tokens":88211,"output_tokens":72,"cache_read_input_tokens":88128}`),
-			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"glm-5.3-flash","to":"ollama-cloud/glm-5.3-flash","provider_id":"prv-ollama"},{"type":"attempt","provider_id":"prv-codex","model":"gpt-5"},{"type":"failed","provider_id":"prv-codex","class":"capability_gap","error_code":"unsupported_image","http_status":400,"failure_position":"pre_stream","capability":"vision","latency_ms":140},{"type":"capability_fallback","capability":"vision","reason":"chain exhausted on capability gaps; trying the capability fallback models"},{"type":"failover","from":"prv-codex","to":"prv-ollama","reason":"capability fallback model"},{"type":"attempt","provider_id":"prv-ollama","model":"glm-5.3-flash"}]}`),
+			// The vision fallback (ADR-014) in the order production records it:
+			// the chain fails on the image, a vision model describes it, the
+			// capability fallback is consulted, and the chain is retried with
+			// the text in place of the image. Hence two child rows for one
+			// rescue — the caption and the consultation — each with its own
+			// payload (2026-10-10).
+			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"glm-5.3-flash","to":"ollama-cloud/glm-5.3-flash","provider_id":"prv-ollama"},{"type":"attempt","provider_id":"prv-codex","model":"gpt-5"},{"type":"failed","provider_id":"prv-codex","class":"capability_gap","error_code":"unsupported_image","http_status":400,"failure_position":"pre_stream","capability":"vision","latency_ms":140},{"type":"image_caption","provider_id":"prv-ollama","model":"glm-5.3-vl","latency_ms":820,"reason":"184 character(s) described"},{"type":"capability_fallback","capability":"vision","reason":"chain exhausted on capability gaps; described 1 image(s) and retrying the chain with the text in place of the image"},{"type":"failover","from":"prv-codex","to":"prv-ollama","reason":"capability fallback model"},{"type":"attempt","provider_id":"prv-ollama","model":"glm-5.3-flash"}]}`),
 			ConversationID: "conv_de1a7e00", ConvKey: "sys:ci-smoke",
 			Protocol: "anthropic", Features: json.RawMessage(`{"streaming":false,"tools":false,"thinking":false,"web_search":false,"web_fetch":false,"vision":false}`),
 		},
@@ -345,8 +352,42 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 		// / capability-fallback / emulated-tool event get their child rows by
 		// the same derivation the server uses, so the fixture exercises the
 		// real parent→sub-op rendering (nested table rows + drawer list).
-		if err := store.InsertChildLogs(ctx, id, fixtureChildren(l.RouteTrace)); err != nil {
+		//
+		// Each row also gets its own payload (2026-10-10), and the caption row
+		// its excerpt instead of a character count — both through the
+		// production renderer, so the drawer the baselines capture is
+		// production-shaped rather than a hand-written approximation.
+		ops := fixtureChildren(l.RouteTrace)
+		seeded := make([]routing.ChildPayload, len(ops))
+		for i, op := range ops {
+			p, ok := fixturePayload(op)
+			if !ok {
+				continue
+			}
+			seeded[i] = p
+			ops[i] = httpapi.ChildOpWithPayload(op, p)
+		}
+		ids, err := store.InsertChildLogs(ctx, id, ops)
+		if err != nil {
 			return fmt.Errorf("seed child logs: %w", err)
+		}
+		for i, p := range seeded {
+			if i >= len(ids) || p.Kind == "" {
+				continue
+			}
+			req, resp, ok := httpapi.RenderChildPayload(p)
+			if !ok {
+				continue
+			}
+			if err := store.PutRequestPayload(ctx, storage.RequestPayload{
+				OwnerKind:      storage.PayloadOwnerChild,
+				OwnerID:        ids[i],
+				TS:             ops[i].TS,
+				ClientRequest:  req,
+				ClientResponse: resp,
+			}); err != nil {
+				return fmt.Errorf("seed child payload: %w", err)
+			}
 		}
 	}
 
@@ -371,4 +412,46 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 // that could drift from it.
 func fixtureChildren(trace json.RawMessage) []storage.ChildLog {
 	return httpapi.ChildOpsFromTrace(trace)
+}
+
+// fixturePayload synthesizes the body a seeded child row shows, so the
+// drawer the baselines capture is not an empty state. Fixed text only: the
+// fixture server never makes a live call and never reads the clock for
+// content. The SHAPE comes from the production renderer
+// (httpapi.RenderChildPayload), only the facts are the fixture's own.
+func fixturePayload(op storage.ChildLog) (routing.ChildPayload, bool) {
+	switch routing.OpKind(op.Kind) {
+	case routing.OpEmulatedTool:
+		switch op.ToRef {
+		case "web_search":
+			return routing.ChildPayload{
+				Kind: routing.OpEmulatedTool, Tool: "web_search",
+				Input: `{"query":"sqlite wal busy_timeout"}`,
+				Output: `{"query":"sqlite wal busy_timeout","results":[` +
+					`{"url":"https://sqlite.org/wal.html","title":"Write-Ahead Logging","description":"WAL mode lets readers proceed while a writer is active."},` +
+					`{"url":"https://sqlite.org/lang_transaction.html","title":"Transactions","description":"BEGIN IMMEDIATE takes the write lock up front."}]}`,
+			}, true
+		case "web_fetch":
+			return routing.ChildPayload{
+				Kind: routing.OpEmulatedTool, Tool: "web_fetch",
+				Input:  `{"url":"https://sqlite.org/wal.html"}`,
+				Output: `{"url":"https://sqlite.org/wal.html","content":"Write-Ahead Logging: in WAL mode, readers do not block the writer and the writer does not block readers."}`,
+			}, true
+		}
+	case routing.OpImageCaption:
+		return routing.ChildPayload{
+			Kind:       routing.OpImageCaption,
+			ProviderID: op.ProviderID,
+			Model:      op.Model,
+			Input:      "Describe this image concisely in 2-3 sentences. Focus on the most relevant visual details. The user asked: \"why does this test fail?\"",
+			MediaType:  "image/png",
+			ImageBytes: 48213,
+			Output: "A terminal window showing a failing Go test: the line `TestResolveChain` reports " +
+				"`provider not registered`, with the assertion diff printed below the command. " +
+				"The error text points at a mock fixture rather than production code.",
+		}, true
+	}
+	// A failover names its reason and nothing else: no body, and the row keeps
+	// the trace's detail.
+	return routing.ChildPayload{}, false
 }

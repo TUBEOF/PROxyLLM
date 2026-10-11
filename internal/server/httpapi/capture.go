@@ -284,15 +284,9 @@ func capturedPartText(parts []ir.Part) string {
 }
 
 // decodedImageBytes is the size of the base64 payload's decoded bytes — the
-// fact worth keeping about an image that is not going to be stored.
+// fact worth keeping about an image that is not going to be stored. The
+// arithmetic lives on ir.ImagePart now, so the routing side (which records the
+// same fact for a caption payload) cannot drift from this one.
 func decodedImageBytes(p ir.ImagePart) int {
-	if p.Data == "" {
-		return 0
-	}
-	// 4 base64 characters carry 3 bytes, minus the padding.
-	n := len(p.Data) / 4 * 3
-	if pad := strings.Count(p.Data, "="); pad > 0 && pad <= 2 {
-		n -= pad
-	}
-	return n
+	return p.DecodedBytes()
 }

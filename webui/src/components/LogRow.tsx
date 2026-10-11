@@ -11,13 +11,14 @@
 // Pure render: all derivation (chain marks, healed, row click) arrives via
 // the props.
 import { memo } from 'react';
+import type { KeyboardEvent } from 'react';
 import type { ChildLog, RequestLog, RunningRequest } from '../types';
 import { childCls, childMeta, childTitle } from './RouteTrace';
 
 export type LogRowShape =
   | { kind: 'done'; row: RequestLog; healed: boolean; childCount?: number }
   | { kind: 'running'; run: RunningRequest }
-  | { kind: 'child'; child: ChildLog; last?: boolean; onOpenParent?: () => void };
+  | { kind: 'child'; child: ChildLog; last?: boolean; onOpenChild?: () => void };
 
 // ParentShape is a request row (finished or running) — the rows the
 // conversation-chain grouping pass operates on (sub-operations never
@@ -121,10 +122,30 @@ function LogRowInner({
     // with the parent's provider, not in a merged blob. The MODEL column
     // shows the model this op actually served/used (2026-10-08: the trace
     // walk now attributes each op's model; empty → the meta as before).
+    //
+    // The row OPENS (2026-10-10): a sub-operation has its own detail view,
+    // because what it sent and received lives in a payload of its own — the
+    // parent's conversation and answer cannot answer "what did this step do".
+    // Hence a button role and a keyboard path, not decoration.
+    const open = shape.onOpenChild;
     return (
       <tr
         className="log-row log-row-child"
         {...(shape.last ? { 'data-child-last': true } : {})}
+        {...(open
+          ? {
+              onClick: open,
+              onKeyDown: (e: KeyboardEvent<HTMLTableRowElement>) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  open();
+                }
+              },
+              tabIndex: 0,
+              role: 'button',
+              title: 'Show what this step sent and received',
+            }
+          : {})}
       >
         <td className="td-gutter">
           <span className="child-elbow" aria-hidden="true" />

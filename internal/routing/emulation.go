@@ -224,6 +224,10 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 	// & must ride verbatim, or the guard's verbatim set and the model's
 	// echo drift apart (the escaped form vs the decoded form).
 	payload := resultPayloadForModel(call, res)
+	// The operator must be able to read what this step actually sent and got
+	// back — the parent request's capture shows the conversation, not the tool
+	// exchange that answered a call inside it.
+	trace.EmulatedToolPayload(call.Name, string(call.Input), payload)
 	tr := ir.ToolResultPart{ToolUseID: call.ID,
 		Content: []ir.Part{ir.TextPart{Text: payload}}}
 	return use, res, tr
