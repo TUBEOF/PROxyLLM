@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual runs, and the target of the explicit re-dispatch from
+  # update-visual-baselines.yml: a baseline commit pushed with GITHUB_TOKEN
+  # cannot create a workflow run (GitHub suppresses token-triggered events,
+  # workflow_dispatch/repository_dispatch excepted), so the refresh workflow
+  # dispatches this one by name instead of relying on a push event. That is what
+  # replaced the old throwaway "trigger CI after baseline regen" empty commit.
+  workflow_dispatch:
 
 permissions:
   # security-events: write — the CodeQL analyze step uploads its SARIF
@@ -30,7 +37,7 @@ env:
 jobs:
   # Gate 1: lint + format + static analysis — blocking
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -40,7 +47,11 @@ jobs:
       - name: gofmt check
         run: test -z "$(gofmt -l cmd internal webui/embed.go)"
       - name: go vet
-        run: go vet $GO_PKGS
+        run: |
+          # $GO_PKGS is a deliberate word-split: it expands to three package
+          # patterns, and quoting it would pass them as one bogus argument.
+          # shellcheck disable=SC2086
+          go vet $GO_PKGS
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
@@ -48,7 +59,7 @@ jobs:
 
   # Gate 2+3: unit + contract tests with race detector — blocking
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -56,7 +67,10 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
       - name: go test -race
-        run: go test -race $GO_PKGS
+        run: |
+          # Same deliberate word-split as the vet step above.
+          # shellcheck disable=SC2086
+          go test -race $GO_PKGS
       - name: govulncheck
         uses: golang/govulncheck-action@v1
         with:
@@ -67,7 +81,7 @@ jobs:
   # enforcing annotated suppressions) — a standalone gosec CLI run would
   # ignore the //nolint:gosec annotations and double-report.
   security:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
@@ -76,27 +90,37 @@ jobs:
         uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Explicit path rather than relying on the action's auto-detection:
+          # .gitleaks.toml carries one narrow allowance (the entropy heuristic
+          # cannot tell a synthetic test fixture from a real key), and which files
+          # it applies to should not depend on the action's version.
+          GITLEAKS_CONFIG: .gitleaks.toml
       - name: CodeQL
         # Code scanning on private repos requires GitHub Advanced Security
         # (a paid plan feature). The workflow cannot enable it; if the
         # repo is private without GHAS, skip the SAST leg with a visible
         # notice instead of failing the gate on a settings limitation.
         # gitleaks and the gosec linter in Gate 1 still run regardless.
-        if: ${{ github.event.repository.visibility != 'private' }}
+        # Gated on the boolean `repository.private`: the string
+        # `repository.visibility` field is absent from some event payloads, so
+        # comparing it silently evaluated false and skipped an enabled scanner.
+        if: ${{ !github.event.repository.private }}
         uses: github/codeql-action/init@v4
         with:
           languages: go
       - name: CodeQL analyze
-        if: ${{ github.event.repository.visibility != 'private' }}
+        if: ${{ !github.event.repository.private }}
         uses: github/codeql-action/analyze@v4
       - name: CodeQL skipped (no GHAS on private repo)
-        if: ${{ github.event.repository.visibility == 'private' }}
+        if: ${{ github.event.repository.private }}
         run: |
           echo "::notice::CodeQL skipped: code scanning needs GitHub Advanced Security on private repos. Make the repo public or enable GHAS in Settings → Code security."
 
-  # Gate 4: WebUI build + bundle budget + visual regression — blocking
+  # Gate 4: WebUI build + bundle budget — blocking. The Playwright suites moved
+  # to visual-regression.yml (2026-10-10): the assertion suite still blocks, but
+  # only on PRs that touch UI paths, and the baseline comparison only reports.
   webui:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -146,42 +170,23 @@ jobs:
             echo "::error::bundle budget exceeded: ${total} > 204800 bytes gzip"
             exit 1
           fi
-      # V-4: the seeded suite runs two projects: desktop-chrome (chromium
-      # engine) and iphone-13 (the iPhone 13 device descriptor maps to the
-      # webkit engine — installing only chromium fails every mobile test);
-      # baselines are captured in CI, never locally (V-3).
-      - name: install Playwright browsers
-        working-directory: webui
-        run: npx playwright install --with-deps chromium webkit
-      - name: build fixture server
-        run: |
-          go build -o webui/e2e/fixturesrv-bin ./webui/e2e/fixturesrv
-      - name: visual regression (seeded)
-        working-directory: webui
-        run: npx playwright test -c playwright.config.ts
-      - name: visual regression (empty states)
-        working-directory: webui
-        run: npx playwright test -c playwright.empty.config.ts
-      - name: upload test results
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-artifacts
-          path: |
-            webui/e2e/.artifacts
-            webui/e2e/.artifacts-empty
-          # retention-days and if-no-files-found are upload-artifact inputs —
-          # as step-level keys they make the workflow unparseable (GitHub
-          # rejects unknown step keys; js-yaml does not validate the schema).
-          retention-days: 7
-          if-no-files-found: ignore
+      # The Playwright suites (assertions + screenshot comparison) live in
+      # visual-regression.yml: they need a built fixture server and two browser
+      # engines, they are path-filtered to UI changes, and the comparison must
+      # not fail a check. Building the SPA above stays here regardless — the Go
+      # embed needs real assets.
 
   # Benchmark job (plan §8): perf budgets are measured on main so the
   # numbers are visible per commit and regressions trend in the log. NOT
   # blocking here — plan §8: "regressions block release, not every PR";
   # release.yml runs the same budget test as a hard release gate.
+  # main-only (2026-10-10): a PR's perf numbers are noise — the runner is
+  # shared and a same-branch re-run can differ by an order of magnitude — so
+  # they cost runner minutes without telling anyone anything. The trend that
+  # matters is per commit on main.
   benchmark:
-    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -201,7 +206,7 @@ jobs:
 
   # Gate 6: Docker image build — blocking
   docker:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
@@ -216,15 +221,26 @@ jobs:
       - name: Smoke test container
         run: |
           docker run -d --rm --name proxyllm-ci -p 18080:8080 proxyllm:ci
-          for i in $(seq 1 30); do
+          for attempt in $(seq 1 30); do
             if curl -fsS http://localhost:18080/healthz >/dev/null 2>&1; then
-              echo "health check passed"
+              echo "health check passed (attempt ${attempt})"
               docker stop proxyllm-ci
               exit 0
             fi
             sleep 1
           done
-          echo "health check FAILED"
+          echo "health check FAILED after 30 attempts"
           docker logs proxyllm-ci
           docker stop proxyllm-ci || true
           exit 1
+
+  # Gate 7: workflow syntax. Workflows are code, and a YAML typo or an unknown
+  # step key does not fail just that workflow — it fails EVERY run in the same
+  # push (GitHub marks the whole push as a workflow-file issue), which is the
+  # most confusing failure mode this repo has hit. actionlint validates the
+  # schema and the expressions, so such a change fails here instead.
+  actionlint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: raven-actions/actionlint@v2.2.0

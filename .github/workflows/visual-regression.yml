@@ -1,0 +1,167 @@
+# Visual regression, split out of ci.yml (2026-10-10).
+#
+# Two phases in one job, deliberately different in severity:
+#
+#   1. assertions (design rules + log behaviour) — deterministic, no baselines,
+#      BLOCKING. A failure here is a real defect.
+#   2. screenshot comparison (routes + empty states) — environment-sensitive
+#      (font rendering, antialiasing, browser/OS version), so it only REPORTS:
+#      the diff images are uploaded as an artifact and a sticky PR comment
+#      carries the outcome, and the job still exits 0.
+#
+# Why the split: the comparison used to run unconditionally on every PR, so a
+# Dependabot or docs PR went red for a rendering difference it could not have
+# caused — and refreshing the baseline PNGs needed a manual main-only workflow
+# whose GITHUB_TOKEN push cannot re-trigger CI, so a maintainer had to push a
+# throwaway empty commit. Neither is needed now: this workflow is path-filtered,
+# the comparison never blocks, and update-visual-baselines.yml re-dispatches CI
+# explicitly. Baselines are still captured in CI only, never locally (ADR-006
+# V-3/V-4) — OS rendering differences would poison them.
+
+name: visual-regression
+
+on:
+  pull_request:
+    paths:
+      - 'webui/src/**'
+      - 'webui/e2e/**'
+      - 'webui/public/**'
+      - 'webui/index.html'
+      - 'webui/*.config.ts'
+      - 'webui/*.config.js'
+      - 'webui/package.json'
+      - 'webui/package-lock.json'
+      - 'webui/embed.go'
+      - 'webui/**/*.css'
+      - '.github/workflows/visual-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # The sticky comment below posts through the issue-comment API, which for a
+  # PR rides pull-requests: write (contents: read is not enough).
+  pull-requests: write
+
+jobs:
+  regression:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+      - name: npm ci
+        working-directory: webui
+        run: npm ci
+      # npm run build overwrites the committed dist placeholder with the real
+      # bundle — required so the Go embed serves real assets to the fixture.
+      - name: build SPA
+        working-directory: webui
+        run: npm run build
+      - name: install Playwright browsers
+        working-directory: webui
+        # iphone-13 maps to the webkit engine (the device descriptor), so
+        # installing only chromium fails every mobile assertion.
+        run: npx playwright install --with-deps chromium webkit
+      - name: build fixture server
+        run: go build -o webui/e2e/fixturesrv-bin ./webui/e2e/fixturesrv
+
+      # Phase 1 — BLOCKING. Assertions only: computed styles and behaviour, no
+      # baseline PNGs, so a rendering-environment change cannot fail it. Both
+      # files are listed explicitly; the screenshot-comparing specs are excluded
+      # by construction, not by a filter.
+      - name: assertions (design rules + log behaviour)
+        working-directory: webui
+        run: npx playwright test -c playwright.config.ts e2e/design-rules.spec.ts e2e/log-childops.spec.ts
+
+      # Phase 2 — REPORTING ONLY. Exit codes are captured and OR'd, the step
+      # always succeeds, and the outcome travels in a step output. Not
+      # continue-on-error: that leaves the step visually failed in some views.
+      - name: screenshot comparison (report only)
+        id: visual
+        if: always()
+        working-directory: webui
+        run: |
+          set +e
+          npx playwright test -c playwright.config.ts e2e/routes.spec.ts
+          seeded=$?
+          npx playwright test -c playwright.empty.config.ts
+          empty=$?
+          code=$(( seeded | empty ))
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          echo "::notice::visual comparison exit code $code — report only, see the visual-regression-diff artifact"
+          exit 0
+
+      - name: upload diff artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: visual-regression-diff
+          path: |
+            webui/e2e/.artifacts
+            webui/e2e/.artifacts-empty
+          retention-days: 7
+          if-no-files-found: ignore
+
+      # One sticky comment per PR: the marker is looked up and that comment is
+      # PATCHed, so a PR with twenty pushes keeps one comment, not twenty. The
+      # lookup is by marker rather than `--edit-last` so a comment some other
+      # tool posted after ours is never overwritten.
+      #
+      # Every failure path is swallowed: on a fork PR GITHUB_TOKEN is read-only
+      # (no secret, no write scope), so posting is refused — and a red check for
+      # "could not comment" is exactly the confusing failure this workflow
+      # exists to remove. The diff artifact is the deliverable either way.
+      - name: sticky PR comment
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EXIT_CODE: ${{ steps.visual.outputs.exit_code }}
+        run: |
+          case "$EXIT_CODE" in
+            "")   verdict="did not run (a blocking assertion above failed first)" ;;
+            "0")  verdict="no differences" ;;
+            *)    verdict="differences detected — report only, this does not fail the check" ;;
+          esac
+          body=$(cat <<EOF
+          <!-- visual-regression -->
+          ### Visual regression
+
+          Screenshot comparison: **${verdict}** (exit code \`${EXIT_CODE:-none}\`).
+
+          The comparison is report-only by design: the baselines are
+          environment-sensitive (font rendering, browser and OS version), so a
+          diff here is not a failure. Download the \`visual-regression-diff\`
+          artifact from [this run](${RUN_URL}) for the actual/expected/diff
+          images.
+
+          If the diff is a deliberate design change, refresh the baselines by
+          dispatching the **update-visual-baselines** workflow with
+          \`branch\` = this branch; it regenerates them in CI (never locally) and
+          re-dispatches CI itself.
+          EOF
+          )
+
+          marker='<!-- visual-regression -->'
+          if ! id=$(gh api "repos/${REPO}/issues/${PR_NUMBER}/comments" --paginate \
+                       --jq "[.[] | select(.body | contains(\"${marker}\"))][-1].id // empty"); then
+            echo "::notice::could not list PR comments — skipping the visual-regression comment"
+            exit 0
+          fi
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/${REPO}/issues/comments/${id}" -f body="$body" >/dev/null \
+              || echo "::notice::could not update the visual-regression comment"
+          else
+            gh api -X POST "repos/${REPO}/issues/${PR_NUMBER}/comments" -f body="$body" >/dev/null \
+              || echo "::notice::could not post the visual-regression comment (read-only token, e.g. a fork PR)"
+          fi
+          exit 0

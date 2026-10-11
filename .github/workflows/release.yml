@@ -20,7 +20,7 @@ jobs:
   # benchmark job runs the same tests on main non-blocking; here the budget
   # assertions in TestPerfBudgets fail the tag build loudly.
   perf-budgets:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -31,7 +31,7 @@ jobs:
 
   release:
     needs: [perf-budgets]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:

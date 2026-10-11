@@ -1,25 +1,60 @@
-# Baseline update for the visual regression suite (research §7 V-5).
+# Baseline refresh for the visual regression suite (ADR-006 V-3/V-5).
 #
-# After a DELIBERATE design change, a maintainer dispatches this workflow
-# (workflow_dispatch, main branch only). It regenerates ALL baselines in CI
-# — never locally, OS rendering differs — and commits them to main so the
-# next CI run compares against the updated truth. The resulting commit is
-# reviewable in the history; blanket updates without a design change are
-# a review finding, not a workflow matter.
+# After a DELIBERATE design change, a maintainer dispatches this workflow. It
+# regenerates ALL baselines in CI — never locally, OS rendering differs — and
+# commits them so the next comparison uses the updated truth. The commit is
+# reviewable in the history; blanket updates without a design change are a
+# review finding, not a workflow matter.
+#
+# Two things changed on 2026-10-10:
+#
+#   - `branch` input. The refresh is no longer main-only, so a UI PR can refresh
+#     its own baselines instead of the maintainer hand-copying PNGs.
+#   - The re-dispatch at the end REPLACES the throwaway empty commit. A push
+#     made with GITHUB_TOKEN cannot create a workflow run (GitHub suppresses
+#     token-triggered events, workflow_dispatch and repository_dispatch
+#     excepted), so the old flow needed a maintainer to push an empty "trigger
+#     CI" commit to get a run. `gh workflow run` is a workflow_dispatch event,
+#     which IS exempt — so the run happens without a bogus commit.
 
 name: update-visual-baselines
 
 on:
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch whose baselines to regenerate (e.g. main, or a UI PR branch)'
+        required: true
+        default: main
 
 permissions:
   contents: write
+  # gh workflow run dispatches ci.yml — that needs actions: write.
+  actions: write
 
 jobs:
   update:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
+      # Defence in depth, before anything is checked out. workflow_dispatch is
+      # already restricted to write-capable users, so this is not a privilege
+      # boundary — but `refs/pull/<N>/head` exists in the base repo for fork PRs,
+      # and checking that out would run untrusted code (npm ci's postinstall, the
+      # Go build) in a job whose .git/config holds a contents: write token. Only
+      # a plain branch name is accepted.
+      - name: validate the branch input
+        env:
+          BRANCH: ${{ inputs.branch }}
+        run: |
+          case "$BRANCH" in
+            refs/*|*[!A-Za-z0-9._/-]*)
+              echo "::error::invalid branch input '${BRANCH}' — pass a plain branch name, not a ref"
+              exit 1
+              ;;
+          esac
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.branch }}
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -37,11 +72,14 @@ jobs:
         run: npm run build
       - name: install Playwright browsers
         working-directory: webui
-        # iphone-13 project runs on the webkit engine (chromium alone can't
+        # iphone-13 project runs on the webkit engine (chromium alone cannot
         # regenerate the mobile baselines)
         run: npx playwright install --with-deps chromium webkit
       - name: build fixture server
         run: go build -o webui/e2e/fixturesrv-bin ./webui/e2e/fixturesrv
+      # The whole seeded config, not just the screenshot spec: --update-snapshots
+      # is a no-op for assertion-only specs, and naming specs here would silently
+      # skip the baselines of any spec added later.
       - name: regenerate baselines (seeded)
         working-directory: webui
         run: npx playwright test -c playwright.config.ts --update-snapshots
@@ -49,12 +87,20 @@ jobs:
         working-directory: webui
         run: npx playwright test -c playwright.empty.config.ts --update-snapshots
       - name: commit baselines
+        id: commit
+        env:
+          # A workflow_dispatch input reaches the shell as text: interpolating
+          # ${{ inputs.branch }} into the script would let a value containing
+          # shell metacharacters break out of the quoting. Passed as env
+          # instead, so it is data the shell never re-parses.
+          BRANCH: ${{ inputs.branch }}
         run: |
           git config user.name "PROxyLLM CI"
           git config user.email "ci@proxyllm.local"
           git add webui/e2e
           if git diff --cached --quiet; then
-            echo "No baseline changes — snapshots already up to date."
+            echo "No baseline changes — snapshots already match this tree."
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           # Single-line -m paragraphs: a multi-line quoted string with
@@ -63,6 +109,15 @@ jobs:
           # in the same push — GitHub marks the whole push as a workflow
           # file issue).
           git commit -m "webui: regenerate visual regression baselines (CI)" \
-            -m "Baseline refresh via update-visual-baselines workflow (research §7 V-5): captured in CI on ubuntu-latest against the fixture server, never locally." \
+            -m "Baseline refresh via update-visual-baselines workflow (ADR-006 V-3/V-5): captured in CI on the pinned runner against the fixture server, never locally." \
             -m "Co-Authored-By: Claude Code <noreply@anthropic.com>"
-          git push
+          git push origin "HEAD:${BRANCH}"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+      # Explicitly ask CI to run on the refreshed branch — the push above used
+      # GITHUB_TOKEN, so it created no run of its own.
+      - name: re-dispatch CI
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ inputs.branch }}
+        run: gh workflow run ci.yml --ref "$BRANCH"
