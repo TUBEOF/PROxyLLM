@@ -274,7 +274,7 @@ Performance claims get the same treatment: a latency assertion that would only
 re-measure the host belongs in a *relative* form (this path against that path) or
 in report mode. `internal/e2e/scalability_test.go` is the pattern.
 
-## Change discipline (binding, user-set)
+## Change discipline (binding, user-set 2026-09-21)
 
 1. **Impact analysis before every change**: before editing a function, state
    which other files are affected (callers, wire contracts, tests, WebUI
