@@ -82,6 +82,13 @@ func TestAuthCostIsNotAKdfPerRequest(t *testing.T) {
 	if testing.Short() {
 		t.Skip("measures wall-clock latency (skipped in -short)")
 	}
+	if raceEnabled {
+		// The gap is measured in milliseconds and the bound is absolute; race
+		// instrumentation inflates both paths ~40x, which makes a 3 ms bound a
+		// statement about the detector rather than about the code. Same reasoning
+		// as TestPerfBudgets, which skips for the same reason.
+		t.Skip("race detector instrumentation inflates wall-clock latency; the assertion is enforced uninstrumented")
+	}
 	e := newEnv(t)
 	ctx := context.Background()
 	// Wire the client-key hasher the way main does, BEFORE the key is created:
