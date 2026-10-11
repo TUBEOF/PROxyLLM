@@ -70,8 +70,8 @@ type Router struct {
 	// replaceable at runtime (WebUI routing writes reload it). Readers take
 	// RLock; the reload path takes Lock for one whole-set swap. Aliases and
 	// KeyScopes stay startup-fixed: only rules are DB-editable today.
-	mu         sync.RWMutex
-	rules      []Rule
+	mu    sync.RWMutex
+	rules []Rule
 	// rrCounters holds one atomic counter per rule, keyed by rule id. A
 	// sync.Map rather than a map+mutex: rotation is per request, and the
 	// counter is the only mutable state the resolve path touches.

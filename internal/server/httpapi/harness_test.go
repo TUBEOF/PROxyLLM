@@ -1,4 +1,5 @@
 package httpapi
+
 // Test harness for the client-facing API surfaces (plan §5.1): a full
 // client → auth → httpapi → Router → Executor → mock-upstream round trip
 // over real HTTP (Analysis F streaming-harness doctrine). RED tests derive

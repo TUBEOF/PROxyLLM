@@ -1,4 +1,5 @@
 package e2e
+
 // End-to-end acceptance harness (Phase 1 DoD, Task #19): the OFFICIAL
 // client SDKs — openai-go v3 and anthropic-sdk-go — drive a fully
 // assembled proxy (auth middleware, httpapi, router, executor) over real
