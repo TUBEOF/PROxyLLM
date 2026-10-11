@@ -134,10 +134,13 @@ being a bigger decision than it is:
 
 So it is a preference among survivors, applied last, not a filter.
 
-**The veto.** `pinned` was honored by the learning but written by nothing, so
-the operator had no reset path: setting `vision: true` in the Models editor was
-overwritten by the next rejected request. Saving a model there now pins every
-capability it declares, which is the same statement the editor already made.
+**The veto already existed.** `pinned` is written by the Models editor, not by
+the server: the editor sends the map itself, `pinned[flag] = on`, so checking a
+capability pins it and unchecking it removes the pin — which is what makes
+"uncheck it and the learning resumes" true. An earlier draft of this change
+added a server-side re-derivation of `pinned` from the boolean flags in the same
+save; that pinned the *unchecked* flags too and inverted the editor's contract,
+so it was dropped. The stored blob rides through verbatim, as before.
 
 **Also fixed on the way through:** the model row's capability blob carries the
 `pinned` **object** beside its boolean flags, and two readers decoded it

@@ -166,11 +166,17 @@ func TestServer_LearnedVisionGapStopsRetryingTheBlindModel(t *testing.T) {
 	}
 }
 
-// TestServer_OperatorOverrideSurvivesLearning — the reset path. Learning honors
-// a `pinned` entry and nothing ever wrote one, so an operator who cleared a
-// learned vision:false through the model editor had it clobbered by the next
-// rejected request. Declaring a capability in that editor IS the override, and
-// the save now records it as one.
+// TestServer_OperatorOverrideSurvivesLearning — the reset path, in both
+// directions.
+//
+// The Models editor sends the `pinned` map itself, and it is the editor that
+// owns the semantics (Models.tsx): `pinned[flag] = on`, so checking a
+// capability pins it and UNCHECKING it removes the pin, which is what makes
+// "uncheck it and the learning resumes" true. The server stores the blob
+// verbatim — a server-side re-derivation of `pinned` from the boolean flags
+// would pin the unchecked ones too and quietly invert that contract, so this
+// test pins BOTH halves: a checked flag survives a later rejection, an
+// unchecked one does not.
 func TestServer_OperatorOverrideSurvivesLearning(t *testing.T) {
 	ctx := context.Background()
 	cfg := newConfig(t)
@@ -201,15 +207,18 @@ func TestServer_OperatorOverrideSurvivesLearning(t *testing.T) {
 	defer ts.Close()
 
 	login := bootstrapAdmin(t, ts)
-	// The operator declares the model CAN see images.
-	resp := adminCall(t, ts, http.MethodPut, "/api/admin/models/ollamacloud/chat-model",
-		`{"provider_id":"mock-main","name":"chat-model","capabilities":{"vision":true},"priority":0}`, login)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("save model: status %d, body %s", resp.StatusCode, ensureBodyClosed(t, resp))
-	}
-	_ = ensureBodyClosed(t, resp)
 
-	// A later rejection must not overwrite the declaration.
+	// (1) The operator CHECKS vision → the pin holds against a later rejection.
+	save := func(t *testing.T, caps string) {
+		t.Helper()
+		resp := adminCall(t, ts, http.MethodPut, "/api/admin/models/ollamacloud/chat-model",
+			`{"provider_id":"mock-main","name":"chat-model","capabilities":`+caps+`,"priority":0}`, login)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("save model: status %d, body %s", resp.StatusCode, ensureBodyClosed(t, resp))
+		}
+		_ = ensureBodyClosed(t, resp)
+	}
+	save(t, `{"vision":true,"pinned":{"vision":true}}`)
 	if err := st.MergeLearnedCapability(ctx, "mock-main", "chat-model", "vision", false); err != nil {
 		t.Fatalf("MergeLearnedCapability: %v", err)
 	}
@@ -218,7 +227,20 @@ func TestServer_OperatorOverrideSurvivesLearning(t *testing.T) {
 		t.Fatalf("get model: %v", err)
 	}
 	if !strings.Contains(string(row.Capabilities), `"vision":true`) {
-		t.Errorf("capabilities = %s, want the operator's vision:true to survive learning", row.Capabilities)
+		t.Errorf("capabilities = %s, want the checked vision:true to survive learning", row.Capabilities)
+	}
+
+	// (2) The operator UNCHECKS vision → the pin is gone, so learning resumes.
+	save(t, `{"vision":false,"pinned":{"vision":false}}`)
+	if err := st.MergeLearnedCapability(ctx, "mock-main", "chat-model", "vision", true); err != nil {
+		t.Fatalf("MergeLearnedCapability: %v", err)
+	}
+	row, err = st.GetModel(ctx, "ollamacloud/chat-model")
+	if err != nil {
+		t.Fatalf("get model: %v", err)
+	}
+	if !strings.Contains(string(row.Capabilities), `"vision":true`) {
+		t.Errorf("capabilities = %s, want learning to resume once the pin is removed", row.Capabilities)
 	}
 }
 

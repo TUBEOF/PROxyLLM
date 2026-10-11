@@ -418,6 +418,24 @@ func TestExecute_EmulatedFetchHonorsMaxContentTokens(t *testing.T) {
 		}
 	})
 
+	t.Run("an absurd budget is not a panic", func(t *testing.T) {
+		// max_content_tokens arrives from the client. A value near MaxInt would
+		// overflow the chars-per-token multiply into a NEGATIVE byte limit,
+		// which truncateRunes would then use as a slice index — a panic out of
+		// untrusted input. 1<<61 × 4 wraps to exactly MinInt64.
+		_, res := run(t, &ir.ServerToolConfig{MaxUses: 10, MaxContentTokens: 1 << 61})
+		if res.IsError {
+			t.Fatalf("a page under an absurd budget is still a page, got %+v", res)
+		}
+		if res.Fetch == nil {
+			t.Fatal("fetch payload missing")
+		}
+		// A budget far above the page cannot truncate it.
+		if len(res.Fetch.Data) != chars {
+			t.Errorf("fetched text = %d bytes, want the page untouched (%d)", len(res.Fetch.Data), chars)
+		}
+	})
+
 	t.Run("zero means no limit", func(t *testing.T) {
 		// The parameter is optional; an absent budget must not invent one.
 		_, res := run(t, &ir.ServerToolConfig{MaxUses: 10})

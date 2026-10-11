@@ -1037,51 +1037,6 @@ func (a *AdminAPI) listModels(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"models": out})
 }
 
-// pinCapabilities marks every capability an operator declares through this
-// endpoint as PINNED, so ADR-014's learning stops overwriting it.
-//
-// Without this the reset path did not exist: learning writes vision:false on a
-// capability_gap and honors only a `pinned` entry — which nothing ever wrote —
-// so an operator who set vision back to true in the Models editor had it
-// clobbered by the very next rejected request. Declaring a capability here IS
-// the override; recording it as one makes the save stick.
-//
-// The blob is rewritten, so an absent or unparseable body stays absent: only a
-// genuine set of boolean flags is pinned. `pinned` itself is never treated as a
-// flag.
-func pinCapabilities(raw json.RawMessage) json.RawMessage {
-	if len(raw) == 0 {
-		return raw
-	}
-	var blob map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &blob); err != nil {
-		return raw
-	}
-	out := map[string]any{}
-	pinned := map[string]bool{}
-	for name, val := range blob {
-		if name == "pinned" {
-			continue // the override map is never itself a capability
-		}
-		var on bool
-		if err := json.Unmarshal(val, &on); err != nil {
-			out[name] = val // unknown shape: preserved verbatim, not pinned
-			continue
-		}
-		out[name] = on
-		pinned[name] = true
-	}
-	if len(pinned) == 0 {
-		return raw // nothing declared: leave the body exactly as sent
-	}
-	out["pinned"] = pinned
-	encoded, err := json.Marshal(out)
-	if err != nil {
-		return raw
-	}
-	return encoded
-}
-
 func (a *AdminAPI) putModel(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req struct {
@@ -1118,7 +1073,7 @@ func (a *AdminAPI) putModel(w http.ResponseWriter, r *http.Request) {
 		ID:           id,
 		ProviderID:   req.ProviderID,
 		Name:         req.Name,
-		Capabilities: pinCapabilities(req.Capabilities),
+		Capabilities: req.Capabilities,
 		Compat:       req.Compat,
 		Priority:     req.Priority,
 		// ADR-010: a WebUI save is operator authorship — a synced row edited

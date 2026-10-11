@@ -156,10 +156,10 @@ persists the observed gap into the model row's capabilities (e.g.
 `"vision": false`) — asynchronously, never on the request path. A pinned
 flag (the operator's manual selection in the Models editor, written as
 `"pinned": {"vision": true}`) stops the learning for exactly that
-capability; the row's sync origin is preserved. Saving a model in that
-editor always records the capabilities it declares as pinned, because
-declaring one there *is* the override — without that the operator's
-`"vision": true` was clobbered by the very next rejected request.
+capability; the row's sync origin is preserved. The editor composes that
+map and the server stores the blob verbatim: checking a capability pins
+it, unchecking it removes the pin, and the learning then resumes for that
+capability alone.
 
 **The learned vision gap is read back** (spec change 2026-10-11). Learning
 that nothing consumes is just a write: a model row that had learned

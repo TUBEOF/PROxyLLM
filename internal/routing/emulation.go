@@ -261,7 +261,15 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 		// (ir.EstimateTokens), which is also the ratio the reference's own
 		// size examples use. The parameter is optional: zero means no limit,
 		// and the limit applies to text, never to binary content.
-		if st.MaxContentTokens > 0 {
+		//
+		// The budget is compared against the page BEFORE multiplying, and that
+		// ordering is load-bearing: max_content_tokens arrives from the client,
+		// and a value near MaxInt would overflow the ×4 into a NEGATIVE byte
+		// limit, which truncateRunes would then use as a slice index — a panic
+		// out of untrusted input. Bounding the comparison by len(fc.Data) keeps
+		// the product small, and a budget at or above the page's own byte count
+		// could only ever have been a no-op anyway.
+		if st.MaxContentTokens > 0 && st.MaxContentTokens < len(fc.Data) {
 			fc.Data = truncateRunes(fc.Data, st.MaxContentTokens*4)
 		}
 		res.Fetch = fc
