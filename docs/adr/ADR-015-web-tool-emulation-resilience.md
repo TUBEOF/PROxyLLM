@@ -96,3 +96,49 @@ between clients, which is an explicit operator decision, not a default); a
 transient error still costs the walk one account (an inline retry was rejected
 because it multiplies latency inside a fixed budget); token streaming for the
 emulated class is deferred to a change that would amend ADR-005.
+
+## Addendum 2026-10-11: a second backend, a bounded page, and a page that failed
+
+The operator reported `web_fetch` still failing after this ADR landed: Claude Code
+showed the fetch returning 1.4 MB, then the turn came back with no assistant text.
+Reading the code found that the fetch's **encode** path had never been tested —
+every fetch test stopped at the IR part, and the one encode test round-tripped
+through the same codec, so encoder and decoder agreed with each other by
+construction and a wire defect was invisible.
+
+Three corrections, plus the second backend the operator asked for:
+
+1. **`max_content_tokens` was decoded and never enforced.** The parameter is
+   documented behaviour, not a hint — "If the fetched content exceeds this limit,
+   the tool truncates it" — and it is what bounds the re-dispatch message. A
+   multi-megabyte page rode into the upstream conversation at full size, and the
+   upstream answered with an empty turn, which is the failure the operator saw.
+   The budget is now applied at the single point where a page is accepted, so it
+   covers both the model-facing payload and the result block the client receives.
+   Optional: zero still means no limit, and it never applies to binary content.
+2. **An unservable page is now the documented error.** Cause 2 above made such a
+   page *empty*; empty then encoded as a success whose document block carried no
+   `source.data` — a shape the reference never produces. It maps to
+   `url_not_accessible` ("Failed to fetch content (HTTP error)"). The pool's rule
+   that an empty answer outranks a later failure is untouched: that decides which
+   ACCOUNT serves the call, not what the client is told.
+3. **A `web_fetch` result with no payload no longer falls through to the search
+   branch**, which answered a `web_fetch` use with a `web_search`-shaped content
+   array.
+
+**The pool was left backend-agnostic, and took the second backend without an
+interface change.** An entry is an id plus the two-method `Emulator`; there is no
+backend-type field, which is why `internal/tools/ollamaweb` (Ollama's hosted
+`/api/web_search` and `/api/web_fetch`) needed only a catalog entry, a config
+parse case and a `buildProvider` case to join the same ordered walk. It is a
+separate account type from `ollama-cloud`, not a second role for the chat
+account: a provider row is either an LLM endpoint or a web-tool backend, and the
+two roles stay independently orderable and independently revocable.
+
+Two limits of that backend are surfaced rather than papered over. Its search
+endpoint takes no domain filters, so a search whose definition carries them
+**fails** — letting the walk try a backend that can honour the constraint —
+instead of silently returning unfiltered results. And its per-result `content`
+snippet is dropped, because neither `ir.WebSearchResultItem` nor the Anthropic
+`web_search_result` block has a plain-text field to carry it; adding one is a
+wire change, not a backend concern.

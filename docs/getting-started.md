@@ -58,9 +58,10 @@ the UI), Ollama Cloud (API key; rides Ollama's OpenAI-compatible `/v1`
 endpoint — interleaved thinking models stream as one text block plus one
 thinking block, so Claude Code renders fluently), or any custom
 OpenAI-compatible endpoint. Credentials are AES-256-GCM encrypted at rest.
-The web-tool emulation (web_search/web_fetch via Firecrawl) activates when
-`PROXYLLM_FIRECRAWL_API_KEY` is set — without it, emulated tool requests
-receive the documented "unavailable" error results (loud, never silent).
+The web-tool emulation (web_search/web_fetch via Firecrawl or Ollama Cloud)
+activates once a web-tool account exists or `PROXYLLM_FIRECRAWL_API_KEY` is set
+— without either, emulated tool requests receive the documented "unavailable"
+error results (loud, never silent).
 
 ## Next
 
@@ -75,7 +76,8 @@ receive the documented "unavailable" error results (loud, never silent).
 
 - Set `PROXYLLM_MASTER_KEY` (32 bytes, hex/base64) or let the keyfile be
   generated — keep `/data` backed up (SQLite file + keyfile = full state).
-- Without a Firecrawl key, web-tool emulation stays inactive (logged at
-  startup).
+- Without a Firecrawl account (or a web-tool account of any other family) and
+  without `PROXYLLM_FIRECRAWL_API_KEY`, web-tool emulation stays inactive
+  (logged at startup).
 - `PROXYLLM_AUTH_DISABLED=1` is the only way to disable auth and emits a
   loud startup warning — never do this on a network you do not control.

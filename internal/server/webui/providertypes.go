@@ -128,6 +128,19 @@ var providerTypes = []providerTypeDesc{
 		AccountFields:       nil,
 		DefaultCapabilities: nil, // web-tool accounts carry no chat capabilities
 	},
+	{
+		Type:        ProviderTypeOllamaCloudWeb,
+		Label:       "Ollama Cloud (Web Tools)",
+		Description: "Ollama's hosted web-tool API at ollama.com/api powering emulated web_search / web_fetch. Not a chat model provider — a separate account type from Ollama Cloud's chat endpoint.",
+		Kind:        KindWebTool,
+		Auth:        "api_key",
+		SettingsFields: []fieldDesc{
+			{Key: "base_url", Label: "Base URL", Kind: fieldKindURL, Required: false,
+				Hint: "Optional override; defaults to https://ollama.com (the endpoint paths /api/web_search and /api/web_fetch ride the root)"},
+		},
+		AccountFields:       nil,
+		DefaultCapabilities: nil, // web-tool accounts carry no chat capabilities
+	},
 }
 
 // ProviderTypeDescription returns the catalog entry for a canonical type

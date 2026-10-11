@@ -36,6 +36,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/server/webui"
 	"github.com/tubeof/proxyllm/internal/storage"
 	"github.com/tubeof/proxyllm/internal/tools/firecrawl"
+	"github.com/tubeof/proxyllm/internal/tools/ollamaweb"
 )
 
 // loadProviders builds live providers from the stored rows. Errors are
@@ -116,6 +117,14 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 		// and fails at call time with the documented upstream error (the
 		// same honest-state contract as keyless custom accounts).
 		emu := firecrawl.NewEmulator(cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), nil)
+		return nil, emu, nil
+
+	case webui.ProviderTypeOllamaCloudWeb:
+		// The second web-tool backend (ADR-015): Ollama's hosted
+		// web_search/web_fetch API. Same web_tool contract as Firecrawl —
+		// credential from the encrypted token store, keyless rows construct
+		// and fail at call time.
+		emu := ollamaweb.NewEmulator(cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), nil)
 		return nil, emu, nil
 
 	case webui.ProviderTypeCustomOpenAI:

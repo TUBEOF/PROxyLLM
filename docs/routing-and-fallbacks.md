@@ -80,7 +80,7 @@ saved in one write):
 | List | Entries | Semantics |
 |---|---|---|
 | **Vision fallback** | MODEL IDs (routing identities, e.g. `ollamacloud/glm-5.3`) | After a chain exhausted on `capability_gap` rejections, these models DESCRIBE each image (they never receive the conversation); the descriptions replace the images and the routed chain is dispatched again (ADR-014) |
-| **Web search fallback** | Web-tool account IDs (firecrawl today) | The emulator pool tries accounts in order on emulated `web_search`; a failing account fails over to the next |
+| **Web search fallback** | Web-tool account IDs (firecrawl, ollama-cloud-web) | The emulator pool tries accounts in order on emulated `web_search`; a failing account fails over to the next |
 | **Web fetch fallback** | Web-tool account IDs | Same as above for `web_fetch` |
 
 **Spec change 2026-09-21** (breaking for the vision list): entries are
@@ -210,14 +210,33 @@ and the [translation matrix](reference/translation-matrix.md).
 ## Tool emulation
 
 When a request needs `web_search`/`web_fetch` and the routed provider
-lacks native support, the Firecrawl emulation layer substitutes
+lacks native support, the emulation layer substitutes
 (protocol-conform result blocks) when the model's `server_tool_emulation`
 is `emulate-firecrawl` — the substitution is recorded in route_trace and
-the response metadata. Firecrawl accounts are connected in the WebUI
-(Providers → Firecrawl, ADR-010); the `PROXYLLM_FIRECRAWL_API_KEY` ENV
+the response metadata. The stored value keeps the name it was introduced
+under; the pool it drives is no longer Firecrawl-only.
+
+Two web-tool backends are available, both connected in the WebUI
+(Providers, ADR-010):
+
+| Type | Serves | Endpoints |
+|---|---|---|
+| **Firecrawl** | `web_search`, `web_fetch` | `api.firecrawl.dev/v2` |
+| **Ollama Cloud (Web Tools)** | `web_search`, `web_fetch` | `ollama.com/api` — a separate account type from Ollama Cloud's chat endpoint |
+
+They share one ordered walk: the web fallback lists name accounts of
+either family and the pool tries them in that order, so the two can be
+mixed and reordered freely. `PROXYLLM_FIRECRAWL_API_KEY` ENV
 remains the fallback when no account exists, and with neither, emulation
 returns the documented "unavailable" error results. Multiple accounts +
-the web fallback lists give the emulation real failover. Vision cannot be
+the web fallback lists give the emulation real failover. Note one
+difference between the families: Ollama's search endpoint takes no domain
+filters, so a search whose definition carries `allowed_domains` /
+`blocked_domains` fails on that account and fails over — rather than
+returning results that ignore the constraint. A fetched page is truncated
+to the definition's `max_content_tokens` when that limit is set.
+
+Vision cannot be
 emulated: a model that really rejects image input at the upstream fails
 over within the chain, then to the configured vision fallback MODELS —
 see above.
