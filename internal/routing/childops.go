@@ -78,6 +78,20 @@ type ChildOp struct {
 // issued the tool call. The Logs page renders that on the child row;
 // provider/model identity is the op's point (never request bodies).
 func ChildOps(events []Event) []ChildOp {
+	// One vision rescue records TWO events — a caption per described image and
+	// a consultation for the rescue as a whole — but they are one operation, so
+	// only the caption becomes a row. The consultation survives on its own only
+	// when no vision model could describe the image: then it is the sole
+	// evidence the fallback was consulted at all, and dropping it would hide the
+	// failure.
+	captionPresent := false
+	for _, ev := range events {
+		if ev.Type == EventImageCaption {
+			captionPresent = true
+			break
+		}
+	}
+
 	var ops []ChildOp
 	for i, ev := range events {
 		switch ev.Type {
@@ -90,6 +104,9 @@ func ChildOps(events []Event) []ChildOp {
 				Model:      nextAttemptModel(events, i, ev.To),
 			})
 		case EventCapabilityFallback:
+			if captionPresent {
+				continue
+			}
 			ops = append(ops, ChildOp{
 				Kind: OpCapabilityFallback,
 				// The event's Reason is the same boilerplate for every

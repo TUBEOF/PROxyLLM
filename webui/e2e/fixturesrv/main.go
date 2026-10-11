@@ -335,9 +335,10 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 			// The vision fallback (ADR-014) in the order production records it:
 			// the chain fails on the image, a vision model describes it, the
 			// capability fallback is consulted, and the chain is retried with
-			// the text in place of the image. Hence two child rows for one
-			// rescue — the caption and the consultation — each with its own
-			// payload (2026-10-10).
+			// the text in place of the image. The rescue records TWO events
+			// (the caption and the consultation) but renders ONE row: the
+			// caption subsumes the consultation, which only becomes a row of
+			// its own when no model could describe the image (2026-10-11).
 			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"glm-5.3-flash","to":"ollama-cloud/glm-5.3-flash","provider_id":"prv-ollama"},{"type":"attempt","provider_id":"prv-codex","model":"gpt-5"},{"type":"failed","provider_id":"prv-codex","class":"capability_gap","error_code":"unsupported_image","http_status":400,"failure_position":"pre_stream","capability":"vision","latency_ms":140},{"type":"image_caption","provider_id":"prv-ollama","model":"glm-5.3-vl","latency_ms":820,"reason":"184 character(s) described"},{"type":"capability_fallback","capability":"vision","reason":"chain exhausted on capability gaps; described 1 image(s) and retrying the chain with the text in place of the image"},{"type":"failover","from":"prv-codex","to":"prv-ollama","reason":"capability fallback model"},{"type":"attempt","provider_id":"prv-ollama","model":"glm-5.3-flash"}]}`),
 			ConversationID: "conv_de1a7e00", ConvKey: "sys:ci-smoke",
 			Protocol: "anthropic", Features: json.RawMessage(`{"streaming":false,"tools":false,"thinking":false,"web_search":false,"web_fetch":false,"vision":false}`),

@@ -117,6 +117,11 @@ function LogRowInner({
   if (shape.kind === 'child') {
     const c = shape.child;
     const meta = childMeta(c);
+    // PROVIDER/ACCOUNT name the endpoint THIS op ran on, which is the point of
+    // a fallback row. The parent's columns would be wrong here: they describe
+    // where the request started, not where a failover landed.
+    const providerId = c.provider_id ?? '';
+    const accountName = c.provider_name ?? c.provider_id ?? '';
     // The child carries the same column count as its parent so its cells
     // sit directly under the parent's — the failover's target lines up
     // with the parent's provider, not in a merged blob. The MODEL column
@@ -153,19 +158,29 @@ function LogRowInner({
         <td>
           <span className={childCls(c.kind)}>{childTitle(c)}</span>
         </td>
-        <td className="primary child-model" title={c.model || meta || undefined}>
+        {/* Single line, like every row: the second line (the op's reason, the
+            caption excerpt, `family: vision`) pushed the row taller than its
+            parent and left the tree elbow floating between two baselines. The
+            op's detail is not lost — it is the first thing the row's own
+            drawer shows. The MODEL column shows the model this op actually
+            served/used; an op with no model of its own falls back to a muted
+            one-liner rather than an empty cell. */}
+        <td className="primary child-model col-model" title={c.model || meta || undefined}>
           {c.model || <span className="txt-muted">{meta || '—'}</span>}
-          {c.model && meta !== '' && (
-            <span className="cell-sub mono child-meta">{meta}</span>
-          )}
         </td>
-        {/* A sub-operation carries only what it owns. The columns that
-            describe a request's endpoint, credentials and token spend have
-            no meaning on a fallback/emulation op, so they stay empty rather
-            than padded with an em-dash placeholder. */}
+        {/* A sub-operation carries only what it owns. PROVIDER/ACCOUNT name the
+            endpoint the op itself ran on (the drawer shows the same pair),
+            which is what makes a fallback row worth reading: it says which
+            account served the step, not which one the request started on.
+            Protocol, key, tokens, TPS and duration have no per-op value — they
+            belong to the request — and stay empty rather than inheriting the
+            parent's, which would attribute a fallback round to the primary
+            endpoint. */}
+        <td>{providerId && <span className="pill">{c.provider_kind ?? providerId}</span>}</td>
         <td />
-        <td />
-        <td />
+        <td className="col-account" title={accountName}>
+          {accountName}
+        </td>
         <td />
         <td />
         <td />
@@ -225,9 +240,8 @@ function LogRowInner({
         <span className={`badge ${st.cls}`}><span className="b-dot" />{st.label}</span>
         {shape.healed && <span className="chip chip-healed">healed</span>}
       </td>
-      <td className="primary">
+      <td className="primary col-model" title={requested !== l.model ? `requested ${requested}` : undefined}>
         {l.model}
-        {requested !== l.model && <span className="cell-sub mono">{requested}</span>}
       </td>
       <td><span className="pill">{provider}</span></td>
       <td><span className="pill pill-warm">{protocolLabel(l.protocol)}</span></td>
