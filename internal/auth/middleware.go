@@ -54,6 +54,15 @@ func GenerateClientKey() (string, error) {
 	return KeyPrefix + string(prefix) + "_" + b64.EncodeToString(secret), nil
 }
 
+// passwordHasher hashes ADMIN PASSWORDS with Argon2id.
+//
+// Passwords keep the KDF and client keys do not (see storage/keyhash.go): a
+// password is a human-chosen, low-entropy secret whose only defence against an
+// offline attack on a stolen table is making each guess expensive. A client key
+// is 256 bits of CSPRNG output, so the expensive part buys nothing and is paid
+// on every authenticated request instead.
+func passwordHasher() *storage.Argon2Hasher { return storage.NewArgon2Hasher() }
+
 // splitClientKey parses pk_<prefix>_<secret> into prefix and secret
 // segments; ok is false for anything malformed — never a verification
 // candidate (fail closed).
@@ -72,8 +81,6 @@ func splitClientKey(key string) (prefix, secret string, ok bool) {
 // keyAlphabet is the display-prefix alphabet: URL-safe chars minus "_" so
 // the prefix can never collide with the key's "_" segment separator.
 const keyAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-
-func hasher() *storage.Argon2Hasher { return storage.NewArgon2Hasher() }
 
 // newKeyID mints a random row id (no secret material in it).
 func newKeyID() (string, error) {
@@ -102,7 +109,7 @@ func CreateClientKeyWithScopes(ctx context.Context, st *storage.Store, name stri
 	if !ok {
 		return "", "", errKeyShape
 	}
-	phc, err := hasher().Hash(secret)
+	phc, err := st.HashClientKey(secret)
 	if err != nil {
 		return "", "", err
 	}
@@ -122,9 +129,9 @@ type verifyResult struct {
 }
 
 // verifyKey authenticates one presented key: candidates narrow by display
-// prefix, then the constant-time Argon2id comparison decides. On success it
-// stamps last_used_at (observability only — a failed touch must not reject
-// a valid key) and returns the row id.
+// prefix, then the stored hash decides. On success it upgrades a legacy
+// Argon2id row to the keyed-MAC scheme and stamps last_used_at (observability
+// only — a failed touch must not reject a valid key), and returns the row id.
 func verifyKey(ctx context.Context, st *storage.Store, key string) verifyResult {
 	prefix, secret, ok := splitClientKey(key)
 	if !ok {
@@ -134,10 +141,19 @@ func verifyKey(ctx context.Context, st *storage.Store, key string) verifyResult 
 	if err != nil {
 		return verifyResult{}
 	}
-	h := hasher()
 	for _, c := range candidates {
-		if !h.Verify(c.KeyHash, secret) {
+		verified, legacy := st.VerifyClientKeyHash(c.KeyHash, secret)
+		if !verified {
 			continue
+		}
+		if legacy {
+			// Transparent migration (2026-10-10): the presented secret is in
+			// hand exactly here, so this is the one moment an Argon2id row can
+			// be rewritten. Best-effort — a failed rewrite must not reject a key
+			// that just verified, and the row simply migrates on its next use.
+			if upgraded, herr := st.HashClientKey(secret); herr == nil {
+				_ = st.UpdateClientKeyHash(ctx, c.ID, upgraded)
+			}
 		}
 		_ = st.TouchClientKey(ctx, c.ID) // observability, not authn
 		return verifyResult{id: c.ID}

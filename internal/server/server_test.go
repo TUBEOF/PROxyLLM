@@ -25,7 +25,12 @@ import (
 
 // authCreateKey creates one client key directly in the store (test
 // shortcut around the WebUI flow that will own this later).
+// authCreateKey mints a client key for the server tests. It wires the keyed-MAC
+// hasher first, exactly as main does (2026-10-10): without it the row would be
+// legacy Argon2id and every authenticated request in this suite would pay a KDF
+// no production request pays.
 func authCreateKey(ctx context.Context, st *storage.Store) (string, string, error) {
+	st.SetKeyHasher(storage.NewKeyHasher([]byte("master-key-material-for-tests")))
 	return auth.CreateClientKey(ctx, st, "server-test")
 }
 

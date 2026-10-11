@@ -83,6 +83,22 @@ full `route_trace` (routing decisions, never credentials).
   decoded size, never by its bytes. Payload writes are off the request path,
   bounded in flight, and dropped rather than queued under load.
 
+## Client keys and the master key (2026-10-10)
+
+- Client keys are 256 bits of CSPRNG output and are stored as a **keyed MAC**
+  (`$hmacsha256$v=1$<salt>$<mac>`, HMAC-SHA256 under a key derived from the
+  master key, see ADR-016). Argon2id exists to make a low-entropy secret
+  expensive to guess; there is nothing to guess here, and the KDF was paid on
+  every authenticated request. Admin passwords keep Argon2id for exactly the
+  opposite reason.
+- The stored hash carries its scheme, so rows written before this change keep
+  verifying and are rewritten on their first successful use — no key has to be
+  reissued. A stolen database alone still cannot be tested offline: the MAC key
+  lives in the process, not the file.
+- **Consequence, stated where an operator will look for it:** rotating the
+  master key invalidates every client key (they are display-once and cannot be
+  re-hashed). Rotation already requires re-entering provider credentials.
+
 ## Container hardening
 
 - Distroless static image, no shell — see `docker/Dockerfile`,

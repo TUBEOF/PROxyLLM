@@ -43,6 +43,11 @@ import (
 	ttestutil "github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
+// testMasterKey is a fixed master key for the keyed-MAC client-key hasher in
+// tests: production generates or reads one, and these tests only need the
+// production WIRING, not production key material.
+const testMasterKey = "master-key-material-for-tests"
+
 // env is one assembled proxy-under-test plus the two official SDK clients
 // aimed at it. mock-main (OpenAI chat wire, all capabilities) is the sole
 // upstream.
@@ -101,6 +106,12 @@ func newEnv(t *testing.T, rules ...routing.Rule) *env {
 
 	h := httpapi.New(httpapi.Params{Store: st, Router: router, Executor: exec})
 
+	// Production parity (2026-10-10): main derives the client-key hasher from
+	// the master key, so a store without one would write legacy Argon2id rows and
+	// every authenticated request in this suite would pay the KDF — a cost no
+	// production request pays, and one that made the latency budgets measure the
+	// wrong thing entirely.
+	st.SetKeyHasher(storage.NewKeyHasher([]byte(testMasterKey)))
 	_, key, err := auth.CreateClientKey(ctx, st, "e2e-test")
 	if err != nil {
 		t.Fatalf("create client key: %v", err)
@@ -127,6 +138,13 @@ func newEnv(t *testing.T, rules ...routing.Rule) *env {
 
 	srv := httptest.NewServer(auth.NewMiddleware(st).Wrap(h))
 	t.Cleanup(srv.Close)
+
+	// Payload capture runs OFF the request path, so it can outlive the request
+	// that triggered it — and cleanups are LIFO, so registering this last makes it
+	// run FIRST, before the store closes and before TempDir removes the directory
+	// the database lives in. Without it a slow runner can fail the cleanup with
+	// "directory not empty" (observed on CI).
+	t.Cleanup(func() { httpapi.WaitForPendingCaptures(5 * time.Second) })
 
 	e := &env{
 		store: st, mock: mock, srv: srv, h: h,

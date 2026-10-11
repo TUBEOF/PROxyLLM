@@ -26,6 +26,11 @@ import (
 	ttestutil "github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
+// testMasterKey is a fixed master key for the keyed-MAC client-key hasher in
+// tests: production generates or reads one, and these tests need the production
+// WIRING, not production key material.
+const testMasterKey = "master-key-material-for-tests"
+
 // env is one assembled proxy-under-test: store, mock upstreams, router,
 // executor, and an httptest server serving the httpapi handler behind the
 // auth middleware. Tests shape behavior through the routing rules and the
@@ -127,6 +132,11 @@ func newEnvWithAuthOpts(t *testing.T, authOpts []auth.Option, rules ...routing.R
 
 	h := New(Params{Store: st, Router: router, Executor: exec})
 
+	// Production parity (2026-10-10): main derives the client-key hasher from
+	// the master key; without it this store would issue legacy Argon2id rows and
+	// every request in this suite would pay a KDF that no production request
+	// pays.
+	st.SetKeyHasher(storage.NewKeyHasher([]byte(testMasterKey)))
 	keyID, key, err := auth.CreateClientKey(ctx, st, "httpapi-test")
 	if err != nil {
 		t.Fatalf("create client key: %v", err)
@@ -134,6 +144,11 @@ func newEnvWithAuthOpts(t *testing.T, authOpts []auth.Option, rules ...routing.R
 
 	srv := httptest.NewServer(auth.NewMiddleware(st, authOpts...).Wrap(h))
 	t.Cleanup(srv.Close)
+
+	// Payload capture runs OFF the request path (see capturesInFlight), so it can
+	// outlive the request; cleanups are LIFO, so registering this last makes it run
+	// first — before the store closes and before TempDir removes its directory.
+	t.Cleanup(func() { WaitForPendingCaptures(5 * time.Second) })
 
 	return &env{
 		t: t, store: st, mock: mock, reg: reg,

@@ -83,20 +83,78 @@ const (
 	notifyCap   = 1         // hub notify channel capacity
 )
 
+// subscriber is one SSE fan-out target. Its OWN mutex and closed flag make the
+// send/close race free without the hub's lock (2026-10-10): the fan-out used to
+// take the hub mutex once PER SUBSCRIBER PER EVENT, so every request's
+// registration serialized behind the whole broadcast.
 type subscriber struct {
 	ch     chan Event
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	mu     sync.Mutex
+	closed bool
+}
+
+// send delivers one event, evicting or dropping as the buffer demands. False
+// means the subscriber is gone (it closed, or this send closed it).
+func (sub *subscriber) send(ev Event) bool {
+	sub.mu.Lock()
+	defer sub.mu.Unlock()
+	if sub.closed {
+		return false
+	}
+	select {
+	case sub.ch <- ev:
+		return true
+	default:
+	}
+	if ev.Kind == EventRunning {
+		// Running is state, not a delta: drop the oldest queued snapshot.
+		select {
+		case <-sub.ch:
+		default:
+		}
+		select {
+		case sub.ch <- ev:
+		default:
+		}
+		return true
+	}
+	// An EventLog with a full buffer means this subscriber cannot keep up. Close
+	// it here, under its own lock, so a concurrent send can never reach a closed
+	// channel.
+	sub.closed = true
+	close(sub.ch)
+	return false
+}
+
+// close ends the registration from the outside (client disconnect). Idempotent
+// with send's own close.
+func (sub *subscriber) close() {
+	sub.mu.Lock()
+	defer sub.mu.Unlock()
+	if sub.closed {
+		return
+	}
+	sub.closed = true
+	close(sub.ch)
 }
 
 // Stream is the in-flight registry + broadcast hub. Safe for concurrent
 // use; run with the -race gate (streaming-adjacent doctrine).
 type Stream struct {
-	mu       sync.Mutex
-	inflight map[string]Inflight
-	subs     map[*subscriber]struct{}
-	seq      atomic.Uint64
-	now      func() time.Time // injectable clock for tests
+	// Two locks, not one (2026-10-10): a request's registration must not queue
+	// behind the broadcast, and reading the in-flight set must not queue behind
+	// another reader.
+	inflightMu sync.RWMutex
+	inflight   map[string]Inflight
+
+	subsMu sync.RWMutex
+	subs   map[*subscriber]struct{}
+
+	seq atomic.Uint64
+	now func() time.Time // injectable clock for tests
 
 	// notify wakes SSE handlers (cap 1, non-blocking send): a missed wake
 	// only delays — handlers re-read their own cursor + snapshot on every
@@ -121,15 +179,15 @@ func (s *Stream) Wait() <-chan struct{} { return s.notify }
 // InflightCount reports the current in-flight registration count (the
 // no-leak tests' probe).
 func (s *Stream) InflightCount() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.inflightMu.RLock()
+	defer s.inflightMu.RUnlock()
 	return len(s.inflight)
 }
 
 // SubCount reports the current subscriber registration count.
 func (s *Stream) SubCount() int {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.subsMu.RLock()
+	defer s.subsMu.RUnlock()
 	return len(s.subs)
 }
 
@@ -155,11 +213,11 @@ func (s *Stream) Start(in Inflight) (finish func(row LogRow), runID string) {
 	var once sync.Once
 	finish = func(row LogRow) {
 		once.Do(func() {
-			s.mu.Lock()
+			s.inflightMu.Lock()
 			delete(s.inflight, in.ID)
-			subs := s.subList()
 			inflight := s.snapshot()
-			s.mu.Unlock()
+			s.inflightMu.Unlock()
+			subs := s.subList()
 			// Running first (removes the pseudo-row), then the terminal row.
 			s.publish(subs, Event{Kind: EventRunning, Running: inflight})
 			s.publish(subs, Event{Kind: EventLog, Row: &row})
@@ -167,12 +225,12 @@ func (s *Stream) Start(in Inflight) (finish func(row LogRow), runID string) {
 		})
 	}
 
-	s.mu.Lock()
+	s.inflightMu.Lock()
 	s.reapStale()
 	s.inflight[in.ID] = in
-	subs := s.subList()
 	inflight := s.snapshot()
-	s.mu.Unlock()
+	s.inflightMu.Unlock()
+	subs := s.subList()
 	s.publish(subs, Event{Kind: EventRunning, Running: inflight})
 	s.ping()
 	return finish, runID
@@ -182,10 +240,7 @@ func (s *Stream) Start(in Inflight) (finish func(row LogRow), runID string) {
 // change): rows that never registered an in-flight entry (e.g. the
 // count_tokens pre-decode path) stay observable on the live stream.
 func (s *Stream) PublishRow(row LogRow) {
-	s.mu.Lock()
-	subs := s.subList()
-	s.mu.Unlock()
-	s.publish(subs, Event{Kind: EventLog, Row: &row})
+	s.publish(s.subList(), Event{Kind: EventLog, Row: &row})
 	s.ping()
 }
 
@@ -197,24 +252,29 @@ func (s *Stream) PublishRow(row LogRow) {
 func (s *Stream) Subscribe(ctx context.Context) (<-chan Event, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(ctx)
 	sub := &subscriber{ch: make(chan Event, subBuffer), ctx: ctx, cancel: cancel}
-	s.mu.Lock()
-	s.subs[sub] = struct{}{}
-	inflight := s.snapshot()
-	// Directly buffered first event under the same mu hold as every send.
-	sub.ch <- Event{Kind: EventRunning, Running: inflight}
-	s.mu.Unlock()
 
-	// One goroutine per subscriber; exits on ctx cancel (client disconnect
-	// or the returned cancel) and removes + closes the registration under
-	// mu (the same hold discipline publish sends under).
+	s.inflightMu.RLock()
+	inflight := s.snapshot()
+	s.inflightMu.RUnlock()
+
+	s.subsMu.Lock()
+	s.subs[sub] = struct{}{}
+	s.subsMu.Unlock()
+
+	// The first event is the current snapshot, buffered directly: the buffer is
+	// untouched, so this send always lands, and it goes through the same
+	// per-subscriber lock as every later one.
+	sub.send(Event{Kind: EventRunning, Running: inflight})
+
+	// One goroutine per subscriber; exits on ctx cancel (client disconnect or
+	// the returned cancel) and removes + closes the registration. The close goes
+	// through the subscriber's own lock, so it cannot race a concurrent send.
 	go func() {
 		<-ctx.Done()
-		s.mu.Lock()
-		if _, live := s.subs[sub]; live {
-			delete(s.subs, sub)
-			close(sub.ch)
-		}
-		s.mu.Unlock()
+		s.subsMu.Lock()
+		delete(s.subs, sub)
+		s.subsMu.Unlock()
+		sub.close()
 	}()
 	return sub.ch, cancel
 }
@@ -241,7 +301,10 @@ func (s *Stream) snapshot() []Inflight {
 }
 
 // subList copies the subscriber set. Call with mu held.
+// subList snapshots the subscriber set under its reader lock.
 func (s *Stream) subList() []*subscriber {
+	s.subsMu.RLock()
+	defer s.subsMu.RUnlock()
 	subs := make([]*subscriber, 0, len(s.subs))
 	for sub := range s.subs {
 		subs = append(subs, sub)
@@ -258,36 +321,15 @@ func (s *Stream) subList() []*subscriber {
 // to a closed channel; the mutex orders them).
 func (s *Stream) publish(subs []*subscriber, ev Event) {
 	for _, sub := range subs {
-		s.mu.Lock()
-		_, live := s.subs[sub]
-		if !live {
-			s.mu.Unlock()
-			continue // already dropped/closed
-		}
-		select {
-		case sub.ch <- ev:
-			s.mu.Unlock()
-			continue
-		default:
-		}
-		if ev.Kind == EventRunning {
-			// drop-and-replace: evict the oldest queued snapshot.
-			select {
-			case <-sub.ch:
-			default:
-			}
-			select {
-			case sub.ch <- ev:
-			default:
-			}
-			s.mu.Unlock()
+		if sub.send(ev) {
 			continue
 		}
-		// EventLog with a full buffer → drop the subscriber (close under
-		// the same mu hold as every send).
+		// Gone (closed by send above, or by its cancel goroutine): stop tracking
+		// it. The close itself happened under the subscriber's own lock, so this
+		// is bookkeeping, not the race-safe boundary.
+		s.subsMu.Lock()
 		delete(s.subs, sub)
-		close(sub.ch)
-		s.mu.Unlock()
+		s.subsMu.Unlock()
 	}
 }
 
