@@ -5,7 +5,14 @@ BINARY := proxyllm
 # vet/test/lint runs. The explicit list is also what CI uses.
 GO_PKGS := ./cmd/... ./internal/... ./webui
 
-.PHONY: build test test-race lint fmt vet run clean docker webui-install webui-build webui-lint webui-typecheck webui-assets
+.PHONY: build test test-race lint lint-tool fmt vet run clean docker webui-install webui-build webui-lint webui-typecheck webui-assets
+
+# The golangci-lint version CI pins (ci.yml, golangci-lint-action). Bumped
+# together with that pin or not at all: a linter newer or older than the gate
+# reports findings CI does not have, which is worse than no local lint at all —
+# this repo has already been bitten by a locally-installed 2.6.2 that refused to
+# load the module entirely.
+GOLANGCI_VERSION := v2.14.0
 
 build:
 	go build -trimpath -o $(BINARY) ./cmd/proxyllm
@@ -15,6 +22,12 @@ test:
 
 test-race:
 	go test -race $(GO_PKGS)
+
+# Installs the pinned linter into $(go env GOPATH)/bin. Needed once per machine
+# (and after every GOLANGCI_VERSION bump); `make lint` then works.
+lint-tool:
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION)
+	@echo "golangci-lint $(GOLANGCI_VERSION) installed in $(shell go env GOPATH)/bin"
 
 lint:
 	golangci-lint run

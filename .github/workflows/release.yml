@@ -44,7 +44,7 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
           cache-dependency-path: webui/package-lock.json
 
@@ -82,7 +82,10 @@ jobs:
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          version: latest
+          # Pinned, not `latest`: a release must be reproducible, and a GoReleaser
+          # released between the tag and the run would otherwise change the build
+          # under it. Bump deliberately.
+          version: v2.18.3
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

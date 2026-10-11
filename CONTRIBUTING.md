@@ -47,12 +47,33 @@ PRs are reviewed against this checklist — reviewers reject on:
 ```bash
 make build          # go build -trimpath -o proxyllm ./cmd/proxyllm
 make test           # go test $(GO_PKGS) — never ./..., see the Makefile note
+make lint-tool      # once per machine: installs the golangci-lint CI pins
 make lint           # golangci-lint
 ```
 
 The Go package list is always the Makefile's `GO_PKGS` (`./cmd/... ./internal/...
 ./webui`). `./...` descends into `webui/node_modules` and breaks vet/test/lint —
 use the targets, or the explicit list.
+
+### Toolchain versions
+
+Always the current, safest release — check before pinning or keeping one, and
+check the dependents' peer ranges too, because "latest" is not "safest" when a
+plugin cannot follow.
+
+| Tool | Version | Note |
+|---|---|---|
+| Go | 1.27 (`go.mod`) | `go-version-file` in CI |
+| Node / npm | 26 / 12 | `engines: node >=26`; CI and the workflows pin 26 |
+| golangci-lint | `v2.14.0` | `GOLANGCI_VERSION` in the Makefile **and** `ci.yml` — bump together |
+| GoReleaser | `v2.18.3` | pinned in `release.yml`: a release must be reproducible |
+
+Deliberately held, with the blocking upstream condition — re-check, do not jump:
+
+| Tool | Latest | Held at | Blocked by |
+|---|---|---|---|
+| ESLint | 10.12.0 | 9.39.5 | `eslint-plugin-react` 7.37.5 (the only release) declares `eslint: ^3 … ^9.7` |
+| TypeScript | 7.0.2 | 6.0.3 | `@typescript-eslint` 8.71.1 declares `typescript: >=4.8.4 <6.1.0` |
 
 ## Commit style
 

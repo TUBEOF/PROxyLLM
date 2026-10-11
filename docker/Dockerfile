@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1
 
 # WebUI stage: build the SPA so every built image embeds the real bundle,
-# not the committed dist placeholder. Pinned to the same node major CI
-# uses (24 LTS); deps from the lockfile only (npm ci, never npm install).
-FROM node:24-alpine AS webui
+# not the committed dist placeholder. Pinned to the same node major CI and
+# the workflows use (26); deps from the lockfile only (npm ci, never npm
+# install).
+FROM node:26-alpine AS webui
 
 WORKDIR /src/webui
 COPY webui/package.json webui/package-lock.json ./
