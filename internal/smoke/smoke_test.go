@@ -43,6 +43,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/provider"
 	"github.com/tubeof/proxyllm/internal/provider/codex"
 	"github.com/tubeof/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/tools/ollamaweb"
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 	"github.com/tubeof/proxyllm/internal/translate/ollama"
 	"github.com/tubeof/proxyllm/internal/translate/openai"
@@ -404,4 +405,58 @@ func TestSmoke_OllamaCloudOpenAIStream(t *testing.T) {
 	}
 	t.Logf("ollama-cloud /v1 pinned: text_blocks=%d thinking_blocks=%d usage in/out=%d/%d",
 		textBlocks, thinkBlocks, finalUsage.InputTokens, finalUsage.OutputTokens)
+}
+
+// TestSmoke_OllamaCloudWebTools pins the hosted Ollama web-tool API — the
+// second backend behind the emulated web_search/web_fetch (ADR-015 addendum,
+// read 2026-10-11). Requires PROXYLLM_SMOKE_OLLAMA_CLOUD_KEY. It verifies the
+// three facts the adapter is built on, which the docs alone cannot pin:
+//   - POST /api/web_search answers {results:[{title,url,content}]};
+//   - POST /api/web_fetch answers {title,content,links} — and links may be
+//     NULL, not an empty array;
+//   - the search endpoint honors no domain filters, so the adapter must refuse
+//     a filtered search rather than return unfiltered results.
+func TestSmoke_OllamaCloudWebTools(t *testing.T) {
+	if !smokeEnabled(t) {
+		return
+	}
+	key := smokeEnv(t, "PROXYLLM_SMOKE_OLLAMA_CLOUD_KEY", "")
+	base := smokeEnv(t, "PROXYLLM_SMOKE_OLLAMA_CLOUD_URL", "https://ollama.com")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	emu := ollamaweb.NewEmulator(base, key, smokeHTTPClient())
+
+	items, err := emu.Search(ctx, "ollama web search api", ir.ServerToolConfig{})
+	if err != nil {
+		t.Fatalf("web_search against the live endpoint: %v", err)
+	}
+	if len(items) == 0 {
+		t.Error("web_search returned no results")
+	}
+	for _, it := range items {
+		if it.URL == "" || it.Title == "" {
+			t.Errorf("search item missing url/title: %+v", it)
+		}
+	}
+	t.Logf("web_search: %d result(s), first url=%s", len(items), items[0].URL)
+
+	page, err := emu.Fetch(ctx, "https://ollama.com", ir.ServerToolConfig{})
+	if err != nil {
+		t.Fatalf("web_fetch against the live endpoint: %v", err)
+	}
+	if page == nil || page.Data == "" {
+		t.Fatalf("web_fetch returned no content: %+v", page)
+	}
+	// The document-block semantics the Anthropic wire shape expects.
+	if page.Source != "text" || page.MediaType != "text/plain" {
+		t.Errorf("source/media_type = %q/%q, want text/text/plain", page.Source, page.MediaType)
+	}
+	t.Logf("web_fetch: title=%q, %d byte(s) of text", page.Title, len(page.Data))
+
+	// A filtered search must NOT answer: unfiltered results for a request that
+	// asked for a filter would be silently wrong.
+	if _, err := emu.Search(ctx, "ollama", ir.ServerToolConfig{AllowedDomains: []string{"example.com"}}); !errors.Is(err, ollamaweb.ErrDomainFiltersUnsupported) {
+		t.Errorf("filtered search err = %v, want ErrDomainFiltersUnsupported", err)
+	}
 }
