@@ -1,7 +1,7 @@
 {
   "fixture": "server-tool-web-fetch-error-response.json",
   "source": "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/web-fetch-tool",
-  "accessed": "2026-09-12",
+  "accessed": "2026-10-11",
   "facts": ["A3", "A10"],
-  "notes": "web_fetch error shape: content is a single {\"type\":\"web_fetch_tool_result_error\",\"error_code\":...} object. Documented error_code values: invalid_tool_input, url_too_long (250 chars), url_not_allowed, url_not_in_prior_context, url_not_accessible, too_many_requests, unsupported_content_type (text/HTML/PDF only), max_uses_exceeded, unavailable."
+  "notes": "web_fetch error shape: content is a single {\"type\":\"web_fetch_tool_result_error\",\"error_code\":...} object. Documented error_code values: invalid_tool_input, url_too_long (250 chars), url_not_allowed, url_not_in_prior_context, url_not_accessible, too_many_requests, unsupported_content_type (text/HTML/PDF only), max_uses_exceeded, unavailable. RE-READ 2026-10-11 (page now served from platform.claude.com): an error is a 200 response with the error in the body — the client sees it and continues the turn. url_not_accessible is documented as 'Failed to fetch content (HTTP error)', which is what an emulation backend answers when a scrape produced no page (Firecrawl replies HTTP 200 even for a page it could not serve). Failed fetches also count against max_uses."
 }

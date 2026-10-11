@@ -3,6 +3,7 @@ package anthropic_test
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	anth "github.com/tubeof/proxyllm/internal/translate/anthropic"
@@ -292,6 +293,128 @@ func TestEncodeResponse_ServerToolBlocks(t *testing.T) {
 	}
 	if got.Usage.WebSearchRequests != 1 {
 		t.Errorf("round trip usage.web_search_requests = %d", got.Usage.WebSearchRequests)
+	}
+}
+
+// wireContentOf returns the raw "content" array of an Anthropic message
+// response as decoded JSON values, so a block can be compared key by key.
+func wireContentOf(t *testing.T, raw []byte) []any {
+	t.Helper()
+	var msg struct {
+		Content []any `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &msg); err != nil {
+		t.Fatalf("unmarshal content: %v", err)
+	}
+	return msg.Content
+}
+
+// wireBlockOfType finds the single content block of the given wire type.
+func wireBlockOfType(t *testing.T, blocks []any, typ string) map[string]any {
+	t.Helper()
+	found := map[string]any(nil)
+	for _, b := range blocks {
+		m, ok := b.(map[string]any)
+		if !ok || m["type"] != typ {
+			continue
+		}
+		if found != nil {
+			t.Fatalf("more than one %s block", typ)
+		}
+		found = m
+	}
+	if found == nil {
+		t.Fatalf("no %s block in %v", typ, blocks)
+	}
+	return found
+}
+
+// TestEncodeResponse_WebFetchMatchesTheReferenceBlock closes the coverage gap
+// that let three earlier web_fetch fixes miss: nothing asserted the ENCODED
+// wire shape. TestEncodeResponse_ServerToolBlocks round-trips through the same
+// codec, so encoder and decoder agree with each other by construction and a
+// shape defect is invisible.
+//
+// This test instead encodes the fixture's own IR and compares the emitted
+// block to the block the reference response carries. ADR-006: the fixture is
+// the specification, so a difference here is a defect in the encoder.
+func TestEncodeResponse_WebFetchMatchesTheReferenceBlock(t *testing.T) {
+	raw := testutil.LoadGolden(t, "anthropic/server-tool-web-fetch-response.json")
+	decoded, err := anth.Codec{}.DecodeResponse(raw)
+	if err != nil {
+		t.Fatalf("DecodeResponse: %v", err)
+	}
+
+	// Re-encode the decoded message verbatim; only the block shape is under
+	// test, so everything else is carried along untouched.
+	emitted, err := anth.Codec{}.EncodeResponse(decoded)
+	if err != nil {
+		t.Fatalf("EncodeResponse: %v", err)
+	}
+
+	want := wireBlockOfType(t, wireContentOf(t, raw), "web_fetch_tool_result")
+	got := wireBlockOfType(t, wireContentOf(t, emitted), "web_fetch_tool_result")
+	if !reflect.DeepEqual(want, got) {
+		t.Errorf("encoded web_fetch_tool_result differs from the reference\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+// TestEncodeResponse_WebFetchErrorMatchesTheReferenceBlock covers the other
+// half of the fetch encode branch: the documented error shape. Like the
+// success case above, it compares against the fixture rather than round-
+// tripping, and it is the only encode-side coverage of the error path for
+// either server tool.
+func TestEncodeResponse_WebFetchErrorMatchesTheReferenceBlock(t *testing.T) {
+	raw := testutil.LoadGolden(t, "anthropic/server-tool-web-fetch-error-response.json")
+	decoded, err := anth.Codec{}.DecodeResponse(raw)
+	if err != nil {
+		t.Fatalf("DecodeResponse: %v", err)
+	}
+
+	emitted, err := anth.Codec{}.EncodeResponse(decoded)
+	if err != nil {
+		t.Fatalf("EncodeResponse: %v", err)
+	}
+
+	want := wireBlockOfType(t, wireContentOf(t, raw), "web_fetch_tool_result")
+	got := wireBlockOfType(t, wireContentOf(t, emitted), "web_fetch_tool_result")
+	if !reflect.DeepEqual(want, got) {
+		t.Errorf("encoded web_fetch_tool_result differs from the reference\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+// TestEncodeResponse_NilFetchNeverEncodesAsASearchResult — a web_fetch result
+// part with no fetch payload must not fall through to the web_search branch,
+// which would answer a `web_fetch` server_tool_use with a
+// web_search_tool_result block (reference: the families are distinct).
+func TestEncodeResponse_NilFetchNeverEncodesAsASearchResult(t *testing.T) {
+	resp := ir.Response{
+		ID:         "msg_test",
+		Model:      "claude-sonnet-5",
+		StopReason: ir.StopEndTurn,
+		Content: []ir.Part{
+			ir.ServerToolResultPart{ToolUseID: "srvtoolu_01", ToolName: "web_fetch"},
+		},
+	}
+	raw, err := anth.Codec{}.EncodeResponse(resp)
+	if err != nil {
+		t.Fatalf("EncodeResponse: %v", err)
+	}
+
+	blocks := wireContentOf(t, raw)
+	for _, b := range blocks {
+		m, ok := b.(map[string]any)
+		if !ok {
+			continue
+		}
+		if typ, _ := m["type"].(string); typ == "web_search_tool_result" {
+			t.Fatalf("a web_fetch result encoded as %s: %#v", typ, m)
+		}
+	}
+	got := wireBlockOfType(t, blocks, "web_fetch_tool_result")
+	inner, ok := got["content"].(map[string]any)
+	if !ok || inner["type"] != "web_fetch_tool_result_error" {
+		t.Fatalf("content = %#v, want a web_fetch_tool_result_error object", got["content"])
 	}
 }
 
