@@ -90,6 +90,11 @@ jobs:
         uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Explicit path rather than relying on the action's auto-detection:
+          # .gitleaks.toml carries one narrow allowance (the entropy heuristic
+          # cannot tell a synthetic test fixture from a real key), and which files
+          # it applies to should not depend on the action's version.
+          GITLEAKS_CONFIG: .gitleaks.toml
       - name: CodeQL
         # Code scanning on private repos requires GitHub Advanced Security
         # (a paid plan feature). The workflow cannot enable it; if the
