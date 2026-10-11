@@ -111,6 +111,13 @@ jobs:
           git commit -m "webui: regenerate visual regression baselines (CI)" \
             -m "Baseline refresh via update-visual-baselines workflow (ADR-006 V-3/V-5): captured in CI on the pinned runner against the fixture server, never locally." \
             -m "Co-Authored-By: Claude Code <noreply@anthropic.com>"
+          # Rebase onto whatever landed while the baselines were being
+          # regenerated (a whole Playwright run is minutes, and any merge to the
+          # branch in that window makes a plain push fail with
+          # "! [rejected] ... (fetch first)" — observed on the first real use of
+          # this workflow). The commit is the only conflict risk, and the
+          # baseline PNGs are its whole content.
+          git pull --rebase origin "${BRANCH}"
           git push origin "HEAD:${BRANCH}"
           echo "pushed=true" >> "$GITHUB_OUTPUT"
       # Explicitly ask CI to run on the refreshed branch — the push above used
