@@ -48,6 +48,7 @@ const (
 	errCodeInvalidToolInput    = "invalid_tool_input"
 	errCodeURLNotInPriorCtx    = "url_not_in_prior_context"
 	errCodeURLNotAllowed       = "url_not_allowed"
+	errCodeURLNotAccessible    = "url_not_accessible"
 	errCodeEmulatorUnavailable = "unavailable"
 )
 
@@ -234,6 +235,42 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 		fc, by, err := fetchVia(callCtx, emu, in.URL, st, trace)
 		if err != nil {
 			return fail(errCodeEmulatorUnavailable, "emulator fetch failed: "+callErrReason(callCtx, err, e.cfg.EmulationCallBudget))
+		}
+		// An account that has nothing to give hands back a non-nil page with
+		// no content: Firecrawl answers HTTP 200 even for a page it could not
+		// serve, and an all-empty account walk returns that page with err ==
+		// nil. That is a FAILED fetch, and the reference enumerates it —
+		// "url_not_accessible: Failed to fetch content (HTTP error)". Encoding
+		// it as a success would emit a document block with no source.data, a
+		// shape the reference never produces.
+		//
+		// The pool rule that an empty answer outranks a later failure is
+		// untouched: it decides which ACCOUNT serves the call, not what the
+		// client is told.
+		if fc == nil || strings.TrimSpace(fc.Data) == "" {
+			return fail(errCodeURLNotAccessible, "the page could not be retrieved")
+		}
+		// max_content_tokens bounds what enters the context (reference:
+		// "If the fetched content exceeds this limit, the tool truncates
+		// it"). Enforced here, at the single point where the page is
+		// accepted, so it bounds BOTH the model-facing re-dispatch payload
+		// and the result block the client receives — an unbounded page was
+		// what pushed the upstream into an empty turn.
+		//
+		// The ratio is the repo's established 4 chars/token
+		// (ir.EstimateTokens), which is also the ratio the reference's own
+		// size examples use. The parameter is optional: zero means no limit,
+		// and the limit applies to text, never to binary content.
+		//
+		// The budget is compared against the page BEFORE multiplying, and that
+		// ordering is load-bearing: max_content_tokens arrives from the client,
+		// and a value near MaxInt would overflow the ×4 into a NEGATIVE byte
+		// limit, which truncateRunes would then use as a slice index — a panic
+		// out of untrusted input. Bounding the comparison by len(fc.Data) keeps
+		// the product small, and a budget at or above the page's own byte count
+		// could only ever have been a no-op anyway.
+		if st.MaxContentTokens > 0 && st.MaxContentTokens < len(fc.Data) {
+			fc.Data = truncateRunes(fc.Data, st.MaxContentTokens*4)
 		}
 		res.Fetch = fc
 		uses[call.Name]++

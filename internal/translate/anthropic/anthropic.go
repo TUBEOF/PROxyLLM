@@ -612,7 +612,20 @@ func serverToolResultToWire(p ir.ServerToolResultPart) wireBlock {
 			errType = "web_fetch_tool_result_error"
 		}
 		b.Content = &wireContent{Obj: &wireBlock{Type: errType, ErrorCode: p.ErrorCode}}
-	case p.ToolName == "web_fetch" && p.Fetch != nil:
+	case p.ToolName == "web_fetch":
+		if p.Fetch == nil {
+			// A web_fetch result part carrying no payload is not a fetch
+			// result. The reference defines no empty success shape for the
+			// family, so the documented `unavailable` error is the only
+			// faithful encoding — falling through to the search branch would
+			// answer a `web_fetch` server_tool_use with a web_search-shaped
+			// content array.
+			b.Content = &wireContent{Obj: &wireBlock{
+				Type:      "web_fetch_tool_result_error",
+				ErrorCode: "unavailable",
+			}}
+			return b
+		}
 		res := &wireBlock{
 			Type:        "web_fetch_result",
 			URL:         p.Fetch.URL,

@@ -31,27 +31,83 @@ test('log rows nest their sub-operations', async ({ page }) => {
   await expect(page.locator('tr.log-row-child[data-child-last]').first()).toBeAttached();
 });
 
-// A sub-row owns only its own facts. The parent's endpoint, credential and
+// The elbow into a row is positioned as a percentage of the row, so the rail
+// element MUST keep the row's full height. It used to be shortened to 50% on
+// the last child, which dragged that child's elbow up to a quarter of the row —
+// the connector read as misaligned because it was.
+test('the tree rail spans its whole row, so the elbow lands on the row centre', async ({ page }) => {
+  await page.goto('/logs');
+  await readyForCapture(page);
+
+  for (const row of await page.locator('tr.log-row-child').all()) {
+    const rowBox = await row.boundingBox();
+    const elbowBox = await row.locator('.child-elbow').first().boundingBox();
+    expect(rowBox).not.toBeNull();
+    expect(elbowBox).not.toBeNull();
+    // Within a pixel: the rail covers the row, top to bottom, on every child,
+    // including the last one that terminates the branch.
+    expect(Math.abs((elbowBox?.height ?? 0) - (rowBox?.height ?? 0))).toBeLessThanOrEqual(1);
+  }
+});
+
+// A sub-row owns only its own facts. The parent's protocol, credential and
 // token columns have no meaning on a fallback op, so they render empty rather
-// than echoing the parent's values or padding with a placeholder dash.
-test('a sub-row leaves the request-scoped columns empty', async ({ page }) => {
+// than echoing the parent's values or padding with a placeholder dash. Provider
+// and account DO carry the endpoint this op ran on — that is the whole point of
+// a fallback row, and the parent's values would name where the request started
+// instead of where the failover landed.
+test('a sub-row shows its own endpoint and leaves the request-scoped columns empty', async ({ page }) => {
   await page.goto('/logs');
   await readyForCapture(page);
 
   const child = page.locator('tr.log-row-child', { hasText: 'Fallback' }).first();
   const cells = child.locator('td');
   // Columns: gutter | status | model | provider | protocol | account | key |
-  // tokens | tps | duration | time. Indices 3..9 are the request-scoped ones.
-  for (const i of [3, 4, 5, 6, 7, 8, 9]) {
+  // tokens | tps | duration | time.
+  for (const i of [4, 6, 7, 8, 9]) {
     await expect(cells.nth(i)).toHaveText('');
   }
-  // The op's own columns still carry content.
+  // The op's own columns still carry content — including its endpoint.
   await expect(cells.nth(1)).not.toHaveText('');
+  await expect(cells.nth(3)).not.toHaveText('');
+  await expect(cells.nth(5)).not.toHaveText('');
   await expect(cells.nth(10)).not.toHaveText('');
 });
 
-// The seeded emulated-tool detail carries a token-shaped value; the child
-// row must show it masked, never raw (the write-path redaction, end to end).
+// Every row is one line tall. The old two-line model cell (the resolved model
+// with the requested id, the op's reason or caption excerpt beneath it) made a
+// sub-row taller than its parent and left the tree elbow floating between two
+// baselines. The detail is not lost: it is the first thing the row's drawer
+// shows.
+test('a model cell is a single line on both the request and the sub-row', async ({ page }) => {
+  await page.goto('/logs');
+  await readyForCapture(page);
+
+  // A Range yields one client rect per LINE BOX, so this counts rendered lines
+  // directly. The targets name short models, so a second box would be a
+  // sub-line rather than a wrapped model id.
+  const captionCell = page
+    .locator('tr.log-row-child', { hasText: 'Image caption' })
+    .first()
+    .locator('.child-model');
+  await expect(captionCell).toHaveText('glm-5.3-vl');
+  const lines = await captionCell.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return range.getClientRects().length;
+  });
+  expect(lines, 'the sub-row model cell must render one line').toBe(1);
+
+  // And the second line is gone as a STRUCTURE, not just on one row: the class
+  // that drew it no longer exists in the table.
+  await expect(page.locator('td.cell-sub')).toHaveCount(0);
+});
+
+// The seeded emulated-tool detail carries a token-shaped value. The row no
+// longer prints the op's detail (that is what made it two lines tall), so the
+// property is now pinned where the detail IS rendered: the request drawer's
+// sub-operation list. It must show the value masked and never raw — the
+// write-path redaction, end to end.
 test('an emulated web-tool child masks its credential-shaped detail', async ({ page }) => {
   await page.goto('/logs');
   await readyForCapture(page);
@@ -59,8 +115,22 @@ test('an emulated web-tool child masks its credential-shaped detail', async ({ p
   const emulated = page.locator('tr.log-row-child', { hasText: 'Web tool: web_search' }).first();
   await expect(emulated).toBeVisible();
   await expect(emulated.locator('.chip')).toHaveClass(/child-emulated-tool/);
-  await expect(emulated).toContainText('[REDACTED');
-  await expect(emulated).not.toContainText('sk-live-e2efixture1234');
+  // Nowhere in the list may the raw secret appear.
+  await expect(page.locator('tr.log-row-child').filter({ hasText: 'Web tool: web_search' })).toHaveCount(
+    1,
+  );
+  await expect(page.locator('table')).not.toContainText('sk-live-e2efixture1234');
+
+  // The detail lives in the request drawer's sub-operation list, masked.
+  // Scoped to that list on purpose: the drawer also renders the raw route_trace
+  // (its own documented surface, not redacted on write — ADR-015), and this
+  // test is about the child operation's own rendering, not the trace view.
+  await emulated.click();
+  await page.locator('.drawer').locator('button', { hasText: 'Open request #' }).click();
+  const list = page.locator('.drawer .child-op-detail');
+  await expect(list.first()).toBeVisible();
+  await expect(list).toContainText('[REDACTED');
+  await expect(list).not.toContainText('sk-live-e2efixture1234');
 });
 
 // The row OPENS (2026-10-10). A sub-row used to be inert, so the tool exchange
@@ -84,19 +154,23 @@ test('a sub-row opens its own view with what the step sent and received', async 
   await expect(drawer.locator('button', { hasText: 'Open request #' })).toBeVisible();
 });
 
-// The operator's report, pinned end to end: a vision-fallback sub-row must say
-// WHAT was described, not how many characters it took.
+// The operator's report, pinned end to end: for a vision-fallback sub-row the
+// description is what matters, never the character count. The row itself is now
+// one line and names only the model that described the image, so the
+// description is asserted where it is rendered — the step's own view.
 test('a vision-fallback sub-row shows the description, not a character count', async ({ page }) => {
   await page.goto('/logs');
   await readyForCapture(page);
 
   const caption = page.locator('tr.log-row-child', { hasText: 'Image caption' }).first();
   await expect(caption).toBeVisible();
+  await expect(caption.locator('.child-model')).toHaveText('glm-5.3-vl');
+  // The count is not evidence of anything; it must not stand in for the text.
   await expect(caption).not.toContainText('character(s) described');
-  await expect(caption).toContainText('failing Go test');
 
   await caption.click();
   const drawer = page.locator('.drawer');
+  await expect(drawer.locator('pre', { hasText: 'failing Go test' }).first()).toBeVisible();
   await expect(drawer.locator('pre', { hasText: 'terminal window' }).first()).toBeVisible();
   // The described image by media type and size — never its bytes.
   await expect(drawer.locator('pre', { hasText: 'image/png' }).first()).toBeVisible();

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/tubeof/proxyllm/internal/provider"
@@ -254,7 +255,8 @@ func TestExecute_EmulatedWebFetchRoundTrip(t *testing.T) {
 
 // emulFetchProvider issues a web_fetch tool call, then answers.
 type emulFetchProvider struct {
-	calls int
+	calls   int
+	lastReq ir.Request
 }
 
 func (p *emulFetchProvider) ID() string { return "emulfetch" }
@@ -264,6 +266,7 @@ func (p *emulFetchProvider) Capabilities() provider.Capabilities {
 func (p *emulFetchProvider) RefreshCredentials(_ context.Context) error { return nil }
 
 func (p *emulFetchProvider) Complete(_ context.Context, req ir.Request) (ir.Response, error) {
+	p.lastReq = req
 	p.calls++
 	if p.calls == 1 {
 		return ir.Response{
@@ -288,6 +291,161 @@ func findFetchResult(resp ir.Response) (ir.ServerToolResultPart, bool) {
 		}
 	}
 	return ir.ServerToolResultPart{}, false
+}
+
+// TestExecute_UnservableFetchIsReportedAsAnError — a scrape that produced no
+// page must reach the client as the documented error, never as a success
+// result whose document block carries no source.data.
+//
+// Firecrawl answers HTTP 200 even for a page it could not serve, so the
+// adapter (pageUsable) hands back a NON-NIL WebFetchContent with an empty
+// Data, and an all-empty account walk returns it with err == nil. The
+// reference enumerates that case — "url_not_accessible: Failed to fetch
+// content (HTTP error)" — and every document block it describes carries
+// source.data (docs.anthropic.com web-fetch-tool, read 2026-10-11).
+//
+// The pool's "an empty answer outranks a later failure" rule is untouched:
+// that decides which ACCOUNT serves the call, not what the client is told.
+func TestExecute_UnservableFetchIsReportedAsAnError(t *testing.T) {
+	p := &emulFetchProvider{}
+	// Exactly the adapter's unusable-page answer: non-nil, no content.
+	emu := &fakeEmulator{fetchAnswers: []string{`{
+		"URL":"https://example.com/article",
+		"Source":"text","MediaType":"text/plain",
+		"RetrievedAt":"2026-10-11T12:00:00Z"
+	}`}}
+	e := roundTripExecutor(p, emu)
+
+	req := ir.Request{
+		Model: "m",
+		Tools: []ir.Tool{{
+			Name:       "web_fetch",
+			ServerTool: &ir.ServerToolConfig{MaxUses: 10},
+			Emulated:   true,
+		}},
+		Messages: []ir.Message{
+			{Role: ir.RoleUser, Parts: []ir.Part{ir.TextPart{Text: "read https://example.com/article please"}}},
+		},
+	}
+	resp, _, err := e.Execute(context.Background(), []routing.ChainEntry{{ProviderID: "emulfetch"}}, req)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	res, ok := findFetchResult(resp)
+	if !ok {
+		t.Fatalf("no web_fetch result part in response: %+v", resp.Content)
+	}
+	if !res.IsError {
+		t.Fatalf("an unservable page must be an error result, got %+v", res)
+	}
+	if res.ErrorCode != "url_not_accessible" {
+		t.Errorf("error_code = %q, want url_not_accessible", res.ErrorCode)
+	}
+	if res.Fetch != nil {
+		t.Errorf("an error result must carry no fetch payload, got %+v", res.Fetch)
+	}
+}
+
+// TestExecute_EmulatedFetchHonorsMaxContentTokens — the reference is explicit:
+// "The max_content_tokens parameter limits the amount of content included in
+// the context. If the fetched content exceeds this limit, the tool truncates
+// it." (docs.anthropic.com web-fetch-tool, read 2026-10-11).
+//
+// The budget is decoded into ir.ServerToolConfig.MaxContentTokens and was
+// enforced NOWHERE, so a multi-megabyte page rode into the re-dispatch message
+// at full size and the upstream answered an empty turn — the failure the
+// operator sees as "No response from model". The limit applies to text, not to
+// binary content, and is optional (zero = no limit).
+func TestExecute_EmulatedFetchHonorsMaxContentTokens(t *testing.T) {
+	const budget = 1000 // tokens
+	const chars = 100_000
+	big := strings.Repeat("x", chars)
+
+	page := func() string {
+		return `{"URL":"https://example.com/article","Title":"Big","Source":"text",` +
+			`"MediaType":"text/plain","Data":"` + big + `","RetrievedAt":"2026-10-11T12:00:00Z"}`
+	}
+	run := func(t *testing.T, st *ir.ServerToolConfig) (*emulFetchProvider, ir.ServerToolResultPart) {
+		t.Helper()
+		p := &emulFetchProvider{}
+		e := roundTripExecutor(p, &fakeEmulator{fetchAnswers: []string{page()}})
+		req := ir.Request{
+			Model: "m",
+			Tools: []ir.Tool{{Name: "web_fetch", ServerTool: st, Emulated: true}},
+			Messages: []ir.Message{
+				{Role: ir.RoleUser, Parts: []ir.Part{ir.TextPart{Text: "read https://example.com/article please"}}},
+			},
+		}
+		resp, _, err := e.Execute(context.Background(), []routing.ChainEntry{{ProviderID: "emulfetch"}}, req)
+		if err != nil {
+			t.Fatalf("Execute: %v", err)
+		}
+		res, ok := findFetchResult(resp)
+		if !ok {
+			t.Fatalf("no web_fetch result part in response: %+v", resp.Content)
+		}
+		return p, res
+	}
+
+	t.Run("truncates to the budget", func(t *testing.T) {
+		p, res := run(t, &ir.ServerToolConfig{MaxUses: 10, MaxContentTokens: budget})
+		if res.IsError {
+			t.Fatalf("a truncated page is still a page, got error %+v", res)
+		}
+		if res.Fetch == nil {
+			t.Fatal("fetch payload missing")
+		}
+		// The repo's established ratio is 4 chars/token (ir.EstimateTokens),
+		// which is also the ratio the reference's own examples use.
+		if limit := 4*budget + len("…"); len(res.Fetch.Data) > limit {
+			t.Errorf("fetched text = %d bytes, want at most %d (%d tokens)", len(res.Fetch.Data), limit, budget)
+		}
+		// The re-dispatch message is the thing that actually reached the
+		// upstream model at full size — bound it there too.
+		if n := len(p.lastReq.Messages); n > 0 {
+			for _, msg := range p.lastReq.Messages {
+				for _, part := range msg.Parts {
+					if tr, ok := part.(ir.ToolResultPart); ok {
+						for _, sub := range tr.Content {
+							if txt, ok := sub.(ir.TextPart); ok && len(txt.Text) > 10_000 {
+								t.Errorf("re-dispatch tool result is %d bytes — the budget did not reach it", len(txt.Text))
+							}
+						}
+					}
+				}
+			}
+		}
+	})
+
+	t.Run("an absurd budget is not a panic", func(t *testing.T) {
+		// max_content_tokens arrives from the client. A value near MaxInt would
+		// overflow the chars-per-token multiply into a NEGATIVE byte limit,
+		// which truncateRunes would then use as a slice index — a panic out of
+		// untrusted input. 1<<61 × 4 wraps to exactly MinInt64.
+		_, res := run(t, &ir.ServerToolConfig{MaxUses: 10, MaxContentTokens: 1 << 61})
+		if res.IsError {
+			t.Fatalf("a page under an absurd budget is still a page, got %+v", res)
+		}
+		if res.Fetch == nil {
+			t.Fatal("fetch payload missing")
+		}
+		// A budget far above the page cannot truncate it.
+		if len(res.Fetch.Data) != chars {
+			t.Errorf("fetched text = %d bytes, want the page untouched (%d)", len(res.Fetch.Data), chars)
+		}
+	})
+
+	t.Run("zero means no limit", func(t *testing.T) {
+		// The parameter is optional; an absent budget must not invent one.
+		_, res := run(t, &ir.ServerToolConfig{MaxUses: 10})
+		if res.Fetch == nil {
+			t.Fatal("fetch payload missing")
+		}
+		if len(res.Fetch.Data) != chars {
+			t.Errorf("fetched text = %d bytes, want the page untouched (%d)", len(res.Fetch.Data), chars)
+		}
+	})
 }
 
 func TestExecute_EmulatedFetchRejectsURLNotInContext(t *testing.T) {

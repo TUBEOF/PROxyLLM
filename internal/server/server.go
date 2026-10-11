@@ -153,6 +153,13 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 			}
 			return row.ProviderID, true
 		}),
+		// The other half of ADR-014's learning (owner decision 2026-10-11).
+		// The executor writes vision:false on a capability_gap and NOTHING read
+		// it back, so an image in a conversation re-triggered the
+		// describe-the-image rescue on every turn. A row that knows it cannot
+		// see images is now skipped before dispatch; a row with no opinion is
+		// permissive, and the gate never empties a chain.
+		routing.WithModelVisionLookup(modelVisionLookup(store)),
 	)
 
 	// Capability fallback models (2026-09-21 automatic capabilities): the

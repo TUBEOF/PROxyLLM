@@ -66,6 +66,14 @@ type Router struct {
 	// Nil disables the implicit route entirely (pre-ADR-011 behavior).
 	modelLookup func(ctx context.Context, modelID string) (providerID string, ok bool)
 
+	// visionLookup reports whether the MODEL ROW for (provider, model) has
+	// LEARNED whether it can see images (ADR-014 learning, owner decision
+	// 2026-10-11). Same injection contract as modelLookup: option-set at
+	// construction, never swapped, nil disables the vision gate entirely —
+	// which is what the no-pre-stream-gate decision above rests on wherever
+	// capabilities were never learned.
+	visionLookup func(ctx context.Context, providerID, model string) (canSeeImages, known bool)
+
 	// mu guards rules and the round-robin counters — the live rule set is
 	// replaceable at runtime (WebUI routing writes reload it). Readers take
 	// RLock; the reload path takes Lock for one whole-set swap. Aliases and
@@ -120,6 +128,20 @@ func WithHealth(h *HealthTracker) Option {
 // no rule → no route.
 func WithModelLookup(lookup func(ctx context.Context, modelID string) (providerID string, ok bool)) Option {
 	return func(r *Router) { r.modelLookup = lookup }
+}
+
+// WithModelVisionLookup sets the model-row vision source for the vision gate:
+// whether the row for (providerID, model) has learned whether that model can
+// see images. Returning known=false means "no opinion" and is PERMISSIVE — the
+// entry stays. Nil (the default) disables the gate, which keeps the
+// no-pre-stream-gate behavior for callers that never wire a store.
+//
+// This is the half of ADR-014's learning that was missing: the executor wrote
+// vision:false on every capability_gap and NOTHING ever read it back, so the
+// describe-the-image rescue re-ran on every turn of an image-bearing
+// conversation. The gate consumes what the learning produces.
+func WithModelVisionLookup(lookup func(ctx context.Context, providerID, model string) (canSeeImages, known bool)) Option {
+	return func(r *Router) { r.visionLookup = lookup }
 }
 
 // NewRouter returns a Router for cfg.
@@ -329,6 +351,40 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 		}
 		out = append(out, ChainEntry{ProviderID: entry, Model: model})
 	}
+
+	// The vision gate (owner decision 2026-10-11) runs LAST and only as a
+	// preference among the survivors, because the two things that make it safe
+	// are both about leaving the pipeline alone otherwise:
+	//
+	//   - It does nothing without a lookup, so an unlearned model row is
+	//     UNKNOWN rather than blind and every candidate survives — the
+	//     no-pre-stream-gate decision above still holds for it.
+	//   - It never empties the chain. Every candidate being known-blind is
+	//     exactly the case the image-caption rescue exists for: the request has
+	//     to go out, be rejected with capability_gap, and be rescued. Emptying
+	//     the chain there would turn a rescue into a hard no-route.
+	//
+	// What it buys: a model that has already been rejected for images once is
+	// not asked again, so the conversation stops paying a rejection plus an
+	// image caption on every single turn.
+	if required.Vision && r.visionLookup != nil && len(out) > 1 {
+		var kept, blind []ChainEntry
+		for _, entry := range out {
+			if canSee, known := r.visionLookup(ctx, entry.ProviderID, entry.Model); known && !canSee {
+				blind = append(blind, entry)
+				continue
+			}
+			kept = append(kept, entry)
+		}
+		if len(kept) > 0 {
+			for _, entry := range blind {
+				trace.add(Event{Type: EventSkipped, ProviderID: entry.ProviderID,
+					Reason: "capability gap: vision (learned for " + entry.Model + ")"})
+			}
+			out = kept
+		}
+	}
+
 	if len(out) == 0 {
 		if healthSkipped && !nonHealthSkipped {
 			// Every candidate was reachable-in-principle but cooled down:

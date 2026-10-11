@@ -36,6 +36,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/server/webui"
 	"github.com/tubeof/proxyllm/internal/storage"
 	"github.com/tubeof/proxyllm/internal/tools/firecrawl"
+	"github.com/tubeof/proxyllm/internal/tools/ollamaweb"
 )
 
 // loadProviders builds live providers from the stored rows. Errors are
@@ -118,6 +119,14 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 		emu := firecrawl.NewEmulator(cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), nil)
 		return nil, emu, nil
 
+	case webui.ProviderTypeOllamaCloudWeb:
+		// The second web-tool backend (ADR-015): Ollama's hosted
+		// web_search/web_fetch API. Same web_tool contract as Firecrawl —
+		// credential from the encrypted token store, keyless rows construct
+		// and fail at call time.
+		emu := ollamaweb.NewEmulator(cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), nil)
+		return nil, emu, nil
+
 	case webui.ProviderTypeCustomOpenAI:
 		return custom.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type)), nil, nil
 
@@ -152,6 +161,52 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 		// construction-table drift, not operator input.
 		return nil, nil, errors.New("no construction path for type " + row.Type)
 	}
+}
+
+// modelVisionLookup is the router's model-row vision source (ADR-014
+// learning, owner decision 2026-10-11): whether the row for (provider, wire
+// model) has learned whether that model can see images.
+//
+// A missing row, an unreadable blob, or a row that simply never formed an
+// opinion all report known=false — "no opinion". That is deliberately
+// permissive: the router keeps such a candidate, so the no-pre-stream-gate
+// behavior still holds for every model the sync has not classified. Callers
+// never see a store error here; a read failure must not become a routing
+// failure.
+func modelVisionLookup(store *storage.Store) func(ctx context.Context, providerID, model string) (canSeeImages, known bool) {
+	return func(ctx context.Context, providerID, model string) (bool, bool) {
+		row, err := store.GetModelByProviderAndName(ctx, providerID, model)
+		if err != nil {
+			return false, false
+		}
+		return modelCapabilityFlag(row.Capabilities, "vision")
+	}
+}
+
+// modelCapabilityFlag reads one boolean flag out of a model row's capabilities
+// blob.
+//
+// Two-step on purpose: the blob carries a `pinned` OBJECT next to the boolean
+// flags (the operator-override map ADR-014's learning writes and honors), so a
+// plain map[string]bool decode fails outright on every row that has ever
+// learned anything — which is exactly the rows this gate exists for.
+func modelCapabilityFlag(raw json.RawMessage, name string) (value, known bool) {
+	if len(raw) == 0 {
+		return false, false
+	}
+	var blob map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &blob); err != nil {
+		return false, false
+	}
+	b, ok := blob[name]
+	if !ok {
+		return false, false
+	}
+	var v bool
+	if err := json.Unmarshal(b, &v); err != nil {
+		return false, false
+	}
+	return v, true
 }
 
 // capsFromConfig resolves the provider's capability set: per-type defaults

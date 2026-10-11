@@ -120,7 +120,9 @@ a gate, not a preference).
 `internal/routing` resolves, per request: client-key scope → model match
 (exact/wildcard/alias map for Claude Code aliases) → capability filter
 (web_search, web_fetch, code_execution, streaming, thinking — derived from
-request content; vision is NOT gated, and neither is the context window: a real
+request content; vision is gated **only** on a model row that has *learned* it
+cannot see images, so an unclassified model stays permissive and the gate can
+never empty a chain — and neither is the context window: a real
 upstream rejection classifies as `capability_gap` (unsupported modality) or
 `context_window_exceeded` (input longer than the model's window, ADR-013) and
 fails over — when the whole chain failed on `capability_gap`, the executor walks
@@ -128,8 +130,9 @@ the configured fallback MODELS to **describe each image** (ADR-014: they receive
 the image and the instruction, never the conversation, so their own context
 window cannot disqualify them), substitutes the descriptions for the images, and
 dispatches the routed chain again; `vision:false` is learned into the model row
-unless pinned) → ordered fallback chain → health gate (circuit breaker, backoff,
-probe recovery).
+unless pinned, and — since 2026-10-11 — actually read back, because a learning
+nothing consumes means the image is re-sent and re-rejected on every turn) →
+ordered fallback chain → health gate (circuit breaker, backoff, probe recovery).
 
 **Failover only before the first streamed byte** — no mid-stream provider swap;
 an upstream failure during streaming terminates with a protocol-conform error
@@ -149,16 +152,32 @@ and, unlike the payload table, is not redacted on write.
 
 ### Web-tool emulation (ADR-015)
 
-`web_search`/`web_fetch` are served by a Firecrawl account pool
-(`internal/routing/fallback.go`, `internal/tools/firecrawl`). Three outcomes per
+`web_search`/`web_fetch` are served by an account pool
+(`internal/routing/fallback.go`) whose backends are `internal/tools/firecrawl`
+and `internal/tools/ollamaweb` (Ollama's hosted `/api/web_search` and
+`/api/web_fetch`). The pool is backend-agnostic — an entry is an id plus the
+two-method `Emulator`, with no backend-type field — so a new backend needs only
+a catalog entry, a config parse case and a `buildProvider` case. Ollama Cloud
+(Web Tools) is a *separate account type* from `ollama-cloud`, not a second role
+for the chat account. Three outcomes per
 account: **answered** (non-empty result) ends the walk, **empty** (a search with
 no matches, a page the service could not serve) continues it, **failed** moves
 on; an empty answer still outranks a later failure, because "nothing found" is
-an answer and "the tool broke" is not. Three bounds keep a slow account from
+an answer and "the tool broke" is not. An empty *fetch* is an error **to the
+client** (`url_not_accessible`, what the reference documents for a fetch that
+could not retrieve content) even though the pool still walks past it — the walk
+decides which account serves the call, the encoder decides what the client is
+told. Three bounds keep a slow account from
 holding the request: a per-invocation call budget (30 s, across all accounts), a
 per-account circuit (three failures cool it down, and an all-cooling family is
 still probed), and a 5-minute loop budget. Every attempt is an
 `emulated_tool_attempt` event naming the account and its outcome.
+
+A fetched page is bounded by the definition's `max_content_tokens` — documented
+behaviour ("If the fetched content exceeds this limit, the tool truncates it"),
+applied where the page is accepted so it covers both the model-facing payload and
+the client's result block. Zero means no limit; the limit is text-only. An
+unbounded page is what once pushed the upstream into an empty turn.
 
 ### Server wiring
 
@@ -167,7 +186,7 @@ still probed), and a 5-minute loop budget. Every attempt is an
 (the API surfaces plus the admin API behind auth middleware) and
 `internal/server/webui` (SPA serving). The master key doubles as the
 session/CSRF HMAC secret, so WebUI sessions and at-rest secrets rotate together.
-Features degrade explicitly, never silently: no Firecrawl key → web-tool
+Features degrade explicitly, never silently: no web-tool account → web-tool
 emulation returns documented "unavailable" errors; no master key → admin API
 answers a uniform 401.
 
@@ -199,8 +218,9 @@ tracker are all lock-split so unrelated requests do not queue behind each other
 `internal/provider` defines the provider interface; built-ins: `codex`
 (ChatGPT/Codex OAuth PKCE, 127.0.0.1-only callback), `ollamacloud` (native
 `ollama.com/api/chat`), `custom` (arbitrary OpenAI-compatible endpoints, with
-SSRF guards on base URLs). `internal/tools/firecrawl` is the universal web-tool
-fallback — it emulates web_search/web_fetch for providers lacking native server
+SSRF guards on base URLs). `internal/tools/firecrawl` and
+`internal/tools/ollamaweb` are the web-tool backends — they emulate
+web_search/web_fetch for providers lacking native server
 tools, producing protocol-conform blocks. Outbound HTTP goes through
 `internal/httpguard` (private-address guard, tuned transport).
 

@@ -26,6 +26,13 @@ const (
 	ProviderTypeOllamaCloud  = "ollama-cloud"
 	ProviderTypeCodexOAuth   = "codex-oauth"
 	ProviderTypeFirecrawl    = "firecrawl"
+	// ProviderTypeOllamaCloudWeb is Ollama's hosted web-tool API as a
+	// web-tool backend (web_search/web_fetch), NOT a chat provider. It is a
+	// separate account type from ollama-cloud on purpose: a provider row is
+	// either an LLM endpoint or a web-tool backend, and the same key entered
+	// once each way keeps the two roles independently orderable and
+	// independently revocable.
+	ProviderTypeOllamaCloudWeb = "ollama-cloud-web"
 )
 
 // OptOutEnv is the documented operator opt-out for the private-address
@@ -168,22 +175,22 @@ func parseProviderConfig(typ string, raw []byte, guardURLs bool) (ProviderConfig
 		if cfg.BaseURL != "" {
 			return cfg, fmt.Errorf("issuer is the only URL field for codex-oauth (the backend URL is pinned by the provider)")
 		}
-	case ProviderTypeFirecrawl:
-		// base_url is optional: empty selects the firecrawl client's
-		// documented default (https://api.firecrawl.dev) — self-hosted
-		// instances and proxies override it.
+	case ProviderTypeFirecrawl, ProviderTypeOllamaCloudWeb:
+		// base_url is optional: empty selects the client's documented
+		// default (https://api.firecrawl.dev / https://ollama.com) —
+		// self-hosted instances and proxies override it.
 		if cfg.BaseURL != "" {
 			if err := checkURL(cfg.BaseURL, "base_url", guardURLs); err != nil {
 				return cfg, err
 			}
 		}
 		if cfg.Issuer != "" {
-			return cfg, fmt.Errorf("base_url is the only URL field for firecrawl (issuer belongs to codex-oauth)")
+			return cfg, fmt.Errorf("base_url is the only URL field for web-tool providers (issuer belongs to codex-oauth)")
 		}
 	case "":
-		return cfg, fmt.Errorf("type is required (custom-openai, ollama-cloud, codex-oauth, firecrawl)")
+		return cfg, fmt.Errorf("type is required (custom-openai, ollama-cloud, codex-oauth, firecrawl, ollama-cloud-web)")
 	default:
-		return cfg, fmt.Errorf("unknown provider type %q (custom-openai, ollama-cloud, codex-oauth, firecrawl)", typ)
+		return cfg, fmt.Errorf("unknown provider type %q (custom-openai, ollama-cloud, codex-oauth, firecrawl, ollama-cloud-web)", typ)
 	}
 
 	for name := range cfg.Capabilities {

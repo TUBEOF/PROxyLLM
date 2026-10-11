@@ -88,6 +88,43 @@ func TestChildOps_CapabilityFallback(t *testing.T) {
 	}
 }
 
+// TestChildOps_CaptionSubsumesTheConsultation — one vision rescue emitted two
+// rows (an image_caption per described image and a capability_fallback for the
+// consultation), which reads as two operations where there was one. When the
+// trace carries a caption, the caption IS the rescue's row and the consultation
+// is not repeated; the consultation survives only when it is the ONLY record
+// (see TestChildOps_CapabilityFallback above — no vision model described the
+// image, so it is the sole evidence the fallback ran).
+func TestChildOps_CaptionSubsumesTheConsultation(t *testing.T) {
+	events := []Event{
+		{Type: EventAttempt, ProviderID: "acc-a", Model: "glm-5.3"},
+		{Type: EventFailed, ProviderID: "acc-a", Capability: "vision"},
+		{Type: EventImageCaption, ProviderID: "vision-acc", Model: "gemma4:31b",
+			Reason: "184 character(s) described"},
+		{Type: EventCapabilityFallback, Capability: "vision",
+			Reason: "chain exhausted on capability gaps; described 1 image(s) and retrying"},
+		{Type: EventFailover, From: "acc-a", To: "vision-acc", Reason: "capability fallback model"},
+		{Type: EventAttempt, ProviderID: "vision-acc", Model: "glm-5.3"},
+	}
+
+	ops := ChildOps(events)
+
+	if len(ops) != 2 {
+		t.Fatalf("ChildOps = %d ops, want 2 (the caption + the failover onto it): %+v", len(ops), ops)
+	}
+	if ops[0].Kind != OpImageCaption {
+		t.Errorf("ops[0].Kind = %q, want %q (the caption represents the rescue)", ops[0].Kind, OpImageCaption)
+	}
+	if ops[0].ProviderID != "vision-acc" || ops[0].Model != "gemma4:31b" {
+		t.Errorf("ops[0] attribution = %q/%q, want vision-acc/gemma4:31b", ops[0].ProviderID, ops[0].Model)
+	}
+	for _, op := range ops {
+		if op.Kind == OpCapabilityFallback {
+			t.Errorf("the consultation must not become a second row when a caption carries the rescue: %+v", op)
+		}
+	}
+}
+
 // TestChildOps_EmulatedTool pins the emulated web-tool call: the tool name is
 // the target and the emulation detail (query/url/outcome) is the detail. Both
 // a success and an error carry the same shape.
