@@ -56,7 +56,7 @@ Compatibility" editor → drawer; stored as `models.compat` in the DB):
 
 | Setting | Values | Notes |
 |---|---|---|
-| `thinking_handling` | `strip` (default for non-Claude) / `map-to-reasoning-effort` / `block` | Non-Claude targets cannot verify Anthropic thinking signatures — `strip` is the safe default; `map-to-reasoning-effort` converts `budget_tokens` into `reasoning_effort` where the target supports it; `block` refuses thinking requests with a protocol-conform error |
+| `thinking_handling` | `strip` (default for non-Claude) / `map-to-reasoning-effort` / `block` | Non-Claude targets cannot verify Anthropic thinking signatures — `strip` is the safe default; `map-to-reasoning-effort` converts `budget_tokens` into `reasoning_effort` where the target supports it; `block` refuses thinking requests with a protocol-conform error. Whatever the setting, a target's own reasoning is dropped from the answer when the request did not enable thinking (`strip-output` in route_trace): Claude Code's helper calls send no thinking parameter and read the first content block as text, so an unsolicited thinking block there reads as an empty answer |
 | `server_tool_emulation` | `native` / `emulate-firecrawl` / `off` | `emulate-firecrawl` substitutes missing web tools via Firecrawl (§6.2), recorded in route_trace |
 | `max_tokens_clamp` | int / off | Clamp `max_tokens` for targets with lower output limits |
 | `context_window` | int | Used by capability routing and the count_tokens heuristic |

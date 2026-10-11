@@ -204,7 +204,14 @@ func NewExecutor(cfg ExecutorConfig) *Executor {
 func (e *Executor) Execute(ctx context.Context, chain []ChainEntry, req ir.Request) (ir.Response, *Trace, error) {
 	trace := &Trace{}
 	resp, err := e.executeWithEmulation(ctx, chain, req, trace)
-	return resp, trace, err
+	if err != nil {
+		return resp, trace, err
+	}
+	// The response is the client's: thinking blocks it never asked for are
+	// dropped here (§6.4 — the reference returns thinking blocks only for
+	// requests that enabled thinking).
+	resp = applyResponseThinking(req, resp, trace)
+	return resp, trace, nil
 }
 
 // executeOnce walks the chain once with the full retry/failover
@@ -418,7 +425,10 @@ func (e *Executor) ExecuteStream(ctx context.Context, chain []ChainEntry, req ir
 	if ch == nil && err != nil {
 		return nil, cancel, trace, err
 	}
-	return ch, cancel, trace, err
+	// The relayed events are the client's answer: an unsolicited thinking
+	// block rides them all the way into the client's message (the reported
+	// WebFetch failure), so the filter sits on the stream.
+	return applyResponseThinkingStream(ctx, req, ch, trace), cancel, trace, err
 }
 
 // executeEmulatedAsStream runs the complete-path emulation loop (full
@@ -442,6 +452,9 @@ func (e *Executor) executeEmulatedAsStream(ctx context.Context, chain []ChainEnt
 		// did not open), so ExecuteStream returns the error directly.
 		return nil, func() {}, trace, err
 	}
+	// The synthesized stream IS the client's answer: filter it on the
+	// response (the same rule the relayed path applies to its events).
+	resp = applyResponseThinking(req, resp, trace)
 
 	ch := make(chan ir.StreamEvent) // unbuffered: backpressure to the caller
 	cancel := func() {}

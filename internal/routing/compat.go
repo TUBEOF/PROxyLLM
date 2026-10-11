@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strconv"
@@ -98,6 +99,12 @@ func applyThinking(c Compat, req ir.Request, trace *Trace) (ir.Request, error) {
 
 	hasThinking := req.Thinking != nil && (req.Thinking.Enabled || req.Thinking.Adaptive)
 
+	// Record the CLIENT's intent before the policy rewrites the parameter
+	// (§6.4): every branch below may nil or remap req.Thinking, and the
+	// response path needs to know whether thinking blocks were asked for —
+	// see applyResponseThinking.
+	req.ThinkingRequested = hasThinking
+
 	switch setting {
 	case ThinkingBlock:
 		if hasThinking {
@@ -157,6 +164,116 @@ func stripThinkingBlocks(req ir.Request) ir.Request {
 		req.Messages[mi].Parts = kept
 	}
 	return req
+}
+
+// ThinkingOutputStrip is the compat_policy value recorded when a target's
+// answer carried thinking blocks the client never asked for.
+const ThinkingOutputStrip = "strip-output"
+
+// thinkingAllowed reports whether the target's reasoning may surface to the
+// client as a thinking block. The reference returns thinking blocks only for
+// requests that ENABLED thinking, and a client that asked for none reads the
+// first content block as text — Claude Code's web_fetch helper answers "No
+// response from model" when it is a thinking block, which made every WebFetch
+// fail (reported 2026-10-11).
+//
+// The recorded verdict is authoritative because the policy may have consumed
+// the parameter (strip/map nil it out); a request that never went through
+// ApplyCompat — a direct executor caller, a test — still decides by its own
+// parameter.
+func thinkingAllowed(req ir.Request) bool {
+	if req.ThinkingRequested {
+		return true
+	}
+	return req.Thinking != nil && (req.Thinking.Enabled || req.Thinking.Adaptive)
+}
+
+// applyResponseThinking removes thinking blocks from a target's answer when
+// the client never enabled thinking, and records the drop (never silent). The
+// blocks are the target's own reasoning, leaked into a response shape the
+// reference does not produce for that request.
+func applyResponseThinking(req ir.Request, resp ir.Response, trace *Trace) ir.Response {
+	if thinkingAllowed(req) {
+		return resp
+	}
+	kept := make([]ir.Part, 0, len(resp.Content))
+	dropped := 0
+	for _, part := range resp.Content {
+		if _, isThinking := part.(ir.ThinkingPart); isThinking {
+			dropped++
+			continue
+		}
+		kept = append(kept, part)
+	}
+	if dropped == 0 {
+		return resp
+	}
+	resp.Content = kept
+	trace.CompatPolicy("thinking_handling", ThinkingOutputStrip,
+		strconv.Itoa(dropped)+" unsolicited thinking block(s) dropped: the request did not enable thinking")
+	return resp
+}
+
+// applyResponseThinkingStream is the streaming half of applyResponseThinking:
+// the reported failure rode the stream, so the filter must sit on the events
+// (a client assembles its message from them). Dropped blocks are renumbered
+// out — the Anthropic encoder relays ev.Index verbatim, so leaving a hole
+// would emit a block index the reference never produces.
+//
+// The passthrough runs on its own goroutine and honors ctx on both sides,
+// like addUsageToStream: a caller that stops reading releases it.
+func applyResponseThinkingStream(ctx context.Context, req ir.Request, in <-chan ir.StreamEvent, trace *Trace) <-chan ir.StreamEvent {
+	if thinkingAllowed(req) {
+		return in
+	}
+	out := make(chan ir.StreamEvent) // unbuffered: backpressure to the caller
+	go func() {
+		defer close(out)
+		dropped := map[int]bool{}
+		remap := map[int]int{}
+		kept := 0
+		reported := false
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case ev, ok := <-in:
+				if !ok {
+					return
+				}
+				switch ev.Type {
+				case ir.BlockStart:
+					if _, isThinking := ev.Part.(ir.ThinkingPart); isThinking {
+						dropped[ev.Index] = true
+						if !reported {
+							reported = true
+							trace.CompatPolicy("thinking_handling", ThinkingOutputStrip,
+								"unsolicited thinking block dropped: the request did not enable thinking")
+						}
+						continue
+					}
+					if len(dropped) > 0 {
+						remap[ev.Index] = kept
+						ev.Index = kept
+					}
+					kept++
+				case ir.Delta, ir.BlockStop:
+					if dropped[ev.Index] {
+						continue
+					}
+					if n, ok := remap[ev.Index]; ok {
+						ev.Index = n
+					}
+				}
+				select {
+				case out <- ev:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}
+	}()
+	return out
 }
 
 // applyClamp caps MaxTokens when the policy sets a lower output limit.

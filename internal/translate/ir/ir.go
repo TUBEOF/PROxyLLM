@@ -312,6 +312,18 @@ type Request struct {
 	// decision so it is observable in route_trace, never silent.
 	ReasoningEffort string
 
+	// ThinkingRequested records the compat layer's verdict on the CLIENT's
+	// request (§6.4): whether it enabled extended thinking (enabled or
+	// adaptive) BEFORE the policy rewrote the parameter — a stripped or
+	// mapped parameter must not erase the client's intent. No codec emits it
+	// on the wire; the RESPONSE path reads it to decide whether the target's
+	// own reasoning may surface as a thinking block (routing
+	// applyResponseThinking). The reference returns thinking blocks only for
+	// requests that enabled thinking, and a client that asked for none reads
+	// the first content block as text — Claude Code's web_fetch helper
+	// answers "No response from model" when it is a thinking block instead.
+	ThinkingRequested bool
+
 	// Passthrough carries wire fields with no IR equivalent, keyed by
 	// top-level field name (nested unknowns live in the codec wire
 	// structs' extras). Same-protocol encoders re-emit them; crossing

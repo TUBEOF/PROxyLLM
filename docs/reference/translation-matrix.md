@@ -27,7 +27,7 @@ application is never silent.
 | role `system` message inside `messages` | encoded as a system-role message carrying its text — never falls through the role switch leaving `content: null` (same Ollama 400; Claude Code appends one for hook output / injected reminders) | system-role input item | kept verbatim | system role |
 | Context-window marker `[1m]`/`[1M]` on the model name (Claude Code's 1M override, e.g. `glm-5.3-flash[1M]`) | stripped at routing (`context_override` trace event, route_trace schema v6) — the base model routes and dispatches; the marker is never part of the model identity, so operators express matchers with the base name | input item carries the base model | base model | base model |
 | Tool result | role `tool` message | `function_call_output` item | `tool_result` block | tool response role |
-| Extended thinking | — | `reasoning` + `encrypted_content` | `thinking` param + thinking blocks (signature opaque) | `reasoning_effort` |
+| Extended thinking | — | `reasoning` + `encrypted_content` | `thinking` param + thinking blocks (signature opaque); blocks the request never enabled are dropped from the answer | `reasoning_effort` |
 | Cache markers | n/a | n/a | `cache_control` (forwarded verbatim on Anthropic→Anthropic only) | n/a |
 | Server tools | n/a | `web_search` etc. | server_tool_use blocks | n/a |
 
@@ -52,7 +52,7 @@ Anthropic surface:
 
 | Setting | Values | Effect on translation |
 |---|---|---|
-| `thinking_handling` | `strip` (default for non-Claude) / `map-to-reasoning-effort` / `block` | strip removes thinking blocks and the `thinking` param upstream — never fabricates signatures back; map converts `budget_tokens` → `reasoning_effort` where the target supports it; block refuses with a protocol-conform error |
+| `thinking_handling` | `strip` (default for non-Claude) / `map-to-reasoning-effort` / `block` | strip removes thinking blocks and the `thinking` param upstream — never fabricates signatures back; map converts `budget_tokens` → `reasoning_effort` where the target supports it; block refuses with a protocol-conform error. Independent of the setting, an upstream's OWN reasoning is dropped from the answer when the request did not enable thinking (`strip-output` event): the reference returns thinking blocks only for thinking-enabled requests, and a client that asked for none reads the first content block as text |
 | `server_tool_emulation` | `native` / `emulate-firecrawl` / `off` | Whether Firecrawl substitutes missing web tools; substitution is recorded in route_trace |
 | `max_tokens_clamp` | int / off | Clamp for targets with lower output limits (C7 default 32000 for unknown model IDs) |
 | `context_window` | int | Context window for capability filtering + the count_tokens heuristic |

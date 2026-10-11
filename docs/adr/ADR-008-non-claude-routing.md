@@ -32,6 +32,32 @@ Global switch `anthropic_surface_non_claude = allow | warn | block`
 (default `allow`). Every compat-policy application appears in route_trace —
 never silent.
 
+## Amendment (2026-10-11): unsolicited thinking blocks are dropped
+
+A target's own reasoning was surfaced to the client as a `thinking` block
+even when the request did not enable thinking — the reference returns
+thinking blocks only for thinking-enabled requests, and a target that
+reasons unprompted (Ollama Cloud's thinking models do, whether or not the
+`think` parameter was sent) leaked its trace into a response shape the
+reference never produces. Claude Code's helper calls send no thinking
+parameter and read the FIRST content block as text, so the block read as an
+empty answer: every `WebFetch` ended as "No response from model"
+(reproduced against a deployed instance; the same shape without the fix on
+a scratch instance).
+
+Decision: `thinking_handling` now governs the response as well as the
+request. The compat layer records on the request whether the CLIENT enabled
+thinking (before the policy rewrites or drops the parameter — a stripped
+parameter must not erase the client's intent), and the response path drops
+thinking blocks — complete and streamed alike, renumbering streamed block
+indexes so no hole reaches the client — when it did not. The drop is a
+`compat_policy` `thinking_handling=strip-output` event, never silent.
+
+Not changed: PROxyLLM still forwards no `think`/`reasoning_effort` for a
+request that did not enable thinking, so a target that reasons anyway still
+spends the tokens. Suppressing the output is what the client contract needs;
+asking the target to stop is a separate, provider-specific change.
+
 ## Consequences
 
 - PROxyLLM deliberately goes beyond Anthropic's "not supported" stance,
