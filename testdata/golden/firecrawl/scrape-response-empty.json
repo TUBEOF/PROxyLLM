@@ -1,0 +1,13 @@
+{
+  "success": true,
+  "data": {
+    "markdown": "# 404 Not Found\n\nThe page you requested does not exist. It may have been moved or deleted.\n\n[Back to the home page](https://example.com/)",
+    "metadata": {
+      "title": "404 Not Found",
+      "url": "https://example.com/missing",
+      "sourceURL": "https://example.com/missing",
+      "statusCode": 404,
+      "error": "Not Found"
+    }
+  }
+}

@@ -91,11 +91,15 @@ func TestVisionResolution_EmptyChainIsErrNoRoute(t *testing.T) {
 
 // --- EmulatorPool ---
 
-// poolEmulator records calls and fails on demand (EmulatorPool tests).
+// poolEmulator records calls and fails — or answers nothing — on demand
+// (EmulatorPool tests). empty models an account that answers successfully with
+// no results: Firecrawl does that for a query with no matches and for a page it
+// could not serve (metadata.statusCode inside a 200 body).
 type poolEmulator struct {
 	id    string
 	calls int
 	err   error
+	empty bool
 }
 
 func (f *poolEmulator) Search(_ context.Context, _ string, _ ir.ServerToolConfig) ([]ir.WebSearchResultItem, error) {
@@ -103,12 +107,18 @@ func (f *poolEmulator) Search(_ context.Context, _ string, _ ir.ServerToolConfig
 	if f.err != nil {
 		return nil, f.err
 	}
+	if f.empty {
+		return nil, nil
+	}
 	return []ir.WebSearchResultItem{{Title: "from-" + f.id}}, nil
 }
 func (f *poolEmulator) Fetch(_ context.Context, _ string, _ ir.ServerToolConfig) (*ir.WebFetchContent, error) {
 	f.calls++
 	if f.err != nil {
 		return nil, f.err
+	}
+	if f.empty {
+		return &ir.WebFetchContent{URL: "https://x", Source: "text", MediaType: "text/plain"}, nil
 	}
 	return &ir.WebFetchContent{Title: "from-" + f.id}, nil
 }
@@ -165,6 +175,92 @@ func TestEmulatorPool_AllFailedSurfacesLastError(t *testing.T) {
 	_, err := pool.Search(context.Background(), "q", ir.ServerToolConfig{})
 	if err == nil || err.Error() != "second down" {
 		t.Errorf("all-failed error = %v, want the LAST emulator's error", err)
+	}
+}
+
+// --- Empty answers (2026-10-10) ---
+//
+// Spec: "web search sometimes returns no results" — an account that answers
+// with nothing must not end the walk, because the next account may have the
+// results. Emptiness comes from the documented wire shapes: a search with no
+// matches (data.web is an empty array with success:true) and a page Firecrawl
+// could not serve (an empty payload). Precedence: a non-empty answer wins, an
+// empty answer is remembered and the walk continues, and the LAST error is
+// surfaced only when nothing answered at all.
+
+func TestEmulatorPool_EmptyResultContinuesTheWalk(t *testing.T) {
+	first := &poolEmulator{id: "first", empty: true}
+	second := &poolEmulator{id: "second"}
+	pool := routing.NewEmulatorPool([]routing.Emulator{first, second}, []routing.Emulator{first, second})
+
+	res, err := pool.Search(context.Background(), "q", ir.ServerToolConfig{})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(res) != 1 || res[0].Title != "from-second" {
+		t.Errorf("search result = %+v, want the second account's answer", res)
+	}
+	if second.calls != 1 {
+		t.Errorf("second emulator calls = %d, want 1 — an empty answer must not stop the walk", second.calls)
+	}
+
+	fc, err := pool.Fetch(context.Background(), "https://x", ir.ServerToolConfig{})
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	if fc.Title != "from-second" {
+		t.Errorf("fetch title = %q, want the second account's page", fc.Title)
+	}
+}
+
+func TestEmulatorPool_AllEmptyIsAnAnswerNotAnError(t *testing.T) {
+	first := &poolEmulator{id: "first", empty: true}
+	second := &poolEmulator{id: "second", empty: true}
+	pool := routing.NewEmulatorPool([]routing.Emulator{first, second}, nil)
+
+	res, err := pool.Search(context.Background(), "q", ir.ServerToolConfig{})
+	if err != nil {
+		t.Errorf("all-empty error = %v, want nil — nothing found is an answer, and the model is told so", err)
+	}
+	if len(res) != 0 {
+		t.Errorf("result = %+v, want empty", res)
+	}
+	if second.calls != 1 {
+		t.Errorf("second emulator calls = %d, want 1 (every account was asked)", second.calls)
+	}
+}
+
+// An empty answer outranks a later failure: the walk found an answer, even if
+// it was "nothing", so the caller must not see the other account's error.
+func TestEmulatorPool_EmptyBeatsALaterError(t *testing.T) {
+	empty := &poolEmulator{id: "empty", empty: true}
+	broken := &poolEmulator{id: "broken", err: errors.New("broken down")}
+	pool := routing.NewEmulatorPool([]routing.Emulator{empty, broken}, nil)
+
+	res, err := pool.Search(context.Background(), "q", ir.ServerToolConfig{})
+	if err != nil {
+		t.Errorf("error = %v, want nil — an empty answer wins over a later account's failure", err)
+	}
+	if len(res) != 0 {
+		t.Errorf("result = %+v, want the empty answer", res)
+	}
+}
+
+// And a non-empty answer still wins over a later account: the walk stops.
+func TestEmulatorPool_NonEmptyAnswerStopsTheWalk(t *testing.T) {
+	first := &poolEmulator{id: "first"}
+	second := &poolEmulator{id: "second"}
+	pool := routing.NewEmulatorPool([]routing.Emulator{first, second}, nil)
+
+	res, err := pool.Search(context.Background(), "q", ir.ServerToolConfig{})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(res) != 1 || res[0].Title != "from-first" {
+		t.Errorf("result = %+v, want the first account's answer", res)
+	}
+	if second.calls != 0 {
+		t.Errorf("second emulator calls = %d, want 0 (a non-empty answer ends the walk)", second.calls)
 	}
 }
 

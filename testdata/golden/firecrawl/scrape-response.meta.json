@@ -1,7 +1,7 @@
 {
   "fixture": "scrape-response.json",
   "source": "https://docs.firecrawl.dev/api-reference/endpoint/scrape",
-  "accessed": "2026-09-10",
+  "accessed": "2026-10-10",
   "facts": ["F3"],
-  "notes": "Response: success flag, data.markdown content, metadata."
+  "notes": "Response: success, data.markdown, data.metadata (title, url, sourceURL, statusCode, nullable error). RE-READ 2026-10-10: there is NO top-level warning on scrape (the earlier fixture carried `\"warning\": []` there); scrape's warning rides under data as a nullable string."
 }

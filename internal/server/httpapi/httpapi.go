@@ -306,16 +306,22 @@ func requiredCapabilities(req ir.Request) provider.Capabilities {
 // event (ADR-011: no rule matched, the models-table row named the
 // provider). Version 6 adds the context_override event (2026-10-06: the
 // Claude Code "[1m]"/"[1M]" context-marker strip, base model routed).
+// Version 7 adds the emulated_tool_attempt event (2026-10-10: one account's
+// outcome inside an emulated web-tool invocation — the account walk is inside
+// the pool, so the log needs it to explain a web tool that found nothing).
 type chainTrace struct {
 	Version int               `json:"version"`
 	Events  []json.RawMessage `json:"events"`
 }
 
-// routeTraceVersion is the current route_trace schema version (v6 adds
-// the context_override event — the Claude Code "[1m]" marker strip,
-// 2026-10-06; previously 5 / implicit model routes ADR-011). The WebUI
-// renders route_trace as raw JSON, so bumps are additive.
-const routeTraceVersion = 6
+// routeTraceVersion is the current route_trace schema version (v7 adds
+// emulated_tool_attempt — one account's outcome inside an emulated web-tool
+// invocation, 2026-10-10: the account walk happens inside the pool, and without
+// this the log could say a web tool ran but not why it found nothing; v6 added
+// the context_override event, the Claude Code "[1m]" marker strip, 2026-10-06;
+// previously 5 / implicit model routes ADR-011). The WebUI renders route_trace
+// as raw JSON, so bumps are additive.
+const routeTraceVersion = 7
 
 // traceField is a request's marshalled route_trace plus the in-memory
 // sub-operation payloads that must never enter it (2026-10-10 Logs page).

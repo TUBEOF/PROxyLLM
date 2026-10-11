@@ -142,8 +142,8 @@ func TestWireModel_TraceRecordsResolution(t *testing.T) {
 	if err := json.Unmarshal([]byte(logs[0].RouteTrace), &trace); err != nil {
 		t.Fatalf("route_trace: %v", err)
 	}
-	if trace.Version != 6 {
-		t.Errorf("version = %d, want 6", trace.Version)
+	if trace.Version != 7 {
+		t.Errorf("version = %d, want 7", trace.Version)
 	}
 	seen := false
 	for _, ev := range trace.Events {
@@ -205,8 +205,8 @@ func TestImplicitRoute_E2E(t *testing.T) {
 	if err := json.Unmarshal([]byte(logs[0].RouteTrace), &trace); err != nil {
 		t.Fatalf("route_trace: %v", err)
 	}
-	if trace.Version != 6 {
-		t.Errorf("version = %d, want 6", trace.Version)
+	if trace.Version != 7 {
+		t.Errorf("version = %d, want 7", trace.Version)
 	}
 	implicit, resolved := false, false
 	for _, ev := range trace.Events {

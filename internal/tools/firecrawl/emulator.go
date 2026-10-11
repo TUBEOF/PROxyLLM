@@ -9,8 +9,11 @@ package firecrawl
 import (
 	"context"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 
+	"github.com/tubeof/proxyllm/internal/httpguard"
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
@@ -22,9 +25,28 @@ type Emulator struct {
 	client *Client
 }
 
-// NewEmulator builds the adapter. An empty baseURL or nil httpClient
-// delegates to the client defaults.
+// emulatorClient is the HTTP client shared by every emulator account.
+//
+// Accounts are built per provider row, and a nil client used to mean "clone a
+// fresh transport per account" — so one pool walk dialled a different connection
+// pool for each account, and an idle connection was never reused across a
+// failover. One client, one pool, which is what makes the per-host idle settings
+// in httpguard mean anything here.
+//
+// The 20 s client timeout is deliberately below the executor's per-invocation
+// emulation budget (30 s): a stalled account has to give up in time for the next
+// account to get a window inside that same budget.
+var emulatorClient = sync.OnceValue(func() *http.Client {
+	return httpguard.NewClient(20 * time.Second)
+})
+
+// NewEmulator builds the adapter. An empty baseURL delegates to the client
+// default; a nil httpClient selects the shared emulator client (see
+// emulatorClient) rather than a private transport per account.
 func NewEmulator(baseURL, apiKey string, httpClient *http.Client) *Emulator {
+	if httpClient == nil {
+		httpClient = emulatorClient()
+	}
 	return &Emulator{client: New(baseURL, apiKey, httpClient)}
 }
 
@@ -57,6 +79,13 @@ func (e *Emulator) Search(ctx context.Context, query string, st ir.ServerToolCon
 // into the WebFetchContent payload — text source with text/plain media
 // type, mirroring the Anthropic document-block semantics (A3), and the
 // scrape timestamp as retrieval time.
+//
+// A page Firecrawl could not serve comes back EMPTY, not as an error: the
+// documented 200 body carries the page's own status and error note, so a 404 or
+// a failed extraction is this account having nothing to give — and the caller's
+// account walk must be free to ask the next one instead of failing the whole
+// call. The empty payload is indistinguishable from a page with no text, which
+// is the honest reading: the model is told nothing was retrieved either way.
 func (e *Emulator) Fetch(ctx context.Context, url string, st ir.ServerToolConfig) (*ir.WebFetchContent, error) {
 	resp, err := e.client.Scrape(ctx, ScrapeRequest{
 		URL:     url,
@@ -65,13 +94,30 @@ func (e *Emulator) Fetch(ctx context.Context, url string, st ir.ServerToolConfig
 	if err != nil {
 		return nil, err
 	}
-	return &ir.WebFetchContent{
+	fc := &ir.WebFetchContent{
 		URL:              url,
 		Title:            resp.Data.Metadata.Title,
 		Source:           "text",
 		MediaType:        "text/plain",
-		Data:             resp.Data.Markdown,
 		CitationsEnabled: st.CitationsEnabled,
 		RetrievedAt:      time.Now().UTC().Format(time.RFC3339),
-	}, nil
+	}
+	if pageUsable(resp) {
+		fc.Data = resp.Data.Markdown
+	}
+	return fc, nil
+}
+
+// pageUsable reports whether a scrape actually produced a document. Firecrawl
+// answers HTTP 200 even for a page it could not fetch, carrying the target's
+// own status in metadata.statusCode (and an error note beside it), so the
+// status code — not the transport — is what says whether there is content. A
+// zero status is treated as usable: some responses omit it, and the markdown
+// check already covers the empty case.
+func pageUsable(resp *ScrapeResponse) bool {
+	if strings.TrimSpace(resp.Data.Markdown) == "" {
+		return false
+	}
+	sc := resp.Data.Metadata.StatusCode
+	return sc == 0 || (sc >= 200 && sc < 300)
 }
