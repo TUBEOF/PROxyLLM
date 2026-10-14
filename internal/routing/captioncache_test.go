@@ -11,6 +11,7 @@ package routing_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -251,6 +252,15 @@ func TestExecutor_Caption_KnownBlindChainSkipsTheDispatch(t *testing.T) {
 	}
 	if got := partStrings(main.seen[2].Messages[0].Parts); len(got) != 2 || got[1] == "image:iVBORw0KGgo=" {
 		t.Errorf("turn 2 dispatched parts = %q, want the image already replaced", got)
+	}
+	// The trace must not describe a rejection that never happened. Turn 2 was
+	// never refused for the image — nothing was attempted until after the
+	// replacement — so "the chain was exhausted and is being retried" would be a
+	// fiction an operator would chase.
+	for _, ev := range eventsOf(trace2, routing.EventCapabilityFallback) {
+		if strings.Contains(ev.Reason, "exhausted") || strings.Contains(ev.Reason, "retrying") {
+			t.Errorf("pre-dispatch substitution traced as %q", ev.Reason)
+		}
 	}
 }
 

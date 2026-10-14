@@ -234,7 +234,15 @@ func (e *Executor) captionImages(ctx context.Context, req ir.Request, trace *Tra
 			"chain exhausted on capability gaps; no configured vision model could describe the image")
 		return req, usage, false
 	}
-	trace.CapabilityFallback("vision", rescueSummary(captioned, reused))
+	if cacheOnly {
+		// Nothing was attempted and nothing is being retried: the images were
+		// replaced before the dispatch, because the chain is known blind. Saying
+		// "chain exhausted" here would describe a rejection that never happened.
+		trace.CapabilityFallback("vision", "images replaced from the caption cache before dispatch: "+
+			strconv.Itoa(reused)+" description(s)")
+	} else {
+		trace.CapabilityFallback("vision", rescueSummary(captioned, reused))
+	}
 	return req.ReplaceImages(refs, descs), usage, true
 }
 
@@ -243,11 +251,11 @@ func (e *Executor) captionImages(ctx context.Context, req ir.Request, trace *Tra
 // those cost nothing because they were already described.
 func rescueSummary(captioned, reused int) string {
 	const lead = "chain exhausted on capability gaps; "
-	switch {
-	case reused == captioned:
+	switch reused {
+	case captioned:
 		return lead + "reused " + strconv.Itoa(reused) +
 			" cached description(s) and retrying the chain with the text in place of the image"
-	case reused == 0:
+	case 0:
 		return lead + "described " + strconv.Itoa(captioned) +
 			" image(s) and retrying the chain with the text in place of the image"
 	default:
