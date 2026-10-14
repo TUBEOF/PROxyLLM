@@ -16,8 +16,18 @@ Before dispatch, the resolved chain's routing ID maps to the wire name
 (row wins; a missing row falls back to the tail after the last slash) —
 traced as `model_resolved` (route_trace v4). The client-facing response
 echoes the routing identity, never the wire name. Aliases
-(`model_aliases`) map client-facing names to routing identities and match
-in the rule step below.
+(`model_aliases`) map client-facing names to routing identities and resolve
+before rule matching. An alias key that appears as a token of a `claude-*`
+request name also serves that name — the operator's bare `sonnet`/`haiku`
+entries cover Claude Code's versioned auxiliary IDs (`claude-sonnet-4-6`,
+`claude-haiku-5-5`, the dated legacy spelling `claude-3-5-sonnet-…`), which
+change with every release and would otherwise need an entry per release.
+An exact entry wins over a family entry; several matching keys resolve to
+the first matching token, left to right; the resolution is an `alias` trace
+event like any other. A request nothing matches keeps the documented
+no-route 404 — its message names the model (`model: <id>`), because that is
+the shape Claude Code classifies as model-not-found, the precondition for
+its own fallback.
 
 ## Rule model (evaluation order)
 

@@ -261,13 +261,26 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 	if pats := r.cfg.KeyScopes[keyID]; keyID != "" && len(pats) > 0 {
 		if !matchAny(typed, pats) && (!hadMarker || !matchAny(base, pats)) {
 			trace.add(Event{Type: EventRejected, Reason: "key scope: model not allowed for key", Model: model})
-			return nil, trace, ErrNoRoute
+			return nil, trace, noRoute(model)
 		}
 	}
 
-	// Step 2: alias resolution.
+	// Step 2: alias resolution. The exact entry first; then, for a claude-*
+	// name the map holds no exact entry for, a family entry: an alias key
+	// that appears as a token of the requested name. Claude Code fires
+	// auxiliary requests (the WebFetch apply call, the auto-mode classifier)
+	// with versioned Claude IDs — claude-sonnet-4-6, claude-haiku-5-5, the
+	// dated legacy spelling alike — that no operator can enumerate, so the
+	// WebUI's promise that "a client's sonnet/haiku family names map onto
+	// whatever model serves them here" is kept by this token match. Several
+	// keys matching one name resolve to the first matching token, left to
+	// right (deterministic); the resolution is traced like any alias.
 	requested := model
-	if target, ok := r.cfg.Aliases[model]; ok {
+	target, aliased := r.cfg.Aliases[model]
+	if !aliased {
+		target, aliased = familyAlias(model, r.cfg.Aliases)
+	}
+	if aliased {
 		model = target
 		trace.add(Event{Type: EventAlias, From: requested, To: model})
 	}
@@ -293,7 +306,7 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 		}
 		if len(implicit.Chain) == 0 {
 			trace.add(Event{Type: EventRejected, Reason: "no matching routing rule", Model: model})
-			return nil, trace, err
+			return nil, trace, noRoute(model)
 		}
 		rule = implicit
 	} else {
@@ -308,7 +321,7 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 	entries, expansionErr := r.expandChain(rule.Chain, trace, model)
 	if expansionErr != nil {
 		trace.add(Event{Type: EventRejected, Reason: "chain empty after expansion", Model: model})
-		return nil, trace, expansionErr
+		return nil, trace, noRoute(model)
 	}
 
 	// Step 5 (ADR-009): strategy. Round robin rotates the expanded
@@ -394,7 +407,7 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 			return nil, trace, ErrChainOverloaded
 		}
 		trace.add(Event{Type: EventRejected, Reason: "chain empty after capability/health filtering", Model: model})
-		return nil, trace, ErrNoRoute
+		return nil, trace, noRoute(model)
 	}
 	return out, trace, nil
 }
@@ -557,6 +570,25 @@ func matchAny(model string, patterns []string) bool {
 	return false
 }
 
+// familyAlias resolves a requested name through the alias map's family
+// entries: a claude-* name without an exact entry maps through an alias key
+// that appears as one of its tokens ("sonnet" for claude-sonnet-4-6, and for
+// the dated legacy spelling claude-3-5-sonnet-20241022 alike). The first
+// matching token, left to right, wins — one deterministic answer. Names
+// outside the claude- family are never rewritten through it, and a missing
+// map entry keeps the caller on its documented no-route path.
+func familyAlias(model string, aliases map[string]string) (string, bool) {
+	if !strings.HasPrefix(model, "claude-") {
+		return "", false
+	}
+	for _, tok := range strings.Split(model, "-") {
+		if target, ok := aliases[tok]; ok {
+			return target, true
+		}
+	}
+	return "", false
+}
+
 // missingCapabilities names the first required capability the provider
 // lacks ("" when all are present). Vision is deliberately NOT here: static
 // provider caps cannot know which MODEL accepts images — a vision request goes
@@ -585,8 +617,32 @@ func missingCapabilities(have, want provider.Capabilities) string {
 }
 
 // ErrNoRoute is the terminal no-route error: no rule matched (or the chain
-// filtered to empty). Never a silent default model.
+// filtered to empty). Never a silent default model. The pipeline returns it
+// as *NoRouteError (errors.Is keeps matching this sentinel) so the surfaces
+// can name the model on the wire.
 var ErrNoRoute = errors.New("routing: no route for model")
+
+// NoRouteError is the terminal no-route outcome, naming the model the
+// pipeline could not route. The name is load-bearing on the wire: the
+// client-facing message is built from it ("model: <id>"), the reference's
+// spelling for an unknown model — and the only message shape Claude Code
+// classifies as model-not-found (404 + not_found_error + "model:"), which
+// is the precondition for its own model fallback to fire. A prose message
+// would read as an opaque 404 and leave client-side recovery dead.
+type NoRouteError struct {
+	// Model is the name the pipeline failed to route: the rewritten
+	// (post-alias) target when an alias resolved, else the requested name.
+	Model string
+}
+
+func (e *NoRouteError) Error() string { return "routing: no route for model " + e.Model }
+
+// Is keeps the sentinel identity: every errors.Is(err, ErrNoRoute) check
+// (surfaces, executor wiring, tests) stays true.
+func (e *NoRouteError) Is(target error) bool { return target == ErrNoRoute }
+
+// noRoute builds the terminal rejection naming model.
+func noRoute(model string) error { return &NoRouteError{Model: model} }
 
 // ErrChainOverloaded is the terminal temporarily-unavailable error: the
 // model routed, but every chain provider is in health cooldown (circuit

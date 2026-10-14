@@ -58,6 +58,39 @@ request that did not enable thinking, so a target that reasons anyway still
 spends the tokens. Suppressing the output is what the client contract needs;
 asking the target to stop is a separate, provider-specific change.
 
+## Amendment (2026-10-14): the Claude family resolves, and a miss answers like the reference
+
+Two coupled gaps broke WebFetch through Claude Code in the field, each
+observed live against a scratch instance:
+
+1. **Claude Code fires auxiliary requests under versioned Claude IDs its
+   own release pins** — the WebFetch summarize call and the auto-mode
+   classifier ran as `claude-haiku-5-5` (older releases: `claude-sonnet-*`)
+   — and the alias map only matched names exactly, so an operator could not
+   cover them without an entry per release. Family entries now resolve:
+   an alias key that appears as a token of a `claude-*` name serves that
+   name (`sonnet` covers `claude-sonnet-4-6`, `haiku` covers
+   `claude-haiku-5-5`, and the dated spelling
+   `claude-3-5-sonnet-20241022` alike). Exact entries win; the first
+   matching token wins; the resolution is an `alias` trace event like any
+   other — this is the Routing page's own promise, not a new default.
+
+2. **The no-route 404 spoke prose, and Claude Code classifies model
+   not-found by shape**: `404` + `not_found_error` + a message containing
+   `model:`. Anything else is an opaque 404 — its fallback model never
+   fires, and the fetch dies. The surfaces now answer the reference's
+   spelling, `model: <id>` (credential shapes masked out of the name, which
+   is client input and rides the log too). The router carries the model on
+   a `*NoRouteError`; `errors.Is(err, ErrNoRoute)` is unchanged. Never a
+   silent default model — the rejection still happens, it just says which
+   model.
+
+Verified live: family resolution end-to-end (alias event, live Ollama
+Cloud answer), WebFetch through the real CLI, and the client fallback
+firing on an unmapped name (`--fallback-model` retried after the conform
+404). Pinned by `internal/smoke` smokes and unit tests on both surfaces,
+stream and non-stream.
+
 ## Consequences
 
 - PROxyLLM deliberately goes beyond Anthropic's "not supported" stance,

@@ -29,9 +29,26 @@ aliases (logged) until fixed.
 ```json
 {
   "claude-sonnet-4-5": "gpt-5.2",
-  "claude-haiku-4-5": "ollamacloud/qwen3:32b"
+  "sonnet": "ollama-cloud/gpt-oss:120b",
+  "haiku": "ollama-cloud/gpt-oss:120b"
 }
 ```
+
+Bare family entries are worth adding: an alias key that appears as a token
+of a `claude-*` name serves every versioned ID of that family — `sonnet`
+covers `claude-sonnet-4-6`, `haiku` covers `claude-haiku-5-5`, and even the
+dated spelling `claude-3-5-sonnet-20241022`. Claude Code fires auxiliary
+requests of its own under those pinned IDs (the WebFetch summarize call,
+the auto-mode classifier); the IDs change with releases, so one entry per
+release would be a losing race. Exact entries always win over family
+entries.
+
+A name nothing maps still answers the reference's model-not-found
+envelope: `404` `not_found_error` with the message `model: <id>`. That
+shape matters — it is what lets Claude Code recognise the model as
+unknown and recover on its own (fallback model, model re-selection)
+instead of failing opaquely, which is how a WebFetch ends as an empty
+answer or a bare "API error".
 
 ## The global surface switch
 
