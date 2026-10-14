@@ -169,8 +169,21 @@ func mapRouteError(err error) (int, string, string) {
 		return http.StatusBadRequest, errTypeInvalidRequest,
 			"This model's compatibility policy does not allow thinking requests (thinking_handling=block)."
 	case errors.Is(err, routing.ErrNoRoute):
-		return http.StatusNotFound, errTypeNotFound,
-			"No route for the requested model. Add a routing rule or check the model name."
+		// The reference's spelling for an unknown model — "model: <id>" — is
+		// load-bearing on the wire: Claude Code classifies a 404 as
+		// model-not-found, the precondition for its own model fallback, only
+		// when the body's error type is not_found_error AND the message
+		// contains "model:". A prose message reads as an opaque 404 and the
+		// client cannot recover.
+		message := "model: (unknown)"
+		var nre *routing.NoRouteError
+		if errors.As(err, &nre) && nre.Model != "" {
+			// The name is client input and rides BOTH the wire and the
+			// request-log row (writeRouteError's msg) — credential shapes are
+			// masked out of it like everywhere else (ErrorRedacted contract).
+			message = "model: " + redactUpstreamMessage(nre.Model)
+		}
+		return http.StatusNotFound, errTypeNotFound, message
 	}
 	// A request that ended because its context did is not a routing failure:
 	// the client stopped reading, or a budget of ours ran out. The status is the

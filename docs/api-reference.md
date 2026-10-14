@@ -54,7 +54,11 @@ Protocol-conform per surface:
 - **Unknown model (404)**: a request 404s when no enabled routing rule
   matches the model AND no models-table row exists (ADR-011). A listed
   model with no rule routes implicitly to its row's provider — traced as
-  `implicit_route`.
+  `implicit_route`. The body is the reference's model-not-found envelope:
+  `not_found_error` with the message `model: <id>`. That message shape is
+  deliberate — Claude Code only classifies a 404 as model-not-found (the
+  precondition for its own model fallback) when the error type is
+  `not_found_error` and the message names the model this way.
 - **All providers in health cooldown (529/503)**: when the model routed
   but every chain provider is in circuit-breaker cooldown, the Anthropic
   surface answers `529` `overloaded_error` and the OpenAI surfaces answer
