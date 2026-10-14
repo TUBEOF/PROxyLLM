@@ -11,9 +11,9 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
-// Stream-encoder contract tests, RED-GREEN per Analysis F. The encoder must
+// Stream-encoder contract tests, RED-GREEN. The encoder must
 // produce the Ollama /api/chat NDJSON stream wire format (pinned via the
-// golden fixture ollama/chat-stream.ndjson, OP-4; facts L10-L11) such that
+// golden fixture ollama/chat-stream.ndjson) such that
 // the package's own stream decoder reconstructs the canonical events
 // (round-trip discipline: the decoder is fixture-verified, so a passing
 // round trip proves wire conformance).
@@ -67,7 +67,7 @@ func TestOllamaStreamEncode_FullSequenceRoundTrip(t *testing.T) {
 }
 
 // Tool calls ride message.tool_calls with OBJECT arguments delivered as one
-// complete JSON value per entry (L10) — the wire cannot carry fragment
+// complete JSON value per entry — the wire cannot carry fragment
 // boundaries or tool IDs (lossy, like the non-stream wire), so the canonical
 // input uses a single complete fragment and no ID.
 func TestOllamaStreamEncode_ToolCallRoundTrip(t *testing.T) {
@@ -121,7 +121,7 @@ func TestOllamaStreamEncode_WireShape(t *testing.T) {
 	}
 }
 
-// Tool arguments marshal as an embedded JSON OBJECT, not a string (L10), and
+// Tool arguments marshal as an embedded JSON OBJECT, not a string, and
 // argument fragments accumulate into the one complete value the wire format
 // requires — fragments never reach the wire split.
 func TestOllamaStreamEncode_ToolArgumentsWireShape(t *testing.T) {

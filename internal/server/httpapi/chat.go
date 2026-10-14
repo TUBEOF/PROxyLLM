@@ -1,9 +1,9 @@
 package httpapi
 
-// POST /v1/chat/completions (plan §5.1, wire facts O2–O4, O10, O11): the
+// POST /v1/chat/completions: the
 // OpenAI chat surface. The client body decodes through the chat codec into
 // IR, routes, executes, and re-encodes into the chat wire — same-surface
-// relay with the per-model compat policy applied first (§6.4).
+// relay with the per-model compat policy applied first.
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/openai"
 )
 
-// chatProbe is the raw-body probe for reasoning_effort (§6.4): the chat
+// chatProbe is the raw-body probe for reasoning_effort: the chat
 // codec has no wire field for it (the chat surface never forwards effort
 // hints upstream verbatim), but the compat policy must see the intent —
 // a block/strip policy is decided by the client's thinking request, not
@@ -45,7 +45,7 @@ func (a *api) handleChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Probe the raw body for reasoning_effort: translate to the IR
-	// Thinking intent so ApplyCompat governs it (§6.4).
+	// Thinking intent so ApplyCompat governs it.
 	var probe chatProbe
 	if json.Unmarshal(raw, &probe) == nil && probe.ReasoningEffort != "" {
 		if req.Thinking == nil {
@@ -75,7 +75,7 @@ func (a *api) runChat(w http.ResponseWriter, r *http.Request, raw []byte, req ir
 	compat := a.compatFor(ctx, req.Model)
 	req, compatTrace, err := routing.ApplyCompat(compat, req)
 	if err != nil {
-		// ErrThinkingBlocked → 400 O10 body + log row (never silent).
+		// ErrThinkingBlocked → 400 error body + log row (never silent).
 		_, _ = a.writeRouteError(w, ew, err)
 		a.writeRequestLog(ctx, keyID, req.Model, "", http.StatusBadRequest, 0,
 			nil, routeTrace(compatTrace), redactedMessage(err))
@@ -91,8 +91,8 @@ func (a *api) runChat(w http.ResponseWriter, r *http.Request, raw []byte, req ir
 		return
 	}
 
-	// Model identity (2026-09-21): resolve the chain entries' routing ID to
-	// the wire name; req.Model stays the client-facing ID (OP-2 echo + log).
+	// Model identity: resolve the chain entries' routing ID to the wire
+	// name; req.Model stays the client-facing ID (echoed to the client + logged).
 	resolveTrace := &routing.Trace{}
 	chain = a.resolveChainWireModels(ctx, chain, resolveTrace)
 
@@ -113,7 +113,7 @@ func (a *api) runChat(w http.ResponseWriter, r *http.Request, raw []byte, req ir
 		return
 	}
 
-	// OP-2: echo the requested model name (see messages.go).
+	// Echo the requested model name (see messages.go).
 	resp.Model = req.Model
 	// Capture the answer the client is about to receive (see capture.go).
 	captureResponse(ctx, resp)
@@ -136,8 +136,8 @@ func (a *api) runChat(w http.ResponseWriter, r *http.Request, raw []byte, req ir
 		routeTrace(compatTrace, routerTrace, resolveTrace, execTrace), "")
 }
 
-// streamChat relays an upstream stream to the chat-wire client (O4:
-// data-only SSE frames, [DONE] terminal, per-event flush).
+// streamChat relays an upstream stream to the chat-wire client: data-only
+// SSE frames, [DONE] terminal, per-event flush.
 func (a *api) streamChat(w http.ResponseWriter, r *http.Request, keyID string, req ir.Request, chain []routing.ChainEntry, traces ...*routing.Trace) {
 	// Declare the event-stream response up front, before any dispatch
 	// (a pre-stream failure below still substitutes a real error).
@@ -169,14 +169,24 @@ func (a *api) streamChat(w http.ResponseWriter, r *http.Request, keyID string, r
 	// Mid-stream outcome correction (4a): dispatch success was reported
 	// at ExecuteStream; a stream that failed mid-stream still counts as
 	// a breaker failure.
-	a.executor.ReportStreamOutcome(lastProvider(execTrace), streamErr)
-
 	latency := time.Since(start).Milliseconds()
 	status := http.StatusOK
 	var errMsg string
 	if streamErr != nil {
 		// ErrorRedacted contract: credential shapes never persist raw.
 		errMsg = redactUpstreamMessage(streamErr.Message)
+	}
+	// An abandoned request is still logged — it really happened — but it is
+	// neither a success nor a failure for the provider, because nothing was
+	// learned about it. Reporting the dispatch success again here would clear a
+	// breaker the client's own departure had nothing to do with.
+	if gone, abandoned := abandonmentStatus(ctx); abandoned {
+		status = gone
+	} else {
+		// Mid-stream outcome correction (4a): dispatch success was reported at
+		// ExecuteStream; a stream that failed mid-stream still counts as a
+		// breaker failure.
+		a.executor.ReportStreamOutcome(lastProvider(execTrace), streamErr)
 	}
 	var usageArg *ir.Usage
 	if terminalUsage != nil {
@@ -190,7 +200,7 @@ func (a *api) streamChat(w http.ResponseWriter, r *http.Request, keyID string, r
 // readBody reads the request body with the shared limits. One extra byte
 // is read past the cap so truncation is detected and reported as 413 —
 // a silently truncated body would otherwise surface as a confusing JSON
-// decode error (Analysis G input validation).
+// decode error (input validation).
 func readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	raw, err := io.ReadAll(io.LimitReader(r.Body, maxBodyBytes+1))
 	if err != nil {
@@ -205,7 +215,7 @@ func readBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	return raw, true
 }
 
-// maxBodyBytes caps request bodies (Analysis G input validation).
+// maxBodyBytes caps request bodies (input validation).
 const maxBodyBytes = 32 << 20
 
 // relayStream forwards canonical events to the client encoder until the
@@ -215,7 +225,7 @@ const maxBodyBytes = 32 << 20
 // event; an empty error type is normalized (the transport pump reports
 // body-read failures with the message only). The Start event's model is
 // rewritten to clientModel: the client's requested model name is echoed
-// (OP-2 alias routing), never the upstream-internal name.
+// (alias routing), never the upstream-internal name.
 //
 // answer accumulates the streamed text for the log's payload capture; a nil
 // builder skips the accumulation (the caller that does not want the answer
@@ -242,7 +252,7 @@ func relayStream(ctx context.Context, ch <-chan ir.StreamEvent, enc translate.St
 					}
 					*streamErr = ev.Error
 				}
-				// B2: the error event is terminal (A13/O7) — nothing may
+				// The error event is terminal — nothing may
 				// follow it on the wire, so stop relaying even if a
 				// misbehaving provider kept the channel open.
 				_ = enc.Write(ctx, ev)
@@ -255,7 +265,7 @@ func relayStream(ctx context.Context, ch <-chan ir.StreamEvent, enc translate.St
 			if answer != nil && ev.Type == ir.Delta && ev.Delta.Kind == ir.DeltaText {
 				answer.WriteString(ev.Delta.Text)
 			}
-			// B1: a failed client write (disconnect) must stop the pump —
+			// A failed client write (disconnect) must stop the pump —
 			// keep relaying only while the client is actually receiving.
 			if enc.Write(ctx, ev) != nil {
 				return

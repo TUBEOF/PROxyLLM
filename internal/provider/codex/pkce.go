@@ -9,7 +9,7 @@ import (
 
 // NewVerifier returns a fresh PKCE code verifier: 64 cryptographically random
 // bytes, base64url-encoded WITHOUT padding (86 chars, inside the RFC 7636
-// 43–128 range; X21 — mirroring codex-rs/login/src/pkce.rs).
+// 43–128 range, mirroring codex-rs/login/src/pkce.rs).
 func NewVerifier() (string, error) {
 	buf := make([]byte, 64)
 	if _, err := rand.Read(buf); err != nil {
@@ -19,7 +19,7 @@ func NewVerifier() (string, error) {
 }
 
 // Challenge derives the S256 code challenge: base64url without padding over
-// the SHA-256 digest of the verifier STRING bytes (X21).
+// the SHA-256 digest of the verifier STRING bytes.
 func Challenge(verifier string) string {
 	sum := sha256.Sum256([]byte(verifier))
 	return base64.RawURLEncoding.EncodeToString(sum[:])

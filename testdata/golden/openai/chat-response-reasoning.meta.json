@@ -2,6 +2,5 @@
   "fixture": "chat-response-reasoning.json",
   "source": "https://github.com/ollama/ollama/issues/17911 (non-streaming /v1/chat/completions returns message.reasoning_content — the asymmetry note) + docs.ollama.com/api/openai-compatibility",
   "accessed": "2026-09-22",
-  "facts": ["O3"],
   "notes": "OpenAI-compat non-streaming reasoning response: the trace rides message.reasoning_content (Ollama) or message.reasoning (some gpt-oss serving stacks) alongside message.content; the decoder accepts both and emits the thinking part before the text part. Paired .expected.json pins the canonical IR response."
 }

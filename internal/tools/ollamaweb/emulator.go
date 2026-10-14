@@ -71,7 +71,7 @@ func (e *Emulator) Search(ctx context.Context, query string, st ir.ServerToolCon
 
 // Fetch answers a web_fetch invocation: the service's extracted article text
 // normalized into the WebFetchContent payload — text source with text/plain
-// media type, mirroring the Anthropic document-block semantics (A3), and the
+// media type, mirroring the Anthropic document-block semantics, and the
 // retrieval time stamped now.
 //
 // A page the service could not retrieve comes back with empty Content and is

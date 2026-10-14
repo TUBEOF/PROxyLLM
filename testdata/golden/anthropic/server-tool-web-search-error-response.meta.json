@@ -2,6 +2,5 @@
   "fixture": "server-tool-web-search-error-response.json",
   "source": "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/web-search-tool",
   "accessed": "2026-09-12",
-  "facts": ["A3", "A10"],
   "notes": "web_search error shape: content is a single object {\"type\":\"web_search_tool_result_error\",\"error_code\":\"max_uses_exceeded\"} — NOT an array (asymmetry vs the success shape). Documented error_code values: too_many_requests, invalid_tool_input, max_uses_exceeded, query_too_long, request_too_large, unavailable. Zero hits produce an empty result array, not an error."
 }

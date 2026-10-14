@@ -11,15 +11,14 @@ import (
 
 // ADR-010 capability fallbacks: two complementary mechanisms.
 //
-//   - EmulatorPool: the executor's web-tool emulator (§6.2) becomes a
-//     priority list per tool family. A failing emulator fails over to the
-//     next in the list — multiple firecrawl accounts (or future providers)
-//     give web_search/web_fetch the same retry discipline chat chains have.
-//   - CapabilityFallbacks on the Executor (2026-09-21 automatic
-//     capabilities): when the whole chain failed with capability_gap
-//     rejections (the model cannot serve an input modality, e.g. images),
-//     the configured fallback MODELS are tried as additional chain entries
-//     — see Executor.SetCapabilityFallbacks and walkChain.
+//   - EmulatorPool: the executor's web-tool emulator becomes a priority list
+//     per tool family. A failing emulator fails over to the next in the list
+//     — multiple firecrawl accounts (or future providers) give
+//     web_search/web_fetch the same retry discipline chat chains have.
+//   - CapabilityFallbacks on the Executor: when the whole chain failed with
+//     capability_gap rejections (the model cannot serve an input modality,
+//     e.g. images), the configured fallback MODELS are tried as additional
+//     chain entries — see Executor.SetCapabilityFallbacks and walkChain.
 
 // EmulatorEntry is one entry of a family list: the account's id and its
 // Emulator. The id is the provider row id, so it survives a live swap — a
@@ -30,7 +29,7 @@ type EmulatorEntry struct {
 	Emulator Emulator
 }
 
-// Per-account circuit (2026-10-10): a misconfigured or down account used to be
+// Per-account circuit: a misconfigured or down account used to be
 // retried first on EVERY call, paying its failure (up to the call budget) before
 // the walk moved on. Three consecutive hard failures cool it down; a success
 // resets it. A cooling account is skipped unless every account is cooling, in
@@ -54,7 +53,7 @@ type emuCircuit struct {
 // executor wraps it into the documented protocol-conform error result —
 // behavior unchanged when the pool holds a single emulator).
 //
-// An EMPTY answer is a success (2026-10-10) — see walk — and the walk skips
+// An EMPTY answer is a success — see walk — and the walk skips
 // accounts in cooldown.
 type EmulatorPool struct {
 	mu     sync.RWMutex
@@ -203,7 +202,7 @@ func (p *EmulatorPool) FetchTraced(ctx context.Context, url string, st ir.Server
 	return out, by, err
 }
 
-// walk tries each account in order with a three-way outcome (2026-10-10):
+// walk tries each account in order with a three-way outcome:
 //
 //   - a NON-EMPTY success returns immediately — an answer that settles it,
 //   - an EMPTY success is remembered and the walk continues, because another

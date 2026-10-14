@@ -6,8 +6,8 @@ import (
 	"errors"
 )
 
-// Spec: plan Analysis C schema (webui_admins: id, username UNIQUE,
-// password_hash) + Analysis G control 1 (Argon2id login). The hash is opaque
+// Spec: schema (webui_admins: id, username UNIQUE, password_hash),
+// Argon2id login. The hash is opaque
 // here: the auth layer derives it via Argon2Hasher; storage persists and
 // resolves it.
 

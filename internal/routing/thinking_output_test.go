@@ -1,8 +1,7 @@
 package routing_test
 
-// Unsolicited thinking blocks (reported 2026-10-11): "Web Fetch weiterhin
-// verbuggt … keine Antwort oder 404". The reference returns thinking blocks
-// only for requests that ENABLED thinking; a client that asked for none gets
+// Unsolicited thinking blocks: the reference returns thinking blocks only for
+// requests that ENABLED thinking; a client that asked for none gets
 // plain content. Claude Code's helper calls (the web_fetch summarizer sends
 // no thinking parameter at all) read the FIRST content block as text, so an
 // unsolicited thinking block reads as an empty answer — every WebFetch
@@ -193,7 +192,7 @@ func TestExecute_PreCompatThinkingParamKeepsBlocks(t *testing.T) {
 
 // --- the streaming path --------------------------------------------------
 
-// The reported failure rode the STREAM: the summarizer call is streamed, and
+// The failure rides the STREAM: the summarizer call is streamed, and
 // Claude Code assembles the message from the events.
 func TestExecuteStream_UnsolicitedThinkingBlockIsDropped(t *testing.T) {
 	p := &thinkingProvider{}

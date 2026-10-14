@@ -5,7 +5,7 @@
 
 ## Context
 
-Threat model (Analysis G): LAN attacker or stolen client key. In scope:
+Threat model: LAN attacker or stolen client key. In scope:
 unauthorized use, credential theft from disk/logs/responses, WebUI
 escalation, quota burn, SSRF via custom-provider base URLs. Out of scope:
 internet-scale multi-tenant exposure (documented hardening guidance only).

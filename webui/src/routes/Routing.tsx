@@ -23,10 +23,7 @@ const ALIASES_KEY = 'model_aliases';
 
 // Routing (plan §9 + ADR-009 + ADR-010): the global strategy (Round Robin
 // default / Fill-First), rules with per-rule strategy overrides, the
-// capability fallback lists, and the model alias map (2026-10-08,
-// relocated here from Models — it IS routing configuration: it rewrites
-// the client-requested name before any rule matches; the interactive
-// AliasEditor replaced the raw-JSON textarea). The admin API's rule model
+// capability fallback lists, and the model alias map. The admin API's rule model
 // is match_model → chain ([]string of provider types, provider ids, or
 // provider/model pairs) + priority + enabled + strategy; the chain editor
 // is an ordered list the operator can append to and reorder (PrioList
@@ -76,7 +73,7 @@ function CapabilityFallbacksCard() {
     setSeeded(true);
   }, [seeded, data]);
 
-  // Vision fallback options are MODELS (2026-09-21): the fallback names
+  // Vision fallback options are MODELS: the fallback names
   // which model serves the capability when the routed model rejected it.
   const modelOptions = useMemo(() => {
     const providerLabel = new Map((providersData?.providers ?? []).map((p) => [p.id, p.name]));
@@ -193,7 +190,7 @@ interface ProvidersResponseLike {
   providers: { id: string; type: string; name: string }[];
 }
 
-// AliasCard (2026-10-08): the model alias map, relocated here from
+// AliasCard: the model alias map, relocated here from
 // Models — it IS routing configuration (it rewrites the client-requested
 // name before any rule matches). The interactive AliasEditor (rows of
 // alias → target picker) replaced the raw-JSON textarea; writes ride the
@@ -490,7 +487,7 @@ export default function Routing() {
         </div>
         {/* ADR-010: the three global capability fallback lists. */}
         <CapabilityFallbacksCard />
-        {/* The model alias map — relocated from Models (2026-10-08). */}
+        {/* The model alias map — relocated from Models. */}
         <AliasCard />
         {error !== null ? (
           <div className="w-full">

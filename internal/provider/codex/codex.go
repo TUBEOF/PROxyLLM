@@ -1,6 +1,6 @@
-// Package codex implements the ChatGPT/Codex OAuth provider (plan §6.3):
-// browser PKCE login, device-code login, lazily refreshed OAuth tokens,
-// and the ChatGPT-backend Responses transport (X13–X24).
+// Package codex implements the ChatGPT/Codex OAuth provider: browser PKCE
+// login, device-code login, lazily refreshed OAuth tokens, and the
+// ChatGPT-backend Responses transport.
 package codex
 
 import (
@@ -18,13 +18,12 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/openai"
 )
 
-// Version rides the User-Agent (X14/X22): PROxyLLM pins its OWN version —
-// the codex CLI itself pins a 0.0.0 build placeholder, so there is no
-// stable CLI version string to mirror.
+// Version rides the User-Agent: PROxyLLM pins its OWN version — the codex
+// CLI itself pins a 0.0.0 build placeholder, so there is no stable CLI
+// version string to mirror.
 const Version = "0.1.0"
 
-// Provider serves one Codex backend account over the Responses wire shape
-// (X19/X23).
+// Provider serves one Codex backend account over the Responses wire shape.
 type Provider struct {
 	id        string
 	caps      provider.Capabilities
@@ -43,8 +42,8 @@ type ProviderConfig struct {
 }
 
 // New builds the provider. The transport talks {BaseURL}/codex/responses
-// (X19/X23) with the codex-rs header set (X14/X15/X24) and the Bearer
-// sourced from the token store, lazily refreshed on expiry (X18).
+// with the codex-rs header set and the Bearer sourced from the token store,
+// lazily refreshed on expiry.
 func New(cfg ProviderConfig) *Provider {
 	httpc := cfg.HTTP
 	if httpc == nil {
@@ -88,9 +87,9 @@ func (p *Provider) HasCredential() bool {
 // Capabilities reports what the provider supports (routing filter input).
 func (p *Provider) Capabilities() provider.Capabilities { return p.caps }
 
-// headers supplies the per-request codex header set (X14/X15/X24, X23
-// Accept switch). The Bearer token comes from the auth store with lazy
-// refresh BEFORE dispatch (X18; X12 single-flight applies inside auth).
+// headers supplies the per-request codex header set (including the Accept
+// switch for streaming). The Bearer token comes from the auth store with
+// lazy refresh BEFORE dispatch; the single-flight logic applies inside auth.
 func (p *Provider) headers(ctx context.Context, stream bool) (http.Header, error) {
 	tok, err := p.auth.AccessToken(ctx)
 	if err != nil {
@@ -98,20 +97,19 @@ func (p *Provider) headers(ctx context.Context, stream bool) (http.Header, error
 	}
 	h := http.Header{}
 	h.Set("Authorization", "Bearer "+tok.Access)
-	h.Set("Originator", "codex_cli_rs")                   // X14
-	h.Set("User-Agent", "codex_cli_rs/proxyllm/"+Version) // X14/X22
+	h.Set("Originator", "codex_cli_rs")
+	h.Set("User-Agent", "codex_cli_rs/proxyllm/"+Version)
 	if tok.AccountID != "" {
-		h.Set("Chatgpt-Account-Id", tok.AccountID) // X15
+		h.Set("Chatgpt-Account-Id", tok.AccountID)
 	}
-	// X24: OAI-Product-Sku is deliberately NOT sent (digest correction).
+	// OAI-Product-Sku is deliberately NOT sent.
 	if stream {
-		h.Set("Accept", "text/event-stream") // X23
+		h.Set("Accept", "text/event-stream")
 	}
-	// The X14 platform tail "(os_type os_version; arch) terminal" is
-	// deliberately omitted: it is telemetry, not auth material, and the
-	// backend is not known to gate on it. If the live smoke run
-	// (PROXYLLM_SMOKE=1, Phase 1 DoD) shows otherwise, the tail becomes a
-	// build/runtime stamp — tracked in the smoke checklist.
+	// The platform tail "(os_type os_version; arch) terminal" is deliberately
+	// omitted: it is telemetry, not auth material, and the backend is not
+	// known to gate on it. If the live smoke run (PROXYLLM_SMOKE=1) shows
+	// otherwise, the tail becomes a build/runtime stamp.
 	return h, nil
 }
 
@@ -120,15 +118,15 @@ func (p *Provider) Complete(ctx context.Context, req ir.Request) (ir.Response, e
 	return p.client.Complete(ctx, req, p.encode, decodeResponse)
 }
 
-// Stream performs one streaming round trip (FO-5 dispatch semantics apply
-// at the routing layer; the transport itself never retries).
+// Stream performs one streaming round trip; the routing layer owns dispatch
+// semantics, and the transport itself never retries.
 func (p *Provider) Stream(ctx context.Context, req ir.Request) (<-chan ir.StreamEvent, func(), error) {
 	return p.client.Stream(ctx, req, p.encode, func(r io.Reader) translate.StreamDecoder {
 		return openai.NewResponsesStreamDecoder(r)
 	})
 }
 
-// encode translates IR into the Responses wire request (X19).
+// encode translates IR into the Responses wire request.
 func (p *Provider) encode(req ir.Request) ([]byte, error) {
 	return p.responses.EncodeRequest(req)
 }
@@ -140,8 +138,8 @@ func decodeResponse(raw []byte) (ir.Response, error) {
 }
 
 // RefreshCredentials rotates the OAuth pair on demand (routing health hook
-// / operator action; single-flight + atomic persistence per X12). Note: a
-// rotation within the X18 cadence window (8 min) satisfies this as a no-op —
+// / operator action; single-flight + atomic persistence). Note: a rotation
+// within the refresh cadence window (8 min) satisfies this as a no-op —
 // a forced rotation (e.g. after a 401) must wait out that window; the lazy
 // pre-expiry path in AccessToken bypasses it only after the interval, so a
 // consumed-token scenario can never hide behind the no-op.
@@ -151,11 +149,11 @@ func (p *Provider) RefreshCredentials(ctx context.Context) error {
 
 // ListModels fetches the backend model list (ADR-010 model sync) —
 // GET {BaseURL}/models with the codex header set. There is no pinned wire
-// contract for this backend endpoint (unlike X13–X24): the lister accepts
-// the OpenAI list shape {data:[{id}]} when the backend serves it and
-// surfaces every other outcome (404, auth failure, unexpected body) as a
-// typed error — the syncer skips the account and records the reason; it
-// never fails the whole run.
+// contract for this backend endpoint (unlike the transport endpoints above):
+// the lister accepts the OpenAI list shape {data:[{id}]} when the backend
+// serves it and surfaces every other outcome (404, auth failure, unexpected
+// body) as a typed error — the syncer skips the account and records the
+// reason; it never fails the whole run.
 func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
 	raw, err := p.client.Get(ctx, "/models")
 	if err != nil {

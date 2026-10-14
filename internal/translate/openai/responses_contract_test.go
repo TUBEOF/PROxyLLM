@@ -10,12 +10,12 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
-// Contract tests for the OpenAI Responses-API codec, RED-GREEN per Analysis
-// F. Every assertion derives from the golden fixtures in
+// Contract tests for the OpenAI Responses-API codec, RED-GREEN.
+// Every assertion derives from the golden fixtures in
 // testdata/golden/openai/responses-* (developers.openai.com, accessed
-// 2026-09-10, facts O5–O8) and the streaming reference
+// 2026-09-10) and the streaming reference
 // (developers.openai.com/api/docs/api-reference/responses-streaming,
-// accessed 2026-09-10) for the inline O7 cases.
+// accessed 2026-09-10) for the inline stream-shape cases.
 
 func TestResponsesDecodeRequest(t *testing.T) {
 	raw := testutil.LoadGolden(t, "openai/responses-request.json")
@@ -34,12 +34,12 @@ func TestResponsesDecodeRequest(t *testing.T) {
 		t.Error("stream must decode to false")
 	}
 
-	// instructions is the Responses system prompt (O5).
+	// instructions is the Responses system prompt.
 	if len(req.System) != 1 || req.System[0].Text != "You are a helpful assistant." {
 		t.Errorf("system = %+v, want one text part from instructions", req.System)
 	}
 
-	// input items map onto messages in order (O5).
+	// input items map onto messages in order.
 	if len(req.Messages) != 3 {
 		t.Fatalf("messages = %d, want 3 (user, function_call, function_call_output)", len(req.Messages))
 	}
@@ -53,7 +53,7 @@ func TestResponsesDecodeRequest(t *testing.T) {
 	}
 
 	// function_call input item → assistant message with a ToolCallPart;
-	// call_id is the tool call ID, arguments the JSON string (O5).
+	// call_id is the tool call ID, arguments the JSON string.
 	fc := req.Messages[1]
 	if fc.Role != ir.RoleAssistant || len(fc.Parts) != 1 {
 		t.Fatalf("messages[1] = %+v", fc)
@@ -70,7 +70,7 @@ func TestResponsesDecodeRequest(t *testing.T) {
 	}
 
 	// function_call_output item → role:tool message with a ToolResultPart
-	// keyed by call_id (O5).
+	// keyed by call_id.
 	out := req.Messages[2]
 	if out.Role != ir.RoleTool || len(out.Parts) != 1 {
 		t.Fatalf("messages[2] = %+v", out)
@@ -89,7 +89,7 @@ func TestResponsesDecodeRequest(t *testing.T) {
 		t.Errorf("tool result content = %+v", tr.Content[0])
 	}
 
-	// Tools are FLAT function tools: no nested function wrapper (O6).
+	// Tools are FLAT function tools: no nested function wrapper.
 	if len(req.Tools) != 1 || req.Tools[0].Name != "get_weather" {
 		t.Fatalf("tools = %+v", req.Tools)
 	}
@@ -100,19 +100,19 @@ func TestResponsesDecodeRequest(t *testing.T) {
 		t.Errorf("tool parameters = %s", req.Tools[0].InputSchema)
 	}
 
-	// tool_choice "auto" (O5).
+	// tool_choice "auto".
 	if req.ToolChoice == nil || req.ToolChoice.Type != ir.ToolChoiceAuto {
 		t.Errorf("tool_choice = %+v", req.ToolChoice)
 	}
 
-	// reasoning.effort "medium" maps onto the IR thinking config (O5).
+	// reasoning.effort "medium" maps onto the IR thinking config.
 	if req.Thinking == nil || !req.Thinking.Enabled || req.Thinking.BudgetTokens != 0 {
 		t.Errorf("reasoning = %+v, want enabled thinking with effort medium", req.Thinking)
 	}
 }
 
 func TestResponsesDecodeRequest_InputString(t *testing.T) {
-	// input may be a plain string instead of an item array (O5).
+	// input may be a plain string instead of an item array.
 	wire := `{"model":"gpt-5","input":"Hello there","stream":true}`
 	req, err := oa.ResponsesCodec{}.DecodeRequest([]byte(wire))
 	if err != nil {
@@ -145,12 +145,12 @@ func TestResponsesDecodeResponse(t *testing.T) {
 	if resp.Model != "gpt-5" {
 		t.Errorf("model = %q", resp.Model)
 	}
-	// status "completed" normalizes to the IR end_turn stop reason (O5).
+	// status "completed" normalizes to the IR end_turn stop reason.
 	if resp.StopReason != ir.StopEndTurn {
 		t.Errorf("stop reason = %q, want end_turn (status completed)", resp.StopReason)
 	}
 
-	// Output message item with an output_text part (O5).
+	// Output message item with an output_text part.
 	if len(resp.Content) != 1 {
 		t.Fatalf("content = %d parts, want 1", len(resp.Content))
 	}
@@ -158,7 +158,7 @@ func TestResponsesDecodeResponse(t *testing.T) {
 		t.Errorf("content[0] = %+v", resp.Content[0])
 	}
 
-	// Usage {input_tokens, output_tokens, total_tokens} (O5).
+	// Usage {input_tokens, output_tokens, total_tokens}.
 	if resp.Usage.InputTokens != 37 || resp.Usage.OutputTokens != 11 {
 		t.Errorf("usage in/out = %d/%d, want 37/11", resp.Usage.InputTokens, resp.Usage.OutputTokens)
 	}
@@ -173,7 +173,7 @@ func TestResponsesStreamDecode_FullSequence(t *testing.T) {
 }
 
 // Named semantic events beyond the golden fixture rest on the streaming
-// reference (O7, developers.openai.com/api/docs/api-reference/
+// reference (developers.openai.com/api/docs/api-reference/
 // responses-streaming, accessed 2026-09-10):
 //   - response.function_call_arguments.delta carries
 //     {delta, item_id, output_index, sequence_number, type}
@@ -244,7 +244,7 @@ func TestResponsesStreamDecode_FunctionCallArguments(t *testing.T) {
 	}
 }
 
-// The flat error event (O7): {code, message, param, sequence_number, type}
+// The flat error event: {code, message, param, sequence_number, type}
 // maps onto the terminal canonical error.
 func TestResponsesStreamDecode_ErrorEvent(t *testing.T) {
 	wire := strings.Join([]string{
@@ -268,7 +268,7 @@ func TestResponsesStreamDecode_ErrorEvent(t *testing.T) {
 }
 
 // response.failed carries the failed response snapshot whose error object is
-// the terminal error (streaming reference, O7).
+// the terminal error (streaming reference).
 func TestResponsesStreamDecode_ResponseFailed(t *testing.T) {
 	wire := strings.Join([]string{
 		`event: response.created`,

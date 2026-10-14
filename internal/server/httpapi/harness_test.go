@@ -1,11 +1,10 @@
 package httpapi
 
-// Test harness for the client-facing API surfaces (plan §5.1): a full
+// Test harness for the client-facing API surfaces: a full
 // client → auth → httpapi → Router → Executor → mock-upstream round trip
-// over real HTTP (Analysis F streaming-harness doctrine). RED tests derive
-// exclusively from plan §5.1/§5.3, the §2 wire facts (O10/A13/C1/C2/A2),
-// golden fixtures under testdata/golden/, and the routing/compat specs
-// (§6.4) — never from implementation behavior.
+// over real HTTP. RED tests derive exclusively from the wire contracts,
+// golden fixtures under testdata/golden/, and the routing/compat specs —
+// never from implementation behavior.
 
 import (
 	"context"
@@ -70,7 +69,7 @@ func newEnvWithRules(t *testing.T, rules ...routing.Rule) *env {
 }
 
 // newEnvAuthDisabled assembles the environment with client-key auth
-// disabled (Analysis G control 1, PROXYLLM_AUTH_DISABLED opt-out): requests
+// disabled (PROXYLLM_AUTH_DISABLED opt-out): requests
 // must pass with NO key at all. Routes claude-sonnet-5 like newClaudeEnv so
 // the golden Anthropic fixture requests resolve.
 func newEnvAuthDisabled(t *testing.T) *env {
@@ -110,7 +109,7 @@ func newEnvWithAuthOpts(t *testing.T, authOpts []auth.Option, rules ...routing.R
 
 	// One shared HealthTracker: the router gates on it and the executor
 	// reports into it — decoupled instances would mask health-gated
-	// failover bugs (review M1).
+	// failover bugs.
 	health := routing.NewHealthTracker()
 	router := routing.NewRouter(routing.Config{Rules: rules},
 		routing.WithRegistry(reg), routing.WithHealth(health),
@@ -132,7 +131,7 @@ func newEnvWithAuthOpts(t *testing.T, authOpts []auth.Option, rules ...routing.R
 
 	h := New(Params{Store: st, Router: router, Executor: exec})
 
-	// Production parity (2026-10-10): main derives the client-key hasher from
+	// Production parity: main derives the client-key hasher from
 	// the master key; without it this store would issue legacy Argon2id rows and
 	// every request in this suite would pay a KDF that no production request
 	// pays.

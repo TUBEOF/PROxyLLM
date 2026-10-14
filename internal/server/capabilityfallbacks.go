@@ -1,7 +1,7 @@
 package server
 
-// Capability-fallback wiring (2026-09-21 automatic capabilities, ADR-010
-// amendment): the stored vision_fallback KV holds MODEL IDs (routing
+// Capability-fallback wiring (ADR-010, with automatic capabilities):
+// the stored vision_fallback KV holds MODEL IDs (routing
 // identities, "ollamacloud/glm-5.3"); the executor needs fully resolved
 // (provider, wire-model) chain entries. This file owns that translation:
 // store.GetModel per ID → ChainEntry{ProviderID, Model: row.Name}, with

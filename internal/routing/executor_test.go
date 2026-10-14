@@ -11,26 +11,25 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
-// Failover-executor contract tests, RED-GREEN. Derived from the phase-1
-// research facts (docs/research/phase-1-best-practices.md §3, accessed
-// 2026-09-10):
+// Failover-executor contract tests, RED-GREEN. Derived from the documented
+// early-stream and retry bounds:
 //
-//	FO-1  Early-stream failures (before first content byte: 408/429/5xx/
-//	      TLS reset) are safe to retry/fail over. Mid-stream failures are
-//	      never retried or swapped — stop cleanly, surface the error.
-//	FO-3  Retry budgets: max 1–2 retries per provider, max 2–3 providers
-//	      total, backoff ceiling 2–4 s, total timeout including TTFT.
-//	FO-5  Streaming requests are never retried once dispatched — partial
-//	      data may already have been sent. (Identical to our FO-1 rule;
-//	      the stream path knows only failover-before-first-event and
-//	      terminal.)
+//	Position  Early-stream failures (before first content byte: 408/429/5xx/
+//	          TLS reset) are safe to retry/fail over. Mid-stream failures are
+//	          never retried or swapped — stop cleanly, surface the error.
+//	Budgets   Retry budgets: max 1–2 retries per provider, max 2–3 providers
+//	          total, backoff ceiling 2–4 s, total timeout including TTFT.
+//	Streams   Streaming requests are never retried once dispatched — partial
+//	          data may already have been sent. The stream path knows only
+//	          failover-before-first-event and terminal.
 //
-// Executor defaults below encode FO-3: MaxRetriesPerProvider=2 (the upper
-// end of 1–2), MaxProviders=3, BackoffCeiling=3s (inside 2–4 s).
+// The executor defaults below sit at the upper end of those bounds:
+// MaxRetriesPerProvider=2 (the upper end of 1–2), MaxProviders=3,
+// BackoffCeiling=3s (inside 2–4 s).
 
 // scriptedProvider serves a queue of per-attempt results for the executor
-// tests (Analysis F mock discipline: behavior scripted up front, never
-// derived from the code under test).
+// tests: behavior is scripted up front, never derived from the code under
+// test.
 type scriptedProvider struct {
 	id string
 	// caps: reported Capabilities (zero value = none; needed by rows that
@@ -66,7 +65,7 @@ func (p *scriptedProvider) Complete(_ context.Context, _ ir.Request) (ir.Respons
 }
 
 // countingCancel returns a cancel func that records its invocations on p
-// (4c leak probe: the executor must release a failed attempt's upstream
+// (leak probe: the executor must release a failed attempt's upstream
 // resources when failing over).
 func (p *scriptedProvider) countingCancel() func() {
 	return func() { p.cancelCalls++ }
@@ -105,7 +104,7 @@ func newExecutor(t *testing.T, provs ...provider.Provider) *routing.Executor {
 		Registry: regOf(provs...),
 		Health:   routing.NewHealthTracker(),
 		// Backoff is behavior-relevant, not timing-relevant here: no real
-		// waiting in tests (Analysis F determinism).
+		// waiting in tests (deterministic).
 		RetrySleeper: func(time.Duration) {},
 	})
 	return e
@@ -140,7 +139,7 @@ func chain(ids ...string) []routing.ChainEntry {
 }
 
 // TestExecutor_NonStreaming_FailoverOnServerError: 5xx fails over to the
-// next chain entry (FO-2 server_error → failover fast).
+// next chain entry (a server_error fails over fast).
 func TestExecutor_NonStreaming_FailoverOnServerError(t *testing.T) {
 	p1 := &scriptedProvider{id: "p1", completeErrs: []error{upErr(500, "server_error")}}
 	p2 := &scriptedProvider{id: "p2"}
@@ -150,7 +149,7 @@ func TestExecutor_NonStreaming_FailoverOnServerError(t *testing.T) {
 	if err != nil || resp.ID != "ok" {
 		t.Fatalf("Execute = %+v, %v; want p2 success", resp, err)
 	}
-	// FO-4: attempt p1 → failed → failover → attempt p2.
+	// The trace: attempt p1 → failed → failover → attempt p2.
 	events := trace.Events()
 	want := []routing.EventType{routing.EventAttempt, routing.EventFailed, routing.EventFailover, routing.EventAttempt}
 	if len(events) < len(want) {
@@ -164,8 +163,8 @@ func TestExecutor_NonStreaming_FailoverOnServerError(t *testing.T) {
 }
 
 // TestExecutor_NonStreaming_ContentFilterNeverFailsOver: content_filter
-// is terminal across the whole chain (FO-2 compliance risk — the same
-// prompt triggers the same filter elsewhere).
+// is terminal across the whole chain — the same prompt triggers the same
+// filter elsewhere.
 func TestExecutor_NonStreaming_ContentFilterNeverFailsOver(t *testing.T) {
 	p1 := &scriptedProvider{id: "p1", completeErrs: []error{upErr(400, "content_filter")}}
 	p2 := &scriptedProvider{id: "p2"}
@@ -182,7 +181,7 @@ func TestExecutor_NonStreaming_ContentFilterNeverFailsOver(t *testing.T) {
 
 // TestExecutor_NonStreaming_RateLimitRetriesThenFailsOver: 429 retries
 // the same provider within the budget, then fails over once the budget
-// is spent (FO-2 rate_limit → retry same, FO-3 budget).
+// is spent (a rate limit retries the same provider, then the budget ends).
 func TestExecutor_NonStreaming_RateLimitRetriesThenFailsOver(t *testing.T) {
 	p1 := &scriptedProvider{id: "p1", completeErrs: []error{
 		upErr(429, ""), upErr(429, ""), upErr(429, ""),
@@ -194,7 +193,7 @@ func TestExecutor_NonStreaming_RateLimitRetriesThenFailsOver(t *testing.T) {
 	if err != nil || p2.calls == 0 {
 		t.Fatalf("Execute err = %v, p2.calls = %d; want success via p2 after budget exhaustion", err, p2.calls)
 	}
-	// FO-3: default budget is 2 retries on p1 before failover.
+	// Default budget: 2 retries on p1 before failover.
 	if p1.calls != 3 {
 		t.Errorf("p1.calls = %d, want 3 (initial + 2 retries)", p1.calls)
 	}
@@ -236,7 +235,7 @@ func TestExecutor_NonStreaming_BudgetExhaustionTerminal(t *testing.T) {
 }
 
 // TestExecutor_NonStreaming_ClientErrorTerminal: 401 never retried,
-// never failed over (FO-2 client_error).
+// never failed over.
 func TestExecutor_NonStreaming_ClientErrorTerminal(t *testing.T) {
 	p1 := &scriptedProvider{id: "p1", completeErrs: []error{upErr(401, "")}}
 	p2 := &scriptedProvider{id: "p2"}
@@ -279,43 +278,66 @@ func TestExecutor_NonStreaming_HealthReportedPerAttempt(t *testing.T) {
 	}
 }
 
-// TestExecutor_NonStreaming_RetryAfterHonoredAndCapped: Retry-After from
-// the upstream error drives the retry delay, capped by the FO-3 ceiling
-// (O10).
+// TestExecutor_NonStreaming_RetryAfterHonoredAndCapped: a Retry-After the
+// upstream advertises inside our backoff budget drives the retry delay.
 func TestExecutor_NonStreaming_RetryAfterHonoredAndCapped(t *testing.T) {
-	for _, tc := range []struct {
-		name        string
-		retryAfter  time.Duration
-		wantSleep   time.Duration
-		ceilingSeen bool
-	}{
-		{name: "advertised delay within ceiling", retryAfter: 1200 * time.Millisecond, wantSleep: 1200 * time.Millisecond},
-		{name: "advertised delay capped at ceiling", retryAfter: 90 * time.Second, wantSleep: 3 * time.Second},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			p1 := &scriptedProvider{id: "p1", completeErrs: []error{
-				&provider.UpstreamError{HTTPStatus: 429, RetryAfter: tc.retryAfter, Message: "slow down"},
-				nil,
-			}}
-			var slept []time.Duration
-			e := routing.NewExecutor(routing.ExecutorConfig{
-				Registry:     regOf(p1),
-				Health:       routing.NewHealthTracker(),
-				RetrySleeper: func(d time.Duration) { slept = append(slept, d) },
-			})
-			if _, _, err := e.Execute(context.Background(), chain("p1"), ir.Request{Model: "m"}); err != nil {
-				t.Fatalf("Execute: %v", err)
-			}
-			if len(slept) != 1 || slept[0] != tc.wantSleep {
-				t.Errorf("slept = %v, want exactly [%v]", slept, tc.wantSleep)
-			}
-		})
+	p1 := &scriptedProvider{id: "p1", completeErrs: []error{
+		&provider.UpstreamError{HTTPStatus: 429, RetryAfter: 1200 * time.Millisecond, Message: "slow down"},
+		nil,
+	}}
+	var slept []time.Duration
+	e := routing.NewExecutor(routing.ExecutorConfig{
+		Registry:     regOf(p1),
+		Health:       routing.NewHealthTracker(),
+		RetrySleeper: func(d time.Duration) { slept = append(slept, d) },
+	})
+	if _, _, err := e.Execute(context.Background(), chain("p1"), ir.Request{Model: "m"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(slept) != 1 || slept[0] != 1200*time.Millisecond {
+		t.Errorf("slept = %v, want exactly [1.2s]", slept)
+	}
+}
+
+// TestExecutor_NonStreaming_AnnouncedResetBeyondTheBudgetIsNotARetry: a
+// provider that says it will be back in 90 seconds has told us it is not coming
+// back within the three we are willing to wait. Sleeping the ceiling and asking
+// again is a round trip against an account we already know is out; the account
+// is cooled for as long as it asked, and the request moves on.
+func TestExecutor_NonStreaming_AnnouncedResetBeyondTheBudgetIsNotARetry(t *testing.T) {
+	p1 := &scriptedProvider{id: "p1", completeErrs: []error{
+		&provider.UpstreamError{HTTPStatus: 429, RetryAfter: 90 * time.Second, Message: "daily quota reached"},
+	}}
+	p2 := &scriptedProvider{id: "p2"}
+
+	var slept []time.Duration
+	health := routing.NewHealthTracker()
+	e := routing.NewExecutor(routing.ExecutorConfig{
+		Registry:     regOf(p1, p2),
+		Health:       health,
+		RetrySleeper: func(d time.Duration) { slept = append(slept, d) },
+	})
+
+	if _, _, err := e.Execute(context.Background(), chain("p1", "p2"), ir.Request{Model: "m"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(slept) != 0 {
+		t.Errorf("slept = %v, want no wait: the reset is beyond anything we would wait for", slept)
+	}
+	if p1.calls != 1 {
+		t.Errorf("p1 attempts = %d, want 1 (no retry inside a hopeless window)", p1.calls)
+	}
+	if p2.calls != 1 {
+		t.Errorf("p2 attempts = %d, want 1 (the request moved on)", p2.calls)
+	}
+	if !health.Cooldown("p1") {
+		t.Error("the account was not cooled for the window it announced")
 	}
 }
 
 // TestExecutor_NonStreaming_ExponentialBackoffWithoutRetryAfter: with no
 // Retry-After, retries back off exponentially from the base, capped by
-// the ceiling (FO-3).
+// the ceiling.
 func TestExecutor_NonStreaming_ExponentialBackoffWithoutRetryAfter(t *testing.T) {
 	p1 := &scriptedProvider{id: "p1", completeErrs: []error{
 		upErr(429, ""), upErr(429, ""), upErr(429, ""),
@@ -344,7 +366,8 @@ func TestExecutor_NonStreaming_ExponentialBackoffWithoutRetryAfter(t *testing.T)
 }
 
 // TestExecutor_Stream_DispatchFailover: a dispatch error (before any
-// event) fails over to the next chain entry (FO-1 early-stream retryable).
+// event) fails over to the next chain entry (an early-stream failure is
+// retryable).
 func TestExecutor_Stream_DispatchFailover(t *testing.T) {
 	p1 := &scriptedProvider{id: "p1", streamErr: []error{upErr(500, "")}}
 	p2 := &scriptedProvider{id: "p2"}
@@ -366,7 +389,7 @@ func TestExecutor_Stream_DispatchFailover(t *testing.T) {
 }
 
 // TestExecutor_Stream_MidStreamNoSwap: once an event has been delivered,
-// an error is terminal — the stream stops, no swap (FO-1/FO-5).
+// an error is terminal — the stream stops, no swap.
 func TestExecutor_Stream_MidStreamNoSwap(t *testing.T) {
 	p1 := &scriptedProvider{id: "p1", streamScript: [][]ir.StreamEvent{{
 		{Type: ir.Start, Response: &ir.Response{ID: "s"}},
@@ -397,7 +420,7 @@ func TestExecutor_Stream_MidStreamNoSwap(t *testing.T) {
 	}
 }
 
-// TestExecutor_Stream_NeverRetriedOnceDispatched: FO-5 — even a
+// TestExecutor_Stream_NeverRetriedOnceDispatched: even a
 // rate-limit-class dispatch failure on a stream never retries the same
 // provider; the request fails over (or terminates) instead.
 func TestExecutor_Stream_NeverRetriedOnceDispatched(t *testing.T) {
@@ -410,10 +433,10 @@ func TestExecutor_Stream_NeverRetriedOnceDispatched(t *testing.T) {
 		t.Fatalf("ExecuteStream: %v", err)
 	}
 	if p1.calls != 1 {
-		t.Errorf("p1.calls = %d, want exactly 1 — streams are never retried once dispatched (FO-5)", p1.calls)
+		t.Errorf("p1.calls = %d, want exactly 1 — streams are never retried once dispatched", p1.calls)
 	}
 	if hasEvent(trace, routing.EventRetry) {
-		t.Error("trace must not record a stream retry (FO-5)")
+		t.Error("trace must not record a stream retry")
 	}
 }
 
@@ -431,8 +454,8 @@ func TestExecutor_Stream_SingleProviderDispatchExhaustion(t *testing.T) {
 
 // TestExecutor_Stream_CancelReleasedOnFailover: a dispatch-failure
 // failover must release the failed attempt's upstream resources — the
-// cancel func returned alongside the dispatch error must be invoked (4c;
-// FO-1 failover must not leak the aborted attempt's connection).
+// cancel func returned alongside the dispatch error must be invoked: an
+// early-stream failover must not leak the aborted attempt's connection).
 func TestExecutor_Stream_CancelReleasedOnFailover(t *testing.T) {
 	p1 := &scriptedProvider{id: "p1", streamErr: []error{upErr(500, "")}}
 	p2 := &scriptedProvider{id: "p2"}
@@ -453,9 +476,9 @@ func TestExecutor_Stream_CancelReleasedOnFailover(t *testing.T) {
 	}
 }
 
-// TestExecutor_ReportStreamOutcome_MidStreamFailureCounts: 4a — a
+// TestExecutor_ReportStreamOutcome_MidStreamFailureCounts: a
 // dispatch that succeeds but fails mid-stream must still count as a
-// breaker failure. ExecuteStream reports success at dispatch (FO-5: the
+// breaker failure. ExecuteStream reports success at dispatch (the
 // stream is never retried); once httpapi has relayed the stream it calls
 // ReportStreamOutcome to correct the record. The caller of this method
 // is the HTTP layer, so the test drives it directly, exactly as httpapi
@@ -497,7 +520,7 @@ func TestExecutor_ReportStreamOutcome_MidStreamFailureCounts(t *testing.T) {
 
 // TestExecutor_ReportStreamOutcome_CleanStreamKeepsSuccess: a clean
 // stream outcome reports success — and stays idempotent with the
-// dispatch-time success report (FO-5: no double-counting, no flap).
+// dispatch-time success report (no double-counting, no flap).
 func TestExecutor_ReportStreamOutcome_CleanStreamKeepsSuccess(t *testing.T) {
 	h := routing.NewHealthTracker()
 	p1 := &scriptedProvider{id: "p1"}
@@ -536,9 +559,9 @@ func TestExecutor_ReportStreamOutcome_EmptyProviderNoop(t *testing.T) {
 	}
 }
 
-// TestExecutor_Stream_CancelReleasedOnRetrySameClassFailover: FO-5 turns
-// a 429-class dispatch failure into a failover too — that branch must
-// equally release the failed attempt's cancel (4c).
+// TestExecutor_Stream_CancelReleasedOnRetrySameClassFailover: a 429-class
+// dispatch failure on a stream becomes a failover too — that branch must
+// equally release the failed attempt's cancel.
 func TestExecutor_Stream_CancelReleasedOnRetrySameClassFailover(t *testing.T) {
 	p1 := &scriptedProvider{id: "p1", streamErr: []error{upErr(429, "")}}
 	p2 := &scriptedProvider{id: "p2"}

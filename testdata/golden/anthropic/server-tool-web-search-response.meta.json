@@ -2,6 +2,5 @@
   "fixture": "server-tool-web-search-response.json",
   "source": "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/web-search-tool",
   "accessed": "2026-09-12",
-  "facts": ["A3", "A8", "A9", "A10"],
   "notes": "Response server-tool blocks: server_tool_use (id/name/input) followed by web_search_tool_result — content is an ARRAY of web_search_result blocks (url, title, encrypted_content, page_age). Asymmetry vs web_fetch: web_search content is an array; web_fetch content is a single object. Usage counts via server_tool_use.web_search_requests."
 }

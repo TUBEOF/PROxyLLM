@@ -1,10 +1,9 @@
 package routing
 
-// Spec source: the route_trace event vocabulary (trace.go:24-93) and the
-// operator requirement of 2026-10-07 — a fallback model walk (vision), an
-// emulated web-tool call, and a chain failover must each become their own
-// log row instead of living only inside the parent's trace. The mapping
-// below is the single source of truth shared by the persist path
+// Spec source: the route_trace event vocabulary (trace.go) — a fallback model
+// walk (vision), an emulated web-tool call, and a chain failover must each
+// become their own log row instead of living only inside the parent's trace.
+// The mapping below is the single source of truth shared by the persist path
 // (httpapi.writeRequestLog) and the live feed (server/livefeed), so the two
 // can never disagree about what a sub-operation is.
 //

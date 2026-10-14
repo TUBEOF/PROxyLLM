@@ -1,6 +1,6 @@
 package firecrawl
 
-// Empty results and soft warnings (2026-10-10).
+// Empty results and soft warnings.
 //
 // Spec: a web-tool fallback account that answers "nothing" must be
 // distinguishable from one that failed — the account walk has to continue past

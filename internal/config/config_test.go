@@ -86,7 +86,7 @@ func TestMasterKeyFromEnv(t *testing.T) {
 	}
 }
 
-// Spec: docs/configuration.md — Firecrawl layer (plan §6.2). The API key is
+// Spec: docs/configuration.md — Firecrawl layer. The API key is
 // a secret: like the master key it must never live in the exported Config
 // struct (config dumps would leak it); only the non-secret base URL does.
 func TestLoad_FirecrawlBaseURL(t *testing.T) {

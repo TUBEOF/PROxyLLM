@@ -1,6 +1,6 @@
 package webui
 
-// Overview snapshot endpoint (2026-10-06 live updates): one assembled
+// Overview snapshot endpoint (live updates): one assembled
 // request for the Dashboard poll — usage of the trailing 14 UTC days and
 // today's totals, so the Overview page refreshes with a single GET and
 // the fixturesrv can seed it deterministically (wall-clock-free math on

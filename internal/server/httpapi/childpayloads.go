@@ -1,6 +1,6 @@
 package httpapi
 
-// Sub-operation payloads on the write path (2026-10-10 Logs page).
+// Sub-operation payloads on the write path (Logs page).
 //
 // A sub-operation's detail view shows what THAT step sent and received, so the
 // drawer needs a body per child row — the tool call and its result, the

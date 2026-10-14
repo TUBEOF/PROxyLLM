@@ -13,8 +13,8 @@ import (
 )
 
 // streamEncoder encodes canonical IR events into the OpenAI
-// chat-completions SSE wire format (facts O4, O10, O12;
-// developers.openai.com/api/docs/guides/streaming, accessed 2026-09-10):
+// chat-completions SSE wire format
+// (developers.openai.com/api/docs/guides/streaming, accessed 2026-09-10):
 // data-only SSE — every event is one `data: {chunk}` line and a dispatching
 // blank line — terminated by the `data: [DONE]` sentinel. Wire conformance
 // is pinned by the golden fixture openai/chat-stream.sse and enforced via
@@ -26,27 +26,27 @@ import (
 //     re-opens on the first chunk
 //   - BlockStart(text) → nothing (implied by the role chunk)
 //   - BlockStart(tool_use) → a tool_calls delta carrying the wire index,
-//     id, name and an empty arguments string (assembly anchor, O4); on
+//     id, name and an empty arguments string (the assembly anchor); on
 //     this wire it also implies the BlockStop of the previously open
 //     block, which the decoder re-emits on the index change
 //   - Delta(text) → a content delta chunk
 //   - Delta(tool_input) → a tool_calls argument-fragment chunk (wire
-//     index + function.arguments only, O4)
-//   - Delta(thinking/signature) → nothing (no chat wire channel; thinking
-//     degradation is a per-model compat policy, §6.4 — never fabricated)
+//     index + function.arguments only)
+//   - Delta(thinking/signature) → nothing (no chat wire channel; the
+//     per-model compat policy decides the degradation — never fabricated)
 //   - BlockStop → deferred: the finish_reason chunk closes the last open
 //     block, and the stop reason is only known at MessageDelta
 //   - MessageDelta → the deferred finish_reason chunk (if a BlockStop is
 //     pending), then the usage chunk (a choice with an empty delta plus
-//     the top-level usage object, O4 stream_options.include_usage)
+//     the top-level usage object, stream_options.include_usage)
 //   - Done → the deferred finish_reason chunk (defensively), then
 //     `data: [DONE]`
-//   - Error → a chunk carrying a top-level error object (O10)
+//   - Error → a chunk carrying a top-level error object
 //   - Ping/Comment/unknown kinds → a wire comment line (the chat wire has
-//     no ping channel; A5 discipline: never fail the stream)
+//     no ping channel; never fail the stream)
 //
-// Each Write flushes when the sink implements http.Flusher (C2: relay
-// as-it-arrives).
+// Each Write flushes when the sink implements http.Flusher, so bytes reach
+// the client as they arrive.
 type streamEncoder struct {
 	w io.Writer
 
@@ -174,10 +174,10 @@ func (e *streamEncoder) Write(ctx context.Context, ev ir.StreamEvent) error {
 		return e.emit(e.chunk([]encChoice{}, nil, &we))
 	case ir.Ping, ir.Comment:
 		// The chat wire has no ping channel; relay keepalives as wire
-		// comment lines (C2 watchdog counts relayed bytes).
+		// comment lines (the client's watchdog counts relayed bytes).
 		return e.writeRaw(":\n\n")
 	default:
-		// Unknown event kinds relay as wire comments (A5 discipline).
+		// Unknown event kinds relay as wire comments.
 		return e.writeRaw(":\n\n")
 	}
 }
@@ -208,7 +208,7 @@ func (e *streamEncoder) emit(c encChunk) error {
 	return e.writeRaw("data: " + string(raw) + "\n\n")
 }
 
-// writeRaw writes one wire frame and flushes (C2).
+// writeRaw writes one wire frame and flushes.
 func (e *streamEncoder) writeRaw(s string) error {
 	if _, err := io.WriteString(e.w, s); err != nil {
 		return fmt.Errorf("openai: encode stream: %w", err)
@@ -221,7 +221,7 @@ func (e *streamEncoder) writeRaw(s string) error {
 
 // finishOf resolves the wire finish_reason for the terminal MessageDelta:
 // the canonical stop reason when set, otherwise inferred from whether a
-// tool block was opened (O12).
+// tool block was opened.
 func finishOf(md *ir.MessageDeltaPayload, hasTool bool) string {
 	reason := ir.StopEndTurn
 	if md != nil && md.StopReason != "" {
@@ -274,7 +274,7 @@ type encChunk struct {
 }
 
 // encChoice is one choice; FinishReason is a pointer so in-flight chunks
-// carry JSON null and the terminal chunk carries the reason (O12).
+// carry JSON null and the terminal chunk carries the reason.
 type encChoice struct {
 	Index        int       `json:"index"`
 	Delta        *encDelta `json:"delta,omitempty"`
@@ -290,7 +290,7 @@ type encDelta struct {
 	ToolCalls []encToolCall `json:"tool_calls,omitempty"`
 }
 
-// encToolCall assembles by index (O4): the anchor entry carries id/type/
+// encToolCall assembles by index: the anchor entry carries id/type/
 // name/empty arguments; argument fragments carry index + arguments only.
 type encToolCall struct {
 	Index    int         `json:"index"`
@@ -316,12 +316,12 @@ type encUsage struct {
 	CompletionTokensDetails encCompletionTokensDetails `json:"completion_tokens_details"`
 }
 
-// encPromptTokensDetails carries cached_tokens (O4).
+// encPromptTokensDetails carries cached_tokens.
 type encPromptTokensDetails struct {
 	CachedTokens int `json:"cached_tokens"`
 }
 
-// encCompletionTokensDetails carries reasoning_tokens (O4).
+// encCompletionTokensDetails carries reasoning_tokens.
 type encCompletionTokensDetails struct {
 	ReasoningTokens int `json:"reasoning_tokens"`
 }

@@ -30,9 +30,10 @@ import (
 // was handed, so a test can assert what each model actually saw.
 type recordingProvider struct {
 	id         string
-	errs       []error // per-Complete result (exhausted → success)
-	streamErrs []error // per-Stream dispatch error
-	text       string  // Complete's answer text ("" → a default description)
+	errs       []error  // per-Complete result (exhausted → success)
+	streamErrs []error  // per-Stream dispatch error
+	text       string   // Complete's answer text ("" → a default description)
+	usage      ir.Usage // what every Complete reports as its spend
 
 	calls int
 	seen  []ir.Request
@@ -53,7 +54,7 @@ func (p *recordingProvider) Complete(_ context.Context, req ir.Request) (ir.Resp
 	if text == "" {
 		text = "a terminal window showing a nil-pointer stack trace"
 	}
-	return ir.Response{ID: "ok", Content: []ir.Part{ir.TextPart{Text: text}}}, nil
+	return ir.Response{ID: "ok", Content: []ir.Part{ir.TextPart{Text: text}}, Usage: p.usage}, nil
 }
 
 func (p *recordingProvider) Stream(_ context.Context, req ir.Request) (<-chan ir.StreamEvent, func(), error) {

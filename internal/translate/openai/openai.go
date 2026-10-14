@@ -1,7 +1,7 @@
 // Package openai implements the OpenAI chat-completions codec pair against
-// the canonical IR (plan Analysis D). Wire shapes derive from the golden
+// the canonical IR. Wire shapes derive from the golden
 // fixtures in testdata/golden/openai/ (developers.openai.com, accessed
-// 2026-09-10, facts O2–O4, O11, O12).
+// 2026-09-10).
 package openai
 
 import (
@@ -37,7 +37,7 @@ func (Codec) DecodeRequest(raw []byte) (ir.Request, error) {
 		switch wm.Role {
 		case "system", "developer":
 			// System/developer precedence collapses into the IR system
-			// list in wire order (O2).
+			// list in wire order.
 			req.System = append(req.System, ir.TextPart{Text: wm.contentText()})
 		case "user":
 			req.Messages = append(req.Messages, ir.Message{
@@ -139,7 +139,7 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 			// omitempty on an empty schema drops the field upstream —
 			// a function tool without any parameters object can be
 			// rejected by strict providers; {} is the documented
-			// "no parameters" shape (O3).
+			// "no parameters" shape.
 			schema = json.RawMessage(`{}`)
 		}
 		w.Tools = append(w.Tools, wireTool{
@@ -234,7 +234,7 @@ func NewStreamDecoder(r io.Reader) translate.StreamDecoder {
 // ---- wire types (mirror the golden fixtures) ----
 
 // wireContent is an OpenAI message content value: a plain string, null, or
-// an array of typed parts (O11).
+// an array of typed parts.
 type wireContent struct {
 	Str    *string
 	Parts  []wireContentPart
@@ -293,7 +293,7 @@ type wireFunction struct {
 	// rejected; the absent-schema case normalizes to {} (schema present
 	// but empty object, the OpenAI request shape for "no validation").
 	Parameters json.RawMessage `json:"parameters,omitempty"`
-	Arguments  string          `json:"arguments,omitempty"` // chat: JSON string (O3)
+	Arguments  string          `json:"arguments,omitempty"` // chat: JSON string
 }
 
 type wireMessage struct {
@@ -440,7 +440,7 @@ func partsFromContent(c wireContent) []ir.Part {
 				continue
 			}
 			// A data: URI is split into payload + media type here; keeping
-			// the whole URI in URL would lose the bytes on re-encode (O11).
+			// the whole URI in URL would lose the bytes on re-encode.
 			parts = append(parts, imagePartFromURL(p.ImageURL.URL, p.ImageURL.Detail))
 		}
 	}

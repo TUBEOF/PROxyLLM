@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="32" viewBox="0 0 180 32" role="img" aria-label="PROxyLLM">
+  <!-- The wordmark the console renders: the accent dot from .sidebar-brand .dot
+       (oklch(78% 0.20 144) = #56d75b) next to the name in the display face at
+       weight 700. Standalone file: the values are written out, because an SVG
+       used outside the document cannot read the CSS custom properties. -->
+  <circle cx="10" cy="16" r="6" fill="#56d75b"/>
+  <text x="24" y="21.5" font-family="'Plus Jakarta Sans', Inter, sans-serif" font-size="17" font-weight="700" fill="#ffffff" letter-spacing="0.2">PROxyLLM</text>
+</svg>

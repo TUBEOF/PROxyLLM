@@ -17,7 +17,8 @@ func irServerToolConfig() ir.ServerToolConfig { return ir.ServerToolConfig{} }
 
 // Wire facts these tests pin come from the official docs, read 2026-10-11
 // (https://docs.ollama.com/capabilities/web-search):
-//   - POST /api/web_search  {query, max_results} → {results:[{title,url,content}]}
+//   - POST /api/web_search  {query, max_results} →
+//     {results:[{title,url,content}]}
 //   - POST /api/web_fetch   {url}                → {title,content,links[]}
 //   - Authorization: Bearer <OLLAMA_API_KEY>
 //   - no domain filters exist on the search endpoint
@@ -113,7 +114,7 @@ func TestEmulator_FetchMapsThePage(t *testing.T) {
 	if fc.URL != "https://example.com/article" || fc.Title != "Article Title" {
 		t.Errorf("url/title = %q/%q", fc.URL, fc.Title)
 	}
-	// The document-block semantics the Anthropic wire shape expects (A3).
+	// The document-block semantics the Anthropic wire shape expects.
 	if fc.Source != "text" || fc.MediaType != "text/plain" {
 		t.Errorf("source/media = %q/%q, want text/text/plain", fc.Source, fc.MediaType)
 	}

@@ -8,8 +8,8 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
-// Per-model compatibility-policy tests, RED-GREEN. Derived from plan §6.4
-// (OP-2 resolution, user-confirmed 2026-09-10; market practice M1–M3):
+// Per-model compatibility-policy tests, RED-GREEN. Derived from the
+// documented policy semantics:
 //
 //	thinking_handling: strip (default for non-Claude) / map-to-reasoning-effort
 //	  / block — strip removes thinking blocks + the thinking param upstream
@@ -18,12 +18,12 @@ import (
 //	  protocol-conform error.
 //	server_tool_emulation: native / emulate-firecrawl / off.
 //	max_tokens_clamp: int / off — clamp for targets with lower output limits
-//	  (C7: 32000 default for unknown model IDs).
-//	cache_control: forward / drop — forward on Anthropic→Anthropic only (C4);
+//	  (32000 default for unknown model IDs).
+//	cache_control: forward / drop — forward on Anthropic→Anthropic only;
 //	  drop logs the degradation.
 //
 // Every compat-policy application is recorded in the Trace as a
-// compat_policy event — never silent (Analysis E observability).
+// compat_policy event — never silent.
 
 func compatWith(setting string) routing.Compat {
 	return routing.Compat{ThinkingHandling: setting}
@@ -44,7 +44,7 @@ func thinkingReq(budget int) ir.Request {
 func TestCompat_ThinkingStrip(t *testing.T) {
 	req := thinkingReq(2048)
 	// A prior assistant turn with a thinking block rides the history —
-	// signatures must never be sent to a non-thinking target (A12).
+	// signatures must never be sent to a non-thinking target.
 	req.Messages = []ir.Message{{
 		Role: "assistant",
 		Parts: []ir.Part{
@@ -73,7 +73,7 @@ func TestCompat_ThinkingStrip(t *testing.T) {
 }
 
 // TestCompat_ThinkingMap: map-to-reasoning-effort converts the thinking
-// budget to a reasoning-effort hint the target understands (L5/L9).
+// budget to a reasoning-effort hint the target understands.
 func TestCompat_ThinkingMap(t *testing.T) {
 	out, trace, err := routing.ApplyCompat(compatWith(routing.ThinkingMapToEffort), thinkingReq(20000))
 	if err != nil {
@@ -111,7 +111,7 @@ func TestCompat_ThinkingBlock(t *testing.T) {
 }
 
 // TestCompat_ThinkingDefaultStrip: an unset policy defaults to strip for
-// non-Claude targets (§6.4) — never pass thinking through silently.
+// non-Claude targets — never pass thinking through silently.
 func TestCompat_ThinkingDefaultStrip(t *testing.T) {
 	out, trace, err := routing.ApplyCompat(routing.Compat{}, thinkingReq(2048))
 	if err != nil {

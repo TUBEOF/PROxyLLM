@@ -13,9 +13,9 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
-// Responses-API stream-encoder contract tests, RED-GREEN per Analysis F.
-// The encoder must produce the Responses-API named-SSE wire format (facts O5,
-// O7; developers.openai.com/api/docs/api-reference/responses-streaming,
+// Responses-API stream-encoder contract tests, RED-GREEN.
+// The encoder must produce the Responses-API named-SSE wire format
+// (developers.openai.com/api/docs/api-reference/responses-streaming,
 // accessed 2026-09-10) such that the package's own fixture-verified stream
 // decoder reconstructs the canonical events (round-trip discipline).
 //
@@ -113,7 +113,7 @@ func TestResponsesStreamEncode_FullSequenceRoundTrip(t *testing.T) {
 	// Re-encode the canonical events → wire.
 	encoded := encodeResponsesAll(t, decoded)
 
-	// Assert the exact named-event types appear (O7: named SSE events).
+	// Assert the exact named-event types appear.
 	events := parseSSEEvents(t, encoded)
 	wantNames := []string{
 		"response.created",
@@ -344,8 +344,8 @@ func TestResponsesStreamEncode_CompletedShape(t *testing.T) {
 
 // TestResponsesStreamEncode_FunctionCallItem: BlockStart with
 // ir.ToolCallPart → response.output_item.added with
-// {type:"function_call", call_id, name} (O7); Delta(tool_input) →
-// response.function_call_arguments.delta (O7).
+// {type:"function_call", call_id, name}; Delta(tool_input) →
+// response.function_call_arguments.delta.
 func TestResponsesStreamEncode_FunctionCallItem(t *testing.T) {
 	evs := []ir.StreamEvent{
 		{Type: ir.Start, Response: &ir.Response{ID: "resp_1", Model: "gpt-5"}},
@@ -501,7 +501,7 @@ func TestResponsesStreamEncode_FunctionCallArgumentsAccumulate(t *testing.T) {
 }
 
 // TestResponsesStreamEncode_ReasoningItem: BlockStart with ir.ThinkingPart →
-// response.output_item.added with type:"reasoning" (O7).
+// response.output_item.added with type:"reasoning".
 func TestResponsesStreamEncode_ReasoningItem(t *testing.T) {
 	evs := []ir.StreamEvent{
 		{Type: ir.Start, Response: &ir.Response{ID: "resp_1", Model: "gpt-5"}},
@@ -552,7 +552,7 @@ func TestResponsesStreamEncode_ReasoningItem(t *testing.T) {
 }
 
 // TestResponsesStreamEncode_ErrorEvent: terminal ir.Error →
-// event: error with FLAT {code, message, param} shape (O7 — Responses error
+// event: error with FLAT {code, message, param} shape (Responses error
 // events are FLAT, unlike chat).
 func TestResponsesStreamEncode_ErrorEvent(t *testing.T) {
 	evs := []ir.StreamEvent{
@@ -575,7 +575,7 @@ func TestResponsesStreamEncode_ErrorEvent(t *testing.T) {
 	if errEvent == nil {
 		t.Fatalf("no error event in %v", events)
 	}
-	// FLAT shape: {type, code, message, param} at top level (O7).
+	// FLAT shape: {type, code, message, param} at top level.
 	if !strings.Contains(errEvent.Data, `"type":"error"`) {
 		t.Errorf("error event must carry type:\"error\", got: %s", errEvent.Data)
 	}
@@ -602,7 +602,7 @@ func TestResponsesStreamEncode_ErrorEvent(t *testing.T) {
 }
 
 // TestResponsesStreamEncode_UnknownKindComment: unknown event kind → comment
-// line (A5 discipline: never fail the stream on unknown kinds).
+// line (never fail the stream on unknown kinds).
 func TestResponsesStreamEncode_UnknownKindComment(t *testing.T) {
 	evs := []ir.StreamEvent{
 		{Type: ir.StreamEventType("bogus_kind")},
@@ -614,7 +614,7 @@ func TestResponsesStreamEncode_UnknownKindComment(t *testing.T) {
 	}
 }
 
-// TestResponsesStreamEncode_PingComment: Ping/Comment → comment line (A5).
+// TestResponsesStreamEncode_PingComment: Ping/Comment → comment line.
 func TestResponsesStreamEncode_PingComment(t *testing.T) {
 	for _, typ := range []ir.StreamEventType{ir.Ping, ir.Comment} {
 		evs := []ir.StreamEvent{{Type: typ}}

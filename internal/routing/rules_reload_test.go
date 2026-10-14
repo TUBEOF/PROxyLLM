@@ -1,9 +1,9 @@
 package routing
 
-// RED tests for the router's live rule-replacement surface (plan Analysis E:
-// rule state is WebUI-editable — a rule write must reach the LIVE router
-// without restart). Derived from the wiring contract: SetRules swaps the
-// rule set atomically, concurrent resolutions keep working, and callers
+// RED tests for the router's live rule-replacement surface: rule state is
+// WebUI-editable — a rule write must reach the LIVE router without restart.
+// Derived from the wiring contract: SetRules swaps the rule set atomically,
+// concurrent resolutions keep working, and callers
 // never observe a torn state (old rules on one lookup, new on the next).
 //
 // The contract these tests pin:

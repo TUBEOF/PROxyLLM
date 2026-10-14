@@ -1,10 +1,9 @@
 package routing_test
 
-// The reported lifecycle (2026-10-08): "WebFetch funktioniert nicht.
-// WebSearch funktioniert perfekt" — the real sequence a client like
-// Claude Code drives is search FIRST, then fetch a URL THE SEARCH
-// RETURNED. The fetched URL never appeared in a user message; its only
-// ride into prior context is the synthesized web_search tool result that
+// The lifecycle this pins: a client like Claude Code searches FIRST, then
+// fetches a URL THE SEARCH RETURNED. The fetched URL never appeared in a user
+// message; its only ride into prior context is the synthesized web_search
+// tool result that
 // rode the round-trip's user-role message. That is exactly what
 // priorContextURLs documents ("synthesized tool results ride user-role
 // messages, so their URLs count for later fetches") — this test pins the
@@ -133,7 +132,7 @@ func TestExecute_SearchResultURLIsFetchable(t *testing.T) {
 	t.Errorf("trace missing web_fetch emulated-tool event: %+v", trace.Events())
 }
 
-// The CROSS-TURN form (the actual reported bug): turn 2's history carries
+// The CROSS-TURN form: turn 2's history carries
 // turn 1's synthesized blocks inside an ASSISTANT message (the wire
 // replays them as assistant content) — the fetch of a URL from turn 1's
 // search results must still pass the prior-context guard.
@@ -224,7 +223,7 @@ func (p *crossTurnFetchProvider) Stream(ctx context.Context, req ir.Request) (<-
 	return nil, func() {}, nil
 }
 
-// The child-op model attribution (2026-10-08 Logs fix): an emulated-tool
+// The child-op model attribution: an emulated-tool
 // op names the provider+model whose round issued the call, a failover op
 // names the model its target attempted — the Logs page renders the model
 // column from these.
@@ -233,7 +232,8 @@ func TestChildOps_CarryModelAttribution(t *testing.T) {
 		{Type: routing.EventAttempt, ProviderID: "p1", Model: "model-a"},
 		{Type: routing.EventFailover, From: "p1", To: "p2", Reason: "chain failover after capability_gap"},
 		{Type: routing.EventAttempt, ProviderID: "p2", Model: "model-b"},
-		{Type: routing.EventEmulatedTool, To: "web_search", Reason: `query "q" → 3 result(s)`},
+		{Type: routing.EventEmulatedTool, ProviderID: "acc-firecrawl", To: "web_search",
+			Reason: `query "q" → 3 result(s) via acc-firecrawl`, LatencyMS: 412},
 	}
 	ops := routing.ChildOps(events)
 	if len(ops) != 2 {
@@ -242,8 +242,18 @@ func TestChildOps_CarryModelAttribution(t *testing.T) {
 	if ops[0].ProviderID != "p2" || ops[0].Model != "model-b" {
 		t.Errorf("failover op = %s/%s, want p2/model-b", ops[0].ProviderID, ops[0].Model)
 	}
-	if ops[1].ProviderID != "p2" || ops[1].Model != "model-b" {
-		t.Errorf("emulated-tool op = %s/%s, want p2/model-b (the round's dispatch context)", ops[1].ProviderID, ops[1].Model)
+	// The emulated-tool op names where the CALL went, not which model asked for
+	// it: the answer to "which web provider served this" is the emulating
+	// account, and naming the chat model there made the log claim a fallback
+	// that never happened.
+	if ops[1].ProviderID != "acc-firecrawl" {
+		t.Errorf("emulated-tool op provider = %q, want the account that served the call", ops[1].ProviderID)
+	}
+	if ops[1].Model != "" {
+		t.Errorf("emulated-tool op model = %q, want empty (the round's model is not where the call went)", ops[1].Model)
+	}
+	if ops[1].LatencyMS != 412 {
+		t.Errorf("emulated-tool op latency = %d, want the invocation's 412 ms", ops[1].LatencyMS)
 	}
 }
 

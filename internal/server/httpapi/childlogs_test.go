@@ -1,6 +1,6 @@
 package httpapi
 
-// Sub-operations as their own rows (2026-10-07 Logs page): a request whose
+// Sub-operations as their own rows (Logs page): a request whose
 // trace recorded a failover must persist a child row for it, linked to the
 // request's row id, so the fallback is visible in the log rather than only
 // inside the parent's route_trace. Spec: the operator report that the

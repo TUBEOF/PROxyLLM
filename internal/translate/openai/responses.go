@@ -1,11 +1,11 @@
 // Responses-API codec pair against the canonical IR. Wire shapes derive
 // from the golden fixtures in testdata/golden/openai/responses-*
 // (developers.openai.com/api/reference/resources/responses/methods/create,
-// accessed 2026-09-10, facts O5–O8) and the streaming reference
+// accessed 2026-09-10) and the streaming reference
 // (developers.openai.com/api/docs/api-reference/responses-streaming,
 // accessed 2026-09-10).
 //
-// Key wire differences from chat-completions (O5, O6):
+// Key wire differences from chat-completions:
 //   - `input` is a plain string or a typed item array (not `messages`).
 //   - `instructions` carries the system prompt (plus system-role items).
 //   - function tools are FLAT: {type:"function", name, ...} with no nested
@@ -44,7 +44,7 @@ func (ResponsesCodec) DecodeRequest(raw []byte) (ir.Request, error) {
 		ToolChoice:  responsesToolChoiceFromWire(w.ToolChoice),
 	}
 	if w.Instructions != "" {
-		// instructions is the Responses system prompt (O5).
+		// instructions is the Responses system prompt.
 		req.System = append(req.System, ir.TextPart{Text: w.Instructions})
 	}
 	if w.Input != nil {
@@ -69,7 +69,7 @@ func (ResponsesCodec) DecodeRequest(raw []byte) (ir.Request, error) {
 	}
 	if w.Reasoning != nil && w.Reasoning.Effort != "" {
 		// reasoning.effort marks enabled thinking; the budget is not on the
-		// wire, so BudgetTokens stays 0 (O5) — the effort level rides in
+		// wire, so BudgetTokens stays 0 — the effort level rides in
 		// Passthrough-free form and is reconstructed on encode.
 		req.Thinking = &ir.ThinkingConfig{Enabled: true}
 	}
@@ -140,9 +140,9 @@ func (ResponsesCodec) DecodeResponse(raw []byte) (ir.Response, error) {
 				Input: json.RawMessage(item.Arguments),
 			})
 		case "reasoning":
-			// O8: reasoning items carry summary text + encrypted_content;
+			// Reasoning items carry summary text + encrypted_content;
 			// the encrypted content rides verbatim as the signature (never
-			// fabricated, A12).
+			// fabricated).
 			resp.Content = append(resp.Content, ir.ThinkingPart{
 				Thinking:  responsesSummaryText(item.Summary),
 				Signature: item.EncryptedContent,
@@ -181,7 +181,7 @@ func (ResponsesCodec) EncodeResponse(resp ir.Response) ([]byte, error) {
 				Type:   "message",
 				Status: "completed",
 				Role:   "assistant",
-				// O5: output message content is a typed part array
+				// An output message's content is a typed part array
 				// ([{"type":"output_text","text":...}]), never a plain string
 				// (a plain string is an *input* shorthand).
 				Content: &responsesWireContent{Parts: []responsesWirePart{
@@ -222,8 +222,7 @@ func NewResponsesStreamDecoder(r io.Reader) translate.StreamDecoder {
 
 // ---- wire types (mirror the golden fixtures) ----
 
-// responsesWireInput is the request `input`: a plain string or an item array
-// (O5).
+// responsesWireInput is the request `input`: a plain string or an item array.
 type responsesWireInput struct {
 	Str   *string
 	Items []responsesWireItem
@@ -249,7 +248,7 @@ func (in responsesWireInput) MarshalJSON() ([]byte, error) {
 }
 
 // responsesWireContent is a message item's `content`: a plain string or a
-// part array (input_text/output_text/input_image, O5, O11).
+// part array (input_text/output_text/input_image).
 type responsesWireContent struct {
 	Str   *string
 	Parts []responsesWirePart
@@ -288,7 +287,7 @@ type responsesWirePart struct {
 }
 
 // responsesWireItem is one input or output item: message, function_call,
-// function_call_output, or reasoning (O5, O8).
+// function_call_output, or reasoning.
 type responsesWireItem struct {
 	Type   string `json:"type"`
 	ID     string `json:"id,omitempty"`
@@ -303,13 +302,12 @@ type responsesWireItem struct {
 	Arguments string                `json:"arguments,omitempty"`
 	Output    *responsesWireContent `json:"output,omitempty"`
 
-	// reasoning (O8).
+	// reasoning items.
 	Summary          []responsesWirePart `json:"summary,omitempty"`
 	EncryptedContent string              `json:"encrypted_content,omitempty"`
 }
 
-// responsesWireTool is a FLAT function tool: no nested function wrapper
-// (O6).
+// responsesWireTool is a FLAT function tool: no nested function wrapper.
 type responsesWireTool struct {
 	Type        string          `json:"type"`
 	Name        string          `json:"name,omitempty"`
@@ -319,7 +317,7 @@ type responsesWireTool struct {
 }
 
 // responsesToolChoice is the tool_choice value: a string or a flat
-// {type:"function", name} object (O5).
+// {type:"function", name} object.
 type responsesToolChoice struct {
 	Str    *string
 	Object *responsesToolChoiceObject
@@ -417,7 +415,7 @@ func responsesMessageFromItem(item responsesWireItem) []ir.Message {
 			}}
 		}
 	case "function_call":
-		// call_id keys the call; arguments is a JSON string (O5).
+		// call_id keys the call; arguments is a JSON string.
 		return []ir.Message{{
 			Role: ir.RoleAssistant,
 			Parts: []ir.Part{ir.ToolCallPart{
@@ -541,7 +539,7 @@ func responsesPartsFromContent(c *responsesWireContent) []ir.Part {
 			parts = append(parts, ir.TextPart{Text: p.Text})
 		case "input_image":
 			// Same data:-URI split as the chat decoder — the whole URI must
-			// not ride in URL, or the payload is lost on re-encode (O11).
+			// not ride in URL, or the payload is lost on re-encode.
 			parts = append(parts, imagePartFromURL(p.ImageURL, p.Detail))
 		}
 	}
@@ -691,8 +689,8 @@ func effortFromBudget(budget int) string {
 	}
 }
 
-// effortFor picks the reasoning effort for a request: the §6.4
-// compat-policy mapping (ir.ReasoningEffort, set by routing) wins over the
+// effortFor picks the reasoning effort for a request: the compat-policy
+// mapping (ir.ReasoningEffort, set by routing) wins over the
 // codec's own budget heuristic — the policy layer owns the decision so it
 // is observable in route_trace, never silent.
 func effortFor(req ir.Request) string {

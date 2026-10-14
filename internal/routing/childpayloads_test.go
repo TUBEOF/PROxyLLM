@@ -1,10 +1,10 @@
 package routing_test
 
 // Spec: a sub-operation's own detail view has to show what THAT step sent and
-// received (2026-10-10 Logs page). The parent request's capture shows the
-// conversation and the answer; it cannot show the tool exchange that answered a
-// call inside it, because that exchange exists only transiently inside the
-// emulation loop. The trace therefore collects a payload per emulated call.
+// received. The parent request's capture shows the conversation and the
+// answer; it cannot show the tool exchange that answered a call inside it,
+// because that exchange exists only transiently inside the emulation loop.
+// The trace therefore collects a payload per emulated call.
 //
 // The second half of the contract is structural: these payloads must NOT reach
 // route_trace. That field is a versioned wire schema the WebUI renders, and it

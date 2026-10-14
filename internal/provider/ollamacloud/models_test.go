@@ -59,12 +59,12 @@ func TestListModels_ErrorSurfaces(t *testing.T) {
 	}
 }
 
-// Context/capability detection (2026-10-06 context auto-detect plan,
-// Task 2): after the /v1/models list, ListModels enriches each model by
+// Context/capability detection: after the /v1/models list, ListModels
+// enriches each model by
 // POSTing /api/show {"model": id} — the registry's per-model facts
 // endpoint. The mock body below is the VERBATIM live response for
-// glm-5.3-flash (https://ollama.com/api/show, accessed 2026-10-06 —
-// re-verified after review finding C1): model_info carries heterogeneous
+// glm-5.3-flash (https://ollama.com/api/show, accessed 2026-10-06):
+// model_info carries heterogeneous
 // values (string "general.architecture", numeric parameter counts) and
 // the detected context_length key suffixed by arch. A decode type that
 // assumes map[string]int64 silently probe-fails every real model — this

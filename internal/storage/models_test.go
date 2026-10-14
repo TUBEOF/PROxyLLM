@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-// Spec: plan Analysis C schema (models: id, provider_id, name, capabilities
-// JSON, compat JSON, priority) + §6.4 (per-model compat policy lives in
-// models.compat, WebUI-editable via the "Models & Compatibility" area).
+// Spec: schema (models: id, provider_id, name, capabilities JSON, compat
+// JSON, priority); the per-model compat policy lives in models.compat,
+// WebUI-editable via the "Models & Compatibility" area.
 
 func seedProvider(t *testing.T, s *Store, id string) {
 	t.Helper()

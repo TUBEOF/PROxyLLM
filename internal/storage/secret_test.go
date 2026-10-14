@@ -7,7 +7,7 @@ import (
 )
 
 // Spec: ADR-007 control 2 — AES-256-GCM envelope per secret, fresh random
-// 12-byte nonce per encryption (verified live 2026-09-10), versioned
+// 12-byte nonce per encryption, versioned
 // envelope with key_id; Argon2id per OWASP (m=19MiB t=2 p=1 minimum,
 // PHC string storage).
 

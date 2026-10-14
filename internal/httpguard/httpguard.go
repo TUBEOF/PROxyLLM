@@ -1,5 +1,5 @@
 // Package httpguard centralizes the SSRF-relevant address classification
-// and the guarded HTTP client construction (Analysis G control 5).
+// and the guarded HTTP client construction.
 //
 // Two consumers share one vocabulary:
 //
@@ -29,7 +29,7 @@ import (
 )
 
 // OptOutEnv is the documented operator opt-out for the private-address
-// SSRF guard (Analysis G control 5). Operators behind a proxy mesh that
+// SSRF guard. Operators behind a proxy mesh that
 // legitimately targets private backends set it to "1".
 const OptOutEnv = "PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS"
 
@@ -61,7 +61,7 @@ func IsPrivateAddr(addr net.IP) bool {
 }
 
 // OptOut reports whether the operator explicitly allowed private
-// provider endpoints (documented opt-out, Analysis G control 5).
+// provider endpoints (documented opt-out).
 func OptOut() bool {
 	return os.Getenv(OptOutEnv) == "1"
 }
@@ -121,7 +121,7 @@ func privateReason(addr net.IP) string {
 // body). 30s matches the firecrawl emulation budget.
 const defaultTimeout = 30 * time.Second
 
-// newTransport is the tuned base for every guarded client (2026-10-10).
+// newTransport is the tuned base for every guarded client.
 //
 // http.DefaultTransport's MaxIdleConnsPerHost is 2 — beyond two in-flight
 // requests to one upstream, connections are not pooled at all, so a proxy

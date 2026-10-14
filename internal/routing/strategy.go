@@ -2,8 +2,8 @@ package routing
 
 // Spec: ADR-009 — the routing strategy concept: round robin (rotate the
 // expanded candidate list per request, distributing first-position load
-// across all accounts of a type) and fill first (today's ordered behavior,
-// named: sticky to the first entry until the health gate opens or a 429
+// across all accounts of a type) and fill first (the pre-existing ordered
+// behavior, named: sticky to the first entry until the health gate opens or a 429
 // fails over). Per rule, with the global default in the config-KV; an
 // empty rule strategy inherits the global one.
 
@@ -22,7 +22,7 @@ const (
 
 	// StrategyFillFirst keeps the chain order — sticky to the first
 	// candidate until the health gate opens (breaker cooldown) or a 429
-	// exhausts the same-provider retry budget (ADR-005 FO-2/FO-3).
+	// exhausts the same-provider retry budget.
 	StrategyFillFirst Strategy = "fill_first"
 )
 

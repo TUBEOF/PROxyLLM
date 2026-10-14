@@ -3,7 +3,7 @@
   "source": "https://developers.openai.com/api/reference/resources/responses/methods/create",
   "accessed": "2026-09-10",
   "facts": [
-    "O5: the response object carries id ('resp_...'), object:'response', created_at, status, output (typed item array), usage",
+    "the response object carries id ('resp_...'), object:'response', created_at, status, output (typed item array), usage",
     "ResponseOutputMessage item: {id:'msg_...', type:'message', status, role:'assistant', content:[parts]}",
     "ResponseOutputText part: {type:'output_text', annotations, logprobs, text}",
     "Usage shape: {input_tokens, output_tokens, output_tokens_details:{reasoning_tokens}, total_tokens}",

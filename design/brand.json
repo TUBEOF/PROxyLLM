@@ -1,0 +1,478 @@
+{
+  "name": "PROxyLLM Console Design System",
+  "version": "2.0.0",
+  "description": "The design system of the PROxyLLM console: a dark-only operational interface on a near-black canvas with one green accent for health and action, glass surfaces, Plus Jakarta Sans headings over Inter body text, and JetBrains Mono for numbers. Coupled to DESIGN.md; colors_and_type.css holds the values.",
+  "mode": "dark-only",
+  "sources": {
+    "rules": "DESIGN.md",
+    "tokens": "colors_and_type.css",
+    "entry_point": "AGENTS.md",
+    "profile": "brand.json",
+    "component_layer": "webui/src/styles/kit.css",
+    "app_layer": "webui/src/styles/app.css",
+    "font_source": "webui/public/fonts/"
+  },
+  "modes": {
+    "default": "dark",
+    "light": {
+      "part_of_system": false,
+      "reason": "Dark is the only appearance: html{color-scheme:dark} and the color-scheme meta tag pin the document, so the canvas, form controls and scrollbars stay dark even when the browser asks for light. Nothing in the console reads prefers-color-scheme. A light appearance would be a separate token layer with its own bg/surface/fg/muted/border/accent; inverting these values is not this system."
+    }
+  },
+  "tokens": {
+    "semantic": {
+      "bg": {
+        "value": "oklch(11% 0.011 250)",
+        "srgb": "#030507",
+        "role": "canvas — page background"
+      },
+      "surface": {
+        "value": "oklch(13% 0.012 250 / 80%)",
+        "role": "glass card, widget, table and pill surface + blur(10px)"
+      },
+      "surface-elevated": {
+        "value": "oklch(13% 0.013 250 / 96%)",
+        "role": "modal, drawer, user menu, toast backing"
+      },
+      "fg": {
+        "value": "oklch(90% 0.008 250)",
+        "srgb": "#dadee3",
+        "role": "primary text, high-emphasis UI"
+      },
+      "muted": {
+        "value": "oklch(81% 0.012 250)",
+        "srgb": "#bbc2c9",
+        "role": "secondary text: nav, captions, help text, table meta"
+      },
+      "border": {
+        "value": "oklch(28% 0.015 250)",
+        "srgb": "#232a30",
+        "role": "hairlines, card borders, dividers"
+      },
+      "accent": {
+        "value": "oklch(78% 0.20 144)",
+        "srgb": "#56d75b",
+        "role": "action, focus, links, healthy status, the sidebar dot"
+      },
+      "accent-dim": {
+        "value": "oklch(78% 0.20 144 / 12%)",
+        "role": "soft accent fill: chips, icon circles, menu hover"
+      }
+    },
+    "primary": {
+      "400": {
+        "value": "oklch(80% 0.22 145)",
+        "srgb": "#45e159",
+        "role": "lighter end of the primary-button gradient"
+      },
+      "500": {
+        "value": "oklch(78% 0.20 144)",
+        "srgb": "#56d75b",
+        "role": "the accent"
+      },
+      "500-alpha": {
+        "value": "oklch(78% 0.20 144 / 35%)",
+        "role": "interactive card border on hover"
+      }
+    },
+    "neutral": {
+      "950": {
+        "value": "oklch(11% 0.011 250)",
+        "srgb": "#030507",
+        "role": "canvas"
+      },
+      "900": {
+        "value": "oklch(14% 0.013 250)",
+        "srgb": "#060a0e",
+        "role": "row surfaces, inputs at 60% alpha"
+      },
+      "800": {
+        "value": "oklch(20% 0.018 250)",
+        "srgb": "#10171e",
+        "role": "dropdown and card borders, ring track"
+      },
+      "700": {
+        "value": "oklch(28% 0.015 250)",
+        "srgb": "#232a30",
+        "role": "borders and dividers (= --border)"
+      },
+      "600": {
+        "value": "oklch(40% 0.018 250)",
+        "srgb": "#414951",
+        "role": "hover borders, button borders, breadcrumb separators"
+      },
+      "500": {
+        "value": "oklch(56% 0.020 250)",
+        "srgb": "#6c7680",
+        "role": "tertiary text, placeholders, section labels"
+      },
+      "400": {
+        "value": "oklch(70% 0.015 250)",
+        "srgb": "#989fa8",
+        "role": "widget headers, disabled, comparison series"
+      },
+      "300": {
+        "value": "oklch(81% 0.012 250)",
+        "srgb": "#bbc2c9",
+        "role": "secondary text (= --muted, --text)"
+      },
+      "200": {
+        "value": "oklch(90% 0.008 250)",
+        "srgb": "#dadee3",
+        "role": "lightest text step (= --fg)"
+      }
+    },
+    "status": {
+      "up": {
+        "value": "var(--primary-500)",
+        "srgb": "#56d75b",
+        "role": "2xx, healthy, online"
+      },
+      "warn": {
+        "value": "oklch(78% 0.15 75)",
+        "srgb": "#efa831",
+        "role": "degraded, retried, failed over, 4xx"
+      },
+      "down": {
+        "value": "oklch(60% 0.20 25)",
+        "srgb": "#de3b3d",
+        "role": "5xx, failed, destructive"
+      },
+      "paused": {
+        "value": "oklch(62% 0.015 250)",
+        "srgb": "#80878f",
+        "role": "paused, inactive, unknown"
+      },
+      "info": {
+        "value": "oklch(72% 0.09 230)",
+        "srgb": "#65afd2",
+        "role": "informational: sub-operations, capability fallbacks, image captions"
+      }
+    },
+    "data": {
+      "chart-line": {
+        "value": "var(--primary-500)",
+        "role": "the single data series"
+      },
+      "chart-area": {
+        "value": "oklch(78% 0.20 144 / 18%)",
+        "role": "fill under a sparkline"
+      },
+      "chart-2": {
+        "value": "var(--neutral-400)",
+        "role": "comparison series — neutral, never a second accent"
+      },
+      "metric-pos": {
+        "value": "var(--primary-500)",
+        "role": "positive delta"
+      },
+      "metric-neg": {
+        "value": "oklch(60% 0.20 25)",
+        "role": "negative delta"
+      },
+      "row-hover": {
+        "value": "oklch(14% 0.013 250 / 60%)",
+        "role": "table row hover"
+      },
+      "widget-head": {
+        "value": "var(--neutral-400)",
+        "role": "widget header text"
+      }
+    },
+    "app_surface": {
+      "rail": {
+        "value": "oklch(70% 0.17 143 / 72%)",
+        "role": "request-log tree rail: parent to sub-operation"
+      },
+      "text": {
+        "value": "var(--neutral-300)",
+        "role": "resting colour of a number inside a data cell"
+      },
+      "bg-elev": {
+        "value": "rgba(127, 127, 127, 0.12)",
+        "role": "achromatic wash marking a moved row"
+      }
+    },
+    "typography": {
+      "display": {
+        "family": "Plus Jakarta Sans",
+        "declared_weights": "200-800",
+        "role": "headings, page titles, KPI values, wordmark"
+      },
+      "body": {
+        "family": "Inter",
+        "declared_weights": "1-1000",
+        "role": "body text, tables, forms, buttons, nav"
+      },
+      "mono": {
+        "family": "JetBrains Mono",
+        "shipped_weights": "400, 500",
+        "role": "numbers, ids, client keys, timestamps, pills"
+      },
+      "sizes": {
+        "xs": "12px",
+        "sm": "14px",
+        "base": "16px"
+      },
+      "measured_sizes": {
+        "page_title": "26px",
+        "kpi_value": "34px",
+        "login_title": "22px",
+        "modal_title": "18px",
+        "drawer_title": "17px"
+      },
+      "weights": {
+        "regular": 400,
+        "medium": 500,
+        "semibold": 600,
+        "bold": 700
+      },
+      "base_size": "16px",
+      "line_height": 1.5,
+      "numeric_features": "font-feature-settings: \"tnum\" 1 on .num"
+    },
+    "spacing": {
+      "base": "4px",
+      "rhythm": [
+        2,
+        4,
+        6,
+        8,
+        10,
+        12,
+        14,
+        16,
+        18,
+        20,
+        22,
+        24,
+        28,
+        32,
+        36,
+        40
+      ],
+      "page_gutter": "24px",
+      "widget_gap": "16px",
+      "table_cell": "13px 16px",
+      "widget_padding": "14px 18px head, 18px body",
+      "topbar": "72px",
+      "sidebar": "240px, collapsed 64px"
+    },
+    "radius": {
+      "sm": "6px",
+      "md": "8px",
+      "lg": "12px",
+      "full": "9999px"
+    },
+    "shadows": {
+      "glass": "inset 0 1px 1px 1px oklch(100% 0 0 / 15%)",
+      "card-hover": "0 8px 25px oklch(78% 0.20 144 / 15%)",
+      "btn-primary": "inset 0 -4px 4px oklch(0% 0 0 / 10%), 0 0 14px oklch(100% 0 0 / 19%)",
+      "btn-hover": "0 1px 12.6px oklch(78% 0.20 144 / 20%), inset 0 -4px 4px oklch(0% 0 0 / 10%), 0 0 14px oklch(100% 0 0 / 19%)",
+      "modal": "0 24px 60px oklch(0% 0 0 / 50%)",
+      "drawer": "-20px 0 50px oklch(0% 0 0 / 40%)",
+      "menu": "0 12px 36px oklch(0% 0 0 / 45%)",
+      "toast": "0 8px 24px oklch(0% 0 0 / 35%)"
+    },
+    "gradients": {
+      "primary": "linear-gradient(135deg, oklch(78% 0.20 144) 0%, oklch(80% 0.22 145) 100%)",
+      "primary-hover": "white overlay gradient over the primary gradient",
+      "nav-glass": "linear-gradient(oklch(11% 0.011 250 / 80%) 0%, oklch(14% 0.013 250 / 80%) 100%)"
+    },
+    "motion": {
+      "base": "0.15s cubic-bezier(0.4, 0, 0.2, 1)",
+      "button": "0.3s ease-out",
+      "sidebar": "0.25s ease-out",
+      "status_ping": "2s cubic-bezier(0, 0, 0.2, 1) infinite — sidebar live dot, healthy status dot",
+      "running_dot": "1.2s ease-in-out infinite — a request still in flight",
+      "spinner": "0.9s linear infinite — a route chunk that has not loaded",
+      "reduced_motion": "every duration is neutralised under prefers-reduced-motion, and the ping and the spinner are switched off; the label alone carries the state"
+    },
+    "blur": {
+      "glass": "2.5px — sticky topbar",
+      "card": "10px — cards, widgets, tables, overlays",
+      "backdrop": "4px — modal backdrop"
+    },
+    "z_index": {
+      "nav": 50,
+      "tooltip": 60,
+      "drawer": 160,
+      "user_menu": 170,
+      "modal_backdrop": 200,
+      "modal": 210,
+      "named_tokens": [
+        "nav",
+        "modal"
+      ],
+      "note": "Only the two layers more than one rule needs are tokens; the others are set once, in the rule that owns them."
+    }
+  },
+  "fonts": {
+    "source": "webui/public/fonts/",
+    "served_at": "/fonts/",
+    "faces": [
+      {
+        "file": "inter-latin-wght-normal.woff2",
+        "family": "Inter",
+        "declared_in": "colors_and_type.css",
+        "license": "SIL OFL 1.1"
+      },
+      {
+        "file": "plus-jakarta-sans-latin-wght-normal.woff2",
+        "family": "Plus Jakarta Sans",
+        "declared_in": "colors_and_type.css",
+        "license": "SIL OFL 1.1"
+      },
+      {
+        "file": "jetbrains-mono-regular.woff2",
+        "family": "JetBrains Mono",
+        "weight": 400,
+        "declared_in": "colors_and_type.css",
+        "license": "SIL OFL 1.1",
+        "license_file": "OFL-JetBrainsMono.txt"
+      },
+      {
+        "file": "jetbrains-mono-medium.woff2",
+        "family": "JetBrains Mono",
+        "weight": 500,
+        "declared_in": "colors_and_type.css",
+        "license": "SIL OFL 1.1",
+        "license_file": "OFL-JetBrainsMono.txt"
+      }
+    ],
+    "note": "All three families are declared with @font-face in the token layer and render in the console: Inter and Plus Jakarta Sans, and JetBrains Mono at 400 and 500. Switching a family on or off re-lays out everything it renders and therefore moves the committed Playwright screenshot baselines."
+  },
+  "voice": {
+    "posture": [
+      "Operational and plain: the console reports, it does not sell.",
+      "Concrete: a number is shown with its unit, or it is absent.",
+      "Honest: a missing value is an em dash or an empty state, never a plausible-looking placeholder.",
+      "Calm: no exclamation marks, no urgency, no marketing verbs."
+    ],
+    "patterns": [
+      "Sentence case for headings, labels and nav ('Client keys', 'Account settings', 'Models & Compatibility').",
+      "Imperative, one-word buttons where possible ('Sign in', 'Cancel', 'Test'), with the action named in full when it is destructive ('Change password').",
+      "Empty state = a short title plus one sentence that says what would put something there ('No client keys', 'No model traffic' / 'Requests appear here once models serve traffic.').",
+      "Loading states name what is being fetched ('Loading logs', 'Fetching the latest requests.').",
+      "Numbers carry their unit and their reference ('142 ms', 'TI:', 'CR: 1,204 (38%)')."
+    ],
+    "do_not": [
+      "Do not invent a metric, a status or a count.",
+      "Do not use marketing language, urgency or superlatives.",
+      "Do not use emoji or an icon in place of a word."
+    ]
+  },
+  "components": {
+    "app_shell": {
+      "grid": "sidebar + content; sidebar 240px (collapsed 64px), topbar 72px, then the routed page",
+      "sidebar": ".sidebar, .sidebar-brand (accent dot + wordmark), .sidebar-section, .sidebar-link with .active accent indicator",
+      "topbar": ".topbar, sticky, glass (blur 2.5px + inset highlight), collapse toggle + account avatar"
+    },
+    "button": {
+      "primary": {
+        "bg": "var(--gradient-primary)",
+        "text": "var(--neutral-900)",
+        "border": "var(--neutral-600)",
+        "shadow": "var(--shadow-btn-primary)",
+        "hover": "white overlay gradient + var(--shadow-btn-hover)"
+      },
+      "secondary": {
+        "text": "var(--fg)",
+        "border": "var(--border)",
+        "bg": "var(--surface)"
+      },
+      "ghost": {
+        "text": "var(--accent)",
+        "border": "var(--neutral-600)",
+        "hover": "accent glow"
+      },
+      "danger": {
+        "text": "var(--status-down)",
+        "bg": "color-mix(in oklch, var(--status-down) 10%, transparent)",
+        "usage": "destructive actions only"
+      },
+      "icon_only": {
+        "size": "36px",
+        "radius": "8px or 9999px"
+      },
+      "round": {
+        "size": "36px",
+        "usage": "table row actions, toolbars"
+      }
+    },
+    "card": {
+      "base": "1px solid var(--border); background var(--surface); backdrop-filter blur(10px); border-radius 12px",
+      "hover": "border-color -> var(--neutral-600); an interactive card turns accent and takes var(--shadow-card-hover)",
+      "anti_pattern": "No left colour stripe — the border itself is the accent surface"
+    },
+    "table": {
+      "base": "glass surface, sticky header, 13px/16px cells, --row-hover on hover, 2px separation by hairline",
+      "numbers": "mono, right-aligned, tabular figures",
+      "cells": "provider and protocol render as .pill/.pill-warm, status as .badge with a coloured dot"
+    },
+    "form": {
+      "field": "label above; input 40px on oklch(11% 0.011 250 / 60%) with a 1px border",
+      "focus": "border-color var(--accent) + 3px accent halo",
+      "error": "border-color var(--status-down) + 3px halo + inline .error line",
+      "valid": "subtle accent border; never a substitute for the error state"
+    },
+    "overlay": {
+      "modal": ".modal-backdrop (fixed, 60% black + blur 4px, z 200) with .modal centred on it (z 210, max-width 480px)",
+      "drawer": "right panel, min(420px, 90vw), z 160",
+      "user_menu": "fixed under the avatar, min-width 210px, z 170",
+      "toast": "status-coloured icon circle, max-width 380px",
+      "tooltip": "above the trigger, z 60"
+    },
+    "logs": {
+      "row": ".log-row, one line per request: status, model, provider, protocol, account, key, tokens, TPS, latency, time",
+      "child": ".log-row-child under its parent, drawn with the .child-elbow tree rail on --rail, keeping the parent's column count",
+      "op_kinds": [
+        ".child-failover",
+        ".child-capability-fallback",
+        ".child-image-caption",
+        ".child-emulated-tool",
+        ".child-retry"
+      ],
+      "chips": ".chip/.chip-healed for a request that recovered, .pill for provider/protocol, .link-chip for an in-row action",
+      "detail": ".chain-summary + .chain-pill, .child-op-open per sub-operation, .raw-trace for the raw trace"
+    },
+    "app_components": {
+      "alias_editor": ".alias-editor/.alias-row/.alias-input/.free-pick — the alias to model map",
+      "provider_type_card": ".provider-type-card — provider-type chooser with hover lift",
+      "login": ".login-wrap/.login-card/.login-error + .loading/.loading-spinner"
+    }
+  },
+  "implementation": {
+    "load_order": [
+      "1. colors_and_type.css — tokens, @font-face, reduced motion, focus, reset",
+      "2. kit.css — component layer (imports the tokens)",
+      "3. app.css — the two app-local additions",
+      "4. page-specific rules only as a composition of tokens, never a redefinition"
+    ],
+    "workflow": [
+      "Compose classes from the kit; copy shapes from design/examples/components.html",
+      "Colour, type, space and motion come from tokens in colors_and_type.css",
+      "Keep the token source and the runtime copy byte-identical (webui/design_sync_test.go)",
+      "Run npm run lint && npm run typecheck && npm run build, go test ./webui/..., and the design-rule assertions",
+      "Style refactors must not move a pixel: design-rules.spec.ts green, screenshot baselines unchanged"
+    ],
+    "verification": {
+      "assertions": "webui/e2e/design-rules.spec.ts — dark-only color-scheme, tokens-only colours (hue windows), no emoji",
+      "screenshots": "webui/e2e/routes.spec.ts — baselines rendered in CI only, refreshed with the update-visual-baselines workflow",
+      "token_sync": "webui/design_sync_test.go — design/colors_and_type.css vs webui/src/styles/colors_and_type.css"
+    }
+  },
+  "anti_patterns": [
+    "Never introduce a second chromatic colour — green is the accent, status tones the only other hues",
+    "Never ship a light theme or read prefers-color-scheme: light",
+    "Never override a token in a component rule — add a token instead",
+    "Never write raw colour literals outside the token and component layers",
+    "Never fabricate a metric — an em dash or an empty state instead",
+    "Never use emoji as icons — inline SVG only",
+    "Never hot-link a remote asset",
+    "Never add tracking or analytics scripts",
+    "Never use outline-only charts — encode with fills",
+    "Never put a left colour stripe on a card; the sidebar's active indicator is the one permitted left edge",
+    "Never put variable-length text on a flex-wrap line above other content"
+  ]
+}

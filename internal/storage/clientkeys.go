@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// ClientKey is one persisted client_keys row (plan Analysis C): the key
+// ClientKey is one persisted client_keys row: the key
 // itself never touches the database — only the Argon2id PHC hash, the short
 // display prefix, and metadata for the WebUI /keys area (G control 1).
 type ClientKey struct {
@@ -128,7 +128,7 @@ func (s *Store) TouchClientKey(ctx context.Context, id string) error {
 
 // UpdateClientKeyHash rewrites one row's stored hash — the transparent upgrade
 // of a legacy Argon2id hash to the keyed-MAC scheme, done on the first
-// successful verify of that key (2026-10-10). The secret is never stored, so a
+// successful verify of that key. The secret is never stored, so a
 // row that is never used again simply stays on the scheme it was written with;
 // both schemes verify (see VerifyClientKeyHash).
 func (s *Store) UpdateClientKeyHash(ctx context.Context, id, keyHash string) error {

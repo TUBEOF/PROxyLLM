@@ -23,23 +23,22 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
-// Codex provider contract tests, RED-GREEN (plan §6.3, Analysis F).
-// Expectations derive from the live-researched codex-rs facts (digest §5b,
-// accessed 2026-09-11/12) — never from provider code behavior:
-//   - X19/X23: the backend speaks the Responses-API wire shape at
-//     {base}/codex/responses (provider-relative "/responses"); streams send
-//     `Accept: text/event-stream`.
-//   - X14/X22: every backend request carries `originator: codex_cli_rs` and
-//     a User-Agent `{originator}/{version} …` with PROxyLLM's OWN version
-//     constant (the CLI pins a 0.0.0 build placeholder).
-//   - X15: `chatgpt-account-id` from the id_token's chatgpt_account_id JWT
-//     claim, alongside Bearer access_token.
-//   - X24: OAI-Product-Sku is NO LONGER sent — must be absent.
-//   - X18: refresh is lazy on demand (expired/near-expiry access tokens are
+// Codex provider contract tests, RED-GREEN.
+// Expectations derive from the codex-rs sources (accessed 2026-09-11/12) —
+// never from provider code behavior:
+//   - the backend speaks the Responses-API wire shape at {base}/codex/responses
+//     (provider-relative "/responses"); streams send `Accept: text/event-stream`.
+//   - every backend request carries `originator: codex_cli_rs` and a User-Agent
+//     `{originator}/{version} …` with PROxyLLM's OWN version constant (the CLI
+//     pins a 0.0.0 build placeholder).
+//   - `chatgpt-account-id` from the id_token's chatgpt_account_id JWT claim,
+//     alongside Bearer access_token.
+//   - OAI-Product-Sku is NO LONGER sent — must be absent.
+//   - refresh is lazy on demand (expired/near-expiry access tokens are
 //     refreshed before the request rides) with single-flight + atomic
-//     persistence (X12).
-//   - FO-1/FO-2/C2: error mapping, mid-stream terminal errors, cancel
-//     semantics (same transport contract as the other HTTP providers).
+//     persistence.
+//   - error mapping, mid-stream terminal errors, cancel semantics (same
+//     transport contract as the other HTTP providers).
 
 const providerID = "codex-1"
 
@@ -89,7 +88,7 @@ func decodeSentBody(t *testing.T, r *http.Request) map[string]any {
 }
 
 // makeJWT builds a structurally valid (unsigned) JWT whose payload carries
-// the chatgpt_account_id claim (X15). Test fixture only — never a credential.
+// the chatgpt_account_id claim. Test fixture only — never a credential.
 func makeJWT(t *testing.T, accountID string) string {
 	t.Helper()
 	header := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT"}`))
@@ -216,10 +215,10 @@ func TestProviderImplementsInterface(t *testing.T) {
 	var _ provider.Provider = (*codex.Provider)(nil)
 }
 
-// TestComplete_RoundTrip: the request rides {base}/codex/responses (X19/X23)
+// TestComplete_RoundTrip: the request rides {base}/codex/responses
 // in the Responses wire shape; the response decodes via the golden fixture.
-// Headers per X14 (originator, own-version User-Agent), X15 (account id from
-// the id_token claim + Bearer), X24 (NO OAI-Product-Sku).
+// Headers: originator, own-version User-Agent, account id from
+// the id_token claim + Bearer, and NO OAI-Product-Sku.
 func TestComplete_RoundTrip(t *testing.T) {
 	var refreshHits int32
 	p, _, _ := newBackend(t, noopRefresh(t, &refreshHits), func(w http.ResponseWriter, r *http.Request) {
@@ -227,23 +226,23 @@ func TestComplete_RoundTrip(t *testing.T) {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
 		if want := "/codex/responses"; r.URL.Path != want {
-			t.Errorf("path = %s, want %s (X23)", r.URL.Path, want)
+			t.Errorf("path = %s, want %s", r.URL.Path, want)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer a1" {
 			t.Errorf("Authorization = %q, want Bearer a1", got)
 		}
 		if got := r.Header.Get("Originator"); got != "codex_cli_rs" {
-			t.Errorf("Originator = %q, want codex_cli_rs (X14)", got)
+			t.Errorf("Originator = %q, want codex_cli_rs", got)
 		}
 		ua := r.Header.Get("User-Agent")
 		if !strings.HasPrefix(ua, "codex_cli_rs/proxyllm/") {
-			t.Errorf("User-Agent = %q, want the PROxyLLM-owned version constant prefix codex_cli_rs/proxyllm/ (X14/X22)", ua)
+			t.Errorf("User-Agent = %q, want the PROxyLLM-owned version constant prefix codex_cli_rs/proxyllm/", ua)
 		}
 		if got := r.Header.Get("Chatgpt-Account-Id"); got != "acct-123" {
-			t.Errorf("Chatgpt-Account-Id = %q, want acct-123 from the id_token claim (X15)", got)
+			t.Errorf("Chatgpt-Account-Id = %q, want acct-123 from the id_token claim", got)
 		}
 		if got := r.Header.Get("OAI-Product-Sku"); got != "" {
-			t.Errorf("OAI-Product-Sku = %q, want ABSENT (X24 correction)", got)
+			t.Errorf("OAI-Product-Sku = %q, want ABSENT", got)
 		}
 		if got := r.Header.Get("Accept"); got != "application/json" {
 			t.Errorf("Accept = %q, want application/json for non-streaming", got)
@@ -272,21 +271,21 @@ func TestComplete_RoundTrip(t *testing.T) {
 		t.Errorf("Complete response = %+v, want golden decode %+v", resp, want)
 	}
 	if refreshHits != 0 {
-		t.Errorf("fresh token must not trigger a refresh, got %d /oauth/token hits (X18)", refreshHits)
+		t.Errorf("fresh token must not trigger a refresh, got %d /oauth/token hits", refreshHits)
 	}
 }
 
 // TestComplete_LazyRefresh: an expired access token is refreshed BEFORE the
-// request rides (X18 lazy on-demand); the rotated pair is persisted (X12) and
+// request rides (lazy on-demand); the rotated pair is persisted and
 // the backend sees the new Bearer.
 func TestComplete_LazyRefresh(t *testing.T) {
 	p, store, _ := newBackend(t, func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Content-Type"); got != "application/json" {
-			t.Errorf("refresh Content-Type = %q, want application/json (X9)", got)
+			t.Errorf("refresh Content-Type = %q, want application/json", got)
 		}
 		body := decodeSentBody(t, r)
 		if body["grant_type"] != "refresh_token" {
-			t.Errorf("refresh grant_type = %v, want refresh_token (X9)", body["grant_type"])
+			t.Errorf("refresh grant_type = %v, want refresh_token", body["grant_type"])
 		}
 		if body["refresh_token"] != "r1" {
 			t.Errorf("refresh_token = %v, want r1 (the stored one)", body["refresh_token"])
@@ -313,12 +312,12 @@ func TestComplete_LazyRefresh(t *testing.T) {
 		t.Errorf("access_token = %q, want a2 (rotation persisted)", got)
 	}
 	if got := store.get(codex.KindRefreshToken); got != "r2" {
-		t.Errorf("refresh_token = %q, want r2 (single-use rotation persisted, X11)", got)
+		t.Errorf("refresh_token = %q, want r2 (single-use rotation persisted)", got)
 	}
 }
 
 // TestComplete_UpstreamError: non-2xx maps to *provider.UpstreamError with
-// both FO-2 tiers + Retry-After (O10) — same contract as every provider.
+// both error tiers + Retry-After — same contract as every provider.
 func TestComplete_UpstreamError(t *testing.T) {
 	var refreshHits int32
 	p, _, _ := newBackend(t, noopRefresh(t, &refreshHits), func(w http.ResponseWriter, r *http.Request) {
@@ -336,15 +335,15 @@ func TestComplete_UpstreamError(t *testing.T) {
 		t.Errorf("HTTPStatus = %d, want %d", up.HTTPStatus, http.StatusTooManyRequests)
 	}
 	if up.Code != "rate_limit_exceeded" {
-		t.Errorf("Code = %q, want rate_limit_exceeded from the body (FO-2 tier 2)", up.Code)
+		t.Errorf("Code = %q, want rate_limit_exceeded from the body", up.Code)
 	}
 	if up.RetryAfter != 7*time.Second {
-		t.Errorf("RetryAfter = %v, want 7s (O10)", up.RetryAfter)
+		t.Errorf("RetryAfter = %v, want 7s", up.RetryAfter)
 	}
 }
 
 // TestComplete_TransportError: a failure before any response is NOT an
-// UpstreamError (routing's zero-status early-stream path, FO-2).
+// UpstreamError (routing's zero-status early-stream path).
 func TestComplete_TransportError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	srv.Close()
@@ -368,13 +367,13 @@ func TestComplete_TransportError(t *testing.T) {
 	}
 }
 
-// TestStream_Events: stream requests carry Accept: text/event-stream (X23)
+// TestStream_Events: stream requests carry Accept: text/event-stream
 // and stream:true; the golden SSE replays to the canonical event sequence.
 func TestStream_Events(t *testing.T) {
 	var refreshHits int32
 	p, _, _ := newBackend(t, noopRefresh(t, &refreshHits), func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Accept"); got != "text/event-stream" {
-			t.Errorf("Accept = %q, want text/event-stream for streams (X23)", got)
+			t.Errorf("Accept = %q, want text/event-stream for streams", got)
 		}
 		body := decodeSentBody(t, r)
 		if body["stream"] != true {
@@ -398,7 +397,7 @@ func TestStream_Events(t *testing.T) {
 }
 
 // TestStream_MidStreamFailure: an upstream break after the first event is a
-// terminal ir.Error event — never a dispatch error (FO-1).
+// terminal ir.Error event — never a dispatch error.
 func TestStream_MidStreamFailure(t *testing.T) {
 	var refreshHits int32
 	p, _, _ := newBackend(t, noopRefresh(t, &refreshHits), func(w http.ResponseWriter, r *http.Request) {
@@ -429,7 +428,7 @@ func TestStream_MidStreamFailure(t *testing.T) {
 	}
 	last := got[len(got)-1]
 	if last.Type != ir.Error {
-		t.Fatalf("last event = %s, want a terminal ir.Error event (FO-1)", last.Type)
+		t.Fatalf("last event = %s, want a terminal ir.Error event", last.Type)
 	}
 	if last.Error == nil || last.Error.Message == "" {
 		t.Error("terminal error event must carry the upstream failure message")
@@ -437,7 +436,7 @@ func TestStream_MidStreamFailure(t *testing.T) {
 }
 
 // TestStream_Cancel: cancel aborts the upstream request and closes the
-// channel promptly (C2).
+// channel promptly.
 func TestStream_Cancel(t *testing.T) {
 	var refreshHits int32
 	p, _, _ := newBackend(t, noopRefresh(t, &refreshHits), func(w http.ResponseWriter, r *http.Request) {
@@ -486,7 +485,7 @@ func TestStream_Cancel(t *testing.T) {
 				return // closed — contract satisfied
 			}
 		case <-deadline:
-			t.Fatal("cancel must close the event channel promptly (C2)")
+			t.Fatal("cancel must close the event channel promptly")
 		}
 	}
 }
@@ -518,7 +517,7 @@ func TestStream_DispatchFailure(t *testing.T) {
 }
 
 // TestRefreshCredentials: the Provider interface method delegates to the
-// auth client's rotation (single-flight + atomic persistence, X12).
+// auth client's rotation (single-flight + atomic persistence).
 func TestRefreshCredentials(t *testing.T) {
 	p, store, _ := newBackend(t, func(w http.ResponseWriter, r *http.Request) {
 		mustWriteString(t, w, `{"access_token":"a3","refresh_token":"r3"}`+"\n")

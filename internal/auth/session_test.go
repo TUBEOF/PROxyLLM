@@ -1,13 +1,14 @@
 package auth
 
-// WebUI session auth + CSRF: RED tests derived from the committed Phase 2
-// research facts (docs/research/phase-2-best-practices.md, §10 binding):
-// S-1..S-11 (session design) and C-1..C-6 (CSRF). Never from implementation
-// behavior.
+// WebUI session auth + CSRF: RED tests covering the session design and the
+// CSRF controls. Never from implementation behavior.
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -18,7 +19,7 @@ import (
 )
 
 // sessionTestEnv is a SessionManager over a fresh store with a pinned clock
-// and a fixed 32-byte master key (the HMAC secret, C-1/C-2).
+// and a fixed 32-byte master key (the HMAC secret).
 type sessionTestEnv struct {
 	sm    *SessionManager
 	st    *storage.Store
@@ -133,7 +134,7 @@ func (res loginResult) cookieHeader() string {
 	return res.sessionCookie + "; " + res.csrfCookie
 }
 
-// S-8: every successful login issues a NEW session id; two logins never
+// every successful login issues a NEW session id; two logins never
 // share a cookie value.
 func TestLogin_IssuesNewSessionPerLogin(t *testing.T) {
 	env := newSessionEnv(t)
@@ -148,11 +149,11 @@ func TestLogin_IssuesNewSessionPerLogin(t *testing.T) {
 		t.Fatalf("no session cookie issued: %q / %q", l1.sessionCookie, l2.sessionCookie)
 	}
 	if l1.sessionCookie == l2.sessionCookie {
-		t.Error("two logins issued the same session id (S-8 violation)")
+		t.Error("two logins issued the same session id")
 	}
 }
 
-// S-9: idle timeout enforced server-side — a session idle past the window
+// idle timeout enforced server-side — a session idle past the window
 // fails auth even with a valid cookie.
 func TestSession_IdleTimeoutServerSide(t *testing.T) {
 	env := newSessionEnv(t)
@@ -166,7 +167,7 @@ func TestSession_IdleTimeoutServerSide(t *testing.T) {
 	}
 }
 
-// S-9: absolute timeout — activity never extends the 12 h cap. Requests
+// absolute timeout — activity never extends the 12 h cap. Requests
 // keep passing the idle window but the absolute expiry still lands.
 func TestSession_AbsoluteTimeoutServerSide(t *testing.T) {
 	env := newSessionEnv(t)
@@ -191,7 +192,7 @@ func TestSession_AbsoluteTimeoutServerSide(t *testing.T) {
 	}
 }
 
-// S-10: logout deletes the server-side row AND clears the cookie; the old
+// logout deletes the server-side row AND clears the cookie; the old
 // session id is dead afterwards.
 func TestLogout_DeletesRowAndClearsCookie(t *testing.T) {
 	env := newSessionEnv(t)
@@ -225,7 +226,7 @@ func TestLogout_DeletesRowAndClearsCookie(t *testing.T) {
 	}
 }
 
-// C-4 (refined by the phase-2 review): a PRESENT Content-Type on a mutation
+// Content-Type rules: a PRESENT Content-Type on a mutation
 // must be application/json (415 otherwise); an ABSENT one is legal — a
 // bodyless POST/DELETE (fetch sends no Content-Type without a body) is
 // processed, and no cross-site form vector can omit the header.
@@ -253,7 +254,7 @@ func TestMutation_ContentTypeRules(t *testing.T) {
 		t.Errorf("text/plain mutation: status %d, want 415", rec.Code)
 	}
 
-	// Bodyless mutation without the CSRF header → 403 (C-5 gates bodyless
+	// Bodyless mutation without the CSRF header → 403 (gates bodyless
 	// mutations independently of the content type).
 	w = env.authed(t, http.MethodPost, "/api/admin/logout", "", l.cookieHeader(), "", "")
 	if w.Code != http.StatusForbidden {
@@ -261,7 +262,7 @@ func TestMutation_ContentTypeRules(t *testing.T) {
 	}
 }
 
-// S-3: __Host- prefix on TLS arrivals, plain id otherwise — per-request
+// __Host- prefix on TLS arrivals, plain id otherwise — per-request
 // split from the arrival scheme.
 func TestLogin_CookiePrefixPerTLS(t *testing.T) {
 	env := newSessionEnv(t)
@@ -277,8 +278,8 @@ func TestLogin_CookiePrefixPerTLS(t *testing.T) {
 	}
 }
 
-// S-4/S-5: session cookie HttpOnly, SameSite=Strict, non-persistent; CSRF
-// cookie JS-readable (C-1: the SPA must echo it).
+// session cookie HttpOnly, SameSite=Strict, non-persistent; CSRF
+// cookie JS-readable (the SPA must echo it).
 func TestLogin_CookieAttributes(t *testing.T) {
 	env := newSessionEnv(t)
 	env.admin()
@@ -288,7 +289,7 @@ func TestLogin_CookieAttributes(t *testing.T) {
 	for _, c := range l.setCookies {
 		// The session cookie is "id=…" or "__Host-id=…"; the csrf cookie
 		// is always plain "csrf=…" (no __Host- prefix needed: no Path
-		// restriction applies, C-1 only requires JS readability).
+		// restriction applies, only requires JS readability).
 		trimmed := strings.TrimPrefix(c, "__Host-")
 		if strings.HasPrefix(trimmed, sessionCookieName+"=") {
 			sessionAttrs = c
@@ -306,14 +307,14 @@ func TestLogin_CookieAttributes(t *testing.T) {
 		}
 	}
 	if strings.Contains(sessionAttrs, "Expires=") || strings.Contains(sessionAttrs, "Max-Age=") {
-		t.Errorf("session cookie is persistent (S-4 violation): %q", sessionAttrs)
+		t.Errorf("session cookie is persistent: %q", sessionAttrs)
 	}
 	if strings.Contains(csrfAttrs, "HttpOnly") {
-		t.Errorf("csrf cookie must be JS-readable (C-1): %q", csrfAttrs)
+		t.Errorf("csrf cookie must be JS-readable: %q", csrfAttrs)
 	}
 }
 
-// C-1/C-2: the CSRF token binds to the session — a token minted for one
+// the CSRF token binds to the session — a token minted for one
 // session cannot authorize another.
 func TestCSRF_TokenIsSessionBound(t *testing.T) {
 	env := newSessionEnv(t)
@@ -336,7 +337,7 @@ func TestCSRF_TokenIsSessionBound(t *testing.T) {
 	}
 }
 
-// C-3: X-CSRF-Token is required on state-changing requests; safe methods
+// X-CSRF-Token is required on state-changing requests; safe methods
 // pass without it.
 func TestCSRF_HeaderRequiredOnMutations(t *testing.T) {
 	env := newSessionEnv(t)
@@ -353,7 +354,7 @@ func TestCSRF_HeaderRequiredOnMutations(t *testing.T) {
 	}
 }
 
-// C-1: a forged token (valid random, wrong HMAC) fails even with the
+// a forged token (valid random, wrong HMAC) fails even with the
 // matching csrf cookie — the MAC is unforgeable without the master key.
 func TestCSRF_ForgedMACRejected(t *testing.T) {
 	env := newSessionEnv(t)
@@ -369,7 +370,7 @@ func TestCSRF_ForgedMACRejected(t *testing.T) {
 	}
 }
 
-// C-4: simple content types are rejected on mutations — text/plain must
+// simple content types are rejected on mutations — text/plain must
 // not be processable cross-site without preflight.
 func TestCSRF_RejectsSimpleContentTypes(t *testing.T) {
 	env := newSessionEnv(t)
@@ -389,7 +390,7 @@ func TestCSRF_RejectsSimpleContentTypes(t *testing.T) {
 	}
 }
 
-// C-6: a mismatching Origin on state-changing requests → 403; an absent
+// a mismatching Origin on state-changing requests → 403; an absent
 // Origin header passes (older clients).
 func TestCSRF_OriginMismatchRejected(t *testing.T) {
 	env := newSessionEnv(t)
@@ -409,7 +410,7 @@ func TestCSRF_OriginMismatchRejected(t *testing.T) {
 	}
 }
 
-// S-6: unknown session ids fail auth (strict mode) — never auto-adopted.
+// unknown session ids fail auth (strict mode) — never auto-adopted.
 func TestSession_UnknownIdRejected(t *testing.T) {
 	env := newSessionEnv(t)
 	env.admin()
@@ -438,7 +439,7 @@ func TestLogin_InvalidCredentials401Shape(t *testing.T) {
 	}
 }
 
-// C-1/C-2 refresh path: a page reload wipes the SPA's in-memory token while
+// refresh path: a page reload wipes the SPA's in-memory token while
 // the session cookie stays alive. The middleware must re-issue the full
 // token (random + session-bound MAC) so a reloaded SPA can keep mutating —
 // and the re-issued token must actually authorize a mutation.
@@ -470,7 +471,7 @@ func TestCSRF_TokenReissuedForLiveSession(t *testing.T) {
 	}
 }
 
-// C-1/C-2: the re-issued token is session-bound like a login-issued one —
+// the re-issued token is session-bound like a login-issued one —
 // one session's re-issued token must not authorize another session.
 func TestCSRF_ReissuedTokenSessionBound(t *testing.T) {
 	env := newSessionEnv(t)
@@ -512,5 +513,22 @@ func TestCSRF_NoReissueForUnauthenticated(t *testing.T) {
 	}
 	if got := w.Header().Get("X-CSRF-Token"); got != "" {
 		t.Errorf("token header on 401 response: %q", got)
+	}
+}
+
+// The CSRF MAC is keyed by a derivation of its own, not by the master key itself.
+// Those same bytes key the credentials envelope; two primitives sharing a key is
+// a weakness that is invisible until it is not.
+func TestCSRFMAC_IsKeyedByItsOwnDerivation(t *testing.T) {
+	master := []byte("0123456789abcdef0123456789abcdef")
+
+	raw := hmac.New(sha256.New, master)
+	raw.Write([]byte("session-cookie"))
+	raw.Write([]byte("."))
+	raw.Write([]byte("random"))
+	undivided := base64.RawURLEncoding.EncodeToString(raw.Sum(nil))
+
+	if got := csrfHMAC(master, "session-cookie", "random"); got == undivided {
+		t.Error("the CSRF MAC is keyed by the master key itself; it must use its own derivation")
 	}
 }

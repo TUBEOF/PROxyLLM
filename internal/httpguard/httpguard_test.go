@@ -27,7 +27,7 @@ func stubLookup(hosts map[string][]net.IPAddr) func() {
 	return func() { lookupIPAddr = prev }
 }
 
-// Spec: the write-path SSRF guard (Analysis G control 5) validates the
+// Spec: the write-path SSRF guard validates the
 // operator-supplied base URL once, at config time. The runtime dial path
 // must re-apply the same guarantee on every redirect: an upstream that
 // answers 301/302 toward a private address (e.g. the cloud metadata
@@ -195,7 +195,7 @@ func TestIsPrivateAddr(t *testing.T) {
 	}
 }
 
-// Connection reuse across bursts (2026-10-10). Behavioral, not a knob
+// Connection reuse across bursts. Behavioral, not a knob
 // assertion: the tuned transport exists so that a burst-heavy proxy does not
 // re-dial TLS for every request, and the observable fact is how many TCP
 // connections a two-burst sequence opens.

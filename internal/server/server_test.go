@@ -1,9 +1,9 @@
 package server
 
-// Server wiring RED tests (plan §4.1/§5.1): New must assemble the live
+// Server wiring RED tests: New must assemble the live
 // proxy — routing rules loaded from the store, providers registered,
 // Executor + Router injected into httpapi, auth middleware wrapping the
-// mux (with the ENV opt-out per Analysis G control 1). Derived from the
+// mux (with the ENV opt-out). Derived from the
 // wiring contract, not implementation behavior.
 
 import (
@@ -26,7 +26,7 @@ import (
 // authCreateKey creates one client key directly in the store (test
 // shortcut around the WebUI flow that will own this later).
 // authCreateKey mints a client key for the server tests. It wires the keyed-MAC
-// hasher first, exactly as main does (2026-10-10): without it the row would be
+// hasher first, exactly as main does: without it the row would be
 // legacy Argon2id and every authenticated request in this suite would pay a KDF
 // no production request pays.
 func authCreateKey(ctx context.Context, st *storage.Store) (string, string, error) {
@@ -49,7 +49,7 @@ func TestServer_LoadsRoutingRulesFromStore(t *testing.T) {
 	cfg := newConfig(t)
 
 	// Store the rule first — New must read it, not require in-memory
-	// registration (Analysis E: rule state lives in the DB, WebUI-editable).
+	// registration (rule state lives in the DB, WebUI-editable).
 	st, err := storage.Open(cfg.Storage)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -117,7 +117,7 @@ func TestServer_LoadsRoutingRulesFromStore(t *testing.T) {
 	}
 }
 
-// 2. Auth-disabled opt-out (Analysis G control 1): with the ENV-derived
+// 2. Auth-disabled opt-out: with the ENV-derived
 // flag set, the same request succeeds without any client key.
 func TestServer_AuthDisabledOptOut(t *testing.T) {
 	ctx := context.Background()
@@ -181,7 +181,7 @@ func providerAllCaps() provider.Capabilities {
 	}
 }
 
-// 3. WithEmulator (plan §6.2): a server assembled with an emulator must
+// 3. WithEmulator: a server assembled with an emulator must
 // answer an emulated web_search end-to-end — the executor routes the
 // model's tool call through the emulator and re-dispatches, so the client
 // sees the synthesized server_tool_use + web_search_tool_result blocks
@@ -209,7 +209,7 @@ func TestServer_WithEmulatorAnswersWebSearch(t *testing.T) {
 		t.Fatalf("put rule: %v", err)
 	}
 
-	// The model row carries the emulate-firecrawl policy (§6.4): compat
+	// The model row carries the emulate-firecrawl policy: compat
 	// rows in the store, not request flags, govern emulation.
 	if err := st.PutModel(ctx, storage.Model{
 		ID:         "gpt-5",

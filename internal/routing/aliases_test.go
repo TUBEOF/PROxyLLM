@@ -1,6 +1,6 @@
 package routing_test
 
-// Spec-derived alias tests (plan §6.4 / C6): the alias map resolves
+// Spec-derived alias tests: the alias map resolves
 // Claude Code aliases (e.g. ANTHROPIC_MODEL names) to configured primary
 // models, is consulted per request, and is replaceable at runtime without
 // restart (WebUI settings writes → SetAliases, same contract as SetRules).

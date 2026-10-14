@@ -10,18 +10,17 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
-// Full-pipeline routing determinism suite (plan §11 Phase-1 test gate,
-// RED-GREEN). Table-driven by requirement: the gate names four scenarios
-// that must resolve to a FIXED event sequence for identical inputs —
-// capability fallback, health cooldown, mid-stream no-swap, and
-// compat-policy application incl. thinking strip/map/block (§6.4).
+// Full-pipeline routing determinism suite, RED-GREEN. Table-driven by
+// scenario: each one must resolve to a FIXED event sequence for identical
+// inputs — capability fallback, health cooldown, mid-stream no-swap, and
+// compat-policy application incl. thinking strip/map/block.
 //
-// Expectations derive from Analysis E + §6.4 + research facts FO-1/FO-5,
-// never from executor/router internals:
+// Expectations derive from the documented pipeline contract, never from
+// executor/router internals:
 //
-//   - The pipeline order is key scope → alias → rule → capability →
-//     health (Analysis E); compat policy applies to the request before
-//     dispatch (§6.4); the executor walks the chain within FO-3 budgets.
+//   - The pipeline order is key scope → alias → rule → capability → health;
+//     compat policy applies to the request before dispatch; the executor
+//     walks the chain within its retry budgets.
 //   - Every skip/retry/failover/degradation is a trace event — never
 //     silent. Identical inputs MUST yield the identical event-type
 //     sequence on every run (score/weight fuzz was rejected for exactly
@@ -58,7 +57,7 @@ type pipelineCase struct {
 	wantAttempted []string
 }
 
-// runPipeline drives the full §4.3 flow for one table row: resolve chain
+// runPipeline drives the full pipeline for one table row: resolve chain
 // (rules + capability + health) → apply compat → execute (complete or
 // stream). It returns the combined event-type sequence and the providers
 // that received an attempt.
@@ -90,7 +89,7 @@ func runPipeline(t *testing.T, tc pipelineCase) ([]routing.EventType, []string, 
 		return eventTypes(resolveTrace), nil, err
 	}
 
-	// Compat policy applies to the request BEFORE dispatch (§6.4); every
+	// Compat policy applies to the request BEFORE dispatch; every
 	// application rides its own trace.
 	adapted, compatTrace, err := routing.ApplyCompat(tc.compat, withChainModel(chainEntries, req))
 	if err != nil {
@@ -155,7 +154,7 @@ func attempted(provs []provider.Provider) []string {
 }
 
 // withChainModel stamps the resolved chain's model onto the request the
-// way the httpapi layer does (§4.3: the chain entry names the per-provider
+// way the httpapi layer does (the chain entry names the per-provider
 // model; the executor re-stamps per attempt).
 func withChainModel(chain []routing.ChainEntry, req ir.Request) ir.Request {
 	if len(chain) > 0 && chain[0].Model != "" {
@@ -168,7 +167,7 @@ func withChainModel(chain []routing.ChainEntry, req ir.Request) ir.Request {
 // cooldown decisions, no sleeps).
 var fixedNow = func() time.Time { return time.Date(2026, 9, 12, 12, 0, 0, 0, time.UTC) }
 
-// TestRoutingDeterminism_Pipeline is the §11 gate table: each row is one
+// TestRoutingDeterminism_Pipeline is the gate table: each row is one
 // named scenario; the event sequence is the pin.
 func TestRoutingDeterminism_Pipeline(t *testing.T) {
 	visionCaps := provider.Capabilities{Streaming: true, Vision: true}
@@ -176,10 +175,9 @@ func TestRoutingDeterminism_Pipeline(t *testing.T) {
 
 	cases := []pipelineCase{
 		{
-			// Spec change 2026-09-21 (automatic capabilities): vision is
-			// no longer gated at resolve time — the request dispatches to
-			// the chain's first entry and the upstream decides. A real
-			// capability_gap rejection would fail over to the executor's
+			// Vision is no longer gated at resolve time — the request
+			// dispatches to the chain's first entry and the upstream decides.
+			// A real capability_gap rejection would fail over to the executor's
 			// fallback models (pinned in capabilityfallback_test.go); here
 			// the text-only provider succeeds, so no fallback fires.
 			name: "vision request: no pre-stream vision gate, the first chain entry serves",
@@ -217,7 +215,7 @@ func TestRoutingDeterminism_Pipeline(t *testing.T) {
 			wantAttempted: []string{"hot"},
 		},
 		{
-			name: "mid-stream no-swap: failure after the first event is terminal, the chain is never swapped (FO-1/FO-5)",
+			name: "mid-stream no-swap: failure after the first event is terminal, the chain is never swapped",
 			rules: []routing.Rule{
 				{MatchModel: "claude-*", Chain: []string{"flaky", "backup"}, Enabled: true},
 			},
@@ -304,11 +302,11 @@ func TestRoutingDeterminism_Pipeline(t *testing.T) {
 			wantAttempted: []string{},
 		},
 		{
-			name: "alias + capability + failover compose deterministically (C6 + FO-2)",
+			name: "alias + capability + failover compose deterministically",
 			rules: []routing.Rule{
 				{MatchModel: "gpt-5", Chain: []string{"dead", "alive"}, Enabled: true},
 			},
-			aliases: map[string]string{"claude-sonnet-5": "gpt-5"}, // C6-style
+			aliases: map[string]string{"claude-sonnet-5": "gpt-5"}, // Claude Code style alias
 			providers: []provider.Provider{
 				&scriptedProvider{id: "dead", completeErrs: []error{upErr(500, "")}},
 				&scriptedProvider{id: "alive"},
@@ -363,7 +361,7 @@ func TestRoutingDeterminism_Pipeline(t *testing.T) {
 	}
 }
 
-// TestRoutingDeterminism_IdenticalRuns proves the Analysis-E claim the
+// TestRoutingDeterminism_IdenticalRuns proves the determinism claim the
 // rejected alternatives failed: the same rules, registry, health state,
 // and request produce the SAME event-type sequence on every run — ten
 // consecutive pipeline runs included.

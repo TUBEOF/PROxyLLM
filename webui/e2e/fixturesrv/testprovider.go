@@ -1,7 +1,7 @@
 package main
 
 // fixtureTestProvider answers the Models page's Test button
-// deterministically (2026-09-22): a fixed "OK" reply for the mdl-test row,
+// deterministically: a fixed "OK" reply for the mdl-test row,
 // never a live upstream call (the fixturesrv determinism contract — the
 // v1.0.2 lesson: real upstream calls poisoned the baselines). It implements
 // the provider interface minimally; only Complete is ever exercised (the

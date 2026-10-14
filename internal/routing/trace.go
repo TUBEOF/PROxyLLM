@@ -4,12 +4,14 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
-// Trace is the route_trace of one request (plan Analysis E: every
-// transition observable; FO-4: original + fallback provider, status + body
-// error code, failure position, tokens consumed, per-attempt and total
-// latency). It serializes to the JSON stored in request_logs.route_trace.
+// Trace is the route_trace of one request: every transition observable —
+// original + fallback provider, status + body error code, failure position,
+// tokens consumed, per-attempt and total latency. It serializes to the JSON
+// stored in request_logs.route_trace.
 //
 // All methods are safe for concurrent use: the failover loop and the
 // observability writer run on different goroutines once a stream is live.
@@ -43,7 +45,7 @@ type EventType string
 
 const (
 	// EventAlias: the requested model name resolved to a configured
-	// primary (C6 alias resolution).
+	// primary (alias resolution).
 	EventAlias EventType = "alias"
 
 	// EventSkipped: a chain entry was skipped (capability gap, health
@@ -56,7 +58,7 @@ const (
 	EventAttempt EventType = "attempt"
 
 	// EventFailed: an attempt failed with its classification (class,
-	// error code, HTTP status, position — FO-2/FO-4).
+	// error code, HTTP status, position).
 	EventFailed EventType = "failed"
 
 	// EventFailover: the request moved to the next chain entry.
@@ -65,8 +67,8 @@ const (
 	// EventRetry: the request re-attempted the same provider (backoff).
 	EventRetry EventType = "retry"
 
-	// EventCompatPolicy: a per-model compat policy was applied (§6.4:
-	// thinking strip/map/block, clamps, emulation) — never silent.
+	// EventCompatPolicy: a per-model compat policy was applied (thinking
+	// strip/map/block, clamps, emulation) — never silent.
 	EventCompatPolicy EventType = "compat_policy"
 
 	// EventExpand: a chain type entry expanded to the accounts of that
@@ -78,13 +80,13 @@ const (
 	// (ADR-009) — From/To carry the old/new first entry. Never silent.
 	EventRotation EventType = "rotation"
 
-	// EventEmulatedTool: a server tool was served by the §6.2 emulation
-	// layer (model tool call answered via the Firecrawl fallback) —
+	// EventEmulatedTool: a server tool was served by the emulation layer
+	// (model tool call answered via the Firecrawl fallback) —
 	// substitutions are never silent.
 	EventEmulatedTool EventType = "emulated_tool"
 
 	// EventEmulatedToolAttempt: one ACCOUNT's outcome inside an emulated tool
-	// invocation (2026-10-10) — ProviderID names the account, Reason the
+	// invocation — ProviderID names the account, Reason the
 	// outcome (answered / empty / failed). The account walk is otherwise
 	// invisible: without this the log can say a web tool ran but not why it
 	// found nothing.
@@ -110,7 +112,7 @@ const (
 	// EventModelResolved: the requested model ID (a prefixed routing
 	// identity, e.g. "ollamacloud/glm-5.3") resolved to the upstream wire
 	// name for dispatch (e.g. "glm-5.3") — From/To carry routing ID → wire
-	// name (2026-09-21 model identity). Never silent.
+	// name. Never silent.
 	EventModelResolved EventType = "model_resolved"
 
 	// EventImplicitRoute: no rule matched, but the models-table row for
@@ -121,9 +123,8 @@ const (
 
 	// EventContextOverride: the requested model name carried the Claude
 	// Code context-window marker ("[1m]"/"[1M]") and was stripped to the
-	// base model before routing (2026-10-06 context auto-detect plan,
-	// Task 1). From carries the typed name, To the stripped base. The
-	// marker is a client-side context hint, never part of the model
+	// base model before routing. From carries the typed name, To the stripped
+	// base. The marker is a client-side context hint, never part of the model
 	// identity — overrides are never silent.
 	EventContextOverride EventType = "context_override"
 )
@@ -143,22 +144,34 @@ type Event struct {
 	From string `json:"from,omitempty"`
 	To   string `json:"to,omitempty"`
 
-	// Class + ErrorCode + HTTPStatus record the FO-2 classification of a
-	// failed attempt (FO-4: the audit trail needs the body error code,
-	// not just the status).
+	// Class + ErrorCode + HTTPStatus record the classification of a
+	// failed attempt: the audit trail needs the body error code,
+	// not just the status.
 	Class      Class  `json:"class,omitempty"`
 	ErrorCode  string `json:"error_code,omitempty"`
 	HTTPStatus int    `json:"http_status,omitempty"`
 
-	// FailurePosition is pre_stream/mid_stream (FO-4).
+	// FailurePosition is pre_stream/mid_stream.
 	FailurePosition FailurePosition `json:"failure_position,omitempty"`
 
 	// Capability names the capability family of a capability_fallback
 	// event (ADR-010).
 	Capability string `json:"capability,omitempty"`
 
-	// LatencyMS is the attempt duration (per-attempt latency, FO-4).
+	// LatencyMS is the attempt duration (per-attempt latency).
 	LatencyMS int64 `json:"latency_ms,omitempty"`
+
+	// Usage is the token spend of the call an event describes, when it
+	// describes one (a described image, an answered tool call). It rides the
+	// event because the event is what the log writer turns into a sub-operation
+	// row, and that row must be able to state what the step cost.
+	Usage *ir.Usage `json:"usage,omitempty"`
+
+	// CacheHit marks an image_caption whose description came from the caption
+	// cache: the image was replaced, but no describer was called. Such an event
+	// is a substitution, not an operation — it carries no usage and no latency,
+	// and it produces no sub-operation row.
+	CacheHit bool `json:"cache_hit,omitempty"`
 
 	// ts is the event time (not serialized per event; the trace carries
 	// relative ordering, and events are appended in order).
@@ -178,9 +191,8 @@ func (t *Trace) Alias(from, to string) {
 	t.add(Event{Type: EventAlias, From: from, To: to})
 }
 
-// ModelResolved records the routing-ID → wire-name resolution (2026-09-21
-// model identity): the chain dispatches the wire name, the client-facing
-// surfaces echo the routing ID.
+// ModelResolved records the routing-ID → wire-name resolution: the chain
+// dispatches the wire name, the client-facing surfaces echo the routing ID.
 func (t *Trace) ModelResolved(routingID, wireName string) {
 	t.add(Event{Type: EventModelResolved, From: routingID, To: wireName})
 }
@@ -224,35 +236,51 @@ func (t *Trace) Retry(providerID string, reason string) {
 	t.add(Event{Type: EventRetry, ProviderID: providerID, Reason: reason})
 }
 
-// CompatPolicy records a compat-policy application (§6.4, never silent).
+// CompatPolicy records a compat-policy application (never silent).
 func (t *Trace) CompatPolicy(setting, value, reason string) {
 	t.add(Event{Type: EventCompatPolicy, Reason: reason,
 		From: setting, To: value})
 }
 
-// CapabilityFallback records a capability-fallback consultation (ADR-010 /
-// 2026-09-21 model fallback): the chain could not serve the capability
-// named by capability, and the configured fallback models were tried.
+// CapabilityFallback records a capability-fallback consultation (ADR-010): the
+// chain could not serve the capability named by capability, and the configured
+// fallback models were tried.
 func (t *Trace) CapabilityFallback(capability, reason string) {
 	t.add(Event{Type: EventCapabilityFallback, Capability: capability, Reason: reason})
 }
 
-// ImageCaption records that a vision fallback model described an image and the
+// ImageCaption records that a vision model described an image and the
 // description was substituted into the request (ADR-014, never silent).
-func (t *Trace) ImageCaption(providerID, model string, chars int) {
+// latencyMS is the describer call, usage its token spend — the sub-operation
+// row the log derives from this event reports what the step cost.
+func (t *Trace) ImageCaption(providerID, model string, chars int, latencyMS int64, usage ir.Usage) {
+	spent := usage
 	t.add(Event{Type: EventImageCaption, ProviderID: providerID, Model: model,
+		LatencyMS: latencyMS, Usage: &spent,
 		Reason: strconv.Itoa(chars) + " character(s) described"})
 }
 
-// EmulatedTool records a server-tool substitution by the §6.2 emulation
+// ImageCaptionCached records that an image was replaced by a description the
+// cache already held. The image bytes were seen before, so no describer was
+// called: the event names the model that produced the text originally, carries
+// no spend, and — because nothing went upstream — produces no log row.
+func (t *Trace) ImageCaptionCached(providerID, model string, chars int) {
+	t.add(Event{Type: EventImageCaption, ProviderID: providerID, Model: model,
+		CacheHit: true,
+		Reason:   strconv.Itoa(chars) + " character(s) reused from the caption cache"})
+}
+
+// EmulatedTool records a server-tool substitution by the emulation
 // layer (never silent). detail carries the invocation summary (tool,
-// query/url, outcome).
-func (t *Trace) EmulatedTool(toolName, detail string) {
-	t.add(Event{Type: EventEmulatedTool, Reason: detail, To: toolName})
+// query/url, outcome); accountID names the emulating account that served the
+// call (empty when none did), latencyMS the invocation.
+func (t *Trace) EmulatedTool(toolName, accountID, detail string, latencyMS int64) {
+	t.add(Event{Type: EventEmulatedTool, ProviderID: accountID, Reason: detail,
+		To: toolName, LatencyMS: latencyMS})
 }
 
 // EmulatedToolAttempt records one account's outcome inside an emulated tool
-// invocation (2026-10-10): which account was asked, and whether it answered,
+// invocation: which account was asked, and whether it answered,
 // came back empty, or failed. The account walk happens inside the pool, so this
 // is the only place the operator can see WHY a web tool found nothing — and
 // which account to look at when one of several is misconfigured.

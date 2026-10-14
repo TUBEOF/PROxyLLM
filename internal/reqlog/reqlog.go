@@ -84,9 +84,9 @@ const (
 )
 
 // subscriber is one SSE fan-out target. Its OWN mutex and closed flag make the
-// send/close race free without the hub's lock (2026-10-10): the fan-out used to
-// take the hub mutex once PER SUBSCRIBER PER EVENT, so every request's
-// registration serialized behind the whole broadcast.
+// send/close race free without the hub's lock: taking the hub mutex once PER
+// SUBSCRIBER PER EVENT would serialize every request's registration behind the
+// whole broadcast.
 type subscriber struct {
 	ch     chan Event
 	ctx    context.Context
@@ -144,7 +144,7 @@ func (sub *subscriber) close() {
 // Stream is the in-flight registry + broadcast hub. Safe for concurrent
 // use; run with the -race gate (streaming-adjacent doctrine).
 type Stream struct {
-	// Two locks, not one (2026-10-10): a request's registration must not queue
+	// Two locks, not one: a request's registration must not queue
 	// behind the broadcast, and reading the in-flight set must not queue behind
 	// another reader.
 	inflightMu sync.RWMutex

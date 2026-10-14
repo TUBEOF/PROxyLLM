@@ -8,7 +8,7 @@
 PROxyLLM translates bidirectionally between the OpenAI protocol family
 (chat/completions + responses) and the Anthropic Messages family, with
 Ollama native as an additional wire shape. Pairwise converters would mean
-N·(N−1) converters, each reimplementing streaming state machines (Analysis D).
+N·(N−1) converters, each reimplementing streaming state machines.
 
 ## Decision
 

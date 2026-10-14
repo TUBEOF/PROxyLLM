@@ -1,7 +1,7 @@
 package webui
 
-// I5 (final review): the SPA no longer sends `compat` on model saves
-// (R5: the knobs are internal) — a plain UPSERT would then wipe the
+// The SPA no longer sends `compat` on model saves
+// (the knobs are internal) — a plain UPSERT would then wipe the
 // stored blob on EVERY operator save. The contract: an absent compat
 // field PRESERVES the stored blob (legacy read-only override); an
 // EXPLICIT compat field still replaces it (the field stays the wire

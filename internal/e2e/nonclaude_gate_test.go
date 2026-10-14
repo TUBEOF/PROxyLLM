@@ -1,7 +1,7 @@
 package e2e
 
-// Spec-derived tests for the global non-Claude switch (plan §6.4 / OP-2 /
-// ADR-008): anthropic_surface_non_claude = allow | warn | block, default
+// Spec-derived tests for the global non-Claude switch (ADR-008):
+// anthropic_surface_non_claude = allow | warn | block, default
 // allow. warn annotates route_trace (compat_policy event); block rejects
 // with a protocol-conform error and dispatches nothing; a missing or
 // invalid setting is allow — the safety net must not de-route on store
@@ -56,7 +56,7 @@ func TestNonClaudeGate_DefaultAllow(t *testing.T) {
 
 // 2. warn: the request still routes, and route_trace carries the
 // compat_policy event {"from":"anthropic_surface_non_claude","to":"warn"}
-// (§6.4: never silent).
+// (never silent).
 func TestNonClaudeGate_WarnTracesAndRoutes(t *testing.T) {
 	e := newEnv(t)
 	seedNonClaude(t, e, "warn")

@@ -1,8 +1,11 @@
-/* WebUI-local additions — everything the SPA needs that the dashboard kit
-   does not ship (kit.css stays verbatim, K-1). Tokens only (DESIGN.md):
-   colors come exclusively from colors_and_type.css custom properties. */
+/* WebUI-local additions — the little the console needs that the component
+   kit (kit.css) does not ship: the route-level loading state and the login
+   page layout.
+   Tokens only: every colour comes from a custom property in
+   colors_and_type.css, and nothing here redefines a token or overrides a kit
+   rule. */
 
-/* Route-level loading state (Suspense boundaries, B-2). */
+/* Route-level loading state (Suspense boundaries). */
 .loading {
   display: flex;
   flex-direction: column;
@@ -26,7 +29,7 @@
   }
 }
 
-/* Login route: centered glass card on the page background (kit has the
+/* Login route: a centered glass card on the page background (the kit has the
    .modal card look, but no standalone auth page layout). */
 .login-wrap {
   min-height: 100vh;
@@ -74,36 +77,10 @@
   font-size: var(--fs-sm);
 }
 
-/* Motion discipline (DESIGN.md): the spinner is decorative — it stops
-   under prefers-reduced-motion; the label alone carries the state. */
+/* Motion discipline: the spinner is decorative — it stops under
+   prefers-reduced-motion; the label alone carries the state. */
 @media (prefers-reduced-motion: reduce) {
   .loading-spinner {
     animation: none;
   }
-}
-
-/* Modal stacking (D-3): the kit renders .modal-backdrop as a fixed,
-   z-index:200 sibling, but .modal itself is unpositioned — the backdrop
-   covers it and swallows every click (Overlays.tsx renders the pair as
-   siblings, unlike the kit demo which nests the modal inside). Position
-   the modal over its backdrop using the token layer's own --z-modal,
-   and center it: as a SIBLING of the flex backdrop it inherits no
-   centering — left to itself it pins to the parent's top-right flow
-   (the 2026-10-08 screenshot: the account modal hung off the avatar).
-   The kit file stays verbatim (K-1); this is a webui-local addition. */
-.modal {
-  position: fixed;
-  z-index: var(--z-modal);
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  margin: 0;
-}
-
-/* Brand link color (D-4): .sidebar-brand is an <a> but only its child
-   .name span carries a color — the anchor itself falls back to the
-   UA dark-mode link blue (rgb(158,158,255)), which the tokens-only
-   design rule rightly rejects. Inherit like every other nav link. */
-a.sidebar-brand {
-  color: var(--fg);
 }

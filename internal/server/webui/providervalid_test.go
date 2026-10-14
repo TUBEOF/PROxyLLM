@@ -1,8 +1,8 @@
 package webui
 
-// Spec-derived tests for the provider config validator (Task 5 Gap #2,
-// plan §5.2 / Analysis G control 5): shape checks, SSRF guard split
-// (write path resolves DNS, construction path does not), strict parsing.
+// Spec-derived tests for the provider config validator: shape checks,
+// SSRF guard split (write path resolves DNS, construction path does not),
+// strict parsing.
 
 import "testing"
 
@@ -41,7 +41,7 @@ func TestParseProviderConfig_TrailingDataRejected(t *testing.T) {
 	}
 }
 
-// Opt-out semantics (Analysis G control 5): with the opt-out the guard
+// Opt-out semantics: with the opt-out the guard
 // accepts a loopback URL; without it the write-path parse rejects it. The
 // static variant is NOT affected by the opt-out because it never resolves.
 func TestParseProviderConfig_OptOutOnlyAffectsWritePath(t *testing.T) {

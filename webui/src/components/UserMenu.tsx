@@ -5,7 +5,7 @@ import { apiCall } from '../api';
 import { Modal } from './Overlays';
 import { IconLogout } from '../icons';
 
-// UserMenu (2026-10-08): the topbar avatar becomes the account menu —
+// UserMenu: the topbar avatar becomes the account menu —
 // username (from GET /api/admin/me, the honest one after a refresh),
 // "Account settings" (the password change modal), "Sign out". The
 // sidebar's bottom Sign out button is gone; the avatar is the single

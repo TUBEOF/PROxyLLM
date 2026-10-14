@@ -144,8 +144,7 @@ export function fmtDay(ts: number): string {
 // pages apart).
 export const CONFIG_LIVE_MS = 15000;
 
-// useLiveData polls a GET endpoint while the page is mounted (2026-10-06
-// live updates): a fixed interval, paused while the tab is hidden (the
+// useLiveData polls a GET endpoint while the page is mounted: a fixed interval, paused while the tab is hidden (the
 // poll resumes on visibility), in-flight aborted on unmount. Same 401 →
 // session-loss path as useAdminData, same DataState contract — live pages
 // use this instead of useAdminData. Transient poll errors surface in the

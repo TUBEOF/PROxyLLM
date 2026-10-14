@@ -1,6 +1,6 @@
 package webui
 
-// Provider-type validation (Task 5 Gap #2, plan §5.2 / Analysis G control 5):
+// Provider-type validation:
 // every provider PUT is validated against the canonical provider types
 // before it reaches the storage layer. Invalid shapes are rejected with 400
 // — the storage layer only checks JSON validity and secret-shaped keys, so
@@ -18,7 +18,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/httpguard"
 )
 
-// Canonical provider types (plan §4.1, SPA PROVIDER_TYPES). The storage
+// Canonical provider types (mirrors the SPA's PROVIDER_TYPES). The storage
 // layer's seed strings are the same hyphenated forms (review fix `f9d6429`),
 // so WebUI saves never rewrite a seeded provider's type.
 const (
@@ -36,7 +36,7 @@ const (
 )
 
 // OptOutEnv is the documented operator opt-out for the private-address
-// SSRF guard (Analysis G control 5: base-URL validation with documented
+// SSRF guard (base-URL validation with documented
 // opt-out). Operators behind a proxy mesh that legitimately targets
 // private backends set it to "1". Aliased from the shared guard package
 // so the write path and the runtime redirect guard share one vocabulary.
@@ -60,12 +60,12 @@ type ProviderConfig struct {
 	// Per-provider capability pins. Optional; only the seven known keys
 	// are accepted.
 	Capabilities map[string]bool `json:"capabilities"`
-	// ModelPrefix is the type's model-identity prefix (2026-09-21): synced
+	// ModelPrefix is the type's model-identity prefix: synced
 	// model IDs are "<model_prefix>/<upstream-name>" (default: the type
 	// string). Optional; empty selects the default. Only meaningful for
 	// llm kinds — refused for web_tool types at the admin write boundary.
 	ModelPrefix string `json:"model_prefix"`
-	// Aliases are the type's client-facing model aliases (2026-09-21):
+	// Aliases are the type's client-facing model aliases:
 	// alias → registered model ID. The server merges every type's map into
 	// the router's live alias map (KV model_aliases still wins on
 	// collision — it stays the operator's escape hatch). Optional.
@@ -264,7 +264,7 @@ func urlShape(raw, field string) error {
 }
 
 // guardPublicURL resolves the host of an operator-supplied URL and rejects
-// private-address targets (Analysis G control 5 — the SSRF guard for
+// private-address targets (the SSRF guard for
 // WebUI-supplied provider endpoints). Write path only. Delegates the
 // address classification to the shared guard package so the write path
 // and the runtime redirect guard cannot drift apart.

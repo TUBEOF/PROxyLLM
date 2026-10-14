@@ -8,8 +8,8 @@ import (
 	"strings"
 )
 
-// RequestLog is one persisted request log row (plan Analysis C schema +
-// Analysis E FO-4 + Analysis G): route_trace keeps every observable routing
+// RequestLog is one persisted request log row: route_trace keeps every
+// observable routing
 // decision, error_redacted is the ONLY error text that ever reaches this
 // table — both feeding the WebUI log viewer.
 type RequestLog struct {

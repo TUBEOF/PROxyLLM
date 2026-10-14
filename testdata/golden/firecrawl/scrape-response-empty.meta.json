@@ -2,6 +2,5 @@
   "fixture": "scrape-response-empty.json",
   "source": "https://docs.firecrawl.dev/api-reference/endpoint/scrape",
   "accessed": "2026-10-10",
-  "facts": ["F3"],
   "notes": "A page Firecrawl could not serve, reported INSIDE a 200 response: the transport succeeded, metadata.statusCode is the target's own status (404 here) and metadata.error carries the page's error note. The markdown carries the 404 page's own text, which is the point — a not-found page HAS a body, so without reading statusCode the model would be handed a 'Not Found' document as if it were the answer. Grounds the contract that an unservable page is an EMPTY result (walk continues, model is told nothing was retrieved), never a hard failure and never a bogus document."
 }

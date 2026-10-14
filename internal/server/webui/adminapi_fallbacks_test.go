@@ -1,11 +1,10 @@
 package webui
 
-// ADR-010 admin surface contract tests, derived from the ADR + its
-// 2026-09-21 amendment (automatic capabilities), not implementation
-// behavior:
+// ADR-010 admin surface contract tests, derived from the ADR and its
+// automatic-capabilities behavior, not implementation behavior:
 //
 //   - GET/PUT /api/admin/capability-fallbacks: three lists (vision,
-//     web_search, web_fetch). Spec change 2026-09-21: vision entries are
+//     web_search, web_fetch). Vision entries are
 //     MODEL IDs (routing identities) validated against the models table —
 //     provider accounts/types are refused; web lists only accept
 //     web_tool-kind accounts; a save pushes ReloadFallbacks; wire shape
@@ -93,7 +92,7 @@ func TestCapabilityFallbacks_UnsetReadsEmptyArrays(t *testing.T) {
 	}
 }
 
-// Spec change 2026-09-21: a provider TYPE entry (the v1.0.2 shape) is no
+// A provider TYPE entry (the v1.0.2 shape) is no
 // longer a valid vision fallback — entries are model IDs.
 func TestCapabilityFallbacks_RefusesProviderTypeAsVision(t *testing.T) {
 	e := newAdminEnv(t)

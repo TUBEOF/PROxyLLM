@@ -1,5 +1,5 @@
 // Command fixturesrv serves a fully-seeded PROxyLLM instance for the
-// Playwright visual regression suite (Phase 2 research §7 V-1..V-7).
+// Playwright visual regression suite.
 //
 // It is a REAL assembly — no network mocking: the embedded SPA, the real
 // admin API, a real SQLite store seeded through the public storage APIs,
@@ -85,7 +85,7 @@ func run(addr, dbPath string, seedData bool) error {
 
 	srv, err := server.New(cfg, store, slog.Default(),
 		server.WithMasterKey(masterKey),
-		// The scripted test-model provider (2026-09-22): the Models page's
+		// The scripted test-model provider: the Models page's
 		// Test button hits it with a "Sag OK" complete — deterministic
 		// "OK" answer, no live upstream, no wall-clock state (latency is
 		// measured but not rendered in the badge).
@@ -135,6 +135,7 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 		{ID: "prv-ollama", Type: "ollama-cloud", Name: "Ollama key 1"},
 		{ID: "prv-ollama-2", Type: "ollama-cloud", Name: "Ollama key 2"},
 		{ID: "prv-openai", Type: "custom-openai", Name: "Custom OpenAI-compatible"},
+		{ID: "prv-firecrawl", Type: "firecrawl", Name: "Firecrawl key 1"},
 		{ID: "prv-test", Type: "custom-openai", Name: "Test target"},
 	} {
 		if err := store.PutProvider(ctx, p); err != nil {
@@ -191,7 +192,7 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 			Compat:       json.RawMessage(`{"thinking_handling":"map-to-reasoning-effort"}`),
 			Priority:     50,
 		},
-		// The test-button target (2026-09-22): the Playwright spec clicks
+		// The test-button target: the Playwright spec clicks
 		// THIS model's Test button — the scripted provider below answers
 		// deterministically ("OK", fixed reply, no wall-clock data in the
 		// badge — latency is not rendered).
@@ -210,7 +211,7 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 		}
 	}
 
-	// Routing rules (Analysis E + ADR-009): an exact-account chain, a
+	// Routing rules (ADR-009): an exact-account chain, a
 	// type-entry rule (expands to all accounts of the type at request
 	// time), and one with an explicit per-rule strategy override.
 	rules := []storage.RoutingRule{
@@ -299,11 +300,11 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 		{
 			Timestamp: base, ClientKeyID: "ckey-claude-code", ProviderID: "prv-openai",
 			Model: "claude-sonnet-5", Status: 200, LatencyMS: 842,
-			Usage:          json.RawMessage(`{"input_tokens":1204,"output_tokens":318,"cache_read_input_tokens":512}`),
+			Usage: json.RawMessage(`{"input_tokens":1204,"output_tokens":318,"cache_read_input_tokens":512}`),
 			// The emulated_tool detail carries a token-shaped value on
 			// purpose: the child row must render it masked, so the e2e
 			// suite proves the redaction end-to-end (review C1/I2).
-			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"claude-sonnet-5","to":"claude-sonnet-5","provider_id":"prv-openai"},{"type":"attempt","provider_id":"prv-openai","model":"claude-sonnet-5"},{"type":"emulated_tool","to":"web_search","reason":"emulator search failed: firecrawl: HTTP 401: unauthorized key sk-live-e2efixture1234"}]}`),
+			RouteTrace:     json.RawMessage(`{"version":8,"events":[{"type":"model_resolved","from":"claude-sonnet-5","to":"claude-sonnet-5","provider_id":"prv-openai"},{"type":"attempt","provider_id":"prv-openai","model":"claude-sonnet-5"},{"type":"emulated_tool_attempt","provider_id":"prv-firecrawl","to":"web_search","reason":"failed"},{"type":"emulated_tool","provider_id":"prv-firecrawl","to":"web_search","latency_ms":640,"reason":"error emulator_unavailable: emulator search failed: firecrawl: HTTP 401: unauthorized key sk-live-e2efixture1234"}]}`),
 			ConversationID: "conv_a1b2c3d4", ConvKey: "sess:11223344-5566-7788-99aa-bbccddeeff00",
 			Protocol: "anthropic", Features: json.RawMessage(`{"streaming":true,"tools":true,"thinking":false,"web_search":false,"web_fetch":false,"vision":false}`),
 		},
@@ -312,7 +313,7 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 			Timestamp: base - 300, ClientKeyID: "ckey-claude-code", ProviderID: "prv-ollama",
 			Model: "llama3.3-70b", Status: 200, LatencyMS: 1930,
 			Usage:          json.RawMessage(`{"input_tokens":1204,"output_tokens":502}`),
-			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"llama3.3-70b","to":"llama3.3-70b","provider_id":"prv-ollama"},{"type":"attempt","provider_id":"prv-openai","model":"claude-sonnet-5"},{"type":"failover","from":"prv-openai","to":"prv-ollama","reason":"upstream 503"},{"type":"attempt","provider_id":"prv-ollama","model":"llama3.3-70b"},{"type":"compat_policy","policy":"thinking_handling","applied":"map-to-reasoning-effort"}]}`),
+			RouteTrace:     json.RawMessage(`{"version":8,"events":[{"type":"model_resolved","from":"llama3.3-70b","to":"llama3.3-70b","provider_id":"prv-ollama"},{"type":"attempt","provider_id":"prv-openai","model":"claude-sonnet-5"},{"type":"failover","from":"prv-openai","to":"prv-ollama","reason":"upstream 503"},{"type":"attempt","provider_id":"prv-ollama","model":"llama3.3-70b"},{"type":"compat_policy","policy":"thinking_handling","applied":"map-to-reasoning-effort"}]}`),
 			ConversationID: "conv_a1b2c3d4", ConvKey: "sess:11223344-5566-7788-99aa-bbccddeeff00",
 			Protocol: "anthropic", Features: json.RawMessage(`{"streaming":true,"tools":true,"thinking":true,"web_search":false,"web_fetch":false,"vision":false}`),
 		},
@@ -321,7 +322,7 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 			Timestamp: base - 900, ClientKeyID: "ckey-ci", ProviderID: "prv-codex",
 			Model: "gpt-5", Status: 429, LatencyMS: 210,
 			Usage:          json.RawMessage(`{}`),
-			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"gpt-5","to":"gpt-5","provider_id":"prv-codex"},{"type":"failed","class":"rate_limit","http_status":429}]}`),
+			RouteTrace:     json.RawMessage(`{"version":8,"events":[{"type":"model_resolved","from":"gpt-5","to":"gpt-5","provider_id":"prv-codex"},{"type":"failed","class":"rate_limit","http_status":429}]}`),
 			ErrorRedacted:  "upstream rate limit exceeded",
 			ConversationID: "conv_de1a7e00", ConvKey: "sys:ci-smoke",
 			Protocol: "openai", Features: json.RawMessage(`{"streaming":false,"tools":false,"thinking":false,"web_search":false,"web_fetch":false,"vision":false}`),
@@ -331,17 +332,31 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 			// the cross-row heal chip renders (previous failed, this 2xx).
 			Timestamp: base - 895, ClientKeyID: "ckey-ci", ProviderID: "prv-ollama",
 			Model: "glm-5.3-flash", Status: 200, LatencyMS: 1180,
-			Usage:          json.RawMessage(`{"input_tokens":88211,"output_tokens":72,"cache_read_input_tokens":88128}`),
+			Usage: json.RawMessage(`{"input_tokens":88211,"output_tokens":72,"cache_read_input_tokens":88128}`),
 			// The vision fallback (ADR-014) in the order production records it:
 			// the chain fails on the image, a vision model describes it, the
 			// capability fallback is consulted, and the chain is retried with
 			// the text in place of the image. The rescue records TWO events
 			// (the caption and the consultation) but renders ONE row: the
 			// caption subsumes the consultation, which only becomes a row of
-			// its own when no model could describe the image (2026-10-11).
-			RouteTrace:     json.RawMessage(`{"version":6,"events":[{"type":"model_resolved","from":"glm-5.3-flash","to":"ollama-cloud/glm-5.3-flash","provider_id":"prv-ollama"},{"type":"attempt","provider_id":"prv-codex","model":"gpt-5"},{"type":"failed","provider_id":"prv-codex","class":"capability_gap","error_code":"unsupported_image","http_status":400,"failure_position":"pre_stream","capability":"vision","latency_ms":140},{"type":"image_caption","provider_id":"prv-ollama","model":"glm-5.3-vl","latency_ms":820,"reason":"184 character(s) described"},{"type":"capability_fallback","capability":"vision","reason":"chain exhausted on capability gaps; described 1 image(s) and retrying the chain with the text in place of the image"},{"type":"failover","from":"prv-codex","to":"prv-ollama","reason":"capability fallback model"},{"type":"attempt","provider_id":"prv-ollama","model":"glm-5.3-flash"}]}`),
+			// its own when no model could describe the image.
+			RouteTrace:     json.RawMessage(`{"version":8,"events":[{"type":"model_resolved","from":"glm-5.3-flash","to":"ollama-cloud/glm-5.3-flash","provider_id":"prv-ollama"},{"type":"attempt","provider_id":"prv-codex","model":"gpt-5"},{"type":"failed","provider_id":"prv-codex","class":"capability_gap","error_code":"unsupported_image","http_status":400,"failure_position":"pre_stream","capability":"vision","latency_ms":140},{"type":"image_caption","provider_id":"prv-ollama","model":"glm-5.3-vl","latency_ms":820,"usage":{"input_tokens":1180,"output_tokens":46,"cache_read_input_tokens":0},"reason":"184 character(s) described"},{"type":"capability_fallback","capability":"vision","reason":"chain exhausted on capability gaps; described 1 image(s) and retrying the chain with the text in place of the image"},{"type":"failover","from":"prv-codex","to":"prv-ollama","reason":"capability fallback model"},{"type":"attempt","provider_id":"prv-ollama","model":"glm-5.3-flash"}]}`),
 			ConversationID: "conv_de1a7e00", ConvKey: "sys:ci-smoke",
 			Protocol: "anthropic", Features: json.RawMessage(`{"streaming":false,"tools":false,"thinking":false,"web_search":false,"web_fetch":false,"vision":false}`),
+		},
+		{
+			// The next turn of a conversation that already carried the image:
+			// the client re-sent its transcript, the description was already
+			// known, and the image was replaced before the dispatch. The trace
+			// records the substitution; the log records no step for it, because
+			// no request went out — a cached description is the absence of an
+			// operation, not an operation that cost nothing.
+			Timestamp: base + 120, ClientKeyID: "ckey-claude-code", ProviderID: "prv-ollama",
+			Model: "glm-5.3-flash", Status: 200, LatencyMS: 940,
+			Usage:          json.RawMessage(`{"input_tokens":88320,"output_tokens":58,"cache_read_input_tokens":0}`),
+			RouteTrace:     json.RawMessage(`{"version":8,"events":[{"type":"model_resolved","from":"glm-5.3-flash","to":"ollama-cloud/glm-5.3-flash","provider_id":"prv-ollama"},{"type":"image_caption","provider_id":"prv-ollama","model":"glm-5.3-vl","cache_hit":true,"reason":"184 character(s) reused from the caption cache"},{"type":"capability_fallback","capability":"vision","reason":"chain exhausted on capability gaps; reused 1 cached description(s) and retrying the chain with the text in place of the image"},{"type":"attempt","provider_id":"prv-ollama","model":"glm-5.3-flash"}]}`),
+			ConversationID: "conv_ca9e0f21", ConvKey: "sys:caption-cache",
+			Protocol: "anthropic", Features: json.RawMessage(`{"streaming":true,"tools":true,"thinking":false,"web_search":false,"web_fetch":false,"vision":true}`),
 		},
 	}
 	for _, l := range logs {
@@ -349,12 +364,12 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 		if err != nil {
 			return fmt.Errorf("seed request log: %w", err)
 		}
-		// Sub-operations (2026-10-07): the rows whose traces carry a failover
+		// Sub-operations: the rows whose traces carry a failover
 		// / capability-fallback / emulated-tool event get their child rows by
 		// the same derivation the server uses, so the fixture exercises the
 		// real parent→sub-op rendering (nested table rows + drawer list).
 		//
-		// Each row also gets its own payload (2026-10-10), and the caption row
+		// Each row also gets its own payload, and the caption row
 		// its excerpt instead of a character count — both through the
 		// production renderer, so the drawer the baselines capture is
 		// production-shaped rather than a hand-written approximation.

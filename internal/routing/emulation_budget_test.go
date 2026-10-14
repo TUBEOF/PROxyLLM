@@ -1,9 +1,9 @@
 package routing_test
 
-// Emulation time budgets (2026-10-10).
+// Emulation time budgets.
 //
-// Spec: the operator report that a web tool sometimes takes "unfassbar lange".
-// Two unbounded waits were possible, both inline on the request path:
+// Spec: a web tool call can take "unfassbar lange". Two unbounded waits were
+// possible, both inline on the request path:
 //
 //   - the ACCOUNT WALK — the pool is one Emulator that walks its account list
 //     internally, so N accounts meant N × the client timeout for a single tool

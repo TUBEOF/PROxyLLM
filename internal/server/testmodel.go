@@ -1,6 +1,6 @@
 package server
 
-// Model test (2026-09-22 Models page): one minimal "Sag OK" round trip
+// Model test (Models page): one minimal "Sag OK" round trip
 // against the model row's provider account — the operator-facing proof
 // that an account actually serves the model. No routing, no executor, no
 // compatibility policy: the raw provider.Complete with the row's wire

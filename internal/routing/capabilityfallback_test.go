@@ -1,6 +1,6 @@
 package routing_test
 
-// Capability-gap learning (2026-09-21 automatic capabilities): every chain
+// Capability-gap learning: every chain
 // entry whose attempt failed with the capability_gap class is reported to the
 // learning callback, carrying the FULL entry — provider ID plus the upstream
 // wire model, the pair the storage layer needs to locate the model row. A

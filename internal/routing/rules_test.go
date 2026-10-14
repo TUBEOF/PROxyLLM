@@ -12,12 +12,11 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
-// Routing rule-model contract tests, RED-GREEN per Analysis F. The rule
-// model derives from plan Analysis E (deterministic order, testable,
-// observable):
+// Routing rule-model contract tests, RED-GREEN. The rule model is
+// deterministic, testable, and observable:
 //
 //	1. Key scope — client key's allowed model patterns.
-//	2. Model match — exact, wildcard, alias map (Claude Code aliases C6 →
+//	2. Model match — exact, wildcard, alias map (Claude Code aliases →
 //	   configured primary models).
 //	3. Capability filter — from request content.
 //	4. Chain resolution — ordered provider/model fallback chain.
@@ -64,7 +63,7 @@ func TestResolveChain(t *testing.T) {
 			want:  []string{"p1"},
 		},
 		{
-			name: "alias resolves to the target model's rule (C6)",
+			name: "alias resolves to the target model's rule",
 			rules: []routing.Rule{
 				{MatchModel: "gpt-5", Chain: []string{"codex"}, Enabled: true},
 			},
@@ -104,7 +103,7 @@ func TestResolveChain(t *testing.T) {
 				}
 			}
 			rr := routing.NewRouter(routing.Config{Rules: tc.rules, Aliases: map[string]string{
-				"claude-sonnet-5": "gpt-5", // C6-style alias for the test
+				"claude-sonnet-5": "gpt-5", // Claude Code style alias for the test
 			}}, routing.WithRegistry(reg))
 			got, _, err := rr.ResolveChainFor(tc.model, provider.Capabilities{})
 			if tc.wantErr {
@@ -128,8 +127,9 @@ func TestResolveChain(t *testing.T) {
 	}
 }
 
-// Determinism (Analysis E rejection of score/weight routing): identical
-// inputs must produce the identical chain on every call, in order.
+// Determinism: identical inputs must produce the identical chain on every
+// call, in order. Score/weight routing was rejected as the primary mechanism
+// because it cannot promise that.
 func TestResolveChain_Deterministic(t *testing.T) {
 	rules := []routing.Rule{
 		{MatchModel: "claude-*", Chain: []string{"a", "b", "c"}, Priority: 1, Enabled: true},
@@ -160,9 +160,9 @@ func TestResolveChain_Deterministic(t *testing.T) {
 	}
 }
 
-// Capability filter (Analysis E step 3; spec change 2026-09-21): chain
-// entries whose provider lacks a required capability are skipped — with
-// the skip recorded (fallbacks are never silent). Vision is deliberately
+// Capability filter: chain entries whose provider lacks a required capability
+// are skipped — with the skip recorded (fallbacks are never silent). Vision is
+// deliberately
 // NOT gated here anymore: static provider caps cannot know which MODEL
 // accepts images — the request goes out and a real upstream rejection
 // (capability_gap) fails over to the executor's fallback models.
@@ -191,8 +191,8 @@ func TestResolveChain_CapabilityFilter(t *testing.T) {
 	}
 }
 
-// The vision gate (owner decision 2026-10-11) narrows the no-pre-stream-gate
-// decision above, and the reason the comment above gives for gating being
+// The vision gate narrows the no-pre-stream-gate decision above, and the
+// reason the comment above gives for gating being
 // impossible is exactly what changed: static provider caps cannot know which
 // MODEL accepts images, but a MODEL ROW can — it LEARNS vision:false from a
 // real rejection. A candidate whose row knows it cannot see images is dropped
@@ -305,7 +305,7 @@ func TestResolveChain_NoImageKeepsEveryCandidate(t *testing.T) {
 	}
 }
 
-// Health gate (Analysis E step 5): providers whose breaker is open are
+// Health gate: providers whose breaker is open are
 // skipped, again with the skip recorded. The breaker opens after the
 // configured consecutive-failure threshold (circuit breaker), and recovery
 // is passive — once the cooldown lapses, the next resolution probes.
@@ -375,7 +375,7 @@ func TestResolveChain_HealthGate(t *testing.T) {
 	}
 }
 
-// Key scope (Analysis E step 1): a client key's allowed model patterns
+// Key scope: a client key's allowed model patterns
 // reject out-of-scope models before any rule runs.
 func TestResolveChain_KeyScope(t *testing.T) {
 	r := routing.NewRouter(routing.Config{

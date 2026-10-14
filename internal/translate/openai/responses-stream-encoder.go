@@ -13,8 +13,8 @@ import (
 )
 
 // responsesStreamEncoder encodes canonical IR events into the OpenAI
-// Responses-API SSE wire format (facts O5, O7;
-// developers.openai.com/api/docs/api-reference/responses-streaming, accessed
+// Responses-API SSE wire format
+// (developers.openai.com/api/docs/api-reference/responses-streaming, accessed
 // 2026-09-10): named SSE events (`event:` + one `data:` line pair), unlike
 // the chat-completions data-only wire. Wire conformance is pinned by the
 // golden fixture testdata/golden/openai/responses-stream.sse and enforced via
@@ -23,7 +23,7 @@ import (
 // The encoder is a pure relay: it mints wire item ids and tracks open output
 // items so delta events carry the correct item_id + output_index, but it
 // accumulates NO content — content assembly is the DECODER's job, never the
-// encoder's (A6 discipline).
+// encoder's.
 //
 // Mapping (the exact inverse of responsesStreamDecoder.mapEvent):
 //   - Start → response.created with a FULL response snapshot in .response
@@ -35,17 +35,17 @@ import (
 //     {item:{id:"msg_n", type:"message", status:"in_progress",
 //     role:"assistant", content:[]}}
 //   - BlockStart(tool_use) → response.output_item.added
-//     {item:{id:"fc_n", type:"function_call", call_id, name}} (O7:
-//     function_call items are FLAT — call_id + name at the item level, no
+//     {item:{id:"fc_n", type:"function_call", call_id, name}} (function_call
+//     items are FLAT — call_id + name at the item level, no
 //     nested function wrapper)
 //   - BlockStart(thinking) → response.output_item.added
-//     {item:{id:"rs_n", type:"reasoning"}} (O7)
+//     {item:{id:"rs_n", type:"reasoning"}}
 //   - Delta(text) → response.output_text.delta
 //     {item_id, output_index, content_index:0, delta}
 //   - Delta(thinking) → response.reasoning_summary_text.delta
-//     {item_id, output_index, summary_index:0, delta} (O7)
+//     {item_id, output_index, summary_index:0, delta}
 //   - Delta(tool_input) → response.function_call_arguments.delta
-//     {item_id, output_index, delta} (O7)
+//     {item_id, output_index, delta}
 //   - BlockStop → response.output_item.done with the completed item
 //   - MessageDelta → response.completed with the FULL final snapshot:
 //     status:"completed", usage mapped from IR
@@ -57,13 +57,13 @@ import (
 //     the fixture's completed snapshot includes the full text)
 //   - Done → no-op (response.completed is the terminal event; the fixture
 //     stream ends there — Done carries nothing the wire doesn't already have)
-//   - Error → event: error with FLAT {code, message, param} shape (O7 —
-//     Responses error events are FLAT, unlike chat's nested error object)
-//   - Ping/Comment/unknown kinds → a wire comment line (A5 discipline: never
+//   - Error → event: error with FLAT {code, message, param} shape (Responses
+//     error events are FLAT, unlike chat's nested error object)
+//   - Ping/Comment/unknown kinds → a wire comment line (never
 //     fail the stream on unknown kinds)
 //
-// Each Write flushes when the sink implements http.Flusher (C2: relay
-// as-it-arrives).
+// Each Write flushes when the sink implements http.Flusher, so bytes reach
+// the client as they arrive.
 
 // responsesStreamEncoderState is the state machine for the encoder. It is
 // split out so the state is visible in the type (and testable in isolation).
@@ -140,7 +140,7 @@ func (e *responsesStreamEncoder) Write(ctx context.Context, ev ir.StreamEvent) e
 	case ir.Ping, ir.Comment:
 		return e.emitComment("")
 	default:
-		// Unknown event kinds relay as wire comments (A5 discipline).
+		// Unknown event kinds relay as wire comments.
 		return e.emitComment("")
 	}
 }
@@ -171,7 +171,7 @@ func (e *responsesStreamEncoder) emitBlockStart(ev ir.StreamEvent) error {
 		e.openItems = append(e.openItems, item)
 		return e.emitEvent("response.output_item.added", e.outputItemAddedReasoning(item))
 	default:
-		// Unknown part kind: relay as comment (A5).
+		// Unknown part kind: relay as comment.
 		return e.emitComment("")
 	}
 }
@@ -179,7 +179,7 @@ func (e *responsesStreamEncoder) emitBlockStart(ev ir.StreamEvent) error {
 // emitDelta maps a Delta onto the appropriate named delta event.
 func (e *responsesStreamEncoder) emitDelta(ev ir.StreamEvent) error {
 	if ev.Index < 0 || ev.Index >= len(e.openItems) {
-		// No open item for this index; drop (A5).
+		// No open item for this index; drop.
 		return e.emitComment("")
 	}
 	item := e.openItems[ev.Index]
@@ -200,7 +200,7 @@ func (e *responsesStreamEncoder) emitDelta(ev ir.StreamEvent) error {
 			e.reasoningDelta(item, ev.Delta.Text))
 	case ir.DeltaToolInput:
 		// Accumulate for the completed snapshot's arguments (function_call
-		// items are FLAT, O7): the completed snapshot carries the FULL
+		// items are FLAT): the completed snapshot carries the FULL
 		// assembled arguments string, so fragments must be collected like
 		// DeltaText — arguments:"" would make a client re-issuing the tool
 		// call from the snapshot call the tool with no arguments.
@@ -209,7 +209,8 @@ func (e *responsesStreamEncoder) emitDelta(ev ir.StreamEvent) error {
 			e.toolInputDelta(item, ev.Delta.PartialJSON))
 	case ir.DeltaSignature:
 		// No dedicated wire channel for reasoning signatures in the stream;
-		// drop (A5, like the chat encoder's thinking/signature degradation).
+		// drop, exactly like the chat encoder's thinking/signature
+		// degradation.
 		return nil
 	default:
 		return e.emitComment("")
@@ -530,7 +531,7 @@ func (e *responsesStreamEncoder) outputItemDone(item *responsesEncItem) string {
 }
 
 // emitError maps a terminal ir.Error onto the FLAT Responses error event
-// (O7: {type, code, message, param} at top level — no nested error object,
+// ({type, code, message, param} at top level — no nested error object,
 // unlike the chat wire).
 func (e *responsesStreamEncoder) emitError(ev ir.StreamEvent) error {
 	type flatError struct {
@@ -557,13 +558,13 @@ func (e *responsesStreamEncoder) emitError(ev ir.StreamEvent) error {
 // ---- wire I/O ----
 
 // emitEvent writes one named SSE event: `event:` + `data:` + blank line,
-// flushing (C2). Follows the chat stream-encoder's writeRaw pattern.
+// flushing. Follows the chat stream-encoder's writeRaw pattern.
 func (e *responsesStreamEncoder) emitEvent(name, data string) error {
 	frame := "event: " + name + "\ndata: " + data + "\n\n"
 	return e.writeRaw(frame)
 }
 
-// emitComment writes a wire comment line (SSE-3, A5).
+// emitComment writes a wire comment line.
 func (e *responsesStreamEncoder) emitComment(text string) error {
 	if text != "" {
 		text = " " + text
@@ -571,7 +572,7 @@ func (e *responsesStreamEncoder) emitComment(text string) error {
 	return e.writeRaw(":" + text + "\n\n")
 }
 
-// writeRaw writes one wire frame and flushes (C2).
+// writeRaw writes one wire frame and flushes.
 func (e *responsesStreamEncoder) writeRaw(s string) error {
 	if _, err := io.WriteString(e.w, s); err != nil {
 		return fmt.Errorf("openai/responses: encode stream: %w", err)

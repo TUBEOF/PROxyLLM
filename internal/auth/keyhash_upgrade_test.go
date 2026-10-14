@@ -1,6 +1,6 @@
 package auth
 
-// Client-key hashing on the request path (2026-10-10).
+// Client-key hashing on the request path.
 //
 // Spec: a 256-bit client secret does not need Argon2id's brute-force resistance
 // (storage/keyhash.go), but a key that was already issued must keep working —

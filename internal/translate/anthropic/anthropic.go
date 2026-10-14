@@ -1,7 +1,7 @@
 // Package anthropic implements the Anthropic Messages API codec pair against
-// the canonical IR (plan Analysis D). Wire shapes derive from the golden
+// the canonical IR. Wire shapes derive from the golden
 // fixtures in testdata/golden/anthropic/ (docs.anthropic.com, accessed
-// 2026-09-10, facts A1–A13).
+// 2026-09-10).
 package anthropic
 
 import (
@@ -99,7 +99,7 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 		role := string(m.Role)
 		if m.Role == ir.RoleTool {
 			// Anthropic has no tool role; tool results ride in user
-			// messages as tool_result blocks (A3).
+			// messages as tool_result blocks.
 			role = "user"
 		}
 		wm := wireMessage{Role: role, Content: &wireContent{}}
@@ -166,7 +166,7 @@ func (Codec) EncodeResponse(resp ir.Response) ([]byte, error) {
 		case ir.TextPart:
 			w.Content = append(w.Content, wireBlock{Type: "text", Text: pt.Text})
 		case ir.ThinkingPart:
-			// Signatures ride verbatim — never fabricated (A12).
+			// Signatures ride verbatim — never fabricated.
 			w.Content = append(w.Content, wireBlock{
 				Type:      "thinking",
 				Thinking:  pt.Thinking,
@@ -217,7 +217,7 @@ type wireImageSource struct {
 }
 
 // wireContent is an Anthropic content value: a plain string, an array of
-// typed blocks (A3), or — for server-tool result blocks — a single block
+// typed blocks, or — for server-tool result blocks — a single block
 // object (web_fetch's single web_fetch_result; both tools' error shapes).
 type wireContent struct {
 	Str    *string
@@ -293,7 +293,7 @@ type wireMessage struct {
 }
 
 // wireTool is a client tool definition (function-shaped) or a server-tool
-// definition (A8: dated type string + knobs). Server-tool defs carry no
+// definition (a dated type string plus its knobs). Server-tool defs carry no
 // input_schema.
 type wireTool struct {
 	Type             string            `json:"type,omitempty"` // server tools only
@@ -355,9 +355,9 @@ type wireResponse struct {
 	Usage        wireUsage     `json:"usage"`
 }
 
-// wireUsage mirrors the Anthropic usage object (A11 + A8 server-tool
-// counters): cache fields are explicit zeros on the wire, server-tool
-// counters nest under server_tool_use.
+// wireUsage mirrors the Anthropic usage object (cache fields plus the
+// server-tool counters): cache fields are explicit zeros on the wire,
+// server-tool counters nest under server_tool_use.
 type wireUsage struct {
 	InputTokens              int                `json:"input_tokens"`
 	OutputTokens             int                `json:"output_tokens"`
@@ -403,9 +403,10 @@ func usageToWire(u ir.Usage) wireUsage {
 
 // ---- conversions ----
 
-// toolFromWire converts a wire tool definition. Server-tool defs (A8) keep
-// their dated type string verbatim (C3 open-list ride-along) and surface
-// their knobs via ServerTool; client tools stay function-shaped.
+// toolFromWire converts a wire tool definition. Server-tool defs keep their
+// dated type string verbatim — the wire type is an open list, so an
+// unrecognized value has to survive a re-encode — and surface their knobs via
+// ServerTool; client tools stay function-shaped.
 func toolFromWire(w wireTool) ir.Tool {
 	t := ir.Tool{
 		Name:        w.Name,
@@ -498,9 +499,9 @@ func toolChoiceToWire(tc *ir.ToolChoice) *wireToolChoice {
 }
 
 // partFromBlock converts a wire content block into an IR part. Unknown block
-// types report ok=false: the IR has no representation yet (server-tool
-// blocks, A8) and they drop with a documented degradation — passthrough
-// lands with the routing layer per plan Analysis D.
+// types report ok=false: the IR has no representation for them, so they drop
+// with a documented degradation. Making them survive a round trip is the
+// passthrough layer's job, and that lands with the routing layer.
 func partFromBlock(b wireBlock) (ir.Part, bool) {
 	switch b.Type {
 	case "text":
@@ -533,7 +534,7 @@ func partFromBlock(b wireBlock) (ir.Part, bool) {
 		}
 		switch {
 		case b.Content.Obj != nil && strings.HasSuffix(b.Content.Obj.Type, "_tool_result_error"):
-			// Error shape: single error object with error_code (A10).
+			// Error shape: single error object with error_code.
 			res.IsError = true
 			res.ErrorCode = b.Content.Obj.ErrorCode
 		case b.Content.Obj != nil:

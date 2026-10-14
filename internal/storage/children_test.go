@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// Spec: the Logs page shows a request's sub-operations as their own rows
-// (2026-10-07). They live in their own table so request_logs keeps its
+// Spec: the Logs page shows a request's sub-operations as their own rows.
+// They live in their own table so request_logs keeps its
 // current shape and semantics — every row there is a request, so the page's
 // pagination and its `total` count are unaffected. The parent link is the
 // request_logs row id.
@@ -63,7 +63,7 @@ func TestChildLog_InsertAndReadBack(t *testing.T) {
 }
 
 // Spec: a sub-operation's own detail view addresses the row it belongs to
-// (2026-10-10 Logs page — per-sub-op payloads). The insert therefore returns
+// (Logs page — per-sub-op payloads). The insert therefore returns
 // the ids it allocated, in insertion order, so the write path can attach a
 // payload to exactly the row it came from. The empty case stays a no-op that
 // allocates nothing.

@@ -1,6 +1,6 @@
 package server
 
-// Live provider construction (Task 5 Gap #2, plan §5.2): at startup and on
+// Live provider construction: at startup and on
 // every admin-API provider write, the stored provider rows become live
 // provider implementations — the WebUI-edited provider routes traffic
 // without a restart.
@@ -12,7 +12,7 @@ package server
 //   - ollama-cloud: base_url defaults to the package's DefaultBaseURL
 //     when the config leaves it empty.
 //   - codex-oauth: issuer from config, backend URL pinned (chatgpt.com
-//     backend per X7), Auth client built against the issuer with the
+//     backend), Auth client built against the issuer with the
 //     provider's own ID — so token rows align with the provider row and
 //     the device flow started in the WebUI refreshes THIS provider.
 //
@@ -136,8 +136,8 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 		return ollamacloud.NewWithLogger(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type), logger), nil, nil
 
 	case webui.ProviderTypeCodexOAuth:
-		// The codex provider speaks the ChatGPT backend (X7/X19); the
-		// issuer from config drives the OAuth client (X1). The auth
+		// The codex provider speaks the ChatGPT backend; the
+		// issuer from config drives the OAuth client. The auth
 		// client is keyed to THIS provider's ID so the token rows and
 		// the device flow the WebUI started align.
 		authc := codex.NewAuthClient(codex.AuthConfig{
@@ -164,7 +164,7 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 }
 
 // modelVisionLookup is the router's model-row vision source (ADR-014
-// learning, owner decision 2026-10-11): whether the row for (provider, wire
+// learning): whether the row for (provider, wire
 // model) has learned whether that model can see images.
 //
 // A missing row, an unreadable blob, or a row that simply never formed an
@@ -244,19 +244,19 @@ func capsFromConfig(cfg webui.ProviderConfig, typ string) provider.Capabilities 
 // freshly saved provider of this class can do before the operator pins
 // anything. Web-search/fetch/code-execution/thinking stay off by default:
 // capability routing sends such requests to providers that truly support
-// them, and Firecrawl emulation covers the gap (plan §6.2).
+// them, and Firecrawl emulation covers the gap.
 func defaultCaps(typ string) provider.Capabilities {
 	switch typ {
 	case webui.ProviderTypeCodexOAuth:
 		// The ChatGPT backend speaks Responses-shaped requests with
-		// streaming and tools (X19/X23); thinking is Claude-only
-		// semantics translated per §6.4, so it stays off here.
+		// streaming and tools; thinking is Claude-only
+		// semantics, so it stays off here.
 		return provider.Capabilities{Streaming: true, Tools: true}
 	case webui.ProviderTypeOllamaCloud:
 		return provider.Capabilities{Streaming: true, Tools: true}
 	default:
 		// custom-openai: a conservative, honest default — streaming and
-		// tools are the OpenAI-compat baseline (O2/O3); the operator pins
+		// tools are the OpenAI-compat baseline; the operator pins
 		// vision/server tools only when the upstream really has them.
 		return provider.Capabilities{Streaming: true, Tools: true}
 	}
@@ -279,7 +279,7 @@ func providerAPIKey(ctx context.Context, logger *slog.Logger, store *storage.Sto
 	return string(tok.Secret)
 }
 
-// webToolAccountsPresent returns a bool-closure over the R5 emulation
+// webToolAccountsPresent returns a bool-closure over the emulation
 // default (httpapi.Params.HasWebToolAccounts): whether ANY stored account
 // is a web_tool kind (firecrawl). The function is read at assembly and on
 // every provider reload — a per-request store query is avoided (the
@@ -301,6 +301,6 @@ func webToolAccountsPresent(store *storage.Store) func() bool {
 	}
 }
 
-// codexBaseURL is the ChatGPT backend root (X7/X19) every codex provider
+// codexBaseURL is the ChatGPT backend root every codex provider
 // instance pins — the backend URL is not operator configuration.
 const codexBaseURL = "https://chatgpt.com/backend-api"

@@ -7,11 +7,11 @@ import (
 	"testing"
 )
 
-// Spec: plan Analysis C schema (request_logs: ts, client_key_id, provider_id,
-// model, status, latency_ms, usage JSON, route_trace JSON, error_redacted)
-// + Analysis E / FO-4 (route_trace must persist the observable routing
-// decisions — fallbacks are never silent) + Analysis G (only the redacted
-// error text ever reaches this table).
+// Spec: schema (request_logs: ts, client_key_id, provider_id, model,
+// status, latency_ms, usage JSON, route_trace JSON, error_redacted).
+// route_trace must persist the observable routing decisions — fallbacks
+// are never silent — and only the redacted error text ever reaches this
+// table.
 
 func TestRequestLog_InsertAndFetch(t *testing.T) {
 	s := openTokenStore(t)
@@ -103,7 +103,7 @@ func TestRequestLog_ListLimit(t *testing.T) {
 	}
 }
 
-// Spec: Logs-page redesign (2026-10-06 plan) — request_rows carry the
+// Spec: Logs-page redesign — request_rows carry the
 // per-request protocol surface, feature flags, and conversation identity;
 // conversation ids derive from conv_key via a 30-minute rolling window
 // (same key + conv_key within the window reuses the prior conversation id),

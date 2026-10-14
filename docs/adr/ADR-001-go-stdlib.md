@@ -10,7 +10,7 @@ bidirectional protocol translation, fallback routing, a single-service
 deployment story, and an open-source contributor base. The backend choice
 dominates every downstream property.
 
-## Criteria (from Analysis A)
+## Criteria
 
 - First-class SSE streaming with backpressure (P1)
 - Concurrency for many long-lived streams (P1)

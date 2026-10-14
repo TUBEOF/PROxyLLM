@@ -1,5 +1,5 @@
 // Emulator adapter: the routing.Emulator implementation on top of the v2
-// client (plan §6.2 Firecrawl fallback). The routing engine declares the
+// client. The routing engine declares the
 // interface (dependency inversion, internal/routing/emulation.go); this
 // package is the production wiring. The adapter does NOT import routing —
 // the interface proof lives in the routing-side wiring test, so the tool
@@ -27,9 +27,9 @@ type Emulator struct {
 
 // emulatorClient is the HTTP client shared by every emulator account.
 //
-// Accounts are built per provider row, and a nil client used to mean "clone a
-// fresh transport per account" — so one pool walk dialled a different connection
-// pool for each account, and an idle connection was never reused across a
+// Accounts are built per provider row; cloning a fresh transport per account
+// would make one pool walk dial a different connection
+// pool for each account, and an idle connection would never be reused across a
 // failover. One client, one pool, which is what makes the per-host idle settings
 // in httpguard mean anything here.
 //
@@ -51,7 +51,7 @@ func NewEmulator(baseURL, apiKey string, httpClient *http.Client) *Emulator {
 }
 
 // Search answers a web_search invocation: the definition's domain filters
-// map onto the documented include/exclude parameter lists (F2), and every
+// map onto the documented include/exclude parameter lists, and every
 // returned web[] entry becomes an IR search item. Firecrawl returns titles
 // and URLs — not Anthropic's provider-encrypted page content — so
 // EncryptedContent stays empty: the emulation layer never fabricates
@@ -75,9 +75,9 @@ func (e *Emulator) Search(ctx context.Context, query string, st ir.ServerToolCon
 	return items, nil
 }
 
-// Fetch answers a web_fetch invocation: a markdown scrape (F3) normalized
+// Fetch answers a web_fetch invocation: a markdown scrape normalized
 // into the WebFetchContent payload — text source with text/plain media
-// type, mirroring the Anthropic document-block semantics (A3), and the
+// type, mirroring the Anthropic document-block semantics, and the
 // scrape timestamp as retrieval time.
 //
 // A page Firecrawl could not serve comes back EMPTY, not as an error: the

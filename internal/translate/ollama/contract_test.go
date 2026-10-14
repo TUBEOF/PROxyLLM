@@ -10,10 +10,10 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
-// Contract tests for the Ollama native /api/chat codec, RED-GREEN per
-// Analysis F. Every assertion derives from the golden fixtures in
-// testdata/golden/ollama/ (provenance: docs.ollama.com + OP-4 pinning,
-// accessed 2026-09-10, facts L7–L11).
+// Contract tests for the Ollama native /api/chat codec, RED-GREEN.
+// Every assertion derives from the golden fixtures in
+// testdata/golden/ollama/ (provenance: docs.ollama.com,
+// accessed 2026-09-10).
 
 func TestDecodeRequest_ChatRequest(t *testing.T) {
 	raw := testutil.LoadGolden(t, "ollama/chat-request.json")
@@ -38,7 +38,7 @@ func TestDecodeRequest_ChatRequest(t *testing.T) {
 	if txt, ok := req.Messages[0].Parts[0].(ir.TextPart); !ok || txt.Text != "What's the weather in San Francisco?" {
 		t.Errorf("messages[0] = %+v", req.Messages[0].Parts[0])
 	}
-	// Tools are OpenAI-function-shaped in the Ollama API (L7).
+	// Tools are OpenAI-function-shaped in the Ollama API.
 	if len(req.Tools) != 1 || req.Tools[0].Name != "get_weather" {
 		t.Fatalf("tools = %+v", req.Tools)
 	}
@@ -61,7 +61,7 @@ func TestDecodeResponse_ChatResponse(t *testing.T) {
 		t.Errorf("done_reason = %q, want end_turn", resp.StopReason)
 	}
 
-	// Content: thinking + text + tool_call with OBJECT arguments (L10).
+	// Content: thinking + text + tool_call with OBJECT arguments.
 	if len(resp.Content) != 3 {
 		t.Fatalf("content = %d parts, want 3 (thinking, text, tool_call)", len(resp.Content))
 	}
@@ -79,12 +79,12 @@ func TestDecodeResponse_ChatResponse(t *testing.T) {
 	if !ok || tc.Name != "get_weather" {
 		t.Fatalf("content[2] = %+v", resp.Content[2])
 	}
-	// Ollama tool_calls arguments are JSON objects, not strings (L10).
+	// Ollama tool_calls arguments are JSON objects, not strings.
 	if string(tc.Input) != `{"location":"San Francisco, CA"}` && !strings.Contains(string(tc.Input), `"location"`) {
 		t.Errorf("tool_call arguments = %s", tc.Input)
 	}
 
-	// Usage: prompt_eval_count/eval_count/prompt_eval_cached_count (L11).
+	// Usage: prompt_eval_count/eval_count/prompt_eval_cached_count.
 	if resp.Usage.InputTokens != 26 || resp.Usage.OutputTokens != 283 {
 		t.Errorf("usage in/out = %d/%d, want 26/283", resp.Usage.InputTokens, resp.Usage.OutputTokens)
 	}
@@ -102,7 +102,7 @@ func TestStreamDecode_FullSequence(t *testing.T) {
 }
 
 // Encoding must send an EXPLICIT stream:false for non-streaming requests —
-// the Ollama API defaults stream to true when the field is absent (L8).
+// the Ollama API defaults stream to true when the field is absent.
 func TestEncodeRequest_StreamFalseExplicit(t *testing.T) {
 	req := ir.Request{
 		Model: "llama3.3",
@@ -121,7 +121,7 @@ func TestEncodeRequest_StreamFalseExplicit(t *testing.T) {
 }
 
 // Thinking config maps to the think parameter: budget → effort level
-// (high/medium/low) or boolean (L7).
+// (high/medium/low) or boolean.
 func TestEncodeRequest_ThinkMapping(t *testing.T) {
 	req := ir.Request{
 		Model: "llama3.3",

@@ -9,22 +9,22 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
-// Compat is the per-model compatibility policy (plan §6.4, OP-2 resolution;
-// storage: models.compat JSON, WebUI "Models & Compatibility" editor). It
-// governs how requests for a target model are adapted before dispatch —
-// every application is recorded in the Trace, never silent.
+// Compat is the per-model compatibility policy (storage: models.compat JSON,
+// WebUI "Models & Compatibility" editor). It governs how requests for a
+// target model are adapted before dispatch — every application is recorded in
+// the Trace, never silent.
 type Compat struct {
 	// ThinkingHandling governs the thinking parameter and thinking blocks
 	// in history: strip / map-to-reasoning-effort / block ("" = strip,
 	// the default for non-Claude targets).
 	ThinkingHandling string
 
-	// ServerToolEmulation governs the Firecrawl web-tool fallback (§6.2):
+	// ServerToolEmulation governs the web-tool emulation layer:
 	// native / emulate-firecrawl / off ("" = native).
 	ServerToolEmulation string
 
 	// MaxTokensClamp caps MaxTokens for targets with lower output limits
-	// (C7: 32000 for unknown model IDs). 0 = off.
+	// (32000 for unknown model IDs). 0 = off.
 	MaxTokensClamp int
 
 	// ContextWindow is the model context window (tokens) for capability
@@ -32,21 +32,21 @@ type Compat struct {
 	ContextWindow int
 
 	// CacheControl governs cache_control markers: forward / drop (""
-	// = forward). Forward applies on Anthropic→Anthropic only (C4); drop
+	// = forward). Forward applies on Anthropic→Anthropic only; drop
 	// removes the markers and logs the degradation.
 	CacheControl string
 }
 
-// ThinkingHandling values (§6.4).
+// ThinkingHandling values.
 const (
 	// ThinkingStrip removes the thinking parameter and thinking blocks
-	// from history — never sends fabricated signatures upstream (A12).
+	// from history — never sends fabricated signatures upstream.
 	// Default for non-Claude targets.
 	ThinkingStrip = "strip"
 
 	// ThinkingMapToEffort converts the thinking budget to a
 	// reasoning-effort hint on the request (ir.ReasoningEffort) where the
-	// target supports it (Ollama L5/L9, OpenAI O5).
+	// target supports it (Ollama and OpenAI reasoning-effort endpoints).
 	ThinkingMapToEffort = "map-to-reasoning-effort"
 
 	// ThinkingBlock refuses thinking requests with a protocol-conform
@@ -54,14 +54,14 @@ const (
 	ThinkingBlock = "block"
 )
 
-// ServerToolEmulation values (§6.2).
+// ServerToolEmulation values.
 const (
 	EmulationNative           = "native"
 	EmulationEmulateFirecrawl = "emulate-firecrawl"
 	EmulationOff              = "off"
 )
 
-// CacheControl values (§6.4, C4).
+// CacheControl values.
 const (
 	CacheControlForward = "forward"
 	CacheControlDrop    = "drop"
@@ -71,8 +71,8 @@ const (
 var ErrThinkingBlocked = errors.New("routing: thinking requests are blocked by the model's thinking_handling policy")
 
 // ApplyCompat adapts req per the per-model compatibility policy, recording
-// every application in a fresh Trace (§6.4: never silent — each event names
-// the setting and its applied value).
+// every application in a fresh Trace (never silent — each event names the
+// setting and its applied value).
 func ApplyCompat(c Compat, req ir.Request) (ir.Request, *Trace, error) {
 	trace := &Trace{}
 
@@ -90,19 +90,19 @@ func ApplyCompat(c Compat, req ir.Request) (ir.Request, *Trace, error) {
 // thinking parameter pass through every setting unchanged and untraced
 // (nothing to degrade) — except history thinking blocks under strip/map,
 // which are still removed: signatures must never reach a non-thinking
-// target (A12).
+// target.
 func applyThinking(c Compat, req ir.Request, trace *Trace) (ir.Request, error) {
 	setting := c.ThinkingHandling
 	if setting == "" {
-		setting = ThinkingStrip // §6.4 default for unset policies
+		setting = ThinkingStrip // default for unset policies
 	}
 
 	hasThinking := req.Thinking != nil && (req.Thinking.Enabled || req.Thinking.Adaptive)
 
-	// Record the CLIENT's intent before the policy rewrites the parameter
-	// (§6.4): every branch below may nil or remap req.Thinking, and the
-	// response path needs to know whether thinking blocks were asked for —
-	// see applyResponseThinking.
+	// Record the CLIENT's intent before the policy rewrites the parameter:
+	// every branch below may nil or remap req.Thinking, and the response
+	// path needs to know whether thinking blocks were asked for — see
+	// applyResponseThinking.
 	req.ThinkingRequested = hasThinking
 
 	switch setting {
@@ -134,7 +134,7 @@ func applyThinking(c Compat, req ir.Request, trace *Trace) (ir.Request, error) {
 					"adaptive thinking → target-default effort")
 			}
 		}
-		// History thinking blocks cannot ride a non-thinking target (A12):
+		// History thinking blocks cannot ride a non-thinking target:
 		// mapped requests drop them too.
 		req = stripThinkingBlocks(req)
 		return req, nil
@@ -150,7 +150,7 @@ func applyThinking(c Compat, req ir.Request, trace *Trace) (ir.Request, error) {
 }
 
 // stripThinkingBlocks removes ThinkingPart blocks from message history
-// (never upstream: fabricated/replayed signatures are an A12 violation).
+// (never upstream: fabricated or replayed signatures must not be sent).
 // System blocks carry no thinking parts, so only Messages are walked.
 func stripThinkingBlocks(req ir.Request) ir.Request {
 	for mi, msg := range req.Messages {
@@ -174,8 +174,8 @@ const ThinkingOutputStrip = "strip-output"
 // client as a thinking block. The reference returns thinking blocks only for
 // requests that ENABLED thinking, and a client that asked for none reads the
 // first content block as text — Claude Code's web_fetch helper answers "No
-// response from model" when it is a thinking block, which made every WebFetch
-// fail (reported 2026-10-11).
+// response from model" when that first block is a thinking block, which made
+// every WebFetch fail.
 //
 // The recorded verdict is authoritative because the policy may have consumed
 // the parameter (strip/map nil it out); a request that never went through
@@ -215,7 +215,7 @@ func applyResponseThinking(req ir.Request, resp ir.Response, trace *Trace) ir.Re
 }
 
 // applyResponseThinkingStream is the streaming half of applyResponseThinking:
-// the reported failure rode the stream, so the filter must sit on the events
+// the failure rides the stream too, so the filter must sit on the events
 // (a client assembles its message from them). Dropped blocks are renumbered
 // out — the Anthropic encoder relays ev.Index verbatim, so leaving a hole
 // would emit a block index the reference never produces.
@@ -293,7 +293,7 @@ func applyClamp(c Compat, req ir.Request, trace *Trace) ir.Request {
 
 // applyCacheControl drops cache_control markers per the drop policy; the
 // degradation is logged via the trace event (forward is the default and
-// applies Anthropic→Anthropic only — C4 — enforced by the caller choosing
+// applies Anthropic→Anthropic only — enforced by the caller choosing
 // the policy, not re-derived here).
 func applyCacheControl(c Compat, req ir.Request, trace *Trace) ir.Request {
 	if c.CacheControl != CacheControlDrop {
@@ -333,14 +333,14 @@ func applyCacheControl(c Compat, req ir.Request, trace *Trace) ir.Request {
 
 // emulatedToolSchema returns the client-tool input schema an emulated
 // server tool presents to the model: the documented input object of the
-// tool family (A8/A9 — query for web_search, url for web_fetch), derived
+// tool family (query for web_search, url for web_fetch), derived
 // from the spec, never from a live capture of provider behavior.
 var emulatedToolSchema = map[string]string{
 	"web_search": `{"type":"object","properties":{"query":{"type":"string","description":"Search query"}},"required":["query"]}`,
 	"web_fetch":  `{"type":"object","properties":{"url":{"type":"string","description":"URL to fetch (must appear in prior conversation context)"}},"required":["url"]}`,
 }
 
-// applyEmulation enforces the server_tool_emulation policy (§6.2/§6.4).
+// applyEmulation enforces the server_tool_emulation policy.
 //
 //   - native (default): server-tool defs ride untouched — the routed
 //     provider has native support.

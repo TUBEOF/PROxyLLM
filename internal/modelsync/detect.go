@@ -7,7 +7,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/storage"
 )
 
-// 2026-10-06 context auto-detect persistence (plan Task 3): detected
+// Context auto-detect persistence: detected
 // facts from provider discovery persist into model rows. The persistence
 // contract mirrors ADR-010's operator-edit survival — detection fills
 // gaps, operator pins win, manual rows are never touched.
@@ -32,8 +32,8 @@ func detectedCaps(info provider.ModelInfo) json.RawMessage {
 }
 
 // detectedCompat blob: the detected context window (omitted when
-// undetected). The thinking policy is deliberately NOT written here
-// (R5, 2026-10-06): httpapi's compatFor derives thinking handling from
+// undetected). The thinking policy is deliberately NOT written here:
+// httpapi's compatFor derives thinking handling from
 // the capability blob — a hardcoded "strip" would pin every synced row
 // and neutralize the capability-driven default forever.
 func detectedCompat(info provider.ModelInfo) json.RawMessage {

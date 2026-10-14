@@ -13,8 +13,8 @@ import (
 )
 
 // capabilityFallbacksDTO is the wire shape of the three fallback lists
-// (Routing page): vision = MODEL IDs (routing identities, 2026-09-21
-// automatic capabilities) tried by the executor after a real upstream
+// (Routing page): vision = MODEL IDs (routing identities, automatic
+// capabilities) tried by the executor after a real upstream
 // capability gap; web_search / web_fetch = web_tool account IDs in pool
 // order.
 type capabilityFallbacksDTO struct {
@@ -46,8 +46,8 @@ func (a *AdminAPI) getCapabilityFallbacks(w http.ResponseWriter, r *http.Request
 // putCapabilityFallbacks validates and persists all three lists in one
 // write. The web-tool lists are validated at the write boundary against
 // web_tool-kind accounts (the storage layer is deliberately schema-blind);
-// vision entries must be existing MODEL rows (2026-09-21 automatic
-// capabilities — the executor resolves each ID to provider + wire name at
+// vision entries must be existing MODEL rows (automatic capabilities —
+// the executor resolves each ID to provider + wire name at
 // reload) — a typo must fail the save, never silently skip at route time.
 func (a *AdminAPI) putCapabilityFallbacks(w http.ResponseWriter, r *http.Request) {
 	var req capabilityFallbacksDTO
@@ -87,7 +87,7 @@ func (a *AdminAPI) putCapabilityFallbacks(w http.ResponseWriter, r *http.Request
 }
 
 // validateVisionFallback checks every entry against the models table
-// (2026-09-21 automatic capabilities): a vision fallback entry is a MODEL
+// (automatic capabilities): a vision fallback entry is a MODEL
 // ID (routing identity), not a provider account or type — the fallback
 // names which MODEL serves images when the chain's model rejected them.
 // Web-tool accounts cannot own model rows, so the old kind refusal is

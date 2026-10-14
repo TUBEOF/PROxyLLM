@@ -17,21 +17,21 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
-// Ollama Cloud provider contract tests, RED-GREEN (plan §4.1, Analysis F).
-// Since 2026-09-22 the cloud provider rides the OpenAI-compatible surface
+// Ollama Cloud provider contract tests, RED-GREEN.
+// The cloud provider rides the OpenAI-compatible surface
 // (base https://ollama.com + /v1 paths, docs.ollama.com/api/
 // openai-compatibility, accessed 2026-09-22) — the native /api/chat wire
-// fragmented interleaved thinking into separate content blocks (the Claude
+// fragmented interleaved thinking into separate content blocks (a Claude
 // Code rendering bug). Expectations derive from the OpenAI-compat wire
 // facts and the openai golden fixtures — never from provider code.
 //
 // Wire facts pinned here:
-//   - O2: chat is POST {base}/v1/chat/completions with {model, messages,
+//   - chat is POST {base}/v1/chat/completions with {model, messages,
 //     stream}.
-//   - L2: auth is `Authorization: Bearer $OLLAMA_API_KEY`.
-//   - O4: streaming is data-only SSE with the [DONE] sentinel.
-//   - O10: non-2xx bodies decode in the OpenAI error shape.
-//   - FO-2/C2/FO-1: same error mapping and cancellation contracts as every
+//   - auth is `Authorization: Bearer $OLLAMA_API_KEY`.
+//   - streaming is data-only SSE with the [DONE] sentinel.
+//   - non-2xx bodies decode in the OpenAI error shape.
+//   - same error mapping and cancellation contracts as every
 //     HTTP provider.
 
 const testAPIKey = "ollama-key-456" //nolint:gosec // dummy fixture key, never a real credential
@@ -103,7 +103,7 @@ func drainEvents(t *testing.T, events <-chan ir.StreamEvent) []ir.StreamEvent {
 }
 
 // TestComplete_RoundTrip: a 2xx /v1/chat/completions body decodes to the
-// IR via the OpenAI codec; auth is Bearer (L2); the body carries
+// IR via the OpenAI codec; auth is Bearer; the body carries
 // "stream":false (the OpenAI-compat endpoint defaults to false, but the
 // explicit field keeps the contract visible).
 func TestComplete_RoundTrip(t *testing.T) {
@@ -115,13 +115,13 @@ func TestComplete_RoundTrip(t *testing.T) {
 			t.Errorf("path = %s, want /v1/chat/completions", r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer "+testAPIKey {
-			t.Errorf("Authorization = %q, want Bearer %q (L2)", got, testAPIKey)
+			t.Errorf("Authorization = %q, want Bearer %q", got, testAPIKey)
 		}
 		body := decodeSentBody(t, r)
 		// The OpenAI-compat endpoint defaults stream to false; the codec
 		// omits the field for non-streaming requests (custom-openai
 		// convention) — absence IS false here, unlike the native wire's
-		// always-true default (L8).
+		// always-true default.
 		if v, ok := body["stream"]; ok && v != false {
 			t.Errorf("request stream = %v, want false (or omitted)", v)
 		}
@@ -203,7 +203,7 @@ func TestComplete_ReasoningResponse(t *testing.T) {
 }
 
 // TestComplete_UpstreamError: a non-2xx maps to *provider.UpstreamError
-// with HTTP status + body error fields + Retry-After (FO-2, O10). The
+// with HTTP status + body error fields + Retry-After. The
 // OpenAI-compat surface answers `{"error":{"message":...}}` — Code/Type
 // stay empty, Message carries the text.
 func TestComplete_UpstreamError(t *testing.T) {
@@ -297,7 +297,7 @@ func TestStream_ReasoningInterleaved(t *testing.T) {
 }
 
 // TestStream_Cancel: cancel aborts the upstream request and closes the
-// channel (C2).
+// channel.
 func TestStream_Cancel(t *testing.T) {
 	pr := newProvider(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -339,7 +339,7 @@ func TestStream_Cancel(t *testing.T) {
 				return
 			}
 		case <-deadline:
-			t.Fatal("cancel must close the event channel promptly (C2)")
+			t.Fatal("cancel must close the event channel promptly")
 		}
 	}
 }

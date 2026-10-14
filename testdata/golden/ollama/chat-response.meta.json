@@ -2,6 +2,5 @@
   "fixture": "chat-response.json",
   "source": "https://docs.ollama.com/api/chat",
   "accessed": "2026-09-10",
-  "facts": ["L7", "L11"],
-  "notes": "Non-streaming response: message.thinking carries separate thinking output; tool_calls[].function.arguments is a JSON object; durations are nanoseconds; prompt_eval_count/eval_count are input/output tokens, prompt_eval_cached_count maps to cache-read tokens (L11). done_reason value strings are residual-risk (OP-4 smoke pins them)."
+  "notes": "Non-streaming response: message.thinking carries separate thinking output; tool_calls[].function.arguments is a JSON object; durations are nanoseconds; prompt_eval_count/eval_count are input/output tokens, prompt_eval_cached_count maps to cache-read tokens. The exact done_reason value strings are residual risk, pinned by the live smoke test rather than by this fixture."
 }

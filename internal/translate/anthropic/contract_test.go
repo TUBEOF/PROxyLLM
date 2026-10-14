@@ -10,10 +10,10 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
-// Contract tests for the Anthropic Messages codec, RED-GREEN per Analysis F.
+// Contract tests for the Anthropic Messages codec, RED-GREEN.
 // Every assertion derives from the golden fixtures in
 // testdata/golden/anthropic/ (provenance: docs.anthropic.com, accessed
-// 2026-09-10, facts A1–A13).
+// 2026-09-10).
 
 func TestDecodeRequest_MessageRequest(t *testing.T) {
 	raw := testutil.LoadGolden(t, "anthropic/message-request.json")
@@ -35,7 +35,7 @@ func TestDecodeRequest_MessageRequest(t *testing.T) {
 		t.Errorf("stop_sequences = %v, want [END]", req.StopSequences)
 	}
 
-	// System must decode into block form preserving cache_control (C4, A11).
+	// System must decode into block form preserving cache_control.
 	if len(req.System) != 1 {
 		t.Fatalf("system parts = %d, want 1", len(req.System))
 	}
@@ -175,7 +175,7 @@ func TestDecodeResponse_MessageResponse(t *testing.T) {
 		t.Errorf("content[2] = %+v", resp.Content[2])
 	}
 
-	// Usage with cache fields (A11).
+	// Usage with cache fields.
 	if resp.Usage.InputTokens != 1250 || resp.Usage.OutputTokens != 77 {
 		t.Errorf("usage in/out = %d/%d, want 1250/77", resp.Usage.InputTokens, resp.Usage.OutputTokens)
 	}
@@ -200,7 +200,7 @@ func TestStreamDecode_ErrorTerminates(t *testing.T) {
 	testutil.AssertEventsEqual(t, "anthropic/stream-error.sse", want, got)
 }
 
-// SSE parsing rules from the WHATWG spec (facts SSE-1..SSE-7): CRLF, lone
+// SSE parsing rules from the WHATWG spec: CRLF, lone
 // CR, and lone LF all terminate lines; BOM stripped; comment lines ignored
 // (relayed); field values strip one leading space; multi-line data
 // concatenates with LF; pending event at EOF is discarded.
@@ -227,7 +227,7 @@ func TestStreamDecode_BOMStripped(t *testing.T) {
 	}
 }
 
-// Unknown future event types must decode without error (A5) — surfaced as
+// Unknown future event types must decode without error — surfaced as
 // comment events so the relay logs them and clients stay compatible.
 func TestStreamDecode_UnknownEventType(t *testing.T) {
 	unknown := "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m1\",\"model\":\"claude-sonnet-5\",\"usage\":{\"input_tokens\":1}}}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: some_future_event\ndata: {\"type\":\"some_future_event\",\"payload\":\"opaque\"}\n\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"x\"}}\n\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\ndata: {\"type\":\"message_stop\"}\n\n"
@@ -246,7 +246,7 @@ func TestStreamDecode_UnknownEventType(t *testing.T) {
 	}
 }
 
-// Incomplete event at EOF is discarded, not dispatched (SSE-6).
+// Incomplete event at EOF is discarded, not dispatched.
 func TestStreamDecode_PendingEventAtEOFDiscarded(t *testing.T) {
 	truncated := "event: ping\ndata: {\"type\":\"ping\"}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0"
 	got := testutil.DrainStreamDecoder(t, anth.NewStreamDecoder(strings.NewReader(truncated)))

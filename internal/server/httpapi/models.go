@@ -1,10 +1,10 @@
 package httpapi
 
-// GET /v1/models (plan §5.1, wire facts O9 + C1/C3): one path, two shapes.
+// GET /v1/models: one path, two shapes.
 // Without the anthropic-version header the OpenAI list shape answers
 // ({"object":"list","data":[...]}); with it, the Anthropic discovery shape
 // ({"data":[...],"first_id":..,"has_more":false,"last_id":..}) — the
-// gateway model discovery Claude Code opts into (C1). ListModels orders by
+// gateway model discovery Claude Code opts into. ListModels orders by
 // id ASC, which fixes first_id/last_id.
 
 import (
@@ -14,7 +14,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/storage"
 )
 
-// anthropicVersionHeader switches the model-list shape (C3).
+// anthropicVersionHeader switches the model-list shape.
 const anthropicVersionHeader = "anthropic-version"
 
 // handleModels serves GET /v1/models in the surface-appropriate shape.
@@ -32,7 +32,7 @@ func (a *api) handleModels(w http.ResponseWriter, r *http.Request) {
 	a.writeOpenAIModels(w, models)
 }
 
-// writeOpenAIModels emits the O9 shape: {"object":"list","data":[...]}.
+// writeOpenAIModels emits the OpenAI list shape: {"object":"list","data":[...]}.
 // data is never null (the empty store answers an honest empty array).
 func (a *api) writeOpenAIModels(w http.ResponseWriter, models []storage.Model) {
 	type modelEntry struct {
@@ -50,7 +50,7 @@ func (a *api) writeOpenAIModels(w http.ResponseWriter, models []storage.Model) {
 	}{Object: "list", Data: entries})
 }
 
-// writeAnthropicModels emits the C1/C3 discovery shape: data entries with
+// writeAnthropicModels emits the Anthropic discovery shape: data entries with
 // id/type/display_name plus the first_id/has_more/last_id envelope.
 func (a *api) writeAnthropicModels(w http.ResponseWriter, models []storage.Model) {
 	type modelEntry struct {

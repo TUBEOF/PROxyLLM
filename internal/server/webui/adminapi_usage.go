@@ -160,7 +160,7 @@ func (a *AdminAPI) refreshAccountUsage(ctx context.Context, accountID string) Re
 	return a.prober(ctx, accountID, a.store)
 }
 
-// overviewDTO is the Dashboard's single-poll snapshot (2026-10-06 live
+// overviewDTO is the Dashboard's single-poll snapshot (live
 // updates): the trailing 14 UTC days of usage plus today's aggregate —
 // one GET replaces the Overview page's multi-request mount and makes the
 // poll trivial.

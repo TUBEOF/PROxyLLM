@@ -1,6 +1,6 @@
-// Package firecrawl implements the Firecrawl v2 REST client (facts F1-F3):
+// Package firecrawl implements the Firecrawl v2 REST client:
 // the universal web-tool fallback behind the web_search/web_fetch emulation
-// layer (plan §6.2). There is no official Go SDK (F5), so this is a direct
+// layer. There is no official Go SDK, so this is a direct
 // JSON-over-HTTP client against the documented endpoints.
 package firecrawl
 
@@ -17,7 +17,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/httpguard"
 )
 
-// DefaultBaseURL is the production Firecrawl API host (F1).
+// DefaultBaseURL is the production Firecrawl API host.
 const DefaultBaseURL = "https://api.firecrawl.dev"
 
 // APIError is a Firecrawl answer in the negative — HTTP status and the
@@ -36,7 +36,7 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("firecrawl: HTTP %d: %s", e.HTTPStatus, e.ErrorMsg)
 }
 
-// SearchRequest is the /v2/search body (F2). Field tags match the
+// SearchRequest is the /v2/search body. Field tags match the
 // documented parameter names verbatim — scrapeOptions stays camelCase on
 // the wire even though Go style says otherwise.
 type SearchRequest struct {
@@ -51,18 +51,18 @@ type SearchRequest struct {
 	Country        string         `json:"country,omitempty"`
 }
 
-// ScrapeOptions is the nested scrapeOptions object (F2).
+// ScrapeOptions is the nested scrapeOptions object.
 type ScrapeOptions struct {
 	Formats []string `json:"formats,omitempty"`
 }
 
-// ScrapeRequest is the /v2/scrape body (F3).
+// ScrapeRequest is the /v2/scrape body.
 type ScrapeRequest struct {
 	URL     string   `json:"url"`
 	Formats []string `json:"formats,omitempty"`
 }
 
-// SearchResponse mirrors the documented /v2/search 200 body (F2, re-read
+// SearchResponse mirrors the documented /v2/search 200 body (re-read
 // 2026-10-10): success, data.web[], and a nullable top-level warning. The
 // arrays present depend on the sources asked for; web is the default.
 type SearchResponse struct {
@@ -111,7 +111,7 @@ func (w *WarningText) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// WebResult is one entry of data.web[] (F2). Markdown is present only when
+// WebResult is one entry of data.web[]. Markdown is present only when
 // scrapeOptions requested it — absence is not an error.
 type WebResult struct {
 	Title       string `json:"title"`
@@ -120,7 +120,7 @@ type WebResult struct {
 	Markdown    string `json:"markdown"`
 }
 
-// ScrapeResponse mirrors the documented /v2/scrape 200 body (F3, re-read
+// ScrapeResponse mirrors the documented /v2/scrape 200 body (re-read
 // 2026-10-10): success, data.markdown, and metadata carrying the page's own
 // status code and error note. There is no top-level warning here — scrape's
 // warning rides under data.
@@ -142,7 +142,7 @@ type ScrapeResponse struct {
 }
 
 // Client calls the Firecrawl v2 API. All requests carry
-// Authorization: Bearer fc-... (F1) and a bounded timeout.
+// Authorization: Bearer fc-... and a bounded timeout.
 type Client struct {
 	baseURL string
 	apiKey  string
@@ -169,7 +169,7 @@ func New(baseURL, apiKey string, httpClient *http.Client) *Client {
 // assertion; not a config surface).
 func (c *Client) BaseURL() string { return c.baseURL }
 
-// Search calls POST /v2/search (F2).
+// Search calls POST /v2/search.
 func (c *Client) Search(ctx context.Context, req SearchRequest) (*SearchResponse, error) {
 	var out SearchResponse
 	if err := c.call(ctx, "/v2/search", req, &out); err != nil {
@@ -178,7 +178,7 @@ func (c *Client) Search(ctx context.Context, req SearchRequest) (*SearchResponse
 	return &out, nil
 }
 
-// Scrape calls POST /v2/scrape (F3).
+// Scrape calls POST /v2/scrape.
 func (c *Client) Scrape(ctx context.Context, req ScrapeRequest) (*ScrapeResponse, error) {
 	var out ScrapeResponse
 	if err := c.call(ctx, "/v2/scrape", req, &out); err != nil {
@@ -264,7 +264,7 @@ func successFalseError(op string, raw []byte) error {
 }
 
 // decodeAPIError parses the Firecrawl error body shape: the docs show
-// success:false with a plain string "error" field (F5).
+// success:false with a plain string "error" field.
 func decodeAPIError(status int, body []byte) *APIError {
 	apiErr := &APIError{HTTPStatus: status}
 	var wire struct {

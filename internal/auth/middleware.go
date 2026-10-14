@@ -1,8 +1,9 @@
-// Package auth implements client-key authentication for both API surfaces
-// (plan §5.1): Bearer keys on the OpenAI surface (O1), x-api-key and/or
-// Bearer on the Anthropic surface (A14, C5 both-headers reality), with
-// 256-bit display-once secrets stored as Argon2id hashes only (Analysis G
-// control 1) and the ENV-gated PROXYLLM_AUTH_DISABLED opt-out.
+// Package auth implements client-key authentication for both API surfaces:
+// Bearer keys on the OpenAI surface, x-api-key and/or
+// Bearer on the Anthropic surface (both header families are real in the
+// wild), with
+// 256-bit display-once secrets stored as Argon2id hashes only
+// and the ENV-gated PROXYLLM_AUTH_DISABLED opt-out.
 package auth
 
 import (
@@ -16,11 +17,11 @@ import (
 	"github.com/tubeof/proxyllm/internal/storage"
 )
 
-// KeyPrefix is the wire prefix of every client key (§5.1: pk_<prefix>_<secret>).
+// KeyPrefix is the wire prefix of every client key (pk_<prefix>_<secret>).
 const KeyPrefix = "pk_"
 
-// secretBytes is the entropy budget of the secret segment: 256 bit (G
-// control 1) → 43 unpadded base64url characters.
+// secretBytes is the entropy budget of the secret segment: 256 bit
+// → 43 unpadded base64url characters.
 const secretBytes = 32
 
 // prefixLen is the character length of the display-prefix segment: short
@@ -147,7 +148,7 @@ func verifyKey(ctx context.Context, st *storage.Store, key string) verifyResult 
 			continue
 		}
 		if legacy {
-			// Transparent migration (2026-10-10): the presented secret is in
+			// Transparent migration: the presented secret is in
 			// hand exactly here, so this is the one moment an Argon2id row can
 			// be rewritten. Best-effort — a failed rewrite must not reject a key
 			// that just verified, and the row simply migrates on its next use.
@@ -168,7 +169,7 @@ func VerifyClientKey(ctx context.Context, st *storage.Store, key string) bool {
 	return verifyKey(ctx, st, key).id != ""
 }
 
-// Middleware gates API requests on a valid client key (§5.1).
+// Middleware gates API requests on a valid client key.
 type Middleware struct {
 	store    *storage.Store
 	disabled bool
@@ -195,7 +196,7 @@ func NewMiddleware(st *storage.Store, opts ...Option) *Middleware {
 }
 
 // Wrap gates next on client-key auth. Both header families are accepted on
-// both surfaces (§5.1, C5): Authorization: Bearer pk_... and x-api-key: pk_...
+// both surfaces: Authorization: Bearer pk_... and x-api-key: pk_...
 func (m *Middleware) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if m.disabled {
@@ -214,7 +215,7 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 }
 
 // ExtractClientKey pulls the client key from either documented header
-// family (O1, A14). Bearer wins when present and well-formed; otherwise
+// family. Bearer wins when present and well-formed; otherwise
 // x-api-key. Empty when neither carries a key.
 func ExtractClientKey(r *http.Request) string {
 	if auth := r.Header.Get("Authorization"); auth != "" {
@@ -234,8 +235,8 @@ func ClientKeyIDFromContext(ctx context.Context) string {
 }
 
 // WriteUnauthorized emits the protocol-conform 401 body for the request's
-// surface (§5.3): OpenAI error.type/code/message on OpenAI paths (O10),
-// Anthropic error.type/message on Anthropic paths (A13).
+// surface: OpenAI error.type/code/message on OpenAI paths,
+// Anthropic error.type/message on Anthropic paths.
 func WriteUnauthorized(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
@@ -246,8 +247,8 @@ func WriteUnauthorized(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"error":{"message":"Incorrect API key provided","type":"invalid_request_error","code":"invalid_api_key"}}`))
 }
 
-// isAnthropicSurface routes the 401 body shape by path (§5.1 surface
-// split). Exact paths only — a broad prefix would shape hypothetical
+// isAnthropicSurface routes the 401 body shape by path. Exact paths only —
+// a broad prefix would shape hypothetical
 // future endpoints like /v1/messages-batch into the Anthropic body.
 func isAnthropicSurface(path string) bool {
 	return path == "/v1/messages" || strings.HasPrefix(path, "/v1/messages/")

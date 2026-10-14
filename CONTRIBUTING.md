@@ -37,8 +37,8 @@ PRs are reviewed against this checklist — reviewers reject on:
 - Preceding **best-practice research pass** (live, cited) for any new
   domain.
 - Closing **independent review** — no code merged by its author alone.
-- **Visual regression tests** for WebUI changes (Playwright vs UpGuard kit
-  baselines).
+- **Visual regression tests** for WebUI changes (Playwright against the
+  console's own rendered baselines).
 - **Verification report** (tests run, findings, resolutions) archived with
   the phase.
 

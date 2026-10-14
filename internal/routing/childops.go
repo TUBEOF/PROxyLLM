@@ -1,11 +1,13 @@
 package routing
 
-// Child operations (2026-10-07 Logs page): the upstream operations the
-// operator needs as their own log rows rather than as trace-only detail —
-// a chain failover, an image description produced by a vision fallback model
-// (ADR-014), and an emulated web-tool call. This mapper is the single source
-// of truth for that mapping; the persist path (httpapi.writeRequestLog →
-// storage.InsertChildLogs) consumes it.
+import "github.com/tubeof/proxyllm/internal/translate/ir"
+
+// Child operations: the upstream operations the operator needs as their own
+// log rows rather than as trace-only detail — a chain failover, an image
+// description produced by a vision fallback model (ADR-014), and an emulated
+// web-tool call. This mapper is the single source of truth for that mapping;
+// the persist path (httpapi.writeRequestLog → storage.InsertChildLogs)
+// consumes it.
 //
 // A same-provider retry is deliberately NOT a row: it is one attempt of the
 // same operation, not a separable one, and a retry storm floods the log.
@@ -24,11 +26,11 @@ const (
 
 	// OpCapabilityFallback: the rule chain was exhausted on capability gaps
 	// and the configured capability fallback models were consulted
-	// (ADR-010 / 2026-09-21 model fallback). Detail carries the capability
+	// (ADR-010). Detail carries the capability
 	// family (e.g. "vision").
 	OpCapabilityFallback OpKind = "capability_fallback"
 
-	// OpEmulatedTool: a server tool was served by the §6.2 emulation layer
+	// OpEmulatedTool: a server tool was served by the emulation layer
 	// (the model's tool call answered via the Firecrawl fallback). To carries
 	// the tool name, Detail the invocation summary (query/url, outcome).
 	OpEmulatedTool OpKind = "emulated_tool"
@@ -64,13 +66,23 @@ type ChildOp struct {
 	// emulator's error text and a model-supplied URL), so the write path
 	// MUST mask it before persisting — see httpapi.ChildOpsFromTrace.
 	Detail string
+
+	// LatencyMS is how long this sub-operation took, when it was one that
+	// took time: a describer call, an emulated tool invocation. Zero for a
+	// transition, which is not an operation.
+	LatencyMS int64
+
+	// Usage is the token spend of the sub-operation, when it spent tokens.
+	// A web-tool call spends none; a describer call spends what the vision
+	// model reported.
+	Usage *ir.Usage
 }
 
 // ChildOps maps a request's recorded trace events to its child operations,
 // in trace order. Only the op kinds above are selected; a request that
 // succeeded through its primary provider yields no ops.
 //
-// Model attribution (2026-10-08 Logs fix): attempt events carry the
+// Model attribution: attempt events carry the
 // provider+wire model actually dispatched, so the walk feeds the attempts
 // into the ops — a capability-fallback op names the fallback model its walk
 // served (the next attempt's model), a failover names the model the target
@@ -116,6 +128,12 @@ func ChildOps(events []Event) []ChildOp {
 				Model: nextAttemptModel(events, i, ""),
 			})
 		case EventImageCaption:
+			if ev.CacheHit {
+				// A cached description replaced the image without a call.
+				// Recording it as an operation would put a row in the log for a
+				// request that never left the proxy.
+				continue
+			}
 			ops = append(ops, ChildOp{
 				Kind:   OpImageCaption,
 				Detail: ev.Reason,
@@ -123,15 +141,20 @@ func ChildOps(events []Event) []ChildOp {
 				// event names it directly, unlike the walk-derived ops.
 				ProviderID: ev.ProviderID,
 				Model:      ev.Model,
+				LatencyMS:  ev.LatencyMS,
+				Usage:      ev.Usage,
 			})
 		case EventEmulatedTool:
 			ops = append(ops, ChildOp{
 				Kind: OpEmulatedTool,
 				To:   ev.To, Detail: ev.Reason,
-				// The model whose round issued the tool call (the last
-				// attempt before this event).
-				ProviderID: lastAttemptProvider(events, i),
-				Model:      lastAttemptModel(events, i),
+				// The emulating account that answered, so the row names the web
+				// provider and account actually used. Model stays empty: the
+				// model whose round issued the tool call has nothing to do with
+				// where the call went, and naming it there made the log claim a
+				// fallback that never happened.
+				ProviderID: ev.ProviderID,
+				LatencyMS:  ev.LatencyMS,
 			})
 		}
 	}
@@ -149,26 +172,6 @@ func nextAttemptModel(events []Event, i int, to string) string {
 		}
 		if to == "" || ev.ProviderID == to {
 			return ev.Model
-		}
-	}
-	return ""
-}
-
-// lastAttemptProvider/Model name the most recent attempt event before
-// index i — the dispatch context the event belongs to.
-func lastAttemptProvider(events []Event, i int) string {
-	for j := i - 1; j >= 0; j-- {
-		if events[j].Type == EventAttempt && events[j].ProviderID != "" {
-			return events[j].ProviderID
-		}
-	}
-	return ""
-}
-
-func lastAttemptModel(events []Event, i int) string {
-	for j := i - 1; j >= 0; j-- {
-		if events[j].Type == EventAttempt && events[j].Model != "" {
-			return events[j].Model
 		}
 	}
 	return ""

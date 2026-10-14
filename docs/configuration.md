@@ -1,7 +1,5 @@
 # Configuration Reference
 
-> Status: Phase 2 — all four layers implemented.
-
 ## Layers (later overrides earlier)
 
 1. **Built-in defaults** — see below
@@ -72,7 +70,7 @@ restart:
 | Key | Values | Effect |
 |---|---|---|
 | `model_aliases` | JSON object alias → model-id | Routing-side alias resolution (WebUI "Routing" → "Model Aliases", relocated from Models 2026-10-08): the target model's rule chain routes the alias request; an invalid blob logs and routes without aliases until it is fixed |
-| `anthropic_surface_non_claude` | `allow` (default) / `warn` / `block` | Global switch on the Anthropic surface (plan §6.4): `warn` annotates route_trace with a compat_policy event; `block` refuses non-Claude model names with a 400 — Claude targets are always spared; a missing or invalid value is `allow` (never fails closed) |
+| `anthropic_surface_non_claude` | `allow` (default) / `warn` / `block` | Global switch on the Anthropic surface : `warn` annotates route_trace with a compat_policy event; `block` refuses non-Claude model names with a 400 — Claude targets are always spared; a missing or invalid value is `allow` (never fails closed) |
 | `routing_strategy` | `round_robin` (default) / `fill_first` | Global default routing strategy (ADR-009): how requests spread across a chain's accounts. Rules without their own strategy inherit it; the WebUI Routing page edits it. A missing or invalid value is `round_robin` |
 | `vision_fallback` | JSON array of MODEL IDs | Capability fallback models (ADR-010, amended 2026-10-10 by ADR-014): when the routed chain failed with real upstream `capability_gap` rejections (e.g. image input), these models DESCRIBE each image — they receive the image and the instruction, never the conversation — and the descriptions replace the images before the routed chain is dispatched again. Entries are validated against the models table at save time (v1.0.2 provider-ID/type entries no longer resolve); edited on the Routing page. Empty/absent = no fallback (the request fails with the upstream error) |
 | `web_search_fallback` | JSON array of web-tool account IDs | Emulator pool order for emulated `web_search` (ADR-010): accounts are tried in order, a failing account fails over to the next. Empty = single-emulator behavior |
@@ -83,11 +81,10 @@ restart:
 | `model_sync_enabled` | `1` (default) / `0` | Automatic model import (ADR-010): when on, every provider exposing model discovery mirrors its upstream list at startup and on the configured cadence |
 | `model_sync_interval_hours` | integer ≥ 1 (default 24) | Sync cadence; effective at the next tick without restart |
 | `model_sync_state` | JSON (read-only — written by the sync) | Last-run summary: per-provider added/updated/removed counts and skip reasons; rendered on the Models page |
-| `request_logging_enabled` | `1` (default) / `0` | Capture each request's conversation and answer beside its log row, readable in the Logs drawer (2026-10-10). On by default — reading what a request said is the point of the log. Turning it off keeps every metadata row; only the captured text stops. Written by the Logs page's "capture bodies" switch. Payloads are redacted, capped at 64 KB per side, and pruned |
+| `request_logging_enabled` | `1` (default) / `0` | Capture each request's conversation and answer beside its log row, readable in the Logs drawer. On by default — reading what a request said is the point of the log. Turning it off keeps every metadata row; only the captured text stops. Written by the Logs page's "capture bodies" switch. Payloads are redacted, capped at 64 KB per side, and pruned |
 | `request_payload_retention_days` | integer ≥ 1 (default 7) | How long captured payloads are kept. A sweep prunes older ones hourly (and once at startup) alongside the model-sync scheduler; pruning never removes the request_logs row itself |
 
-### Context & capability auto-detection (2026-10-06)
-
+### Context & capability auto-detection
 For Ollama Cloud accounts, the model sync enriches each imported model
 by querying the registry's per-model facts endpoint (`POST /api/show`,
 verified live 2026-10-06). Detection populates:

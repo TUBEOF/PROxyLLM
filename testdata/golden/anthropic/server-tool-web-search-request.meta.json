@@ -2,6 +2,5 @@
   "fixture": "server-tool-web-search-request.json",
   "source": "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/web-search-tool",
   "accessed": "2026-09-12",
-  "facts": ["A8", "A9", "A10"],
   "notes": "Server-tool definition in the tools array (web_search_20250305 family): name, max_uses, allowed_domains, blocked_domains, user_location (approximate). Type strings rotate (web_search_20250305 / _20260209 / _20260318) — the dated suffix is a versioned family, not a stable constant."
 }

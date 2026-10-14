@@ -1,6 +1,6 @@
 package httpapi
 
-// Request/response capture for the Logs page (2026-10-10). The log has always
+// Request/response capture for the Logs page. The log has always
 // answered "what happened" — status, tokens, provider, route_trace — but not
 // "what was actually said". An operator could see that a vision fallback fired
 // without being able to read what it answered, or see a 400 without seeing the

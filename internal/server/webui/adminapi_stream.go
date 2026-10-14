@@ -1,6 +1,6 @@
 package webui
 
-// GET /api/admin/logs/stream (Logs-page redesign, 2026-10-06): the admin
+// GET /api/admin/logs/stream (Logs-page redesign): the admin
 // log SSE. Wire: `event: hello` (ack) → `event: running` (the in-flight
 // snapshot; every snapshot REPLACES the previous list) → `event: log` rows
 // (new ones via the store cursor, resumable client-side) → 15 s `: ping`

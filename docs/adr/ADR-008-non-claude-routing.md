@@ -11,7 +11,7 @@ differs: gateways that translate the Anthropic `/v1/messages` surface to
 OpenAI-compatible, Gemini and Bedrock upstreams document the combination as
 a supported setup, and the community-proxy ecosystem treats it as the core
 feature. The user decision
-(2026-09-10, OP-2): this must work "nahezu reibungslos mit allen Models" —
+: this must work "nahezu reibungslos mit allen Models" —
 near-seamless with all models — and be configurable in a dedicated WebUI
 area.
 
@@ -65,5 +65,5 @@ asking the target to stop is a separate, provider-specific change.
 - Thinking-signature semantics are the one real gap: signatures cannot be
   fabricated for non-Claude targets, hence the explicit strip/map/block
   policy instead of silent corruption.
-- A dedicated "Models & Compatibility" WebUI area (Phase 2) holds every
+- A dedicated "Models & Compatibility" WebUI area holds every
   model's fallback chain, capabilities, and compat rules in one editor.

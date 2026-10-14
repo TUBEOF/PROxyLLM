@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>PROxyLLM design tokens</title>
+<!-- This page loads the console's own stylesheets, so it renders against the
+     system it documents rather than a copy of it. Open it through a static
+     server rooted at the repository root (the app serves webui/public at /,
+     which is where /fonts/ resolves); then /design/examples/tokens.html works
+     as-is. Sources of truth: design/colors_and_type.css and design/DESIGN.md. -->
+<link rel="stylesheet" href="../../webui/src/styles/colors_and_type.css">
+<link rel="stylesheet" href="../../webui/src/styles/kit.css">
+<style>
+  /* Local layout for the documentation grid only. Every colour below is a
+     custom property from the token layer; none is written out. */
+  .tok-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .tok { border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; background: var(--surface); }
+  .tok .chip-box { height: 56px; }
+  .tok .meta { padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+  .tok .name { font-family: var(--font-mono); font-size: 12px; color: var(--fg); }
+  .tok .value { font-family: var(--font-mono); font-size: 11px; color: var(--neutral-500); }
+  .tok .use { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .spec-row { display: flex; align-items: baseline; gap: 14px; border-bottom: 1px solid var(--border); padding: 9px 0; }
+  .spec-row:last-child { border-bottom: none; }
+  .spec-row .label { width: 190px; flex-shrink: 0; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .rhythm { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+  .rhythm .bar { background: var(--accent-dim); border: 1px solid var(--primary-500-alpha); border-radius: 3px 3px 0 0; }
+  .rhythm .bar span { font-family: var(--font-mono); font-size: 11px; color: var(--muted); display: block; text-align: center; padding-top: 4px; }
+  .box-demo { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); padding: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="workspace-head">
+    <div>
+      <h1>Design tokens</h1>
+      <p class="sub">Every value the console renders. Authored in oklch; the sRGB figure in each line is what a browser composites.</p>
+    </div>
+  </div>
+
+  <div class="canvas">
+    <section class="w-full">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Public roles</h2></div>
+        <div class="widget-body">
+          <div class="tok-grid">
+            <div class="tok"><div class="chip-box" style="background: var(--bg)"></div><div class="meta"><span class="name">--bg</span><span class="value">oklch(11% 0.011 250) · #030507</span><span class="use">the canvas</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--surface)"></div><div class="meta"><span class="name">--surface</span><span class="value">oklch(13% 0.012 250 / 80%)</span><span class="use">glass cards, widgets, tables</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--surface-elevated)"></div><div class="meta"><span class="name">--surface-elevated</span><span class="value">oklch(13% 0.013 250 / 96%)</span><span class="use">modal, drawer, menu, toast</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--fg)"></div><div class="meta"><span class="name">--fg</span><span class="value">oklch(90% 0.008 250) · #dadee3</span><span class="use">primary text</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--muted)"></div><div class="meta"><span class="name">--muted</span><span class="value">oklch(81% 0.012 250) · #bbc2c9</span><span class="use">secondary text</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--border)"></div><div class="meta"><span class="name">--border</span><span class="value">oklch(28% 0.015 250) · #232a30</span><span class="use">hairlines, dividers</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--accent)"></div><div class="meta"><span class="name">--accent</span><span class="value">oklch(78% 0.20 144) · #56d75b</span><span class="use">action, focus, links, healthy</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--accent-dim)"></div><div class="meta"><span class="name">--accent-dim</span><span class="value">oklch(78% 0.20 144 / 12%)</span><span class="use">soft accent fills</span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-2">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">The accent</h2></div>
+        <div class="widget-body">
+          <div class="tok-grid">
+            <div class="tok"><div class="chip-box" style="background: var(--primary-500)"></div><div class="meta"><span class="name">--primary-500</span><span class="value">oklch(78% 0.20 144)</span><span class="use">the accent</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--primary-400)"></div><div class="meta"><span class="name">--primary-400</span><span class="value">oklch(80% 0.22 145)</span><span class="use">gradient stop</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--primary-500-alpha)"></div><div class="meta"><span class="name">--primary-500-alpha</span><span class="value">oklch(78% 0.20 144 / 35%)</span><span class="use">card border on hover</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--rail)"></div><div class="meta"><span class="name">--rail</span><span class="value">oklch(70% 0.17 143 / 72%)</span><span class="use">request-log tree rail</span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-2">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Status</h2></div>
+        <div class="widget-body">
+          <div class="tok-grid">
+            <div class="tok"><div class="chip-box" style="background: var(--status-up)"></div><div class="meta"><span class="name">--status-up</span><span class="value">#56d75b · 2xx, healthy</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--status-warn)"></div><div class="meta"><span class="name">--status-warn</span><span class="value">oklch(78% 0.15 75) · #efa831</span><span class="use">degraded, retried, 4xx</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--status-down)"></div><div class="meta"><span class="name">--status-down</span><span class="value">oklch(60% 0.20 25) · #de3b3d</span><span class="use">5xx, failed, destructive</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--status-paused)"></div><div class="meta"><span class="name">--status-paused</span><span class="value">oklch(62% 0.015 250) · #80878f</span><span class="use">paused, inactive</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--status-info)"></div><div class="meta"><span class="name">--status-info</span><span class="value">oklch(72% 0.09 230) · #65afd2</span><span class="use">informational, sub-operation</span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-full">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Neutral ramp</h2></div>
+        <div class="widget-body">
+          <div class="tok-grid">
+            <div class="tok"><div class="chip-box" style="background: var(--neutral-950)"></div><div class="meta"><span class="name">--neutral-950</span><span class="value">#030507</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--neutral-900)"></div><div class="meta"><span class="name">--neutral-900</span><span class="value">#060a0e</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--neutral-800)"></div><div class="meta"><span class="name">--neutral-800</span><span class="value">#10171e</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--neutral-700)"></div><div class="meta"><span class="name">--neutral-700</span><span class="value">#232a30</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--neutral-600)"></div><div class="meta"><span class="name">--neutral-600</span><span class="value">#414951</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--neutral-500)"></div><div class="meta"><span class="name">--neutral-500</span><span class="value">#6c7680</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--neutral-400)"></div><div class="meta"><span class="name">--neutral-400</span><span class="value">#989fa8</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--neutral-300)"></div><div class="meta"><span class="name">--neutral-300</span><span class="value">#bbc2c9</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--neutral-200)"></div><div class="meta"><span class="name">--neutral-200</span><span class="value">#dadee3</span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-2">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Typography</h2></div>
+        <div class="widget-body">
+          <div class="spec-row"><span class="label">Display 26px / 600</span><span class="heading" style="font-size: 26px">Workspace</span></div>
+          <div class="spec-row"><span class="label">KPI 34px / 600</span><span class="heading" style="font-size: 34px">12,480</span></div>
+          <div class="spec-row"><span class="label">Body 16px / 400</span><span style="font-size: var(--fs-base)">Inter for everything that is not a heading or a number.</span></div>
+          <div class="spec-row"><span class="label">Table 14px / 400</span><span style="font-size: var(--fs-sm)">Table cells, nav, buttons, drawer text.</span></div>
+          <div class="spec-row"><span class="label">Meta 12px / 400</span><span style="font-size: var(--fs-xs); color: var(--muted)">Pills, captions, table meta.</span></div>
+          <div class="spec-row"><span class="label">Mono 14px / tabular</span><span class="num" style="font-size: var(--fs-sm)">142 ms · sk-…9f2c · 1,204 (38%)</span></div>
+          <div class="spec-row"><span class="label">Medium 500</span><span style="font-weight: var(--fw-medium)">Labels and table primary cells</span></div>
+          <div class="spec-row"><span class="label">Semibold 600</span><span style="font-weight: var(--fw-semibold)">Headings and page titles</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-2">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Space, shape, motion</h2></div>
+        <div class="widget-body">
+          <p class="hint" style="margin: 0 0 10px">Spacing: a 4px base unit. The component layer composes its multiples directly — there is no spacing token, so a new gap is a number, not a variable.</p>
+          <div class="rhythm">
+            <div class="bar" style="width: 26px; height: 8px"><span>2</span></div>
+            <div class="bar" style="width: 26px; height: 12px"><span>4</span></div>
+            <div class="bar" style="width: 26px; height: 16px"><span>6</span></div>
+            <div class="bar" style="width: 26px; height: 20px"><span>8</span></div>
+            <div class="bar" style="width: 26px; height: 25px"><span>12</span></div>
+            <div class="bar" style="width: 26px; height: 33px"><span>16</span></div>
+            <div class="bar" style="width: 26px; height: 37px"><span>18</span></div>
+            <div class="bar" style="width: 26px; height: 41px"><span>20</span></div>
+            <div class="bar" style="width: 26px; height: 49px"><span>24</span></div>
+          </div>
+          <div class="spec-row" style="margin-top: 14px"><span class="label">Radius</span><span style="display: flex; gap: 12px; align-items: center">
+            <span class="box-demo" style="border-radius: var(--radius-sm)">sm 6</span>
+            <span class="box-demo" style="border-radius: var(--radius-md)">md 8</span>
+            <span class="box-demo" style="border-radius: var(--radius-lg)">lg 12</span>
+            <span class="box-demo" style="border-radius: var(--radius-full)">full</span>
+          </span></div>
+          <div class="spec-row"><span class="label">Shadow — glass</span><span class="box-demo" style="box-shadow: var(--shadow-glass)">inset highlight</span></div>
+          <div class="spec-row"><span class="label">Shadow — card hover</span><span class="box-demo" style="box-shadow: var(--shadow-card-hover)">accent glow</span></div>
+          <div class="spec-row"><span class="label">Gradient — primary</span><span class="box-demo" style="background: var(--gradient-primary); color: var(--neutral-900); border: none">primary button</span></div>
+          <div class="spec-row"><span class="label">Blur</span><span style="font-size: var(--fs-sm); color: var(--muted)"><span class="num">--blur-glass</span> 2.5px on the topbar · <span class="num">--blur-card</span> 10px on cards and overlays</span></div>
+          <div class="spec-row"><span class="label">Motion</span><span style="font-size: var(--fs-sm); color: var(--muted)"><span class="num">--transition-base</span> 0.15s · <span class="num">--transition-button</span> 0.3s · sidebar 0.25s. All of it is switched off under <span class="num">prefers-reduced-motion</span>.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-full">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Data surfaces</h2></div>
+        <div class="widget-body">
+          <div class="tok-grid">
+            <div class="tok"><div class="chip-box" style="background: var(--chart-line)"></div><div class="meta"><span class="name">--chart-line</span><span class="value">var(--primary-500)</span><span class="use">the single series</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--chart-area)"></div><div class="meta"><span class="name">--chart-area</span><span class="value">oklch(78% 0.20 144 / 18%)</span><span class="use">fill under the line</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--chart-2)"></div><div class="meta"><span class="name">--chart-2</span><span class="value">var(--neutral-400)</span><span class="use">comparison series</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--metric-pos)"></div><div class="meta"><span class="name">--metric-pos</span><span class="value">var(--primary-500)</span><span class="use">positive delta</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--metric-neg)"></div><div class="meta"><span class="name">--metric-neg</span><span class="value">oklch(60% 0.20 25)</span><span class="use">negative delta</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--row-hover)"></div><div class="meta"><span class="name">--row-hover</span><span class="value">oklch(14% 0.013 250 / 60%)</span><span class="use">table row hover</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--widget-head)"></div><div class="meta"><span class="name">--widget-head</span><span class="value">var(--neutral-400)</span><span class="use">widget header text</span></div></div>
+            <div class="tok"><div class="chip-box" style="background: var(--bg-elev)"></div><div class="meta"><span class="name">--bg-elev</span><span class="value">rgba(127, 127, 127, 0.12)</span><span class="use">a row being moved</span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+</body>
+</html>

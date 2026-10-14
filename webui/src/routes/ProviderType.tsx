@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { apiCall } from '../api';
 import type {
@@ -20,6 +20,20 @@ import { IconPlus } from '../icons';
 // time.
 
 // asStringMap narrows the settings blob to the form's string fields.
+// aliasRowsFrom reads the alias map out of a settings blob. The aliases are an
+// object field beside the catalog's text fields, so the value arrives as
+// `unknown` and has to be narrowed before it can become rows.
+function aliasRowsFrom(settings: unknown): { alias: string; target: string }[] {
+  const raw = (settings as Record<string, unknown> | null)?.aliases;
+  const rows: { alias: string; target: string }[] = [];
+  if (raw !== null && raw !== undefined && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [alias, target] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof target === 'string') rows.push({ alias, target });
+    }
+  }
+  return rows;
+}
+
 function asStringMap(v: unknown): Record<string, string> {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) return {};
   const out: Record<string, string> = {};
@@ -53,38 +67,34 @@ export default function ProviderTypePage() {
   const accounts = useMemo(() => detail.data?.accounts ?? [], [detail.data]);
   const savedSettings = useMemo(() => asStringMap(detail.data?.settings), [detail.data]);
 
-  // Settings form state, seeded once per loaded detail via effect (a
+  // Settings form state, seeded once per loaded type via effect (a
   // render-phase setState from props would be a side effect).
   const [settingsForm, setSettingsForm] = useState<Record<string, string>>({});
-  const [settingsSeeded, setSettingsSeeded] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const saveSettings = useMutation();
 
   // Type aliases (object field in the settings blob, not a catalog text
-  // field): seeded once per loaded detail alongside the string fields.
+  // field): seeded alongside the string fields.
   const [aliasRows, setAliasRows] = useState<{ alias: string; target: string }[]>([]);
-  const [aliasesSeeded, setAliasesSeeded] = useState(false);
 
+  // The catalog — which names the fields — and the detail — which carries their
+  // values — arrive from two independent requests, and the detail is refetched
+  // when the type changes while keeping its previous value until the new one
+  // lands. So the form is filled only when both are in and neither is in flight,
+  // and it is refilled when the type changes.
+  //
+  // Getting this wrong is not cosmetic: filling the form from a catalog that
+  // arrived first leaves every field empty, and saving that form writes the
+  // emptiness back over the saved settings.
+  const seededType = useRef<string | null>(null);
   useEffect(() => {
-    if (settingsSeeded || meta === null) return;
+    if (meta === null || detail.loading || detail.data === null || seededType.current === type) return;
     const seed: Record<string, string> = {};
     for (const f of meta.settings_fields) seed[f.key] = savedSettings[f.key] ?? '';
     setSettingsForm(seed);
-    setSettingsSeeded(true);
-  }, [settingsSeeded, meta, savedSettings]);
-
-  useEffect(() => {
-    if (aliasesSeeded || detail.data === null) return;
-    const raw = (detail.data.settings as Record<string, unknown> | null)?.aliases;
-    const rows: { alias: string; target: string }[] = [];
-    if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
-      for (const [alias, target] of Object.entries(raw as Record<string, unknown>)) {
-        if (typeof target === 'string') rows.push({ alias, target });
-      }
-    }
-    setAliasRows(rows);
-    setAliasesSeeded(true);
-  }, [aliasesSeeded, detail.data]);
+    setAliasRows(aliasRowsFrom(detail.data.settings));
+    seededType.current = type;
+  }, [type, meta, detail.loading, detail.data, savedSettings]);
 
   const submitSettings = useCallback(
     async (e: FormEvent) => {

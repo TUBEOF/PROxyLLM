@@ -2,6 +2,5 @@
   "fixture": "message-request-thinking.json",
   "source": "https://docs.anthropic.com/en/api/messages",
   "accessed": "2026-09-10",
-  "facts": ["A12"],
   "notes": "Extended-thinking request parameter: type enabled with budget_tokens >= 1024; adaptive variant included as a second file."
 }

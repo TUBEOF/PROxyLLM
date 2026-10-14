@@ -8,7 +8,7 @@ import (
 	"fmt"
 )
 
-// Provider is the CRUD-facing provider row (plan Analysis C: id, type, name
+// Provider is the CRUD-facing provider row (id, type, name
 // + per-type non-secret config). The Config blob carries public settings
 // only (base_url etc.) — credentials NEVER ride here; they live in
 // provider_tokens behind the AES-256-GCM envelope.
@@ -20,8 +20,8 @@ type Provider struct {
 }
 
 // secretShapedConfigKeys are config keys whose values must never appear in
-// the providers.config column — defense-in-depth for Analysis G control 2
-// ("secrets never in config exports"): even if the API layer's validation
+// the providers.config column — defense-in-depth for the "secrets never in
+// config exports" rule: even if the API layer's validation
 // were bypassed, the storage boundary refuses to persist a plaintext
 // credential here.
 var secretShapedConfigKeys = []string{"api_key", "apikey", "token", "secret", "password", "refresh_token", "access_token"}

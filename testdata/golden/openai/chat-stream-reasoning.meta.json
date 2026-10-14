@@ -2,6 +2,5 @@
   "fixture": "chat-stream-reasoning.sse",
   "source": "https://github.com/ollama/ollama/issues/17911 (delta.reasoning field on /v1/chat/completions streaming) + docs.ollama.com/api/openai-compatibility (reasoning/thinking control listed as a supported /v1/chat/completions feature)",
   "accessed": "2026-09-22",
-  "facts": ["O4"],
   "notes": "OpenAI-compat reasoning stream as served by ollama.com/v1 for thinking models (glm, gpt-oss, qwen3, deepseek): reasoning fragments ride delta.reasoning (DeepSeek-style providers use delta.reasoning_content — the decoder accepts both). Fragments INTERLEAVE with content deltas mid-word (the exact shape that fragments the proxy's text when replayed as separate blocks). The paired .expected.json pins the proxy's buffered decode: one text block, reasoning flushed as a single thinking block after the content, before message_delta."
 }

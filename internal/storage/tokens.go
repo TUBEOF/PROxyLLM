@@ -23,7 +23,7 @@ var ErrConflict = errors.New("storage: conflict")
 
 // ProviderToken is one decrypted provider credential row. Secrets exist in
 // plaintext ONLY inside this struct — at rest they are AES-256-GCM
-// envelopes (ADR-sec-storage; research digest X12).
+// envelopes (ADR-007).
 type ProviderToken struct {
 	ProviderID  string
 	Kind        string // e.g. "access_token", "refresh_token", "id_token"
@@ -34,7 +34,7 @@ type ProviderToken struct {
 
 // PutProviderTokens atomically upserts the given tokens: all rows seal with
 // a fresh nonce and commit in ONE transaction — a refresh rotation that
-// persists access + refresh tokens either lands whole or not at all (X12).
+// persists access + refresh tokens either lands whole or not at all.
 // Requires the envelope (SetEnvelope); refusing the write is safer than
 // persisting plaintext.
 func (s *Store) PutProviderTokens(ctx context.Context, tokens ...ProviderToken) error {

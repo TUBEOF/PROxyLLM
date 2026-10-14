@@ -1,4 +1,4 @@
-// RouteTrace (2026-10-07): the structured renderer for a request's
+// RouteTrace: the structured renderer for a request's
 // route_trace — a chain summary plus a human-readable routing timeline —
 // with the raw JSON kept as a disclosure for debugging and for trace shapes
 // this renderer does not recognise (the pre-v2 unversioned rows older

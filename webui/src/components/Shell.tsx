@@ -16,7 +16,7 @@ import {
 // the 64px icon rail, mobile slides the off-canvas sidebar in. Navigating
 // closes it again on mobile so the content is never covered for long.
 //
-// Account surface (2026-10-08): the topbar avatar IS the user menu —
+// Account surface: the topbar avatar IS the user menu —
 // identity, account settings (password change), sign out. The sidebar's
 // bottom Sign out button is gone (it read as a nav item and broke the
 // sections' visual line).

@@ -1,6 +1,6 @@
 package webui
 
-// Sub-operations on the log page response (2026-10-07): each log row ships
+// Sub-operations on the log page response: each log row ships
 // its child operations keyed by row id, in one batched read — the WebUI
 // renders a fallback model walk or an emulated web-tool call as its own
 // nested row without a second round trip per row.

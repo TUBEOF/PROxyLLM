@@ -1,6 +1,6 @@
 package httpapi
 
-// Wire-name resolution (2026-09-21 model identity): the client-facing model
+// Wire-name resolution (model identity): the client-facing model
 // ID is a prefixed routing identity ("ollamacloud/glm-5.3"); the upstream
 // request body must carry the bare wire name ("glm-5.3"). Rows created by
 // the model sync store the wire name in models.name; legacy unprefixed rows
@@ -12,7 +12,7 @@ package httpapi
 // the executor stamps each entry's model onto the request at dispatch
 // (executor withModel), so the wire name reaches the upstream only through
 // the entries. The client-facing echo and the request-log row keep the
-// routing ID (OP-2), and the trace records the resolution.
+// routing ID, and the trace records the resolution.
 
 import (
 	"context"

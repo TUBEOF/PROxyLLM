@@ -1,12 +1,11 @@
 # Routing & Fallbacks
 
-The routing engine (Analysis E) is deterministic and observable: every
+The routing engine is deterministic and observable: every
 skip, retry, failover, compat-policy application, tool-emulation
 substitution, chain expansion, and strategy rotation lands in the request's
 `route_trace` — **fallbacks are never silent**.
 
-## Model identity (2026-09-21)
-
+## Model identity
 A model's routing identity is `<prefix>/<wire-name>` (e.g.
 `ollamacloud/glm-5.3`): the prefix is a per-provider-type setting
 (editable on the provider type's page, default = the type string), the
@@ -52,7 +51,7 @@ in the rule step below.
    derived from the request content (web_search, web_fetch,
    code_execution, streaming, context size vs. window); providers failing
    the filter are skipped **with a logged reason**. Vision is deliberately
-   NOT gated here (2026-09-21 automatic capabilities): static provider
+   NOT gated here: static provider
    flags cannot know which MODEL accepts images — the request goes out,
    and a real upstream rejection fails over.
 6. **Health gate** — circuit breaker (consecutive failures), exponential
@@ -71,6 +70,28 @@ rule set swaps in (a failed store write keeps the last known-good rules).
 The executor's attempt cap (2–3 providers per request) still applies to
 the expanded chain — a very long account pool is not walked in one
 request.
+
+## When a capability is unknown
+
+A chain entry is filtered on the capabilities the request needs, and each of
+those decisions answers the same question differently: **is a wrong answer
+worse than a missing one?** A request is never silently sent to a target that
+cannot serve it, but "we do not know" is not one value.
+
+| Capability | Unknown means | Why |
+|---|---|---|
+| `streaming`, `tools`, `thinking`, `web_search`, `web_fetch`, `code_execution` | **permitted** — only a declared `false` excludes an entry | a target that turns out not to support the flag produces a worse answer, not a false one; the answer itself is still about the request |
+| `vision` | **permitted** — and the image is handled by the rescue below | the rescue exists precisely for this: a model that cannot see images answers a 400, the images are described, and the chain is retried. An unnecessarily described image costs fidelity; a wasted round trip costs time |
+
+The one thing an unknown capability must never do is make the request fail: a
+chain whose every entry is filtered out is a hard no-route, so the filter only
+ever narrows a chain that still has a member.
+
+Vision is the case worth watching, because a model that answers with confidence
+about an image it never received is the worst outcome in this system. If a model
+row that has no opinion about vision is ever seen doing that, the rule above is
+the one to revisit — the model table can carry the fact, and the router already
+reads it.
 
 ## Capability fallback lists (ADR-010, amended 2026-09-21)
 
@@ -135,14 +156,14 @@ long", "maximum context length", "input length exceeds the context length",
 class existed such a 400 was terminal, which meant a chain died on its first
 too-small model instead of reaching a larger one further down.
 
-**Wiring note (2026-10-06)**: the two web-tool lists are now CONSUMED —
+**Wiring note**: the two web-tool lists are now CONSUMED —
 until this fix the pool was assembled in registry account order and the
 stored lists were validated but ignored. Pool assembly resolves each
 entry's account to its emulator and walks the lists in priority order;
 unknown accounts (e.g. a deleted account named in a stale list) are
 skipped with a log line, and an empty list keeps the insertion order.
 
-**Streaming emulation (2026-10-06)**: a STREAMING request whose tools
+**Streaming emulation**: a STREAMING request whose tools
 include emulated defs rides the complete-path emulation round trip to
 finality, and the final response is synthesized into a protocol-conform
 event stream. Latency trade: such a request has no token streaming (the
@@ -189,8 +210,7 @@ LLM-chain-routable; the rule editor refuses them.
 - The terminal chain error plus the full route trace is logged; the
   client sees the protocol error, the WebUI shows the transitions.
 
-### Fallbacks as their own log rows (2026-10-07)
-
+### Fallbacks as their own log rows
 Fallback transitions are never silent, and since this release the ones an
 operator most needs to see are no longer nested only inside the parent
 request's `route_trace` — they are their own rows in the WebUI log:
@@ -213,6 +233,31 @@ records cannot drift apart.
 A circuit breaker per provider opens after consecutive failures, backs
 off exponentially, and probes for recovery. Cooled-down providers are
 skipped with a route_trace reason; recovery is recorded too.
+
+**Not every failure is evidence about the provider**, and counting them all is
+how one bad request becomes an outage. Opening the breaker is reserved for the
+failures a provider is actually responsible for:
+
+| Failure | Opens the breaker | Why |
+|---|---|---|
+| `capability_gap` | no | the service answered correctly; the model cannot do something |
+| `context_window_exceeded` | no | the request did not fit anywhere |
+| `content_filter` | no | a property of the content, not of the service |
+| client error, other than 401/403 | no | the request or the caller is at fault |
+| client error 401/403 | yes | invalid credentials are an account fact |
+| `insufficient_quota` | no | it has its own, longer cooldown: the window the upstream announced |
+| client abandoned the request | no | nobody is waiting for the answer |
+| `rate_limit` | yes | the account is under real load |
+| `server_error`, transport failure | yes | what the breaker exists to measure |
+
+Three image requests against a text-only model used to open the breaker for every
+model on that account, because each one produced a capability gap. A request the
+client abandoned counted as well — and then, when the client hung up mid-stream,
+the dispatch success reported afterwards *cleared* the breaker instead.
+
+An account that has been failing is also reported as **degraded** before it is
+taken out of rotation: the last failure before the threshold. A single threshold
+otherwise gives a cliff — nothing to see until everything stops working.
 
 ## Non-Claude routing & compatibility
 
@@ -257,8 +302,7 @@ emulated: a model that really rejects image input at the upstream fails
 over within the chain, then to the configured vision fallback MODELS —
 see above.
 
-### How a web-tool account walk decides (2026-10-10)
-
+### How a web-tool account walk decides
 The pool walks its accounts in the configured priority order, and each
 attempt has one of three outcomes:
 

@@ -1,10 +1,9 @@
 package routing_test
 
 // Capability-fallback contract tests, derived from the specification (not
-// implementation behavior). Spec change 2026-09-21/22 (automatic
-// capabilities, documented in ADR-010's amendment note): the vision
-// fallback is NO LONGER a router-side pre-stream gate — static provider
-// caps cannot know which MODEL accepts images. The new contract:
+// implementation behavior). The vision fallback is not a router-side
+// pre-stream gate — static provider caps cannot know which MODEL accepts
+// images (ADR-010's amendment note). The contract:
 //
 //   - Router: a vision-needing request resolves the rule chain without any
 //     vision gate (the upstream decides); an empty chain is ErrNoRoute
@@ -178,7 +177,7 @@ func TestEmulatorPool_AllFailedSurfacesLastError(t *testing.T) {
 	}
 }
 
-// --- Empty answers (2026-10-10) ---
+// --- Empty answers ---
 //
 // Spec: "web search sometimes returns no results" — an account that answers
 // with nothing must not end the walk, because the next account may have the

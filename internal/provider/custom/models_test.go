@@ -17,7 +17,7 @@ import (
 )
 
 func TestListModels_Contract(t *testing.T) {
-	// The golden fixture body — O9 shape.
+	// The golden fixture body — the OpenAI models list shape.
 	raw := string(ttestutil.LoadGolden(t, "openai/models.json"))
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/models" {

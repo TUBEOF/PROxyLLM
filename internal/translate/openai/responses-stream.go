@@ -11,8 +11,8 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/sse"
 )
 
-// responsesStreamDecoder decodes the Responses-API SSE stream (facts O5, O7;
-// developers.openai.com/api/docs/api-reference/responses-streaming, accessed
+// responsesStreamDecoder decodes the Responses-API SSE stream
+// (developers.openai.com/api/docs/api-reference/responses-streaming, accessed
 // 2026-09-10) into canonical IR events, using the shared WHATWG SSE reader.
 //
 // Unlike chat-completions SSE (data-only), the Responses stream uses named
@@ -34,9 +34,9 @@ import (
 //   - response.output_item.done → BlockStop
 //   - response.completed → MessageDelta(stop reason from the final output,
 //     usage from the snapshot) + Done
-//   - error (FLAT {code, message, param}, O7) → terminal ir.Error
+//   - error (FLAT {code, message, param}) → terminal ir.Error
 //   - response.failed → terminal ir.Error from the snapshot's error object
-//   - unknown event types → Comment (A5 discipline: pass through unlogged
+//   - unknown event types → Comment (pass through unlogged
 //     semantics, never fail)
 //
 // One wire event can map to two canonical events (completed → MessageDelta +
@@ -100,7 +100,7 @@ func (d *responsesStreamDecoder) Read(_ context.Context) (ir.StreamEvent, error)
 }
 
 // responsesWireStreamEvent is the union shape of the named Responses stream
-// events (O7). The event name rides in `type`; each payload family sets only
+// events. The event name rides in `type`; each payload family sets only
 // its own fields.
 type responsesWireStreamEvent struct {
 	Type           string `json:"type"`
@@ -127,7 +127,7 @@ type responsesWireStreamEvent struct {
 	// reasoning_summary_text.delta / done.
 	SummaryIndex int `json:"summary_index,omitempty"`
 
-	// error (FLAT, O7 — no nested error object).
+	// error (FLAT — no nested error object).
 	Code    string `json:"code,omitempty"`
 	Message string `json:"message,omitempty"`
 	Param   string `json:"param,omitempty"`
@@ -207,7 +207,7 @@ func (d *responsesStreamDecoder) mapEvent(w *responsesWireStreamEvent) {
 		}
 		if d.finish == "" {
 			// Status completed → end_turn unless the final output holds
-			// function calls (O5).
+			// function calls.
 			if w.Response != nil && w.Response.Status == "incomplete" {
 				d.finish = ir.StopMaxTokens
 			} else if d.hasTool {
@@ -224,7 +224,7 @@ func (d *responsesStreamDecoder) mapEvent(w *responsesWireStreamEvent) {
 		d.queue = append(d.queue, ir.StreamEvent{Type: ir.Done})
 		d.done = true
 	case "error":
-		// FLAT error event (O7): {code, message, param} at top level.
+		// FLAT error event: {code, message, param} at top level.
 		d.queue = append(d.queue, ir.StreamEvent{Type: ir.Error, Error: &ir.UpstreamError{
 			Code:    w.Code,
 			Message: w.Message,
@@ -250,7 +250,7 @@ func (d *responsesStreamDecoder) mapEvent(w *responsesWireStreamEvent) {
 		}
 		d.done = true
 	default:
-		// Unknown event types pass through as comments (A5 discipline).
+		// Unknown event types pass through as comments.
 		d.queue = append(d.queue, ir.StreamEvent{Type: ir.Comment})
 	}
 }

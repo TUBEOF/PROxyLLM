@@ -1,9 +1,9 @@
 package httpapi
 
-// POST /v1/responses (plan §5.1, wire facts O5–O8): the OpenAI Responses
+// POST /v1/responses: the OpenAI Responses
 // surface. The client body decodes through the Responses codec into IR,
 // routes through the chat-wire upstream (custom provider class), and
-// re-encodes into Responses wire — semantic streaming events per O7.
+// re-encodes into Responses wire — semantic streaming events.
 
 import (
 	"net/http"
@@ -57,8 +57,8 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Model identity (2026-09-21): resolve the chain entries' routing ID to
-	// the wire name; req.Model stays the client-facing ID (OP-2 echo + log).
+	// Model identity: resolve the chain entries' routing ID to the wire
+	// name; req.Model stays the client-facing ID (echoed to the client + logged).
 	resolveTrace := &routing.Trace{}
 	chain = a.resolveChainWireModels(ctx, chain, resolveTrace)
 
@@ -78,7 +78,7 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// OP-2: echo the requested model name (see messages.go).
+	// Echo the requested model name (see messages.go).
 	resp.Model = req.Model
 	// Capture the answer the client is about to receive (see capture.go).
 	captureResponse(ctx, resp)
@@ -102,7 +102,7 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 }
 
 // streamResponses relays an upstream stream as Responses semantic events
-// (O7: response.created → output_text.delta / function_call_arguments
+// (response.created → output_text.delta / function_call_arguments
 // deltas → response.completed carrying the terminal usage).
 func (a *api) streamResponses(w http.ResponseWriter, r *http.Request, keyID string, req ir.Request, chain []routing.ChainEntry, traces ...*routing.Trace) {
 	// Declare the event-stream response up front, before any dispatch
@@ -134,14 +134,25 @@ func (a *api) streamResponses(w http.ResponseWriter, r *http.Request, keyID stri
 	// Mid-stream outcome correction (4a): dispatch success was reported
 	// at ExecuteStream; a stream that failed mid-stream still counts as
 	// a breaker failure.
-	a.executor.ReportStreamOutcome(lastProvider(execTrace), streamErr)
-
 	var errMsg string
 	if streamErr != nil {
 		// ErrorRedacted contract: credential shapes never persist raw.
 		errMsg = redactUpstreamMessage(streamErr.Message)
 	}
+	// An abandoned request is still logged — it really happened — but it is
+	// neither a success nor a failure for the provider, because nothing was
+	// learned about it. Reporting the dispatch success again here would clear a
+	// breaker the client's own departure had nothing to do with.
+	status := http.StatusOK
+	if gone, abandoned := abandonmentStatus(ctx); abandoned {
+		status = gone
+	} else {
+		// Mid-stream outcome correction (4a): dispatch success was reported at
+		// ExecuteStream; a stream that failed mid-stream still counts as a
+		// breaker failure.
+		a.executor.ReportStreamOutcome(lastProvider(execTrace), streamErr)
+	}
 	a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
-		http.StatusOK, time.Since(start).Milliseconds(), terminalUsage,
+		status, time.Since(start).Milliseconds(), terminalUsage,
 		routeTrace(append(traces, execTrace)...), errMsg)
 }

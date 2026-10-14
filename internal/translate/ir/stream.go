@@ -1,10 +1,10 @@
 package ir
 
-// StreamEvent is the canonical streaming event IR (Analysis D). Protocol
+// StreamEvent is the canonical streaming event IR. Protocol
 // SSE machines emit/decode these; the hub never sees wire formats.
 //
-// Ordering contract (Anthropic A6 is the reference discipline; other
-// protocols map onto it):
+// Ordering contract (the Anthropic stream order is the reference discipline;
+// other protocols map onto it):
 //
 //	Start → (BlockStart → Delta* → BlockStop)* → MessageDelta → Done
 //	(ping anywhere; Error terminates the stream)
@@ -27,7 +27,7 @@ type StreamEvent struct {
 	// MessageDelta carries terminal StopReason + final Usage.
 	MessageDelta *MessageDeltaPayload `json:"message_delta,omitempty"`
 
-	// Error carries the terminal error (A13).
+	// Error carries the terminal error.
 	Error *UpstreamError `json:"error,omitempty"`
 }
 
@@ -54,13 +54,14 @@ const (
 	// Done is message_stop.
 	Done StreamEventType = "done"
 
-	// Ping is a keepalive (relayed, counts toward silence watchdog C2).
+	// Ping is a keepalive (relayed, counts toward the silence watchdog).
 	Ping StreamEventType = "ping"
 
-	// Error terminates the stream with a protocol-conform error (A13).
+	// Error terminates the stream with a protocol-conform error.
 	Error StreamEventType = "error"
 
-	// Comment is an SSE comment line (relayed verbatim per SSE-3/H2-2).
+	// Comment is an SSE comment line (relayed verbatim, including any
+	// keepalive frame an upstream sends).
 	Comment StreamEventType = "comment"
 )
 
@@ -71,15 +72,16 @@ const (
 	// DeltaText is incremental text content.
 	DeltaText DeltaKind = "text"
 
-	// DeltaThinking is incremental thinking content (A7 thinking_delta).
+	// DeltaThinking is incremental thinking content (Anthropic's
+	// thinking_delta).
 	DeltaThinking DeltaKind = "thinking"
 
-	// DeltaSignature is a thinking-block signature fragment (A7
-	// signature_delta, arrives immediately before BlockStop A6).
+	// DeltaSignature is a thinking-block signature fragment (Anthropic's
+	// signature_delta, arrives immediately before the block stop).
 	DeltaSignature DeltaKind = "signature"
 
 	// DeltaToolInput is a fragment of a tool call's JSON input
-	// (A7 input_json_delta; OpenAI argument fragments O4).
+	// (Anthropic's input_json_delta; OpenAI argument fragments).
 	DeltaToolInput DeltaKind = "tool_input"
 )
 
@@ -91,7 +93,7 @@ type DeltaPayload struct {
 	Text string `json:"text,omitempty"`
 
 	// ToolIndex disambiguates parallel tool calls within one block
-	// (OpenAI assembles by tool_calls index O4; Anthropic emits one
+	// (OpenAI assembles by tool_calls index; Anthropic emits one
 	// tool_use block per call, so ToolIndex is always 0 there).
 	ToolIndex int `json:"tool_index,omitempty"`
 

@@ -1,6 +1,6 @@
 package httpapi
 
-// Spec: Logs-page redesign (2026-10-06 plan), conversation derivation
+// Spec: Logs-page redesign, conversation derivation
 // priority order — Anthropic metadata.user_id session segment > whole
 // user_id (probed from the RAW wire body: the codecs have no IR field for
 // it), explicit headers (sanitized), previous_response_id, fallback hash

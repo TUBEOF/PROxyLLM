@@ -25,8 +25,15 @@ testdata/golden/
 4. **RED-GREEN**: contract tests are written against the fixture before the
    codec exists; they start red and go green only via correct code.
 
-## Phase 0 status
+## What the set covers
 
-Directory scaffolded; fixture capture begins with Phase 1 (translation
-engine contract tests). The fixture set is listed in the plan's §2 Research
-Digest (A1–A14, O1–O12, L1–L6, F1–F5).
+One directory per wire surface the proxy speaks or calls: `anthropic/` (the
+Messages API and its event stream), `openai/` (chat completions and the Responses
+API), `ollama/` (the native `/api/chat` NDJSON stream) and `firecrawl/` (the
+web-tool backend). Each fixture pins a request, a response or a stream event, and
+each `.meta.json` beside it records where the shape came from and when it was
+read.
+
+The fixtures are the specification, not a record of what the code does. When a
+reference changes, the fixture and its `.meta.json` change first — a fixture that
+encodes a shape the reference no longer describes is a defect.

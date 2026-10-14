@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-// Spec: plan §5.2 admin API behind session auth; Phase 2 research facts S-1
-// (256-bit CSPRNG session IDs, SHA-256-hashed at rest), S-6 (server-side
-// idle/absolute expiry enforcement), S-7 (hash-only persistence: the raw ID
-// lives only in the cookie), S-10 (logout = row delete). Storage stores and
+// Spec: the admin API sits behind session auth; the session design is
+// 256-bit CSPRNG session IDs, SHA-256-hashed at rest; server-side
+// idle/absolute expiry enforcement; hash-only persistence (the raw ID lives
+// only in the cookie); logout = row delete. Storage stores and
 // resolves hashes; the auth middleware generates IDs, enforces the 30 min
 // idle / 12 h absolute windows from the timestamps stored here.
 
@@ -79,7 +79,7 @@ func TestSession_TouchUpdatesLastSeen(t *testing.T) {
 	if got.LastSeenAt != 2000 {
 		t.Errorf("last_seen = %d, want 2000 (idle window restarts per request)", got.LastSeenAt)
 	}
-	// Touch must not disturb the absolute window (S-6: activity never
+	// Touch must not disturb the absolute window (activity never
 	// extends the 12 h cap).
 	if got.AbsoluteExpiresAt != 1000+12*3600 {
 		t.Errorf("absolute expiry changed by touch: %d", got.AbsoluteExpiresAt)
@@ -90,7 +90,7 @@ func TestSession_DeleteIsIdempotent(t *testing.T) {
 	s := openTokenStore(t)
 	ctx := context.Background()
 
-	// Logout (S-10): the client may not resend the cookie, a proxy purge may
+	// Logout: the client may not resend the cookie, a proxy purge may
 	// have already removed the row — either way the outcome is "logged
 	// out", so a second delete must not error and the cookie is cleared.
 	insertTestSession(t, s, "h", "adm-1", 1000)
@@ -109,7 +109,7 @@ func TestSession_DeleteForAdminRemovesAllSessions(t *testing.T) {
 	s := openTokenStore(t)
 	ctx := context.Background()
 
-	// S-8: password change = privilege change → all of that admin's sessions
+	// Password change = privilege change → all of that admin's sessions
 	// are revoked server-side. Count returned so callers can audit.
 	insertTestSession(t, s, "h1", "adm-1", 1000)
 	insertTestSession(t, s, "h2", "adm-1", 1000)
@@ -138,7 +138,7 @@ func TestSession_PurgeExpired(t *testing.T) {
 	s := openTokenStore(t)
 	ctx := context.Background()
 
-	// S-6: housekeeping sweep removes rows whose absolute expiry has
+	// The housekeeping sweep removes rows whose absolute expiry has
 	// passed, so abandoned sessions cannot accumulate (and a stolen cookie
 	// dies with its row even if never presented).
 	insertTestSession(t, s, "expired-1", "adm-1", 1000) // expires at 1000+12h

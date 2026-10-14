@@ -1,9 +1,9 @@
 package storage
 
-// Request payloads (2026-10-10 Logs page): the conversation a request carried
-// and the answer it produced. The log used to be metadata only — status,
+// Request payloads (Logs page): the conversation a request carried
+// and the answer it produced. Without them the log is metadata only — status,
 // tokens, provider, route_trace — which answers "what happened" but not "what
-// was actually said", so an operator debugging a routing decision could see
+// was actually said": an operator debugging a routing decision could see
 // that a fallback fired but not what the fallback model answered.
 //
 // Two shape decisions matter here:

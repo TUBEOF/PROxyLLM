@@ -1,6 +1,6 @@
 # Security Guide
 
-Threat model and controls summary (full concept: Analysis G in the plan,
+Threat model and controls summary (the full concept is
 [ADR-007](adr/ADR-007-security-concept.md)). Scope: a LAN-deployed
 single-tenant proxy operated by one operator. **Out of scope for v1**:
 internet-scale multi-tenant exposure — if you expose the proxy to the
@@ -83,7 +83,7 @@ full `route_trace` (routing decisions, never credentials).
   decoded size, never by its bytes. Payload writes are off the request path,
   bounded in flight, and dropped rather than queued under load.
 
-## Client keys and the master key (2026-10-10)
+## Client keys and the master key
 
 - Client keys are 256 bits of CSPRNG output and are stored as a **keyed MAC**
   (`$hmacsha256$v=1$<salt>$<mac>`, HMAC-SHA256 under a key derived from the

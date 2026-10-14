@@ -11,7 +11,7 @@ accounts, routing rules. Write pattern: modest OLTP plus bursty
 stream-completion log inserts. Volume: MB to low GB. Deployment constraint:
 **one service, one data directory** — backup must be "copy the file".
 
-## Criteria (from Analysis C)
+## Criteria
 
 Transactions for concurrent WebUI writes; query/filter/aggregate for logs
 and stats; backup simplicity; single-service constraint; at-rest encryption
@@ -34,7 +34,7 @@ at the application layer; retention management.
 **SQLite via `modernc.org/sqlite`** (pure Go, CGO-free — preserves the static
 binary), WAL mode, one file in the bind-mounted data dir.
 
-Verified live (2026-09-10, github.com/modernc.org/sqlite docs): DSN pragmas
+Verified against github.com/modernc.org/sqlite: DSN pragmas
 `?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)`
 apply to every pool connection; `SetMaxOpenConns(1)` is the most effective
 mitigation against SQLITE_BUSY; transactions must stay short.

@@ -6,7 +6,7 @@ import (
 	"errors"
 )
 
-// Spec: plan Analysis C — the config table is the top layer of the config
+// Spec: the config table is the top layer of the config
 // layering (defaults → file → ENV → WebUI/DB overrides). Values are opaque
 // strings at this layer; typed parsing belongs to the config package.
 

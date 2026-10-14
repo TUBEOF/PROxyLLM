@@ -1,4 +1,4 @@
-// Logs page sub-operations (2026-10-07): assertion-only specs — no
+// Logs page sub-operations: assertion-only specs — no
 // baselines involved, so this suite is green locally as well as in CI.
 // Fixturesrv derives the child rows from the seeded traces with the server's
 // own mapping, so these assertions exercise the real content.
@@ -56,7 +56,16 @@ test('the tree rail spans its whole row, so the elbow lands on the row centre', 
 // and account DO carry the endpoint this op ran on — that is the whole point of
 // a fallback row, and the parent's values would name where the request started
 // instead of where the failover landed.
-test('a sub-row shows its own endpoint and leaves the request-scoped columns empty', async ({ page }) => {
+// A sub-row shows what the step owns — where it ran, what it spent — and
+// inherits what the request owns: the surface it arrived on and the key that
+// opened it. Nothing is left blank: a value an op has none of reads as a dash,
+// so an empty cell can never be confused with a column that failed to load.
+//
+// This contract replaced an earlier one that kept protocol/key/tokens/TPS/
+// duration empty on sub-rows. The operator asked for the opposite: a describer
+// call and a web-tool call both take time, the describer also spends tokens, and
+// the request's own facts belong to every step of it.
+test('a sub-row shows its own endpoint, the request it belongs to, and a dash where it owns nothing', async ({ page }) => {
   await page.goto('/logs');
   await readyForCapture(page);
 
@@ -64,14 +73,18 @@ test('a sub-row shows its own endpoint and leaves the request-scoped columns emp
   const cells = child.locator('td');
   // Columns: gutter | status | model | provider | protocol | account | key |
   // tokens | tps | duration | time.
-  for (const i of [4, 6, 7, 8, 9]) {
-    await expect(cells.nth(i)).toHaveText('');
+  // A failover is a transition, not an operation: it took no time and spent
+  // nothing, and says so.
+  await expect(cells.nth(7)).toHaveText(/—/);
+  await expect(cells.nth(8)).toHaveText('—');
+  await expect(cells.nth(9)).toHaveText('—');
+  // Inherited from the request, so both carry content.
+  await expect(cells.nth(4)).not.toHaveText('');
+  await expect(cells.nth(6)).not.toHaveText('');
+  // The op's own columns: status, model, provider, account, time.
+  for (const i of [1, 2, 3, 5, 10]) {
+    await expect(cells.nth(i)).not.toHaveText('');
   }
-  // The op's own columns still carry content — including its endpoint.
-  await expect(cells.nth(1)).not.toHaveText('');
-  await expect(cells.nth(3)).not.toHaveText('');
-  await expect(cells.nth(5)).not.toHaveText('');
-  await expect(cells.nth(10)).not.toHaveText('');
 });
 
 // Every row is one line tall. The old two-line model cell (the resolved model
@@ -133,7 +146,7 @@ test('an emulated web-tool child masks its credential-shaped detail', async ({ p
   await expect(list).not.toContainText('sk-live-e2efixture1234');
 });
 
-// The row OPENS (2026-10-10). A sub-row used to be inert, so the tool exchange
+// The row OPENS. A sub-row used to be inert, so the tool exchange
 // that answered a call inside the request was unreachable from the log — the
 // operator could see that a web tool ran but not what it said.
 test('a sub-row opens its own view with what the step sent and received', async ({ page }) => {
@@ -168,6 +181,14 @@ test('a vision-fallback sub-row shows the description, not a character count', a
   // The count is not evidence of anything; it must not stand in for the text.
   await expect(caption).not.toContainText('character(s) described');
 
+  // A describer call is an operation: it took time and it spent tokens, so the
+  // row reports both where it knows them.
+  const cells = caption.locator('td');
+  await expect(cells.nth(4)).not.toHaveText(''); // protocol, inherited
+  await expect(cells.nth(6)).not.toHaveText(''); // API key, inherited
+  await expect(cells.nth(7)).toContainText('TI:');
+  await expect(cells.nth(9)).toContainText('ms');
+
   await caption.click();
   const drawer = page.locator('.drawer');
   await expect(drawer.locator('pre', { hasText: 'failing Go test' }).first()).toBeVisible();
@@ -175,6 +196,57 @@ test('a vision-fallback sub-row shows the description, not a character count', a
   // The described image by media type and size — never its bytes.
   await expect(drawer.locator('pre', { hasText: 'image/png' }).first()).toBeVisible();
   await expect(drawer.locator('pre', { hasText: '48213' }).first()).toBeVisible();
+});
+
+// A web-tool sub-row answers "which web provider served this". It names the
+// emulating account, not the model whose round asked for the call, and it owns a
+// duration but no tokens — the model's own round is accounted on the request.
+test('a web-tool sub-row names the web provider, with no model and no tokens', async ({ page }) => {
+  await page.goto('/logs');
+  await readyForCapture(page);
+
+  const row = page.locator('tr.log-row-child', { hasText: 'Web tool: web_search' }).first();
+  await expect(row).toBeVisible();
+  const cells = row.locator('td');
+  await expect(cells.nth(2)).toHaveText('—'); // no model: the chat model is not where the call went
+  await expect(cells.nth(3)).not.toHaveText(''); // provider: the emulating account
+  await expect(cells.nth(5)).not.toHaveText(''); // account name
+  await expect(cells.nth(7)).toHaveText(/—/); // nothing was billed here
+  await expect(cells.nth(8)).toHaveText('—');
+  await expect(cells.nth(9)).toContainText('ms');
+});
+
+// A description served from the cache is the absence of an operation, so it
+// produces no row of its own. The substitution is still on the record — in the
+// request's own trace — and the request itself has no sub-row at all.
+test('a cached description adds no sub-row', async ({ page }) => {
+  await page.goto('/logs');
+  await readyForCapture(page);
+
+  const row = page.locator('tr.log-row[title*="ca9e0f21"]').first();
+  await expect(row).toBeVisible();
+  await expect(row).not.toHaveAttribute('data-has-children', /.+/);
+
+  await row.click();
+  const drawer = page.locator('.drawer');
+  await expect(drawer.locator('.child-op-list')).toHaveCount(0);
+  await expect(drawer).toContainText('reused from the caption cache');
+});
+
+// Nothing in the log is blank: a value a row does not have reads as a dash, so
+// an empty cell can only ever mean "not loaded".
+test('no cell in the log table is empty', async ({ page }) => {
+  await page.goto('/logs');
+  await readyForCapture(page);
+
+  // The gutter column is the tree rail: a graphic, not a value, and correctly
+  // empty on a row without children.
+  const empties = await page
+    .locator('tr.log-row td:not(.td-gutter), tr.log-row-child td:not(.td-gutter)')
+    .evaluateAll((cells) =>
+      cells.map((c) => (c.textContent ?? '').trim()).filter((t) => t === ''),
+    );
+  expect(empties).toEqual([]);
 });
 
 // A step and its request are two views of the same request, linked both ways:

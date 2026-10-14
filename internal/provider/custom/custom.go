@@ -1,6 +1,6 @@
-// Package custom implements the config-defined OpenAI-compatible provider
-// (plan §4.1): arbitrary chat-completions endpoints attach by configuration
-// alone. It speaks the OpenAI wire protocol (O1–O4) through the OpenAI
+// Package custom implements the config-defined OpenAI-compatible provider:
+// arbitrary chat-completions endpoints attach by configuration
+// alone. It speaks the OpenAI wire protocol through the OpenAI
 // codec and the shared HTTP transport foundation.
 package custom
 
@@ -30,7 +30,7 @@ type Provider struct {
 
 // New constructs a custom provider. baseURL is the API root including the
 // version prefix (e.g. "https://api.example.com/v1"); chat completions
-// POST to {baseURL}/chat/completions (O2).
+// POST to {baseURL}/chat/completions.
 func New(id, baseURL, apiKey string, caps provider.Capabilities) *Provider {
 	return &Provider{
 		client: httpx.Client{
@@ -73,8 +73,8 @@ func (p *Provider) Complete(ctx context.Context, req ir.Request) (ir.Response, e
 	return p.client.Complete(ctx, req, p.codec.EncodeRequest, p.codec.DecodeResponse)
 }
 
-// Stream starts one streaming chat-completions round trip (data-only SSE,
-// O4); canonical events arrive on the returned channel.
+// Stream starts one streaming chat-completions round trip (data-only SSE);
+// canonical events arrive on the returned channel.
 func (p *Provider) Stream(ctx context.Context, req ir.Request) (<-chan ir.StreamEvent, func(), error) {
 	return p.client.Stream(ctx, req, p.codec.EncodeRequest, p.decoder)
 }
@@ -84,7 +84,7 @@ func (p *Provider) Stream(ctx context.Context, req ir.Request) (<-chan ir.Stream
 func (p *Provider) RefreshCredentials(_ context.Context) error { return nil }
 
 // ListModels fetches the upstream model list (ADR-010 model sync) —
-// GET {baseURL}/models, the OpenAI list shape (O9 wire shape; fixture
+// GET {baseURL}/models, the OpenAI list shape (fixture
 // testdata/golden/openai/models.json, developers.openai.com, 2026-09-10).
 // The entry "id" field is the wire model identifier.
 func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {

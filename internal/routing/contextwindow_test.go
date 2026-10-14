@@ -1,9 +1,8 @@
 package routing_test
 
-// Context-window classification contract tests (FO-6, 2026-10-09): an
-// upstream rejection saying the INPUT is larger than the target model's
-// window is not the request's fault — the request is well-formed, the model
-// is too small. Spec sources:
+// Context-window classification contract tests: an upstream rejection saying
+// the INPUT is larger than the target model's window is not the request's
+// fault — the request is well-formed, the model is too small. Spec sources:
 //
 //   - testdata/golden/openai/context-length-exceeded.json (code
 //     context_length_exceeded, accessed 2026-10-09)
@@ -77,7 +76,7 @@ func TestClassifyError_ContextWindowDoesNotShadowOtherClasses(t *testing.T) {
 	}
 }
 
-// TestClassifyError_ContextWindowMidStreamIsTerminal: FO-1 outranks the
+// TestClassifyError_ContextWindowMidStreamIsTerminal: position outranks the
 // class — once content reached the client there is no swap, however
 // attractive one looks.
 func TestClassifyError_ContextWindowMidStreamIsTerminal(t *testing.T) {

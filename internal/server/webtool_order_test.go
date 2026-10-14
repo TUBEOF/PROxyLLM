@@ -2,8 +2,8 @@ package server
 
 // TestServer_WebToolFallbackListOrdersPool: the stored web_fetch/web_search
 // fallback KVs name WEB-TOOL ACCOUNT IDs; the pool walks them in the STORED
-// order (ADR-010 decision 3 — previously validated-but-ignored: the pool
-// was assembled in registry insertion order and the lists were never read).
+// order (ADR-010 decision 3: the stored order outranks registry insertion
+// order).
 // Seeded: fetch list = [fc-b, fc-a] → account fc-b answers first even
 // though fc-a is first in the registry.
 //

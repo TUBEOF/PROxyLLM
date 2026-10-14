@@ -1,6 +1,6 @@
 package e2e
 
-// Performance-budget benchmarks (plan §8, phase 3): the three P1 budgets
+// Performance-budget benchmarks: the three budgets
 // measured over the fully assembled proxy stack (auth → httpapi → router →
 // executor → mock upstream over real HTTP) with a raw HTTP client, so the
 // measured overhead is the proxy's own, not an SDK's.
@@ -10,7 +10,7 @@ package e2e
 //	RSS ≤ 128 MB               (100 concurrent streams)
 //
 // Run: go test ./internal/e2e -bench . -benchtime=200x
-// Budgets block release, not every PR (plan §8). MemStats.Sys stands in
+// Budgets block release, not every PR. MemStats.Sys stands in
 // for process RSS in-process (the release job compares against the same
 // metric, so the comparison is apples-to-apples).
 
@@ -36,10 +36,10 @@ import (
 // non-streaming upstream body (built once at creation), and an uninstrumented
 // HTTP client, so measured overhead is the proxy's own, not an SDK's.
 //
-// The measured path is the PRODUCTION one, key check included (2026-10-10). It
-// used to measure an auth-disabled mirror of the same handler, because key
-// verification was Argon2id — ~20 ms per request, deliberately slow, and
-// authentication cost rather than proxy overhead. Client keys now verify with a
+// The measured path is the PRODUCTION one, key check included. Measuring an
+// auth-disabled mirror instead would exclude key verification — with Argon2id
+// that was ~20 ms per request, deliberately slow, authentication cost rather
+// than proxy overhead. Client keys now verify with a
 // keyed MAC, and the gap between the two paths is within measurement noise
 // (internal/e2e/scalability_test.go asserts exactly that), so excluding the
 // auth path would only mean measuring something nobody runs.
@@ -235,7 +235,7 @@ func BenchmarkProxy100Streams(b *testing.B) {
 }
 
 // TestPerfBudgets is the release-gate variant: it measures the p99 latency
-// and first-byte budgets and asserts the plan §8 ceilings so a budget
+// and first-byte budgets and asserts the release ceilings so a budget
 // regression fails loudly in the benchmark CI job.
 func TestPerfBudgets(t *testing.T) {
 	if testing.Short() {
@@ -309,7 +309,7 @@ func TestPerfBudgets(t *testing.T) {
 	// observations. The benchmark job on main uses report mode — a shared
 	// runner can be neighbor-loaded for the entire run (observed: every
 	// batch 31-140 ms for code measuring 2.6-5.9 ms on quiet runners), and
-	// per plan §8 regressions block release, not every push. The release
+	// per the release policy, regressions block release, not every push. The release
 	// pipeline runs the default hard mode as its gate.
 	reportOnly := os.Getenv("PROXYLLM_PERF_BUDGETS") == "report"
 

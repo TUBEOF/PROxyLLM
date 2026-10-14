@@ -11,10 +11,10 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
-// Contract tests for the OpenAI chat-completions codec, RED-GREEN per
-// Analysis F. Every assertion derives from the golden fixtures in
+// Contract tests for the OpenAI chat-completions codec, RED-GREEN.
+// Every assertion derives from the golden fixtures in
 // testdata/golden/openai/ (provenance: developers.openai.com, accessed
-// 2026-09-10, facts O2–O4, O11, O12).
+// 2026-09-10).
 
 func TestDecodeRequest_ChatRequest(t *testing.T) {
 	raw := testutil.LoadGolden(t, "openai/chat-request.json")
@@ -33,7 +33,7 @@ func TestDecodeRequest_ChatRequest(t *testing.T) {
 		t.Error("stream must decode to false")
 	}
 
-	// System role message decodes into System[0] (O2).
+	// System role message decodes into System[0].
 	if len(req.System) != 1 || req.System[0].Text != "You are a helpful assistant." {
 		t.Errorf("system = %+v, want one text part", req.System)
 	}
@@ -42,7 +42,7 @@ func TestDecodeRequest_ChatRequest(t *testing.T) {
 		t.Fatalf("messages = %d, want 3 (user, assistant, tool)", len(req.Messages))
 	}
 
-	// User: text + image_url with detail hint (O11).
+	// User: text + image_url with detail hint.
 	user := req.Messages[0]
 	if user.Role != ir.RoleUser || len(user.Parts) != 2 {
 		t.Fatalf("messages[0] = %+v", user)
@@ -58,7 +58,7 @@ func TestDecodeRequest_ChatRequest(t *testing.T) {
 		t.Errorf("image = %+v, want url source/detail high", img)
 	}
 
-	// Assistant: tool_calls with JSON-string arguments (O3).
+	// Assistant: tool_calls with JSON-string arguments.
 	asst := req.Messages[1]
 	if asst.Role != ir.RoleAssistant || len(asst.Parts) != 1 {
 		t.Fatalf("messages[1] = %+v", asst)
@@ -93,7 +93,7 @@ func TestDecodeRequest_ChatRequest(t *testing.T) {
 		t.Errorf("tool result content = %+v", tr.Content[0])
 	}
 
-	// Tools are function-shaped (O3).
+	// Tools are function-shaped.
 	if len(req.Tools) != 1 || req.Tools[0].Name != "get_weather" {
 		t.Fatalf("tools = %+v", req.Tools)
 	}
@@ -115,7 +115,7 @@ func TestDecodeResponse_ChatResponse(t *testing.T) {
 	if resp.Model != "gpt-5" {
 		t.Errorf("model = %q", resp.Model)
 	}
-	// finish_reason tool_calls (O12) normalizes to the IR stop reason.
+	// finish_reason tool_calls normalizes to the IR stop reason.
 	if resp.StopReason != ir.StopToolUse {
 		t.Errorf("finish_reason = %q, want tool_use", resp.StopReason)
 	}
@@ -131,7 +131,7 @@ func TestDecodeResponse_ChatResponse(t *testing.T) {
 		t.Errorf("content[1] = %+v", resp.Content[1])
 	}
 
-	// Usage incl. cached_tokens → cache read (O4 details).
+	// Usage incl. cached_tokens → cache read.
 	if resp.Usage.InputTokens != 1250 || resp.Usage.OutputTokens != 77 {
 		t.Errorf("usage in/out = %d/%d, want 1250/77", resp.Usage.InputTokens, resp.Usage.OutputTokens)
 	}
@@ -148,7 +148,7 @@ func TestStreamDecode_FullSequence(t *testing.T) {
 	testutil.AssertEventsEqual(t, "openai/chat-stream.sse", want, got)
 }
 
-// OpenAI chat streaming is data-only SSE terminated by [DONE] (O4); tool
+// OpenAI chat streaming is data-only SSE terminated by [DONE]; tool
 // calls assemble by index; usage arrives in a final chunk when
 // stream_options.include_usage is set.
 func TestStreamDecode_DataOnlyAndDoneSentinel(t *testing.T) {
@@ -164,8 +164,8 @@ func TestStreamDecode_DataOnlyAndDoneSentinel(t *testing.T) {
 	}
 }
 
-// One chunk may carry several tool_calls entries — parallel tool calls
-// (O4): each entry assembles by its OWN index, id/name riding the first
+// One chunk may carry several tool_calls entries — parallel tool calls:
+// each entry assembles by its OWN index, id/name riding the first
 // entry of each index. The decoder must open one ToolCallPart block per
 // index, not drop every entry after the first.
 func TestStreamDecode_ParallelToolCalls(t *testing.T) {
@@ -235,7 +235,7 @@ func TestStreamDecode_ReasoningInterleaved(t *testing.T) {
 	got := testutil.DrainStreamDecoder(t, oa.NewStreamDecoder(bytes.NewReader(wire)))
 	testutil.AssertEventsEqual(t, "openai/chat-stream-reasoning.sse", want, got)
 
-	// Guard the exact failure shape of the bug this fixture pins: exactly
+	// Guard the exact failure shape this fixture pins: exactly
 	// one text block, exactly one thinking block, thinking after the text.
 	textStarts, thinkStarts, thinkIdx := 0, 0, -1
 	for _, ev := range got {
@@ -294,7 +294,7 @@ func TestDecodeResponse_ReasoningContent(t *testing.T) {
 	}
 }
 
-// Runaway-trace guard (security review 2026-09-22): a pathological
+// Runaway-trace guard: a pathological
 // upstream pumping reasoning fragments beyond maxReasoningBuffer must not
 // grow decoder memory unboundedly — the trace truncates, and the stream
 // still terminates conformly (text block, one thinking block ≤ cap,
@@ -484,11 +484,11 @@ func TestEncodeRequest_ToolCallOnlyAssistantEncodesEmptyStringContent(t *testing
 }
 
 // The anchoring tool_calls delta may carry the COMPLETE arguments string
-// (spec O4: arguments arrive as appends to the same index — and upstreams
+// (arguments arrive as appends to the same index — and upstreams
 // like ollama.com/v1 send the whole string in one delta). The decoder must
 // queue the initial fragment for the NEWLY opened block too; dropping it
 // produces a tool_use with empty input, which clients reject as invalid
-// tool parameters (bug pinned 2026-10-06, WebSearch screenshot).
+// tool parameters.
 func TestStreamDecode_ToolCallOneShotArgs(t *testing.T) {
 	wire := testutil.LoadGolden(t, "openai/chat-stream-tool-oneshot.sse")
 	want := testutil.LoadExpectedEvents(t, "openai/chat-stream-tool-oneshot.expected.json")

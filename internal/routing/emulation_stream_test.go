@@ -1,12 +1,12 @@
 package routing_test
 
-// Streaming-path emulation (§6.2, 2026-10-06): ExecuteStream previously
-// relayed raw tool_use events for emulated web tools with no proxy-side
-// answers (the emulation round-trip loop only ran on the complete path —
-// streaming Claude Code requests got the bared tool call). The contract:
-// a streaming request whose tools include emulated defs runs the SAME
-// complete-path emulation round-trip to finality and synthesizes the
-// protocol-conform event stream from the final response. Latency trade:
+// Streaming-path emulation: ExecuteStream used to relay raw tool_use events
+// for emulated web tools with no proxy-side answers (the emulation round-trip
+// loop only ran on the complete path), which left a streaming client with a
+// tool call nothing would ever answer. The contract: a streaming request whose
+// tools include emulated defs runs the SAME complete-path emulation round-trip
+// to finality and synthesizes the protocol-conform event stream from the final
+// response. Latency trade:
 // no token streaming for those requests (documented in routing-and-
 // fallbacks.md / ADR-010 Amendment).
 
@@ -95,7 +95,7 @@ drained:
 	}
 }
 
-// C1 (final review): the detour must dispatch stream:false — a complete
+// The detour must dispatch stream:false — a complete
 // request carrying true makes real upstreams answer chunked SSE, which
 // the non-streaming decode cannot parse (the whole request class would
 // fail instead of being emulated). Pinned via the provider's view.

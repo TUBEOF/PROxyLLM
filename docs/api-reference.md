@@ -81,7 +81,7 @@ admin account when none exists.
 | Observability | `GET /usage`, `GET /logs` (redacted; `route_trace` detail; rows carry `conversation_id`, `protocol`, `features`, `error_redacted` since the Logs-page redesign, plus `key_name`/`key_prefix`/`provider_name`/`provider_kind` display projections), `GET /logs/stream` (SSE, see below) |
 | Settings | `GET /settings`, `PUT /settings`, `DELETE /settings/{key}` (DB override layer) |
 
-### Sub-operations (2026-10-07)
+### Sub-operations
 
 A request's separable upstream operations get their own log rows rather
 than living only inside the parent's `route_trace`: a chain failover, a
@@ -91,6 +91,15 @@ mapping (`internal/routing` `ChildOps`) and stored beside it. A
 same-provider retry is deliberately **not** a row — it re-attempts the same
 operation rather than naming a separable one, and a retry storm would flood
 the log with rows; it stays a timeline event in the detail drawer.
+Each row carries what the step itself spent — its duration, and its token usage
+for a call that spent tokens — and inherits the request's own facts: the surface
+it arrived on (`protocol`) and the client key that opened it (`client_key_id`,
+`key_name`, `key_prefix`). The provider and account columns name the endpoint the
+step ran on, so a web-tool row says which web account served the call rather than
+which chat model asked for it. A description taken from the caption cache produces
+no row at all: it is a substitution without an upstream call, and the log lists
+operations.
+
 `GET /api/admin/logs` returns sub-operations as `children`, a map keyed by
 the parent row id (as a string — JSON object keys are strings):
 
@@ -115,8 +124,7 @@ The raw refs remain on the wire — a ref naming something that is not a
 configured account (a model id, or a since-deleted row) projects no name
 and its raw value stays authoritative.
 
-### Sub-operation payloads (2026-10-10)
-
+### Sub-operation payloads
 A sub-operation has a captured body of its own, so a row can be opened and
 read instead of only counted:
 
@@ -145,8 +153,7 @@ is stored. Payloads are stored only while body capture is on (see
 backpressure. The `image_caption` row's `detail` is a short excerpt of the
 caption — the full text is the payload.
 
-### Live log stream (2026-10-06)
-
+### Live log stream
 `GET /api/admin/logs/stream` is an SSE feed over the request log: the wire
 is `event: hello` (ack) → `event: running` (the in-flight snapshot — every
 snapshot replaces the previous list) → `event: log` (one finished request
@@ -173,17 +180,18 @@ a successful write reaches the runtime without restart (see
 2026-09-21 the `vision_fallback` entries are MODEL IDs validated against
 the models table.
 
-`route_trace` rows carry `"version":6` since the context-marker work
-(additive: version 6 added the `context_override` event — the Claude Code
-`[1m]` marker strip; version 5 ADR-011's `implicit_route`, version 4 the
-`model_resolved` event; version 3 added ADR-010's `capability_fallback`
-event, version 2 the ADR-009 `expand`/`rotation` events — older rows render
-unchanged, as do unversioned ones). The WebUI renders the trace as a chain
+`route_trace` rows carry `"version":8` (additive: version 8 added the
+per-operation facts the sub-operation rows report — token usage, latency, the
+emulating account and the cache-hit marker; version 7 the `emulated_tool_attempt`
+event, version 6 the `context_override` event, the Claude Code `[1m]` marker
+strip; version 5 ADR-011's `implicit_route`, version 4 the `model_resolved`
+event, version 3 ADR-010's `capability_fallback` event, version 2 the ADR-009
+`expand`/`rotation` events — older rows render unchanged, as do unversioned
+ones). The WebUI renders the trace as a chain
 summary plus a routing timeline, with the exact JSON behind a "Raw JSON"
 disclosure — so an unrecognised or older shape still renders there.
 
-### Model test (2026-09-22)
-
+### Model test
 | Endpoint | Notes |
 |---|---|
 | `POST /api/admin/models/test/{id}` | One minimal "Sag OK" round trip against the model's provider: 16-token budget, no thinking, no stream, 15 s timeout. Response `{ok, latency_ms, reply, error}` — failures carry a plain-language, redacted cause; `ok:false` is still HTTP 200 (the round trip happened). Unwired (no master key) answers 404. |

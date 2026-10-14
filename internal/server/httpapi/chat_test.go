@@ -1,13 +1,10 @@
 package httpapi
 
-// OpenAI-surface RED tests: POST /v1/chat/completions (O2) and GET
-// /v1/models (O9). Derived from plan §5.1/§5.3, wire facts O10/O11/O3/O4,
-// golden fixtures testdata/golden/openai/*.json, and the §6.4 compat
-// policy. The upstream mock speaks the OpenAI chat wire — same-surface
-// relay must be fixture-exact for the decodable fields.
-//
-// RED state: package httpapi does not exist yet (build failure proves RED
-// for every test in this file).
+// OpenAI-surface RED tests: POST /v1/chat/completions and GET /v1/models.
+// Derived from the wire contracts, golden fixtures
+// testdata/golden/openai/*.json, and the compat policy. The upstream mock
+// speaks the OpenAI chat wire — same-surface relay must be fixture-exact
+// for the decodable fields.
 
 import (
 	"encoding/json"
@@ -42,7 +39,7 @@ func mockFail(t *testing.T, status int, body string) *mockprovider.Script {
 
 // 1. Fixture round trip: a golden chat request routed to a mock upstream
 // that answers with the golden chat response must surface the upstream
-// answer as a valid chat.completion (O2): the proxy decodes the client
+// answer as a valid chat.completion: the proxy decodes the client
 // body, routes, executes, and re-encodes for the client.
 func TestChatCompletions_FixtureRoundTrip(t *testing.T) {
 	e := newEnv(t)
@@ -75,7 +72,7 @@ func TestChatCompletions_FixtureRoundTrip(t *testing.T) {
 		t.Errorf("model = %q, want gpt-5", resp.Model)
 	}
 	if len(resp.Choices) != 1 || resp.Choices[0].FinishReason != "tool_calls" {
-		t.Errorf("choices = %+v, want one choice with finish_reason tool_calls (O3/O12)", resp.Choices)
+		t.Errorf("choices = %+v, want one choice with finish_reason tool_calls", resp.Choices)
 	}
 	if resp.Usage == nil {
 		t.Error("usage missing — chat.completion must carry usage")
@@ -115,7 +112,7 @@ func TestChatCompletions_UpstreamSeesChatWire(t *testing.T) {
 	}
 }
 
-// 3. Error relay per O10/§5.3: an upstream 429 exhausts the retry budget
+// 3. Error relay: an upstream 429 exhausts the retry budget
 // and the single-provider chain; the client sees a protocol-conform
 // OpenAI error body (error.type/code/message) with status 429 — the
 // terminal chain error, never a bare Go error string.
@@ -138,12 +135,12 @@ func TestChatCompletions_Upstream429Error(t *testing.T) {
 		} `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(body), &wireErr); err != nil {
-		t.Fatalf("error body not O10-shaped: %v (%s)", err, body)
+		t.Fatalf("error body not the OpenAI error shape: %v (%s)", err, body)
 	}
 	if wireErr.Error.Message == "" || wireErr.Error.Type == "" {
-		t.Errorf("error body missing type/message (O10): %s", body)
+		t.Errorf("error body missing type/message: %s", body)
 	}
-	// Upstream credentials never echoed (§5.3): the mock upstream was
+	// Upstream credentials never echoed: the mock upstream was
 	// called with Authorization: Bearer mock-key — the error body must not
 	// contain it.
 	if strings.Contains(body, "mock-key") {
@@ -151,8 +148,8 @@ func TestChatCompletions_Upstream429Error(t *testing.T) {
 	}
 }
 
-// 4. No-route: a request for a model with no rule → 4xx client error per
-// §5.3 with an O10-shaped body.
+// 4. No-route: a request for a model with no rule → 4xx client error
+// with the OpenAI error shape.
 func TestChatCompletions_NoRoute(t *testing.T) {
 	e := newEnv(t)
 	req := `{"model":"unknown-model","messages":[{"role":"user","content":"hi"}]}`
@@ -167,14 +164,14 @@ func TestChatCompletions_NoRoute(t *testing.T) {
 		} `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(body), &wireErr); err != nil {
-		t.Fatalf("no-route body not O10-shaped: %v (%s)", err, body)
+		t.Fatalf("no-route body not the OpenAI error shape: %v (%s)", err, body)
 	}
 	if wireErr.Error.Message == "" || wireErr.Error.Type == "" {
 		t.Errorf("no-route error body missing fields: %s", body)
 	}
 }
 
-// 5. Request log row (§4.3 observability): one successful request must
+// 5. Request log row (observability): one successful request must
 // persist exactly one request_logs row with client_key_id, provider_id,
 // model, status 200, upstream-relayed usage, and a route_trace object.
 func TestChatCompletions_RequestLogRow(t *testing.T) {
@@ -217,7 +214,7 @@ func TestChatCompletions_RequestLogRow(t *testing.T) {
 	}
 }
 
-// 6. Streaming relay per C2 (OpenAI wire: data-only SSE per O4): the
+// 6. Streaming relay (OpenAI wire: data-only SSE frames): the
 // proxy relays upstream SSE frames as-they-arrive, terminating with
 // [DONE], and the client-visible deltas match the upstream fixture.
 func TestChatCompletions_StreamRelay(t *testing.T) {
@@ -233,7 +230,7 @@ func TestChatCompletions_StreamRelay(t *testing.T) {
 		t.Fatalf("SSE frames = %d, want >= 3 (deltas + usage + [DONE])", len(frames))
 	}
 	if frames[len(frames)-1] != "[DONE]" {
-		t.Errorf("last frame = %q, want [DONE] (O4)", frames[len(frames)-1])
+		t.Errorf("last frame = %q, want [DONE]", frames[len(frames)-1])
 	}
 	if !strings.Contains(body, `"Hello"`) || !strings.Contains(body, `" world"`) {
 		t.Errorf("relayed stream missing upstream text deltas: %s", body)
@@ -337,9 +334,9 @@ func TestChatCompletions_StreamErrorRedactsCredentialsInRequestLog(t *testing.T)
 	}
 }
 
-// --- GET /v1/models (O9) ---
+// --- GET /v1/models ---
 
-// 8. GET /v1/models lists every model row from the store (O9 shape:
+// 8. GET /v1/models lists every model row from the store (OpenAI list shape:
 // {"object":"list","data":[...]} with object:"model" entries), ordered by
 // id (storage contract).
 func TestModels_List(t *testing.T) {
@@ -375,7 +372,7 @@ func TestModels_List(t *testing.T) {
 	}
 }
 
-// 9. GET /v1/models on an empty store → honest empty list (O9 shape).
+// 9. GET /v1/models on an empty store → honest empty list.
 func TestModels_EmptyList(t *testing.T) {
 	e := newEnv(t)
 	status, body := e.get(t, "/v1/models")
@@ -387,18 +384,18 @@ func TestModels_EmptyList(t *testing.T) {
 		Data   []map[string]any `json:"data"`
 	}
 	if err := json.Unmarshal([]byte(body), &resp); err != nil {
-		t.Fatalf("empty models body not O9-shaped: %v (%s)", err, body)
+		t.Fatalf("empty models body not an OpenAI list shape: %v (%s)", err, body)
 	}
 	if resp.Object != "list" || resp.Data == nil {
 		t.Errorf("empty models body = %s, want object:list data:[]", body)
 	}
 }
 
-// --- compat policies (§6.4 — first ApplyCompat caller) ---
+// --- compat policies (first ApplyCompat caller) ---
 
-// 10. thinking block (§6.4): a model configured with
+// 10. thinking block: a model configured with
 // thinking_handling=block rejects a thinking request with a
-// protocol-conform 400 (O10) and a request_logs row recording the
+// protocol-conform 400 and a request_logs row recording the
 // rejection (never silent).
 func TestChatCompletions_ThinkingBlock(t *testing.T) {
 	e := newEnv(t)
@@ -423,7 +420,7 @@ func TestChatCompletions_ThinkingBlock(t *testing.T) {
 	}
 }
 
-// 11. thinking strip (§6.4 default): history thinking blocks + the
+// 11. thinking strip (the default): history thinking blocks + the
 // thinking param are stripped before upstream dispatch; the request
 // succeeds and the strip is traced.
 func TestChatCompletions_ThinkingStrip(t *testing.T) {
@@ -448,7 +445,7 @@ func TestChatCompletions_ThinkingStrip(t *testing.T) {
 	}
 }
 
-// 12. max_tokens_clamp (§6.4): a model configured with max_tokens_clamp
+// 12. max_tokens_clamp: a model configured with max_tokens_clamp
 // clamps the client max tokens before upstream dispatch.
 func TestChatCompletions_MaxTokensClamp(t *testing.T) {
 	e := newEnv(t)
@@ -474,7 +471,7 @@ func TestChatCompletions_MaxTokensClamp(t *testing.T) {
 	}
 }
 
-// --- failover on the surface (§5.3 + Analysis E) ---
+// --- failover on the surface ---
 
 // 13. Failover: a two-provider chain where the first fails with 500 and
 // the second succeeds → the client sees 200 and both providers attempted.

@@ -11,7 +11,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/provider"
 )
 
-// Rule is one routing rule (Analysis E rule model; storage:
+// Rule is one routing rule (storage:
 // routing_rules table, extended by ADR-009). The deterministic resolution
 // order is: key scope → model match → chain expansion → strategy →
 // capability filter → health gate.
@@ -49,9 +49,9 @@ type ChainEntry struct {
 	Model      string
 }
 
-// Router resolves requests to deterministic fallback chains (plan
-// Analysis E: deterministic and testable; score/weight fuzzy routing was
-// rejected as primary mechanism precisely because it is neither).
+// Router resolves requests to deterministic fallback chains: the resolution
+// is reproducible and testable, which is exactly why score/weight fuzzy
+// routing was rejected as the primary mechanism — it is neither.
 // ADR-009 restates determinism per request sequence: the round-robin
 // counters are the only sequence-dependent state, per-rule and observable.
 type Router struct {
@@ -67,9 +67,9 @@ type Router struct {
 	modelLookup func(ctx context.Context, modelID string) (providerID string, ok bool)
 
 	// visionLookup reports whether the MODEL ROW for (provider, model) has
-	// LEARNED whether it can see images (ADR-014 learning, owner decision
-	// 2026-10-11). Same injection contract as modelLookup: option-set at
-	// construction, never swapped, nil disables the vision gate entirely —
+	// LEARNED whether it can see images (ADR-014). Same injection contract as
+	// modelLookup: option-set at construction, never swapped, nil disables the
+	// vision gate entirely —
 	// which is what the no-pre-stream-gate decision above rests on wherever
 	// capabilities were never learned.
 	visionLookup func(ctx context.Context, providerID, model string) (canSeeImages, known bool)
@@ -77,7 +77,7 @@ type Router struct {
 	// mu guards rules and the round-robin counters — the live rule set is
 	// replaceable at runtime (WebUI routing writes reload it). Readers take
 	// RLock; the reload path takes Lock for one whole-set swap. Aliases and
-	// KeyScopes stay startup-fixed: only rules are DB-editable today.
+	// KeyScopes stay startup-fixed: only rules are DB-editable.
 	mu    sync.RWMutex
 	rules []Rule
 	// rrCounters holds one atomic counter per rule, keyed by rule id. A
@@ -92,11 +92,11 @@ type Config struct {
 	Rules []Rule
 
 	// Aliases map requested model names to configured primary models
-	// (Claude Code alias resolution, C6).
+	// (Claude Code alias resolution).
 	Aliases map[string]string
 
 	// KeyScopes maps client key ID → allowed model patterns; a key with
-	// no entry is unrestricted (Analysis E step 1).
+	// no entry is unrestricted.
 	KeyScopes map[string][]string
 
 	// GlobalStrategy is the strategy for rules whose own Strategy is
@@ -265,7 +265,7 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 		}
 	}
 
-	// Step 2: alias resolution (C6).
+	// Step 2: alias resolution.
 	requested := model
 	if target, ok := r.cfg.Aliases[model]; ok {
 		model = target
@@ -321,10 +321,9 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 
 	// Step 6: capability + health filter, recording every skip (never
 	// silent). The filter loop is unchanged — it walks whatever order the
-	// strategy produced. Vision is not gated here (2026-09-21 automatic
-	// capabilities): a vision request goes out, and a real upstream
-	// rejection (capability_gap) fails over to the executor's capability
-	// fallback models.
+	// strategy produced. Vision is not gated here: a vision request goes out, and
+	// a real upstream rejection (capability_gap) fails over to the executor's
+	// capability fallback models.
 	out := make([]ChainEntry, 0, len(entries))
 	// healthSkipped tracks whether every filter rejection was a health
 	// cooldown — a chain that is merely cooled down is temporarily
@@ -352,7 +351,7 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 		out = append(out, ChainEntry{ProviderID: entry, Model: model})
 	}
 
-	// The vision gate (owner decision 2026-10-11) runs LAST and only as a
+	// The vision gate runs LAST and only as a
 	// preference among the survivors, because the two things that make it safe
 	// are both about leaving the pipeline alone otherwise:
 	//
@@ -474,7 +473,7 @@ func (r *Router) accountsOfType(typ string) (accounts, excluded []string) {
 func (r *Router) rotate(rule Rule, entries []string, trace *Trace) []string {
 	// An atomic per-rule counter, not the rule mutex: rotation happens on every
 	// round-robin request, and taking the router's write lock there serialized
-	// every concurrent resolve behind one counter increment (2026-10-10).
+	// every concurrent resolve behind one counter increment.
 	counter, _ := r.rrCounters.LoadOrStore(rule.ID, new(atomic.Uint64))
 	offset := counter.(*atomic.Uint64).Add(1) - 1
 
@@ -559,11 +558,10 @@ func matchAny(model string, patterns []string) bool {
 }
 
 // missingCapabilities names the first required capability the provider
-// lacks ("" when all are present). Vision is deliberately NOT here
-// (2026-09-21 automatic capabilities): static provider caps cannot know
-// which MODEL accepts images — a vision request goes out, and a real
-// upstream rejection (capability_gap class) fails over to the configured
-// fallback models in the executor. The remaining capabilities are
+// lacks ("" when all are present). Vision is deliberately NOT here: static
+// provider caps cannot know which MODEL accepts images — a vision request goes
+// out, and a real upstream rejection (capability_gap class) fails over to the
+// configured fallback models in the executor. The remaining capabilities are
 // deterministic surface/emulation facts the gate can decide up front.
 func missingCapabilities(have, want provider.Capabilities) string {
 	type pair struct {

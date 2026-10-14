@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>PROxyLLM components</title>
+<!-- The console's own stylesheets, in the order webui/src/main.tsx loads them,
+     so every specimen below is the real component and not a copy of it. Open
+     this page through a static server rooted at the repository root (the app
+     serves webui/public at /, which is where /fonts/ resolves); then
+     /design/examples/components.html works as-is. Markup is taken from the
+     components under webui/src — numbers and rows are specimens, not data. -->
+<link rel="stylesheet" href="../../webui/src/styles/colors_and_type.css">
+<link rel="stylesheet" href="../../webui/src/styles/kit.css">
+<link rel="stylesheet" href="../../webui/src/styles/app.css">
+<style>
+  /* Local layout for the documentation page only; colours are tokens. */
+  .demo-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .demo-row + .demo-row { margin-top: 14px; }
+  .demo-note { font-size: 12px; color: var(--neutral-500); margin: 0 0 12px; }
+  .demo-frame { position: relative; height: 210px; border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+  .demo-specimen { max-width: 420px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="workspace-head">
+    <div>
+      <h1>Components</h1>
+      <p class="sub">The classes the console renders, composed the way the app composes them. Each specimen uses the shipped stylesheets unchanged.</p>
+    </div>
+  </div>
+
+  <div class="canvas">
+    <section class="w-2">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Buttons</h2></div>
+        <div class="widget-body">
+          <p class="demo-note">Always with a variant: the base <span class="num">.btn</span> sets no colour of its own.</p>
+          <div class="demo-row">
+            <button type="button" class="btn btn-primary">Save settings</button>
+            <button type="button" class="btn btn-secondary">Cancel</button>
+            <button type="button" class="btn btn-ghost">Back</button>
+            <button type="button" class="btn btn-danger">Delete key</button>
+          </div>
+          <div class="demo-row">
+            <button type="button" class="btn btn-primary btn-sm">Test</button>
+            <button type="button" class="btn btn-secondary btn-sm">Reload</button>
+            <button type="button" class="btn btn-icon btn-sm" aria-label="Remove alias">
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg>
+            </button>
+            <button type="button" class="btn btn-round" aria-label="Next page">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg>
+            </button>
+            <span class="btn-group">
+              <button type="button" class="btn btn-secondary btn-sm">Day</button>
+              <button type="button" class="btn btn-secondary btn-sm">Week</button>
+              <button type="button" class="btn btn-secondary btn-sm">Month</button>
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-2">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Status</h2></div>
+        <div class="widget-body">
+          <div class="demo-row">
+            <span class="badge up"><span class="b-dot"></span>200</span>
+            <span class="badge warn"><span class="b-dot"></span>429</span>
+            <span class="badge down"><span class="b-dot"></span>502</span>
+            <span class="badge paused"><span class="b-dot"></span>—</span>
+            <span class="badge info"><span class="b-dot b-dot-spin"></span>…</span>
+            <span class="chip chip-healed">healed</span>
+          </div>
+          <div class="demo-row">
+            <span class="status-dot up"></span>
+            <span class="status-dot warn"></span>
+            <span class="status-dot down"></span>
+            <span class="status-dot paused"></span>
+            <span class="chain-summary">
+              <span class="chain-pill">ollama-cloud</span>
+              <span class="chain-pill">codex</span>
+              <span class="chain-pill serving">anthropic</span>
+            </span>
+          </div>
+          <div class="demo-row">
+            <span class="pill">Ollama Cloud</span>
+            <span class="pill pill-warm">CLAUDE</span>
+            <span class="chip child-failover">failover</span>
+            <span class="chip child-capability-fallback">capability fallback</span>
+            <span class="chip child-image-caption">image caption</span>
+            <span class="chip child-emulated-tool">web tool</span>
+            <span class="chip child-retry">retry</span>
+            <button type="button" class="link-chip">show steps</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-2">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">KPI and charts</h2></div>
+        <div class="widget-body">
+          <p class="demo-note">Specimen markup — no live data.</p>
+          <div class="kpi">
+            <span class="kpi-label">Requests today</span>
+            <span class="kpi-value">12,480</span>
+            <span class="kpi-foot">
+              <span class="delta pos">↑ 8.2%</span>
+              <span class="kpi-sub">vs. yesterday</span>
+            </span>
+          </div>
+          <svg class="spark" viewBox="0 0 200 54" preserveAspectRatio="none" aria-hidden="true">
+            <path class="spark-area" d="M0,40 L25,34 L50,36 L75,26 L100,28 L125,18 L150,22 L175,12 L200,8 L200,54 L0,54 Z"/>
+            <path class="spark-line" d="M0,40 L25,34 L50,36 L75,26 L100,28 L125,18 L150,22 L175,12 L200,8"/>
+            <circle class="spark-pt" cx="200" cy="8" r="3"/>
+          </svg>
+          <div class="bars">
+            <div class="bar-row"><span class="bar-lab">4xx — client keys</span><span class="bar-val">38</span><span class="bar-track"><span class="bar-fill" style="width: 46%"></span></span></div>
+            <div class="bar-row"><span class="bar-lab">5xx — upstream</span><span class="bar-val">11</span><span class="bar-track"><span class="bar-fill" style="width: 14%"></span></span></div>
+            <div class="bar-row"><span class="bar-lab">Retries</span><span class="bar-val">7</span><span class="bar-track"><span class="bar-fill alt" style="width: 9%"></span></span></div>
+          </div>
+          <div class="health" style="margin-top: 16px">
+            <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+              <circle class="ring-track" cx="60" cy="60" r="50"/>
+              <circle class="ring-seg" cx="60" cy="60" r="50" stroke="var(--status-up)" stroke-dasharray="264 314" transform="rotate(-90 60 60)"/>
+            </svg>
+            <div>
+              <div class="health-num">84</div>
+              <div class="health-lab">requests served first try</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-full">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Request log</h2></div>
+        <div class="widget-body" style="padding: 0">
+          <div class="table-toolbar">
+            <span class="count">1,204 requests</span>
+            <div class="pg-nav">
+              <label class="hint" for="demo-page-size">Rows</label>
+              <span class="select">
+                <select id="demo-page-size"><option>50</option><option>100</option></select>
+              </span>
+              <button type="button" class="btn btn-secondary btn-sm">Newer</button>
+              <button type="button" class="btn btn-secondary btn-sm">Older</button>
+            </div>
+          </div>
+          <div class="table-wrap" style="border: none; border-radius: 0">
+            <div class="table-scroll">
+              <table class="table logs-table">
+                <thead>
+                  <tr>
+                    <th class="td-gutter" aria-label="chain"><span class="gutter-spacer" aria-hidden="true"></span></th>
+                    <th>Status</th><th>Model</th><th>Provider</th><th>Protocol</th><th>Account</th><th>API key</th>
+                    <th>Tokens</th><th class="num">TPS</th><th class="num">Duration</th><th>Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="log-row" data-has-children="true" title="conversation conv_7a91c2f4">
+                    <td class="td-gutter"></td>
+                    <td><span class="badge up"><span class="b-dot"></span>200</span><span class="chip chip-healed">healed</span></td>
+                    <td class="primary col-model" title="requested claude-sonnet-4-5">deepseek-v4.1-flash</td>
+                    <td><span class="pill">Ollama Cloud</span></td>
+                    <td><span class="pill pill-warm">CLAUDE</span></td>
+                    <td class="col-account" title="main-2">main-2</td>
+                    <td class="mono col-key" title="Claude Code (sk-…9f2c)">Claude Code (sk-…9f2c)</td>
+                    <td class="mono col-tokens">
+                      <span class="txt-muted">TI:</span> <span class="num-ti">18,204</span>
+                      <span class="txt-muted">TO:</span> <span class="num-to">1,902</span>
+                      <span class="txt-muted">CR:</span> <span class="num-cr">12,004 (66%)</span>
+                    </td>
+                    <td class="mono num">42.6</td>
+                    <td class="mono num">44 ms</td>
+                    <td class="mono col-time">12:04:31</td>
+                  </tr>
+                  <tr class="log-row log-row-child" data-child-last="true" tabindex="0" role="button" title="Show what this step sent and received">
+                    <td class="td-gutter"><span class="child-elbow" aria-hidden="true"></span></td>
+                    <td><span class="chip child-failover">Fallback Ollama Cloud → Codex</span></td>
+                    <td class="primary child-model col-model">gpt-5-codex</td>
+                    <td><span class="pill">codex</span></td>
+                    <td><span class="pill pill-warm">CLAUDE</span></td>
+                    <td class="col-account" title="codex-oauth">codex-oauth</td>
+                    <td class="mono col-key" title="Claude Code (sk-…9f2c)">Claude Code (sk-…9f2c)</td>
+                    <td class="mono col-tokens">
+                      <span class="txt-muted">TI:</span> <span class="num-ti">—</span>
+                      <span class="txt-muted">TO:</span> <span class="num-to">—</span>
+                      <span class="txt-muted">CR:</span> <span class="num-cr">—</span>
+                    </td>
+                    <td class="mono num">—</td>
+                    <td class="mono num">12 ms</td>
+                    <td class="mono col-time">12:04:31</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-2">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Trace detail</h2></div>
+        <div class="widget-body">
+          <div class="chain-summary">
+            <span class="chain-pill">ollama-cloud</span>
+            <span class="chain-pill">codex</span>
+            <span class="chain-pill serving">codex</span>
+          </div>
+          <div class="feed">
+            <div class="feed-item sev-info">
+              <span class="f-ic" aria-hidden="true"></span>
+              <div class="f-main">
+                <p class="f-title">Resolved sonnet → claude-sonnet-4-5</p>
+                <p class="f-meta">alias</p>
+              </div>
+            </div>
+            <div class="feed-item sev-up">
+              <span class="f-ic" aria-hidden="true"></span>
+              <div class="f-main">
+                <p class="f-title">Emulated web_search</p>
+                <p class="f-meta">firecrawl · 312 ms</p>
+              </div>
+            </div>
+            <div class="feed-item sev-warn">
+              <span class="f-ic" aria-hidden="true"></span>
+              <div class="f-main">
+                <p class="f-title">Failover ollama-cloud → codex</p>
+                <p class="f-meta">capacity · 503 · 12 ms</p>
+              </div>
+            </div>
+            <div class="feed-item sev-down">
+              <span class="f-ic" aria-hidden="true"></span>
+              <div class="f-main">
+                <p class="f-title">Failed codex (429)</p>
+                <p class="f-meta">quota_exceeded · before_first_byte</p>
+              </div>
+            </div>
+          </div>
+          <details class="raw-trace">
+            <summary>Raw JSON</summary>
+            <pre class="mono" style="margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px">{ "version": { "route_trace": 7 }, "events": [ { "type": "model_resolved", "from": "sonnet", "to": "claude-sonnet-4-5" } ] }</pre>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-2">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Empty state</h2></div>
+        <div class="widget-body">
+          <div class="empty">
+            <span class="empty-ic" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="m13.4 12.6 4.6-4.6"/><path d="M12 4a9 9 0 0 1 9 9"/></svg>
+            </span>
+            <span class="empty-t">No model traffic</span>
+            <span class="empty-h">Requests appear here once models serve traffic.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-full">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Forms and controls</h2></div>
+        <div class="widget-body">
+          <form class="form" style="max-width: 640px">
+            <fieldset class="fieldset">
+              <legend>Endpoint</legend>
+              <div class="form-row">
+                <div class="field">
+                  <label for="demo-base">Base URL<span class="req">*</span></label>
+                  <input id="demo-base" class="input" type="text" value="https://ollama.com">
+                  <span class="hint">Must be reachable from the proxy.</span>
+                </div>
+                <div class="field has-select">
+                  <label for="demo-kind">Kind</label>
+                  <select id="demo-kind"><option>Ollama Cloud</option><option>Codex OAuth</option><option>Custom (OpenAI-compatible)</option></select>
+                </div>
+              </div>
+              <div class="field is-error">
+                <label for="demo-key">API key</label>
+                <input id="demo-key" class="input" type="password" value="invalid">
+                <span class="error">The endpoint rejected this key (401).</span>
+              </div>
+              <div class="field is-valid">
+                <label for="demo-name">Account name</label>
+                <div class="input-affix">
+                  <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4 10-10"/></svg></span>
+                  <input id="demo-name" class="input" type="text" value="main-2">
+                </div>
+              </div>
+            </fieldset>
+            <p class="form-note" role="alert">The account could not be saved: the upstream answered 401.</p>
+            <div class="form-actions">
+              <button type="button" class="btn btn-secondary">Cancel</button>
+              <button type="button" class="btn btn-primary">Save settings</button>
+            </div>
+          </form>
+          <div class="demo-row" style="margin-top: 22px">
+            <label class="check"><input type="checkbox" checked><span class="cbox"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4 10-10"/></svg></span>Enable</label>
+            <label class="toggle"><input type="checkbox" checked><span class="tswitch"></span>Auto-refresh</label>
+            <label class="radio"><input type="radio" name="demo-mode" checked><span class="rdot"></span>Failover</label>
+            <span class="rpills">
+              <label class="rpill"><input type="radio" name="demo-range">24 h</label>
+              <label class="rpill"><input type="radio" name="demo-range" checked>7 d</label>
+              <label class="rpill"><input type="radio" name="demo-range">30 d</label>
+            </span>
+          </div>
+          <div class="demo-row">
+            <span class="tabs" style="width: 100%">
+              <span class="tab active">Overview</span>
+              <span class="tab">Requests</span>
+              <span class="tab">Steps</span>
+            </span>
+          </div>
+          <div class="breadcrumb" style="margin-top: 12px">
+            <span>Providers</span><span class="sep">/</span><span>Codex OAuth</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-2">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Model aliases</h2></div>
+        <div class="widget-body">
+          <div class="alias-editor" role="group" aria-label="Model aliases">
+            <div class="alias-row">
+              <input class="input mono alias-input" type="text" value="sonnet" aria-label="Alias name for sonnet">
+              <span class="select">
+                <select class="input alias-input" aria-label="Target model for sonnet">
+                  <option>claude-sonnet-4-5</option>
+                  <option>deepseek-v4.1-flash</option>
+                </select>
+              </span>
+              <button type="button" class="btn btn-icon btn-sm" aria-label="Remove alias sonnet">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg>
+              </button>
+            </div>
+            <div class="alias-row">
+              <input class="input mono alias-input" type="text" value="haiku" aria-label="Alias name for haiku">
+              <input class="input mono alias-input free-pick" type="text" value="qwen3-coder-30b" aria-label="Target model for haiku (unregistered id, edit freely)">
+              <button type="button" class="btn btn-icon btn-sm" aria-label="Remove alias haiku">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg>
+              </button>
+            </div>
+            <div class="alias-row alias-row-new">
+              <input class="input mono alias-input" type="text" placeholder="alias" aria-label="New alias name">
+              <input class="input alias-input" type="text" placeholder="model id" aria-label="New alias target model">
+              <button type="button" class="btn btn-secondary btn-sm">Add alias</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-2">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Provider types</h2></div>
+        <div class="widget-body">
+          <div class="cards" style="display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr))">
+            <button type="button" class="widget provider-type-card">
+              <span class="type-head">
+                <span class="title">Ollama Cloud</span>
+                <span class="type-count"><span class="badge up"><span class="b-dot"></span>2</span></span>
+              </span>
+              <span class="type-desc">Native <span class="num">ollama.com/api/chat</span>, with web search and fetch on the account itself.</span>
+              <span class="type-auth">API key</span>
+            </button>
+            <button type="button" class="widget provider-type-card">
+              <span class="type-head">
+                <span class="title">Codex OAuth</span>
+                <span class="type-count"><span class="badge paused"><span class="b-dot"></span>0</span></span>
+              </span>
+              <span class="type-desc">ChatGPT sign-in with a local callback; tokens refresh on the account.</span>
+              <span class="type-auth">OAuth</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-2">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Account menu</h2></div>
+        <div class="widget-body">
+          <div class="demo-frame overlay-host">
+            <div class="user-menu" style="right: 16px; top: 16px">
+              <div class="user-menu-head">
+                <span class="user-menu-name">admin</span>
+                <span class="hint">signed in</span>
+              </div>
+              <button type="button" class="user-menu-item" role="menuitem">Account settings</button>
+              <button type="button" class="user-menu-item user-menu-signout" role="menuitem">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5h3a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-3"/><path d="M10 12h9"/><path d="m16 8 4 4-4 4"/><path d="M4 12h4"/></svg>
+                Sign out
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-2">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Overlays</h2></div>
+        <div class="widget-body">
+          <p class="demo-note">The modal and the drawer are the real components; the buttons below only toggle them.</p>
+          <div class="demo-row">
+            <button type="button" class="btn btn-primary btn-sm" data-demo-open="modal">Open modal</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-demo-open="drawer">Open drawer</button>
+            <button type="button" class="btn btn-secondary btn-sm" data-demo-open="toast">Show toast</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="w-2">
+      <div class="widget">
+        <div class="widget-head"><h2 class="title">Loading and sign-in</h2></div>
+        <div class="widget-body">
+          <div class="loading" style="min-height: 90px" role="status" aria-live="polite">
+            <svg class="loading-spinner" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2.5" opacity="0.2"/>
+              <path d="M21 12a9 9 0 0 0-9-9" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+            </svg>
+            <span class="muted">Loading…</span>
+          </div>
+          <div class="login-card demo-specimen" style="margin: 0 auto">
+            <h1>PROxyLLM Console</h1>
+            <p class="sub">Sign in to manage providers, routing and keys.</p>
+            <p class="login-error">The username or password is incorrect.</p>
+            <div class="field">
+              <label for="demo-user">Username</label>
+              <input id="demo-user" class="input" type="text" value="admin">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<!-- The real overlay markup, toggled by class. Nothing here is invented: the
+     modal and drawer are the shells webui/src/components/Overlays.tsx renders. -->
+<div id="demo-modal" hidden>
+  <div class="modal-backdrop" data-demo-close></div>
+  <div class="modal" role="dialog" aria-modal="true" aria-label="Account settings">
+    <div class="modal-head">
+      <div>
+        <h3>Account settings</h3>
+        <p>Change the admin password. Other signed-in sessions are signed out; this one stays.</p>
+      </div>
+      <button type="button" class="btn btn-icon btn-ghost" data-demo-close aria-label="Close">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="form">
+        <div class="field"><label for="demo-cur">Current password</label><input id="demo-cur" class="input" type="password"></div>
+        <div class="field"><label for="demo-new">New password (min. 8 characters)</label><input id="demo-new" class="input" type="password"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-secondary" data-demo-close>Cancel</button>
+      <button type="button" class="btn btn-primary">Change password</button>
+    </div>
+  </div>
+</div>
+
+<div id="demo-drawer" hidden>
+  <div class="drawer-backdrop" data-demo-close></div>
+  <aside class="drawer" role="dialog" aria-modal="true" aria-label="Request detail">
+    <div class="drawer-head">
+      <h3>Request detail</h3>
+      <button type="button" class="btn btn-icon btn-ghost" data-demo-close aria-label="Close">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg>
+      </button>
+    </div>
+    <div class="drawer-body">
+      <div class="chain-summary">
+        <span class="chain-pill">ollama-cloud</span>
+        <span class="chain-pill serving">codex</span>
+      </div>
+      <div class="child-ops">
+        <span class="child-op-detail">Steps that belong to this request and can be opened on their own.</span>
+        <ul class="child-op-list">
+          <li>
+            <button type="button" class="child-op-open">
+              <span class="chip child-failover">Fallback Ollama Cloud → Codex</span>
+              <span class="child-op-detail">503 from the first endpoint, served by the second · 12 ms</span>
+            </button>
+          </li>
+        </ul>
+      </div>
+    </div>
+    <div class="drawer-foot">
+      <button type="button" class="btn btn-secondary" data-demo-close>Close</button>
+    </div>
+  </aside>
+</div>
+
+<!-- The wrapper is a plain element on purpose: `.toast-wrap` sets display:flex,
+     which would beat the `hidden` attribute (the UA's display:none) and leave
+     the toast on screen. -->
+<div id="demo-toast" hidden>
+  <div class="toast-wrap" style="position: fixed; right: 24px; bottom: 24px; z-index: var(--z-modal)">
+    <div class="toast up" role="status">
+      <span class="t-ic" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4 10-10"/></svg>
+      </span>
+      <div>
+        <p class="t-title">Settings saved</p>
+        <p class="t-msg">The account is reachable again.</p>
+      </div>
+      <button type="button" class="t-close" data-demo-close aria-label="Close">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Documentation-page plumbing: show one overlay, close it on the backdrop,
+  // the close buttons or Escape — the behaviour the app itself provides.
+  const overlays = { modal: 'demo-modal', drawer: 'demo-drawer', toast: 'demo-toast' };
+  function closeAll() {
+    for (const id of Object.values(overlays)) document.getElementById(id).hidden = true;
+  }
+  for (const [key, id] of Object.entries(overlays)) {
+    const el = document.getElementById(id);
+    el.querySelectorAll('[data-demo-close]').forEach((b) => b.addEventListener('click', closeAll));
+    document.querySelector(`[data-demo-open="${key}"]`).addEventListener('click', () => {
+      closeAll();
+      el.hidden = false;
+    });
+  }
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAll(); });
+</script>
+</body>
+</html>

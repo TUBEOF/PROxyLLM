@@ -1,6 +1,6 @@
 package httpapi
 
-// Sub-operation payloads on the write path (2026-10-10 Logs page).
+// Sub-operation payloads on the write path (Logs page).
 //
 // Spec: the operator's report that a fallback/vision sub-row is unreadable —
 // its second line is a character count, it cannot be opened, and nothing about
