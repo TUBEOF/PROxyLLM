@@ -2,6 +2,5 @@
   "fixture": "tags-response.json",
   "source": "https://docs.ollama.com/api/list-models",
   "accessed": "2026-09-17",
-  "facts": ["ADR-010 model-sync discovery"],
   "notes": "GET /api/tags list response: models array with name/model/modified_at/size/digest/details entries. Model identity rides 'name' (the /api/chat 'model' field value). Endpoint is the native local+cloud model list; not part of facts L1-L11."
 }

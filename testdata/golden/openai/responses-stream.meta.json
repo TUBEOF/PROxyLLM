@@ -3,7 +3,7 @@
   "source": "https://developers.openai.com/api/reference/resources/responses/methods/create",
   "accessed": "2026-09-10",
   "facts": [
-    "O7: Responses streaming uses named SSE events (event: lines), unlike chat-completions' data-only SSE",
+    "Responses streaming uses named SSE events (event: lines), unlike chat-completions' data-only SSE",
     "Verbatim example sequence on the cited page: response.created → response.in_progress → response.output_item.added → response.content_part.added → response.output_text.delta → … → response.output_text.done → response.content_part.done → response.output_item.done → response.completed",
     "response.created/response.in_progress/response.completed carry the FULL response object snapshot in .response; response.completed includes usage {input_tokens:37, output_tokens:11, output_tokens_details:{reasoning_tokens:0}, total_tokens:48}",
     "response.output_text.delta carries {item_id, output_index, content_index, delta}",

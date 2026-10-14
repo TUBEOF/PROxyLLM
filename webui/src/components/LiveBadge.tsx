@@ -1,4 +1,4 @@
-// LiveBadge (2026-10-08): the one live indicator every data page uses.
+// LiveBadge: the one live indicator every data page uses.
 // A green dot with the kit's pulsing ring while the page is receiving
 // fresh data, degrading to a quiet "PAUSED" when it is not.
 //

@@ -1,9 +1,8 @@
 package webui
 
-// RED tests for the admin API (plan §5.2), derived exclusively from the
-// committed storage v2 + session-auth contracts (Phase 2 research §10,
-// S-/C- facts) and the Analysis G security doctrine — never from
-// implementation behavior. The API is the WebUI SPA's only backend:
+// RED tests for the admin API, derived exclusively from the committed
+// storage v2 + session-auth contracts and the security doctrine — never
+// from implementation behavior. The API is the WebUI SPA's only backend:
 // admin bootstrap, providers CRUD, models incl. per-model compat, routing
 // rules + reload, client keys (display-once), usage, request logs,
 // settings KV.
@@ -24,7 +23,7 @@ package webui
 //   - POST   /api/admin/keys                  {"name"} → {"id","key"} (display-once)
 //   - GET    /api/admin/keys
 //   - POST   /api/admin/keys/{id}/revoke
-//   - POST   /api/admin/providers/{id}/oauth/start  (X20 device flow: user_code +
+//   - POST   /api/admin/providers/{id}/oauth/start  (device flow: user_code +
 //     verification URL surfaced to the operator; replaces any active flow)
 //   - POST   /api/admin/providers/{id}/oauth/poll   (one issuer round trip per call,
 //     throttled to the issuer interval: {"status":"pending"|"approved", account_id?};
@@ -164,10 +163,10 @@ func (e *adminEnv) authedCall(t *testing.T, method, path, body string, s loginSt
 		req.Header.Set("Content-Type", "application/json")
 	}
 	if isMutation(method) {
-		// C-3: the CSRF header is required on every mutation. Content-Type is
+		// The CSRF header is required on every mutation. Content-Type is
 		// NOT set on bodyless requests — mirroring fetch exactly, where a
 		// bodyless POST/DELETE sends no Content-Type header (the auth layer
-		// accepts an absent one; see the C-4 note in auth/session.go).
+		// accepts an absent one; see the note in auth/session.go).
 		if body != "" {
 			req.Header.Set("Content-Type", "application/json")
 		}
@@ -232,7 +231,7 @@ func parseLogin(t *testing.T, w *httptest.ResponseRecorder) loginState {
 // Scenarios
 // ---------------------------------------------------------------------------
 
-// §5.2: bootstrap creates the FIRST admin only; a second bootstrap must
+// Bootstrap creates the FIRST admin only; a second bootstrap must
 // never be able to add or hijack admins.
 func TestBootstrap_FirstAdminOnly(t *testing.T) {
 	env := newAdminEnv(t)
@@ -254,7 +253,7 @@ func TestBootstrap_FirstAdminOnly(t *testing.T) {
 	assertStatus(t, w, http.StatusUnauthorized, "attacker login")
 }
 
-// Analysis G: every admin resource sits behind session auth; 401s are the
+// Every admin resource sits behind session auth; 401s are the
 // uniform error shape, never distinguishing the failure layer.
 func TestAdminEndpoints_RequireSession(t *testing.T) {
 	env := newAdminEnv(t)
@@ -273,13 +272,13 @@ func TestAdminEndpoints_RequireSession(t *testing.T) {
 	}
 }
 
-// §5.2 providers CRUD: upsert + list + delete round-trip. Storage's
-// secret-shaped-config rejection (Analysis G control 2: plain config must
-// never hold credentials) must surface as 400.
+// Providers CRUD: upsert + list + delete round-trip. Storage's
+// secret-shaped-config rejection (plain config must never hold
+// credentials) must surface as 400.
 func TestProviders_CRUDAndSecretConfigRejected(t *testing.T) {
 	env := newAdminEnv(t)
 	s := env.bootstrap(t, "operator")
-	// The guard resolves base_url hosts (SSRF, Analysis G control 5) —
+	// The guard resolves base_url hosts (SSRF) —
 	// unit tests must not depend on DNS; guard behavior is pinned by
 	// TestPutProvider_PrivateURLsRejected.
 	t.Setenv("PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS", "1")
@@ -330,7 +329,7 @@ func TestProviders_CRUDAndSecretConfigRejected(t *testing.T) {
 	assertStatus(t, w, http.StatusNotFound, "delete missing provider")
 }
 
-// §5.2 + §6.4 (OP-2): models carry per-model compatibility settings (compat
+// Models carry per-model compatibility settings (compat
 // JSON) — the "Models & Compatibility" editor's persistence backend. The
 // provider FK guarantee must surface as 400.
 func TestModels_CRUDAndCompatRoundTrip(t *testing.T) {
@@ -379,7 +378,7 @@ func TestModels_CRUDAndCompatRoundTrip(t *testing.T) {
 	assertStatus(t, w, http.StatusNotFound, "delete missing model")
 }
 
-// §5.2 + Analysis E: WebUI rule edits must reach the live router without a
+// WebUI rule edits must reach the live router without a
 // restart — every successful routing-rule write triggers the reload hook; a
 // rejected write must not. Rules list priority-DESC.
 func TestRoutingRules_CRUDTriggersReload(t *testing.T) {
@@ -440,7 +439,7 @@ func TestRoutingRules_CRUDTriggersReload(t *testing.T) {
 	}
 }
 
-// §5.2 + Analysis G control 1: client key secrets are display-once — the
+// Client key secrets are display-once — the
 // create response shows the full key exactly one time; no later response
 // (list, revoke) ever contains the secret or the Argon2id hash.
 func TestClientKeys_DisplayOnceAndHashFreeList(t *testing.T) {
@@ -498,7 +497,7 @@ func TestClientKeys_DisplayOnceAndHashFreeList(t *testing.T) {
 	}
 }
 
-// §5.2 usage/stats: inclusive day-range query for the Overview dashboard; a
+// Usage/stats: inclusive day-range query for the Overview dashboard; a
 // matching-free range is honestly empty, never an error.
 func TestUsage_InclusiveDayRange(t *testing.T) {
 	env := newAdminEnv(t)
@@ -554,7 +553,7 @@ func TestUsage_InclusiveDayRange(t *testing.T) {
 	}
 }
 
-// §5.2 request logs: newest-first pages with filters for the log viewer;
+// Request logs: newest-first pages with filters for the log viewer;
 // total lets the UI render page links without a second query per page.
 func TestRequestLogs_PaginationAndFilters(t *testing.T) {
 	env := newAdminEnv(t)
@@ -611,7 +610,7 @@ func TestRequestLogs_PaginationAndFilters(t *testing.T) {
 	}
 }
 
-// §5.2 settings: config KV round-trip — the DB overrides layer (Analysis C)
+// Settings: config KV round-trip — the DB overrides layer
 // the Settings page edits.
 func TestSettings_KVRoundTrip(t *testing.T) {
 	env := newAdminEnv(t)
@@ -645,7 +644,7 @@ func TestSettings_KVRoundTrip(t *testing.T) {
 	}
 }
 
-// C-3/C-4 via the real mux: mutations without the CSRF header are 403;
+// CSRF via the real mux: mutations without the CSRF header are 403;
 // simple content types are 415 — a cross-site form must never be
 // processable without a CORS preflight.
 func TestAdminMutations_CSRFAndContentTypeEnforced(t *testing.T) {
@@ -669,9 +668,9 @@ func TestAdminMutations_CSRFAndContentTypeEnforced(t *testing.T) {
 
 	// Bodyless mutation (no Content-Type at all — exactly what fetch sends
 	// for a bodyless POST/DELETE, e.g. provider delete or oauth start) →
-	// processed, not 415. Regression for the phase-2 review finding: the
-	// auth layer used to demand application/json on every mutation, which
-	// broke every bodyless admin mutation in the browser.
+	// processed, not 415: the auth layer must not demand application/json on
+	// every mutation — that would reject every bodyless admin mutation the
+	// browser sends with no Content-Type.
 	req = httptest.NewRequest(http.MethodPost, "/api/admin/logout", nil)
 	req.Header.Set("Cookie", s.cookieHeader())
 	req.Header.Set("X-CSRF-Token", s.csrfToken)
@@ -680,7 +679,7 @@ func TestAdminMutations_CSRFAndContentTypeEnforced(t *testing.T) {
 	assertStatus(t, rec, http.StatusOK, "bodyless mutation without content-type")
 }
 
-// S-10 via the mux: logout deletes the server-side session — the old cookie
+// Logout via the mux: the server-side session is deleted — the old cookie
 // is dead afterwards.
 func TestLogout_SessionKilled(t *testing.T) {
 	env := newAdminEnv(t)
@@ -694,12 +693,12 @@ func TestLogout_SessionKilled(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// OAuth device flow endpoints (X20, plan §5.2: providers/{id}/oauth/start|poll)
+// OAuth device flow endpoints (providers/{id}/oauth/start|poll)
 // ---------------------------------------------------------------------------
 
 // oauthEnv is an adminEnv whose store carries a secret envelope — the device
 // flow's approval path persists the token triple through PutProviderTokens,
-// which refuses plaintext writes without one (Analysis G control 2).
+// which refuses plaintext writes without one.
 func newOAuthEnv(t *testing.T) *adminEnv {
 	t.Helper()
 	// Issuer stubs are httptest loopback servers — the private-address SSRF
@@ -715,9 +714,9 @@ func newOAuthEnv(t *testing.T) *adminEnv {
 	return env
 }
 
-// issuerSrv is a scripted X20 issuer: usercode endpoint answering the pinned
-// device pair, token endpoint delegating to pollFn (default: 403 pending),
-// and the X16 form-encoded exchange answering the token triple with an
+// issuerSrv is a scripted OAuth issuer: usercode endpoint answering the
+// pinned device pair, token endpoint delegating to pollFn (default: 403
+// pending), and the form-encoded exchange answering the token triple with an
 // id_token JWT carrying the ChatGPT account id. pollFn returning ("", "", 0)
 // means pending; ("ac", "ver", 200) means approved; any other status is fatal.
 type issuerSrv struct {
@@ -737,7 +736,7 @@ func newIssuerSrv(t *testing.T, accountID string) *issuerSrv {
 		if is.approve() {
 			return "ac-1", "ver-1", http.StatusOK
 		}
-		return "", "", http.StatusForbidden // X20: 403 while not yet approved
+		return "", "", http.StatusForbidden // 403 while not yet approved
 	}
 	is.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -746,7 +745,7 @@ func newIssuerSrv(t *testing.T, accountID string) *issuerSrv {
 				t.Errorf("usercode body must be JSON: %v", err)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			// X20: interval arrives as a STRING.
+			// the interval arrives as a STRING.
 			_, _ = io.WriteString(w, `{"device_auth_id":"dev-1","user_code":"WDJB-MJHT","interval":"1"}`)
 		case "/api/accounts/deviceauth/token":
 			code, verifier, status := is.pollFn()
@@ -758,7 +757,7 @@ func newIssuerSrv(t *testing.T, accountID string) *issuerSrv {
 			_, _ = fmt.Fprintf(w, `{"authorization_code":%q,"code_verifier":%q}`, code, verifier)
 		case "/oauth/token":
 			if err := r.ParseForm(); err != nil {
-				t.Errorf("exchange must be form-encoded (X16): %v", err)
+				t.Errorf("exchange must be form-encoded: %v", err)
 			}
 			is.exchangeForm = r.Form
 			w.Header().Set("Content-Type", "application/json")
@@ -773,7 +772,7 @@ func newIssuerSrv(t *testing.T, accountID string) *issuerSrv {
 }
 
 // makeOAuthJWT builds a 3-part JWT whose payload carries the ChatGPT account
-// id claim (X15: chatgpt_account_id) — the codex package parses it out of the
+// id claim (chatgpt_account_id) — the codex package parses it out of the
 // id_token, so the admin API's approval response must surface the account id.
 func makeOAuthJWT(t *testing.T, accountID string) string {
 	t.Helper()
@@ -809,7 +808,7 @@ func (e *adminEnv) oauthPoll(t *testing.T, id string, s loginState) *httptest.Re
 	return e.authedCall(t, http.MethodPost, "/api/admin/providers/"+id+"/oauth/poll", `{}`, s)
 }
 
-// X20 + §5.2: start surfaces the pair the operator needs (user_code +
+// Start surfaces the pair the operator needs (user_code +
 // verification URL) at the issuer-provided pace. The usercode request must
 // carry the pinned client_id.
 func TestOAuthStart_SurfacesUserCodeAndURL(t *testing.T) {
@@ -827,20 +826,20 @@ func TestOAuthStart_SurfacesUserCodeAndURL(t *testing.T) {
 	}
 	decodeJSON(t, w, &start)
 	if start.UserCode != "WDJB-MJHT" {
-		t.Errorf("user_code = %q, want WDJB-MJHT (X20)", start.UserCode)
+		t.Errorf("user_code = %q, want WDJB-MJHT", start.UserCode)
 	}
 	if !strings.HasPrefix(start.VerificationURL, is.srv.URL+"/codex/device") {
-		t.Errorf("verification_url = %q, want {issuer}/codex/device (X20)", start.VerificationURL)
+		t.Errorf("verification_url = %q, want {issuer}/codex/device", start.VerificationURL)
 	}
 	if start.IntervalSeconds != 1 {
-		t.Errorf("interval_seconds = %d, want 1 (issuer-provided, X20)", start.IntervalSeconds)
+		t.Errorf("interval_seconds = %d, want 1 (issuer-provided)", start.IntervalSeconds)
 	}
 	if is.usercodeBody["client_id"] != "app_EMoamEEZ73f0CkXaXp7hrann" {
-		t.Errorf("usercode client_id = %v, want the pinned default (X13)", is.usercodeBody["client_id"])
+		t.Errorf("usercode client_id = %v, want the pinned default", is.usercodeBody["client_id"])
 	}
 }
 
-// X20: poll reports pending while the issuer answers 403, then approved once
+// Poll reports pending while the issuer answers 403, then approved once
 // the approval has been exchanged AND persisted — the token triple must be on
 // disk (sealed) by the time the caller sees approved, and the response
 // surfaces the account id.
@@ -864,7 +863,7 @@ func TestOAuthPoll_PendingThenApprovedPersistsTokens(t *testing.T) {
 	}
 	decodeJSON(t, w, &poll)
 	if poll.Status != "pending" {
-		t.Errorf("status = %q, want pending while the issuer answers 403 (X20)", poll.Status)
+		t.Errorf("status = %q, want pending while the issuer answers 403", poll.Status)
 	}
 	if poll.AccountID != "" {
 		t.Errorf("pending response must not carry an account_id: %q", poll.AccountID)
@@ -877,10 +876,10 @@ func TestOAuthPoll_PendingThenApprovedPersistsTokens(t *testing.T) {
 	assertStatus(t, w, http.StatusOK, "oauth poll approved")
 	decodeJSON(t, w, &poll)
 	if poll.Status != "approved" {
-		t.Fatalf("status = %q, want approved (X20)", poll.Status)
+		t.Fatalf("status = %q, want approved", poll.Status)
 	}
 	if poll.AccountID != "acct-77" {
-		t.Errorf("account_id = %q, want acct-77 from the id_token claim (X15)", poll.AccountID)
+		t.Errorf("account_id = %q, want acct-77 from the id_token claim", poll.AccountID)
 	}
 
 	// The approval persisted the token triple through the store — sealed
@@ -908,7 +907,7 @@ func TestOAuthPoll_PendingThenApprovedPersistsTokens(t *testing.T) {
 	}
 }
 
-// X20: a non-403/404 issuer failure is fatal — the poll endpoint reports the
+// A non-403/404 issuer failure is fatal — the poll endpoint reports the
 // terminal failure as the uniform error shape, and later polls replay it
 // without further issuer traffic.
 func TestOAuthPoll_FatalIssuerFailureIsTerminal(t *testing.T) {
@@ -920,7 +919,7 @@ func TestOAuthPoll_FatalIssuerFailureIsTerminal(t *testing.T) {
 	w := env.oauthStart(t, "prv-codex", s)
 	assertStatus(t, w, http.StatusOK, "oauth start")
 
-	// 500 on the poll endpoint is fatal (X20: only 403/404 keep polling).
+	// 500 on the poll endpoint is fatal (only 403/404 keep polling).
 	var polls atomic.Int32
 	is.pollFn = func() (string, string, int) {
 		polls.Add(1)
@@ -959,7 +958,7 @@ func TestOAuthStart_NonCodexTypeRejected(t *testing.T) {
 
 // A codex-oauth provider without an issuer in its config is rejected at save
 // time — the type vocabulary and per-type required fields are validated by
-// putProvider (Task 5 Gap #2: stored config must be live-constructible).
+// putProvider (stored config must be live-constructible).
 func TestPutProvider_BareCodexConfigRejected(t *testing.T) {
 	env := newAdminEnv(t)
 	s := env.bootstrap(t, "operator")
@@ -991,7 +990,7 @@ func TestPutProvider_CustomOpenAIMissingBaseURLRejected(t *testing.T) {
 }
 
 // ollama-cloud is the one type where every field is optional: an empty
-// config defaults to the hosted API root (L1).
+// config defaults to the hosted API root.
 func TestPutProvider_OllamaCloudEmptyConfigAccepted(t *testing.T) {
 	env := newAdminEnv(t)
 	s := env.bootstrap(t, "operator")
@@ -1036,7 +1035,7 @@ func TestAdminBodies_UnknownFieldsRejected(t *testing.T) {
 	assertStatus(t, w, http.StatusBadRequest, "create key with typo'd name field")
 }
 
-// Private-address SSRF guard (Analysis G control 5): loopback and RFC1918
+// Private-address SSRF guard: loopback and RFC1918
 // base URLs are rejected at save. The documented opt-out is an ENV the
 // operator sets explicitly.
 func TestPutProvider_PrivateURLsRejected(t *testing.T) {
@@ -1071,7 +1070,7 @@ func TestPutProvider_PrivateURLsRejected(t *testing.T) {
 func TestProviderWriteReloadsLiveRegistry(t *testing.T) {
 	env := newAdminEnv(t)
 	s := env.bootstrap(t, "operator")
-	// The guard resolves base_url hosts (SSRF, Analysis G control 5) —
+	// The guard resolves base_url hosts (SSRF) —
 	// unit tests must not depend on DNS, so this hook test runs under the
 	// documented opt-out. Guard behavior itself is pinned by
 	// TestPutProvider_PrivateURLsRejected.
@@ -1100,7 +1099,7 @@ func TestProviderWriteReloadsLiveRegistry(t *testing.T) {
 	}
 }
 
-// X20: 404 on the usercode request = device login disabled — an operator
+// 404 on the usercode request = device login disabled — an operator
 // action surfaced as 400, not a retry candidate masquerading as 500.
 func TestOAuthStart_DeviceLoginDisabledIsOperatorError(t *testing.T) {
 	env := newOAuthEnv(t)
@@ -1211,16 +1210,16 @@ func TestOAuthResponses_NeverEchoTokens(t *testing.T) {
 	// The issuer issued these exact values; none may appear in any body.
 	for _, secret := range []string{"acctok", "reftok"} {
 		if strings.Contains(w.Body.String(), secret) {
-			t.Errorf("oauth response echoes the token %q (Analysis G: upstream credentials never echo)", secret)
+			t.Errorf("oauth response echoes the token %q (upstream credentials must never echo)", secret)
 		}
 	}
 }
 
 // ---------------------------------------------------------------------------
 // Account: GET /api/admin/me + PUT /api/admin/password
-// (the Shell avatar menu: honest identity + password change; contract added
-// 2026-10-08 — spec: /me names the session admin, the password change
-// verifies the current password, enforces the length floor, and revokes
+// (the Shell avatar menu: honest identity + password change. /me names the
+// session admin, the password change verifies the current password,
+// enforces the length floor, and revokes
 // every OTHER session of this admin while the requesting session survives.)
 // ---------------------------------------------------------------------------
 
@@ -1292,12 +1291,9 @@ func TestPassword_OtherSessionsRevoked(t *testing.T) {
 	assertStatus(t, w, http.StatusOK, "requesting session survives")
 }
 
-// contract added with the account endpoints (2026-10-08, round-2 review): a
-// session whose admin row vanished is dead state — /me answers the uniform
+// A session whose admin row vanished is dead state — /me answers the uniform
 // 401 (the shape putPassword answers), never a 404 that would distinguish
 // "row gone" from "session invalid".
-// (the test name stays: the observable contract IS the uniform 401; the
-// comment above says what it pins it through.)
 func TestMe_GoneAdminRowIsUniform401(t *testing.T) {
 	env := newAdminEnv(t)
 	s := env.bootstrap(t, "operator")

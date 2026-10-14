@@ -8,7 +8,7 @@ import (
 	"fmt"
 )
 
-// Model is one persisted model row (plan Analysis C schema + §6.4): the
+// Model is one persisted model row: the
 // per-model compatibility policy lives in Compat JSON, WebUI-editable via
 // the "Models & Compatibility" area.
 type Model struct {
@@ -214,7 +214,7 @@ func (s *Store) GetModelByProviderAndName(ctx context.Context, providerID, name 
 }
 
 // MergeLearnedCapability writes one learned capability value into the model
-// row's capabilities blob (2026-09-21 automatic capabilities). The row is
+// row's capabilities blob (automatic capabilities). The row is
 // located by the upstream pair (provider + wire name) — what a real
 // upstream rejection knows. A pinned capability (operator override in the
 // capabilities blob's "pinned" object) is never overwritten: manual

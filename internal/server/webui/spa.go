@@ -1,5 +1,5 @@
 // Package webui serves the embedded single-page app and applies the WebUI
-// security headers (Phase 2 research §4 P-1..P-5, §5 decision option 2).
+// security headers.
 package webui
 
 import (
@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// csp is the pinned Content-Security-Policy (research §4). The Vite build
+// csp is the pinned Content-Security-Policy. The Vite build
 // emits zero inline scripts (SPA mode, assetsInlineLimit: 0), so no nonces
 // are required: script-src 'self' alone admits the bundles. data: stays in
 // img-src only as headroom for inline SVG data URIs if ever needed; fonts
@@ -26,8 +26,8 @@ const csp = "default-src 'self'; " +
 
 // NewSPAHandler returns a handler serving the built SPA from fsys.
 //
-// The embedded FS plugs into the stock file server (research E-3); the only
-// decoration is the history-routing fallback (§5 option 2): a GET request
+// The embedded FS plugs into the stock file server; the only
+// decoration is the history-routing fallback: a GET request
 // that accepts HTML, maps to no file, and is not under /v1/ or /api/ serves
 // index.html with 200 so deep links survive a hard refresh — the SPA renders
 // its own 404 view client-side for unknown paths. Everything else keeps the
@@ -42,8 +42,7 @@ func NewSPAHandler(fsys fs.FS) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Security headers ride on every response this handler produces
-		// (P-1..P-5).
+		// Security headers ride on every response this handler produces.
 		w.Header().Set("Content-Security-Policy", csp)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "same-origin")

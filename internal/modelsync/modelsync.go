@@ -1,11 +1,11 @@
 // Package modelsync implements the automatic model import (ADR-010): every
 // registry provider exposing the ModelLister surface has its upstream model
-// list mirrored into the models table. The sync policy (operator decision,
-// ADR-010): upstream-added models land as origin="synced" rows, operator
+// list mirrored into the models table. The sync policy follows ADR-010:
+// upstream-added models land as origin="synced" rows, operator
 // edits to existing rows (capabilities/compat) are preserved, and synced
 // rows the upstream dropped are deleted — manual rows are never touched.
 //
-// Model identity (2026-09-21 extension): a synced row's ID is
+// Model identity: a synced row's ID is
 // "<prefix>/<upstream-name>" where the prefix is the provider TYPE's
 // model_prefix from the shared type settings (default: the type string,
 // e.g. "ollama-cloud/glm-5.3"). The Name column carries the bare upstream
@@ -236,8 +236,7 @@ func (s *Syncer) syncProvider(ctx context.Context, providerID, typ, prefix strin
 		// Existing row: refresh only the name — capabilities/compat/
 		// priority are operator edits and survive (ADR-010 policy).
 		//
-		// Detection persistence (2026-10-06 context auto-detect plan,
-		// Task 3): rows synced by an earlier run merge the detected
+		// Detection persistence: rows synced by an earlier run merge the detected
 		// capabilities/context into EMPTY blobs only, plus context_window
 		// into a compat blob without a non-zero pin (operator pins win).
 		// Manual rows are never touched by detection — the merge below

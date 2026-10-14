@@ -7,11 +7,11 @@ import (
 	"testing"
 )
 
-// Spec: ADR-sec-storage + research digest X12 (opposite number: atomic
-// rotation persistence) — provider tokens live ONLY as AES-256-GCM
+// Spec: atomic rotation persistence — provider tokens live ONLY as
+// AES-256-GCM
 // envelopes in provider_tokens; reading returns plaintext; writes seal with
 // a fresh nonce; multi-token writes are one transaction (all-or-nothing).
-// Fact X12, source: codex-rs/login/src/auth/manager.rs, accessed 2026-09-10.
+// Source: codex-rs/login/src/auth/manager.rs, accessed 2026-09-10.
 
 func openTokenStore(t *testing.T) *Store {
 	t.Helper()
@@ -99,7 +99,7 @@ func TestProviderToken_SealedAtRest(t *testing.T) {
 		t.Error("token_encrypted contains plaintext — secrets must be sealed (ADR-sec-storage)")
 	}
 
-	// Re-encrypts differently per write (fresh nonce, X12/aead).
+	// Re-encrypts differently per write (fresh nonce, AEAD).
 	if err := s.PutProviderTokens(ctx, ProviderToken{
 		ProviderID: "codex-1",
 		Kind:       "refresh_token",
@@ -120,7 +120,7 @@ func TestProviderToken_MultiWriteAtomic(t *testing.T) {
 	s := openTokenStore(t)
 	ctx := context.Background()
 
-	// X12: access + rotated refresh persist in ONE transaction.
+	// Access + rotated refresh persist in ONE transaction.
 	if err := s.PutProviderTokens(ctx,
 		ProviderToken{ProviderID: "codex-1", Kind: "access_token", Secret: []byte("a1")},
 		ProviderToken{ProviderID: "codex-1", Kind: "refresh_token", Secret: []byte("r1")},
@@ -144,7 +144,7 @@ func TestProviderToken_MultiWriteAtomic(t *testing.T) {
 		t.Fatal(err)
 	}
 	if string(got.Secret) != "a1" {
-		t.Errorf("failed batch leaked a partial write: access_token = %q, want a1 (all-or-nothing, X12)", got.Secret)
+		t.Errorf("failed batch leaked a partial write: access_token = %q, want a1 (all-or-nothing)", got.Secret)
 	}
 }
 

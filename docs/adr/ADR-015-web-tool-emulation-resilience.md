@@ -50,7 +50,7 @@ why it found nothing.
 | A richer result type (`Empty bool`) on the Emulator interface | Explicit | Touches every implementation and every test fake for no capability the pool closure does not already have |
 | Per-account circuit keyed by list position | No wiring change | Forgets a cooling account the moment the operator reorders the list |
 | Restore token streaming for the emulated class | Familiar shape | Puts tool round trips on the client wire and breaks ADR-005's no-mid-stream-swap invariant |
-| Keep the emulated class buffered | Preserves ADR-005 | The client waits for the whole answer (documented; a phase-2 option exists) |
+| Keep the emulated class buffered | Preserves ADR-005 | The client waits for the whole answer (documented; a streaming option exists) |
 
 ## Decision
 

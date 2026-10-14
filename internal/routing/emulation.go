@@ -14,7 +14,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
-// Emulator executes emulated web tools (§6.2 Firecrawl fallback). It is
+// Emulator executes emulated web tools (the Firecrawl fallback). It is
 // declared here, not in the Firecrawl client package, so the routing
 // engine stays decoupled from the tool backend (dependency inversion):
 // tests drive it with fakes, production wires the Firecrawl adapter.
@@ -28,20 +28,20 @@ type Emulator interface {
 	Fetch(ctx context.Context, url string, st ir.ServerToolConfig) (*ir.WebFetchContent, error)
 }
 
-// maxEmulationRounds bounds the §6.2 round-trip loop as an internal
+// maxEmulationRounds bounds the emulation round-trip loop as an internal
 // safety net: a model that keeps re-issuing emulated calls despite error
 // results cannot pin the request forever. Not a wire contract —
 // operators bound invocations with max_uses.
 const maxEmulationRounds = 32
 
 // emulatedToolInput is the documented input object of both web tool
-// families (A8/A9): query for web_search, url for web_fetch.
+// families: query for web_search, url for web_fetch.
 type emulatedToolInput struct {
 	Query string `json:"query"`
 	URL   string `json:"url"`
 }
 
-// Documented server-tool error codes (A10) the loop emits as
+// Documented server-tool error codes the loop emits as
 // protocol-conform error results — never upstream errors.
 const (
 	errCodeMaxUsesExceeded     = "max_uses_exceeded"
@@ -56,7 +56,7 @@ const (
 // answers with tool calls against emulated tool defs: each call is
 // answered via the Emulator, the results ride back as a client-shaped
 // assistant/tool_result exchange, and the request re-dispatches until
-// the model answers without emulated calls (§6.2).
+// the model answers without emulated calls.
 //
 // The client-facing response accumulates the synthesized server-tool
 // blocks (server_tool_use + result, wire order preserved, other parts
@@ -198,7 +198,7 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 	callCtx, cancelCall := context.WithTimeout(ctx, e.cfg.EmulationCallBudget)
 	defer cancelCall()
 
-	// max_uses budget (A10): exceeded calls get the protocol-conform
+	// max_uses budget: exceeded calls get the protocol-conform
 	// error result, never an upstream error, and the loop continues so
 	// the model can recover.
 	if st.MaxUses > 0 && uses[call.Name] >= st.MaxUses {
@@ -227,7 +227,7 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 		if strings.TrimSpace(in.URL) == "" {
 			return fail(errCodeInvalidToolInput, "missing url")
 		}
-		// Security rule (fixture meta, §6.2): web_fetch may only fetch
+		// Security rule: web_fetch may only fetch
 		// URLs that appeared in prior conversation context — never a URL
 		// the model invented (SSRF / prompt-injection guard).
 		if _, ok := priorContextURLs(req)[in.URL]; !ok {
@@ -345,7 +345,7 @@ func callErrReason(ctx context.Context, err error, budget time.Duration) string 
 
 // resultPayloadForModel renders the result block the MODEL sees on the
 // re-dispatch: the documented wire schema (tool_use_id, the search array
-// or the fetch object — §6.2 fixtures), html-escape free. Error results
+// or the fetch object), html-escape free. Error results
 // keep the {"error_code":...} shape the loop's recovery path documents.
 func resultPayloadForModel(call ir.ToolCallPart, res ir.ServerToolResultPart) string {
 	var buf bytes.Buffer
@@ -373,7 +373,7 @@ func resultPayloadForModel(call ir.ToolCallPart, res ir.ServerToolResultPart) st
 		_ = enc.Encode(wire)
 		return strings.TrimSpace(buf.String())
 	}
-	// web_fetch: the single result object (§6.2 wire asymmetry).
+	// web_fetch: the single result object (the wire asymmetry).
 	fetch := struct {
 		ToolUseID string        `json:"tool_use_id"`
 		Content   wireFetchBody `json:"content"`
@@ -598,7 +598,7 @@ func priorContextURLs(req ir.Request) map[string]struct{} {
 }
 
 // domainAllowed enforces the web_fetch allowed/blocked domain knobs
-// (A10 error code url_not_allowed). A malformed or non-http(s) URL is
+// (error code url_not_allowed). A malformed or non-http(s) URL is
 // invalid input, not a domain verdict.
 func domainAllowed(rawURL string, st ir.ServerToolConfig) (bool, string) {
 	u, err := url.Parse(rawURL)

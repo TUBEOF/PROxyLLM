@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Spec: Logs-page redesign (2026-10-06 plan) — the admin log stream needs
+// Spec: the admin log stream needs
 // three capabilities from one component: an in-flight registry (running
 // rows), a finished-row broadcast, and SSE subscriber fan-out with bounded
 // backpressure (drop-slow-client for log rows; running snapshots are

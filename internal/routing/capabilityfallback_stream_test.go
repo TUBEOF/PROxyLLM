@@ -5,10 +5,10 @@ package routing_test
 // capability_gap (an image rejection is a 400 before the first byte) gets its
 // images described, and the chain is dispatched again with the text in place.
 //
-// FO-1/FO-5 are untouched. The caption calls run before anything is sent to the
-// client, and the re-dispatch either streams or fails — a successful dispatch
-// is never re-routed, and a mid-stream failure still rides the channel
-// terminally.
+// The stream discipline is untouched. The caption calls run before anything is
+// sent to the client, and the re-dispatch either streams or fails — a
+// successful dispatch is never re-routed, and a mid-stream failure still rides
+// the channel terminally.
 
 import (
 	"context"

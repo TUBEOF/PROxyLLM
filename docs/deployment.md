@@ -52,12 +52,33 @@ headers (CSP, nosniff, frame-ancestors) are already set by the server.
 
 ## Resource sizing
 
-Plan §8 budgets, verified in the phase-3 report
-([verification/phase-3-verification-report.md](verification/phase-3-verification-report.md)):
+Measured budgets:
 
 - proxy-added latency p99 ≤ 10 ms; streaming first-byte overhead ≤ 15 ms
 - RSS ≤ 128 MB at 100 concurrent streams
 - default container memory limit sized for that budget
+
+### The request log at scale
+
+The log grows with traffic, and the Logs page polls it while open, so what it
+costs is worth knowing rather than assuming. Measured against 200,000 rows with
+the indexes the schema ships:
+
+| Read | Plan | Time |
+|---|---|---|
+| The unfiltered first page (what the poll runs) | index walk, stops at the limit | 0.02 ms |
+| The live-tail cursor feed | rowid seek | — |
+| Filtered by model | index seek, then a sort of every match | 7 ms |
+| Filtered by provider and status | index seek, then a sort of every match | 16 ms |
+
+The single-column filter indexes do not provide the requested order, so a
+filtered page sorts its whole match set before taking one page. That is not
+worth another index today: the query the page actually repeats is the unfiltered
+one, and every index added is write amplification on the hot insert path of
+every proxied request. The trigger to revisit is a filtered page becoming a
+repeated read rather than an interactive one, or a log well past this size — the
+fix is a composite `(filter column, ts)` index, and the measurement above is
+what should justify it.
 
 ## Operations
 

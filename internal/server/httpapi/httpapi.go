@@ -1,10 +1,10 @@
-// Package httpapi implements the client-facing API surfaces (plan §5.1):
+// Package httpapi implements the client-facing API surfaces:
 // the OpenAI-compatible surface (/v1/chat/completions, /v1/responses,
 // GET /v1/models) and the Anthropic-compatible surface (/v1/messages,
 // /v1/messages/count_tokens, dual-shape model discovery). Requests decode
 // into the canonical IR, route through the Router + Executor, and
 // re-encode into the requesting protocol — same-surface relay and
-// cross-surface translation share one pipeline (Analysis D hub-and-spoke).
+// cross-surface translation share one pipeline (ADR-004 hub-and-spoke).
 package httpapi
 
 import (
@@ -42,7 +42,7 @@ type Params struct {
 	Executor *routing.Executor
 
 	// HasWebToolAccounts reports the web-tool account presence at
-	// assembly time (R5 emulation default). nil keeps native; the server
+	// assembly time (the emulation default). nil keeps native; the server
 	// refreshes it via RefreshWebToolAccounts on provider reloads.
 	HasWebToolAccounts func() bool
 
@@ -66,7 +66,7 @@ type api struct {
 
 // API is the assembled client-facing handler (New's return): the mux
 // itself, with the refresh points the server's admin reload hooks need
-// (R5 emulation-presence live swap).
+// (emulation-presence live swap).
 type API struct {
 	http.Handler
 	a *api
@@ -77,7 +77,7 @@ type API struct {
 // next request after a provider write.
 func (p *API) SetWebToolAccounts(present bool) { p.a.hasWebToolAccounts.Store(present) }
 
-// New assembles the client-facing HTTP handler (plan §5.1).
+// New assembles the client-facing HTTP handler.
 func New(p Params) *API {
 	a := &api{store: p.Store, router: p.Router, executor: p.Executor, stream: p.Stream}
 	if p.HasWebToolAccounts != nil {
@@ -97,7 +97,7 @@ func New(p Params) *API {
 
 // wireCompat is the JSON-tagged mirror of routing.Compat for decoding
 // models.compat rows (routing.Compat deliberately has no JSON tags — the
-// storage wire shape belongs to the HTTP layer, §6.4).
+// storage wire shape belongs to the HTTP layer).
 type wireCompat struct {
 	ThinkingHandling    string `json:"thinking_handling"`
 	ServerToolEmulation string `json:"server_tool_emulation"`
@@ -107,9 +107,9 @@ type wireCompat struct {
 }
 
 // compatFor loads the per-model compat policy. The model row's
-// capabilities drive the policy now (2026-10-06, R5: the WebUI compat
-// editor is REMOVED — the defaults are internal policy, capability-aware;
-// the plan's R5 decision): a stored compat blob still wins when present
+// capabilities drive the policy now (the WebUI compat editor is
+// REMOVED — the defaults are internal policy, capability-aware): a
+// stored compat blob still wins when present
 // (legacy rows keep their explicitly-set behavior — read-only, the SPA
 // no longer writes this field).
 //
@@ -144,7 +144,7 @@ func (a *api) compatFor(ctx context.Context, model string) routing.Compat {
 // capabilities when the stored blob left it unset (or was never written
 // again): a thinking-capable target maps the budget to the reasoning
 // effort it actually understands; everything else strips (signatures
-// must never reach a non-thinking target — A12).
+// must never reach a non-thinking target).
 func defaultThinkingFor(capsJSON json.RawMessage, stored string) string {
 	if stored != "" {
 		return stored
@@ -184,7 +184,7 @@ func capabilityFlags(capsJSON json.RawMessage) []string {
 	return present
 }
 
-// defaultCacheControl pins the C4 rule as the enforced default: forward
+// defaultCacheControl pins the enforced cache-marker default: forward
 // markers only Anthropic→Anthropic (the caller decides by the target's
 // surface — for all other targets the stored value stays "" = the drop
 // default through compat.go).
@@ -195,7 +195,7 @@ func defaultCacheControl(stored string) string {
 	return "" // compat.go: "" = drop for non-Anthropic targets
 }
 
-// emulationFor pins the R5 emulation default: emulate-firecrawl whenever
+// emulationFor pins the emulation default: emulate-firecrawl whenever
 // a web-tool account exists (the model cannot serve native web search
 // through this proxy without one), otherwise native (forward whatever
 // the provider accepts). A stored blob value still wins (legacy rows).
@@ -215,7 +215,7 @@ const (
 	settingKeyNonClaude = "anthropic_surface_non_claude"
 )
 
-// Non-Claude gate values (§6.4 global switch, ADR-008).
+// Non-Claude gate values (the global switch, ADR-008).
 const (
 	gateAllow = "allow"
 	gateWarn  = "warn"
@@ -227,7 +227,7 @@ var ErrNonClaudeBlocked = errors.New("httpapi: non-Claude models are blocked on 
 
 // nonClaudeGate reads the global switch from the settings KV. Any missing,
 // unreadable, or invalid value is allow — the safety net must never
-// de-route on store noise (§6.4 default allow).
+// de-route on store noise (default allow).
 func (a *api) nonClaudeGate(ctx context.Context) string {
 	raw, ok, err := a.store.GetConfigValue(ctx, settingKeyNonClaude)
 	if err != nil || !ok {
@@ -243,13 +243,13 @@ func (a *api) nonClaudeGate(ctx context.Context) string {
 
 // isClaudeModel reports whether the requested model name is a Claude
 // family model (the gate spares them). `claude-` is the Anthropic naming
-// convention across the published catalog (§2.1); anything else on the
-// Anthropic surface is a non-Claude target by OP-2 definition.
+// convention across the published catalog; anything else on the
+// Anthropic surface is a non-Claude target by definition.
 func isClaudeModel(model string) bool {
 	return strings.HasPrefix(model, "claude-")
 }
 
-// applyNonClaudeGate enforces the global switch (§6.4): a non-Claude
+// applyNonClaudeGate enforces the global switch: a non-Claude
 // target on the Anthropic surface is annotated under warn (compat_policy
 // event on the trace), refused under block, and passes untouched under
 // allow. The trace records every applied policy — never silent.
@@ -271,7 +271,7 @@ func (a *api) applyNonClaudeGate(ctx context.Context, model string, trace *routi
 // requiredCapabilities derives the capability set the request needs from
 // its content: vision from image parts, tools from tool definitions,
 // streaming, thinking, and web_search/web_fetch from server-tool defs
-// (plan §6.4 / Analysis E capability filter; A8 family identity).
+// (the capability filter; model-family identity).
 func requiredCapabilities(req ir.Request) provider.Capabilities {
 	var caps provider.Capabilities
 	if req.Stream {
@@ -303,18 +303,18 @@ func requiredCapabilities(req ir.Request) provider.Capabilities {
 
 // chainTrace is the JSON object stored in request_logs.route_trace:
 // {"version":4,"events":[...]} with the compat, router, and executor
-// events concatenated in order (plan §4.3 observability — an object, so
+// events concatenated in order (observability — an object, so
 // the row can grow metadata without a breaking change). Version 2 adds
 // the version field itself plus the ADR-009 expand/rotation events; the
 // previous unversioned shape is v1 retroactively (absence of the field =
 // v1), so old rows still render in the WebUI. Version 3 adds the ADR-010
 // capability_fallback event (capability-named fallback consultation).
-// Version 4 adds the model_resolved event (2026-09-21 model identity:
+// Version 4 adds the model_resolved event (model identity:
 // routing ID → wire-name resolution). Version 5 adds the implicit_route
 // event (ADR-011: no rule matched, the models-table row named the
-// provider). Version 6 adds the context_override event (2026-10-06: the
+// provider). Version 6 adds the context_override event (the
 // Claude Code "[1m]"/"[1M]" context-marker strip, base model routed).
-// Version 7 adds the emulated_tool_attempt event (2026-10-10: one account's
+// Version 7 adds the emulated_tool_attempt event (one account's
 // outcome inside an emulated web-tool invocation — the account walk is inside
 // the pool, so the log needs it to explain a web tool that found nothing).
 // Version 8 adds the per-operation facts the sub-operation rows report: the
@@ -334,7 +334,7 @@ type chainTrace struct {
 const routeTraceVersion = 8
 
 // traceField is a request's marshalled route_trace plus the in-memory
-// sub-operation payloads that must never enter it (2026-10-10 Logs page).
+// sub-operation payloads that must never enter it (Logs page).
 //
 // One type rather than a second parameter: every call site already passes either
 // nil or a routeTrace(...) call, so the write path receives the payloads without
@@ -377,7 +377,7 @@ func routeTrace(traces ...*routing.Trace) *traceField {
 
 // lastProvider extracts the provider that actually served the request from
 // the executor trace: the last attempt event names the serving (or last
-// attempted) provider, correct across failovers (Analysis E).
+// attempted) provider, correct across failovers.
 func lastProvider(tr *routing.Trace) string {
 	if tr == nil {
 		return ""
@@ -393,9 +393,9 @@ func lastProvider(tr *routing.Trace) string {
 
 const rollingConversationWindow = int64(1800) // 30 min, see conversation.go
 
-// writeRequestLog persists one request_logs row (plan §4.3). Called on
+// writeRequestLog persists one request_logs row. Called on
 // success AND error paths — a request that never reached an upstream is
-// still an observable request (Analysis E: fallbacks are never silent).
+// still an observable request (fallbacks are never silent).
 // ErrorRedacted carries the terminal error message with credentials never
 // echoed: upstream bodies ride UpstreamError.Message, which never contains
 // request headers.
@@ -476,13 +476,13 @@ func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID stri
 	// client; a failed audit row is a server defect, not a client error.
 	rowID, _ := a.store.InsertRequestLog(ctx, row)
 
-	// Payload capture (2026-10-10 Logs page): the conversation and the answer
+	// Payload capture (Logs page): the conversation and the answer
 	// beside the metadata row, so a log entry can be READ rather than only
 	// counted. Off the request path — the client already has its answer (see
 	// capture.go). Same swallow-failure posture as the row above.
 	a.capturePayload(meta, rowID, row.Timestamp)
 
-	// Sub-operations (2026-10-07 Logs page): the trace's separable upstream
+	// Sub-operations (Logs page): the trace's separable upstream
 	// operations — failovers, capability (vision) fallback walks, emulated
 	// web-tool calls — persist as their own rows under this request's id,
 	// so a fallback model or a web-tool call is visible in the log instead
@@ -491,7 +491,7 @@ func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID stri
 	// posture as the row above: a failed child write is a server defect,
 	// not a client error.
 	//
-	// Each row also gets its own payload (2026-10-10): what that step sent and
+	// Each row also gets its own payload: what that step sent and
 	// received, so the row opens a detail view instead of a character count.
 	// The insert returns the ids it allocated, which is what a payload is keyed
 	// by — hence the write happening here rather than in the payload path.
@@ -537,10 +537,10 @@ func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID stri
 		}
 	}
 
-	// usage_daily increment (Analysis C schema): the Overview dashboard's
+	// usage_daily increment: the Overview dashboard's
 	// data source. Same tuple as the log row, day = today (UTC). Every
 	// observable request counts (+1); a failed one also counts as failure
-	// (Analysis E — failure is never silent). Token deltas only when the
+	// (failure is never silent). Token deltas only when the
 	// request produced usage; a request that died before an upstream saw
 	// it aggregates zeros on its tuple. Same swallow-failure rule: the
 	// response is already on the wire.

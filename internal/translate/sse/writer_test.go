@@ -10,13 +10,12 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/sse"
 )
 
-// SSE writer contract tests, RED-GREEN per Analysis F. The writer must emit
-// the WHATWG wire form (facts SSE-1..SSE-7, phase-1 research §1:
-// html.spec.whatwg.org/multipage/server-sent-events.html, accessed
-// 2026-09-10) and the HTTP/2 comment trick (facts H2-2/H2-3, phase-1
-// research §2): a `: ok` comment frame immediately after the header, one
-// flush per event. The reader in this package is fixture-verified against
-// the same spec, so a round trip through it proves wire conformance.
+// SSE writer contract tests, RED-GREEN. The writer must emit the WHATWG wire
+// form (html.spec.whatwg.org/multipage/server-sent-events.html, accessed
+// 2026-09-10) and the HTTP/2 comment trick: a `: ok` comment frame
+// immediately after the header, one flush per event. The reader in this
+// package is fixture-verified against the same spec, so a round trip through
+// it proves wire conformance.
 
 // recorder is an http.ResponseWriter capturing written bytes and flushes.
 type recorder struct {
@@ -30,9 +29,9 @@ func (r *recorder) Write(p []byte) (int, error) { return r.buf.Write(p) }
 func (r *recorder) WriteHeader(status int)      { r.status = status }
 func (r *recorder) Flush()                      { r.flush++ }
 
-// The header comment (H2-2/H2-3): WriteHeader must be followed by the
-// spec-ignored `: ok` comment frame and one flush — releasing the HTTP/2
-// HEADERS frame behind proxies without disturbing any pending event.
+// The header comment: WriteHeader must be followed by the spec-ignored
+// `: ok` comment frame and one flush — releasing the HTTP/2 HEADERS frame
+// behind proxies without disturbing any pending event.
 func TestSSEWriter_HeaderComment(t *testing.T) {
 	rec := &recorder{}
 	w := sse.NewWriter(rec)
@@ -50,8 +49,7 @@ func TestSSEWriter_HeaderComment(t *testing.T) {
 }
 
 // Events must emit as `event:` + `data:` lines terminated by the dispatching
-// blank line (SSE-5: dispatch on blank line), one flush per event (C2: relay
-// as-it-arrives).
+// blank line, one flush per event so bytes reach the client as they arrive.
 func TestSSEWriter_EventFrame(t *testing.T) {
 	rec := &recorder{}
 	w := sse.NewWriter(rec)
@@ -71,7 +69,7 @@ func TestSSEWriter_EventFrame(t *testing.T) {
 }
 
 // Unnamed events (data-only SSE, the OpenAI chat surface) must emit without
-// an `event:` line — the dispatch blank line terminates the frame (SSE-5).
+// an `event:` line — the dispatch blank line terminates the frame.
 func TestSSEWriter_DataOnlyFrame(t *testing.T) {
 	rec := &recorder{}
 	w := sse.NewWriter(rec)
@@ -106,9 +104,9 @@ func TestSSEWriter_RawFrame(t *testing.T) {
 	}
 }
 
-// Comments (upstream keepalives relayed downstream) must emit as `:` comment
-// lines (SSE-3) — spec-ignored by clients but producing a DATA frame that
-// resets the client's 300 s silence watchdog (C2: relayed bytes count).
+// Comments (upstream keepalives relayed downstream) must emit as `:`
+// comment lines — spec-ignored by clients but producing a DATA frame that
+// resets the client's 300 s silence watchdog, because relayed bytes count.
 func TestSSEWriter_Comment(t *testing.T) {
 	rec := &recorder{}
 	w := sse.NewWriter(rec)
@@ -138,7 +136,7 @@ func TestSSEWriter_Comment(t *testing.T) {
 
 // Multi-line data: the data buffer must never contain a raw newline that
 // could split into a forged extra field line — newlines in the payload split
-// into repeated `data:` lines per WHATWG SSE-5 (one LF per field on the
+// into repeated `data:` lines per the WHATWG spec (one LF per field on the
 // reader side reassembles them).
 func TestSSEWriter_MultiLineData(t *testing.T) {
 	rec := &recorder{}
@@ -155,7 +153,7 @@ func TestSSEWriter_MultiLineData(t *testing.T) {
 }
 
 // Round trip through this package's spec-verified Reader proves wire
-// conformance end to end (SSE-1..SSE-7).
+// conformance end to end.
 func TestSSEWriter_RoundTrip(t *testing.T) {
 	rec := &recorder{}
 	w := sse.NewWriter(rec)
@@ -200,9 +198,9 @@ func TestSSEWriter_RoundTrip(t *testing.T) {
 		data    string
 		comment bool
 	}{
-		// The H2-2 header comment is part of the wire stream (SSE-3). The
-		// reader surfaces comment text raw after ":" (SSE-4's one-space strip
-		// applies to field values), so payloads keep the separator space.
+		// The header comment is part of the wire stream too. The reader
+		// surfaces comment text raw after ":" (the one-space strip applies
+		// only to field values), so payloads keep the separator space.
 		{"", " ok", true},
 		{"message_start", `{"a":1}`, false},
 		{"content_block_delta", `{"b":"\n"}`, false},
@@ -220,7 +218,7 @@ func TestSSEWriter_RoundTrip(t *testing.T) {
 }
 
 // Sink errors must propagate from every write path — the relay layer maps
-// them to the client disconnect, cancelling the upstream (C2).
+// them to the client disconnect, cancelling the upstream.
 func TestSSEWriter_WriteErrors(t *testing.T) {
 	sink := &failWriter{}
 	w := sse.NewWriter(sink)
@@ -245,7 +243,7 @@ func (f *failWriter) WriteHeader(int)             {}
 func (f *failWriter) Flush()                      {}
 
 // Writing to a bare io.Writer (no http.Flusher) must succeed without
-// flushing — the flush step is conditional (C2 applies to HTTP sinks).
+// flushing — the flush step is conditional on the sink being an HTTP one.
 func TestSSEWriter_BareWriter(t *testing.T) {
 	var buf bytes.Buffer
 	w := sse.NewWriter(&buf)

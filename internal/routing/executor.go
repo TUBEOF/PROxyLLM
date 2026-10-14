@@ -11,21 +11,19 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
-// Executor is the request-level failover loop (plan Analysis E failover
-// semantics; research facts FO-1/FO-3/FO-5). It walks the resolved chain
-// and, per failed attempt, applies the FO-2 classification:
+// Executor is the request-level failover loop. It walks the resolved chain
+// and, per failed attempt, applies the two-tier error classification:
 //
 //	retry_same    → re-attempt the SAME provider, up to the retry budget,
-//	                honoring Retry-After (O10), capped by the backoff
-//	                ceiling (FO-3)
+//	                honoring Retry-After, capped by the backoff ceiling
 //	failover      → move to the next chain entry
 //	terminal      → end the request: content_filter (compliance), client
 //	                errors (invalid at any provider), mid-stream failures
-//	                (the client already holds partial output, FO-1)
+//	                (the client already holds partial output)
 //
-// Streaming requests are never retried once dispatched (FO-5): the stream
+// Streaming requests are never retried once dispatched: the stream
 // path knows only dispatch-failure failover (before the first event) and
-// terminal. Every transition is recorded in the Trace (FO-4) and every
+// terminal. Every transition is recorded in the Trace and every
 // attempt outcome is reported to the HealthTracker.
 type Executor struct {
 	cfg ExecutorConfig
@@ -51,17 +49,17 @@ type ExecutorConfig struct {
 	// Health receives per-attempt outcomes (circuit-breaker input).
 	Health *HealthTracker
 
-	// MaxRetriesPerProvider bounds same-provider retries (FO-3: 1–2).
+	// MaxRetriesPerProvider bounds same-provider retries (1–2).
 	// Zero means the default (2).
 	MaxRetriesPerProvider int
 
-	// MaxProviders bounds how many chain entries are attempted (FO-3:
-	// 2–3). Zero means the default (3).
+	// MaxProviders bounds how many chain entries are attempted (2–3).
+	// Zero means the default (3).
 	MaxProviders int
 
-	// BackoffCeiling caps the same-provider retry delay (FO-3: 2–4 s).
+	// BackoffCeiling caps the same-provider retry delay (2–4 s).
 	// Zero means the default (3 s). Retry-After is honored but capped
-	// here (O10).
+	// here.
 	BackoffCeiling time.Duration
 
 	// RetryBackoff is the base delay between same-provider retries;
@@ -71,10 +69,10 @@ type ExecutorConfig struct {
 
 	// RetrySleeper suspends the retry backoff (defaults to time.Sleep).
 	// Injectable so tests exercise the retry discipline without real
-	// waiting (Analysis F determinism).
+	// waiting (deterministic tests).
 	RetrySleeper func(time.Duration)
 
-	// Emulator executes emulated web tools (§6.2 Firecrawl fallback) for
+	// Emulator executes emulated web tools (the Firecrawl fallback) for
 	// the tool-call round-trip loop in Execute. Nil disables actual
 	// emulation but keeps the loop: model tool calls against emulated
 	// tools are answered with a protocol-conform "unavailable" error
@@ -97,7 +95,7 @@ type ExecutorConfig struct {
 	EmulationTotalBudget time.Duration
 
 	// CapabilityFallbacks are the model-level fallback chain entries
-	// (2026-09-21 automatic capabilities, ADR-014): the vision models used
+	// (ADR-014): the vision models used
 	// to DESCRIBE an image when the rule chain exhausted with capability_gap
 	// failures only. Each entry is a fully resolved (provider, wire-model)
 	// pair — the httpapi layer resolves the stored model IDs before Execute.
@@ -114,7 +112,7 @@ type ExecutorConfig struct {
 	Caption CaptionConfig
 
 	// OnCapabilityGap is invoked once per chain entry whose attempt failed
-	// with the capability_gap class (2026-09-21 learning): the wiring layer
+	// with the capability_gap class: the wiring layer
 	// persists the gap into the model row's capabilities (vision=false
 	// learning). It receives the full chain entry — provider ID plus the
 	// upstream wire model, the pair the storage layer needs to find the
@@ -134,10 +132,10 @@ type ExecutorConfig struct {
 	now func() time.Time
 }
 
-// FO-3 defaults: research bounds say 1–2 retries per provider, 2–3
-// providers total, 2–4 s backoff ceiling. We encode the upper bounds so
-// operators tighten via config rather than the research being silently
-// narrower than shipped behavior.
+// Failover defaults: the documented bounds are 1–2 retries per provider,
+// 2–3 providers total, 2–4 s backoff ceiling. We encode the upper bounds so
+// operators tighten via config, rather than shipping behavior that is
+// silently narrower than the documented bounds.
 const (
 	defaultMaxRetriesPerProvider = 2
 	defaultMaxProviders          = 3
@@ -158,7 +156,7 @@ const (
 var ErrChainExhausted = errors.New("routing: chain exhausted")
 
 // exhaustedError carries the last attempt's error for callers that need
-// the upstream cause (error surfacing per §5.3).
+// the upstream cause.
 //
 // last can be nil: a walk where no attempt ever ran (every chain entry skipped
 // as unregistered, or the chain arrived already cancelled) reaches the same exit
@@ -228,7 +226,7 @@ func (e *exhaustedError) record(c Classification, err error) {
 	}
 }
 
-// NewExecutor returns an Executor for cfg, filling FO-3 defaults.
+// NewExecutor returns an Executor for cfg, filling the failover defaults.
 func NewExecutor(cfg ExecutorConfig) *Executor {
 	if cfg.MaxRetriesPerProvider == 0 {
 		cfg.MaxRetriesPerProvider = defaultMaxRetriesPerProvider
@@ -258,14 +256,14 @@ func NewExecutor(cfg ExecutorConfig) *Executor {
 }
 
 // Execute performs a non-streaming request against the chain with the
-// full retry/failover discipline (FO-2/FO-3), plus the §6.2 emulated-tool
+// full retry/failover discipline, plus the emulated-tool
 // round-trip loop: when the request carries emulated web tools (the
 // applyEmulation emulate-firecrawl policy) and the model answers with
 // tool calls against them, the executor answers the calls via the
 // configured Emulator and re-dispatches until the model answers without
 // them, budgets refuse with protocol-conform error results, or the round
 // cap surfaces the last response. The returned Trace records every
-// transition (FO-4).
+// transition.
 func (e *Executor) Execute(ctx context.Context, chain []ChainEntry, req ir.Request) (ir.Response, *Trace, error) {
 	trace := &Trace{}
 	req = e.substituteKnownBlind(ctx, chain, req, trace)
@@ -274,8 +272,8 @@ func (e *Executor) Execute(ctx context.Context, chain []ChainEntry, req ir.Reque
 		return resp, trace, err
 	}
 	// The response is the client's: thinking blocks it never asked for are
-	// dropped here (§6.4 — the reference returns thinking blocks only for
-	// requests that enabled thinking).
+	// dropped here — the reference returns thinking blocks only for
+	// requests that enabled thinking.
 	resp = applyResponseThinking(req, resp, trace)
 	return resp, trace, nil
 }
@@ -315,10 +313,9 @@ func (e *Executor) substituteKnownBlind(ctx context.Context, chain []ChainEntry,
 
 // executeOnce walks the chain once with the full retry/failover
 // discipline — one upstream answer (or the terminal error). When the walk
-// ends with ONLY capability_gap failures (2026-09-21 automatic
-// capabilities), the configured capability fallback models get one walk
-// of their own, appended after the regular chain — the request itself is
-// valid, another model can serve it.
+// ends with ONLY capability_gap failures, the configured capability fallback
+// models get one walk of their own, appended after the regular chain — the
+// request itself is valid, another model can serve it.
 func (e *Executor) executeOnce(ctx context.Context, chain []ChainEntry, req ir.Request, trace *Trace) (ir.Response, error) {
 	return e.walkChain(ctx, chain, req, trace, true)
 }
@@ -330,10 +327,10 @@ func (e *Executor) walkChain(ctx context.Context, chain []ChainEntry, req ir.Req
 	ex := &exhaustedError{}
 
 	// pendingBackoff is the delay before the next same-provider retry,
-	// computed from the failed attempt's Retry-After when present (O10).
+	// computed from the failed attempt's Retry-After when present.
 	var pendingBackoff time.Duration
 
-	// Gap bookkeeping (2026-09-21): a chain is gap-exhausted when every
+	// Gap bookkeeping: a chain is gap-exhausted when every
 	// attempt failed with the capability_gap class — the model cannot
 	// serve the request, but another (fallback) model may.
 	gapOnly := true
@@ -399,7 +396,7 @@ func (e *Executor) walkChain(ctx context.Context, chain []ChainEntry, req ir.Req
 					trace.Retry(entry.ProviderID, "rate_limit: retry same provider within budget")
 					continue
 				}
-				// Budget spent: fail over (FO-2).
+				// Budget spent: fail over.
 			case ActionFailOver:
 				// Budget is irrelevant: move on immediately.
 			}
@@ -433,9 +430,9 @@ func (e *Executor) walkChain(ctx context.Context, chain []ChainEntry, req ir.Req
 }
 
 // SetCapabilityFallbacks atomically replaces the live capability fallback
-// entries (2026-09-21: the admin API's fallback write pushes the freshly
-// stored model list into the executor without restart — same last-known-
-// good live-swap contract as SetEmulator).
+// entries: the admin API's fallback write pushes the freshly stored model
+// list into the executor without restart — same last-known-good live-swap
+// contract as SetEmulator).
 func (e *Executor) SetCapabilityFallbacks(entries []ChainEntry) {
 	e.emuMu.Lock()
 	defer e.emuMu.Unlock()
@@ -489,7 +486,7 @@ func (e *Executor) currentEmulator() Emulator {
 // non-nil streamErr corrects the premature dispatch success into a
 // breaker failure, because a mid-stream upstream failure is a real
 // signal about provider health even though the client-facing stream is
-// never retried (FO-5). httpapi calls this after relaying the stream,
+// never retried. httpapi calls this after relaying the stream,
 // with the provider resolved from the trace and the streamErr surfaced
 // by the relay (streamErr is *ir.UpstreamError, not a plain error,
 // because mid-stream failures surface as typed upstream errors).
@@ -504,16 +501,15 @@ func (e *Executor) ReportStreamOutcome(providerID string, streamErr *ir.Upstream
 	e.reportFailure(providerID)
 }
 
-// ExecuteStream performs a streaming request against the chain. FO-5:
-// streams are never retried once dispatched — dispatch failures (before
+// ExecuteStream performs a streaming request against the chain: streams
+// are never retried once dispatched — dispatch failures (before
 // the first event) fail over; anything after the first event is terminal
 // and surfaces as an Error event on the returned channel.
 //
-// The capability fallback (2026-09-21 automatic capabilities) applies here
-// as on the complete path: a chain whose every DISPATCH failed with a
-// capability_gap (a 400 modality rejection happens before the first byte,
-// so FO-1 permits the swap) gets one walk over the fallback models via
-// p.Stream — no recursion, fallback dispatch gaps terminate.
+// The capability fallback applies here as on the complete path: a chain whose
+// every DISPATCH failed with a capability_gap (a 400 modality rejection happens
+// before the first byte, so the swap is safe) gets one walk over the fallback
+// models via p.Stream — no recursion, fallback dispatch gaps terminate.
 //
 // The returned cancel must be called when the caller is done with the
 // channel to release upstream resources. Dispatch-time success is
@@ -521,11 +517,11 @@ func (e *Executor) ReportStreamOutcome(providerID string, streamErr *ir.Upstream
 // relayed the stream it must call ReportStreamOutcome so a mid-stream
 // failure still counts (ReportStreamOutcome).
 func (e *Executor) ExecuteStream(ctx context.Context, chain []ChainEntry, req ir.Request) (<-chan ir.StreamEvent, func(), *Trace, error) {
-	// Streaming with emulated web tools (§6.2, 2026-10-06): the emulation
+	// Streaming with emulated web tools: the emulation
 	// round-trip loop only exists on the complete path — a streamed tool
-	// call would relay raw to the client with no data (the reported bug:
-	// streaming Claude Code requests got bared tool_use). Once the first
-	// tool_use is on the wire it cannot be retrofitted, so requests whose
+	// call would relay raw to the client with no data (a bare tool_use the
+	// client cannot use). Once the first tool_use is on the wire it cannot be
+	// retrofitted, so requests whose
 	// tools include emulated defs ride the COMPLETE emulation loop to
 	// finality; the final response synthesizes the event stream below.
 	// Latency trade: no token streaming for this request class (the model
@@ -541,8 +537,8 @@ func (e *Executor) ExecuteStream(ctx context.Context, chain []ChainEntry, req ir
 		return nil, cancel, trace, err
 	}
 	// The relayed events are the client's answer: an unsolicited thinking
-	// block rides them all the way into the client's message (the reported
-	// WebFetch failure), so the filter sits on the stream.
+	// block rides them all the way into the client's message and breaks the
+	// client's web_fetch helper, so the filter sits on the stream.
 	return applyResponseThinkingStream(ctx, req, ch, trace), cancel, trace, err
 }
 
@@ -646,7 +642,7 @@ func (e *Executor) walkChainStream(ctx context.Context, chain []ChainEntry, req 
 	var lastErr error
 	ex := &exhaustedError{}
 
-	// Gap bookkeeping (2026-09-21): same contract as the complete path —
+	// Gap bookkeeping: same contract as the complete path —
 	// only an ALL-gap dispatch history consults the fallback models.
 	gapOnly := true
 	attempted := 0
@@ -667,7 +663,7 @@ func (e *Executor) walkChainStream(ctx context.Context, chain []ChainEntry, req 
 		ch, cancel, err := p.Stream(ctx, withModel(req, entry.Model))
 		latency := e.cfg.now().Sub(started).Milliseconds()
 		if err == nil {
-			// Dispatch succeeded: no failover from here (FO-1/FO-5).
+			// Dispatch succeeded: no failover from here.
 			// Health reports success once the stream terminates cleanly;
 			// a dispatch success with a later mid-stream failure still
 			// counts as one failure.
@@ -696,33 +692,33 @@ func (e *Executor) walkChainStream(ctx context.Context, chain []ChainEntry, req 
 			return nil, func() {}, err
 		case ActionFailOver:
 			// Release the failed attempt's upstream resources before
-			// moving on (4c: a dispatch error may still have opened a
-			// connection; httpx hands out nil cancel only when it never
-			// started one).
+			// moving on: a dispatch error may still have opened a
+			// connection, and httpx hands out nil cancel only when it never
+			// started one.
 			if cancel != nil {
 				cancel()
 			}
 			if ci+1 < len(chain) && ci+1 < e.cfg.MaxProviders {
 				trace.Failover(entry.ProviderID, chain[ci+1].ProviderID, "chain failover after "+string(c.Class))
 			}
-			// FO-5: no same-provider retry for streams; on to the next
+			// No same-provider retry for streams; on to the next
 			// chain entry (or terminal exhaustion below).
 		case ActionRetrySame:
-			// FO-5: a 429-class dispatch failure on a stream still never
+			// A 429-class dispatch failure on a stream still never
 			// retries the same provider — "partial data may already have
 			// been sent" upstream. Fail over if a next entry exists.
 			if cancel != nil {
 				cancel()
 			}
 			if ci+1 < len(chain) && ci+1 < e.cfg.MaxProviders {
-				trace.Failover(entry.ProviderID, chain[ci+1].ProviderID, "stream rate_limit: fail over, never retry (FO-5)")
+				trace.Failover(entry.ProviderID, chain[ci+1].ProviderID, "stream rate_limit: fail over, never retry")
 			}
 		}
 	}
 
 	// Image-to-text rescue (ADR-014): identical gate to the complete path.
 	// The caption calls happen before the first byte of the retry, so the
-	// stream discipline (FO-1/FO-5) is untouched: nothing has been sent to the
+	// stream discipline is untouched: nothing has been sent to the
 	// client yet, and the re-dispatch is a fresh dispatch that either streams
 	// or fails.
 	if gapOnly && attempted > 0 && allowFallback {
@@ -751,8 +747,8 @@ func announcedReset(err error) time.Duration {
 }
 
 // retryDelay computes the delay before the next same-provider retry: the
-// upstream-advertised Retry-After when present (O10), capped by the FO-3
-// backoff ceiling; otherwise the exponential backoff for the attempt.
+// upstream-advertised Retry-After when present, capped by the backoff
+// ceiling; otherwise the exponential backoff for the attempt.
 func (e *Executor) retryDelay(err error, attempt int) time.Duration {
 	var ue *provider.UpstreamError
 	if errors.As(err, &ue) && ue.RetryAfter > 0 {
@@ -802,7 +798,7 @@ func (e *Executor) reportFailureFor(pid string, c Classification, status int) {
 }
 
 // reportQuota marks a class-insufficient_quota rejection as a dedicated
-// account cooldown (2026-10-06): the next request must not re-pay the
+// account cooldown: the next request must not re-pay the
 // exhaustion; the account re-probes at the announced reset window (the
 // upstream Retry-After when carried) or hourly.
 func (e *Executor) reportQuota(pid string, err error, c Classification) {

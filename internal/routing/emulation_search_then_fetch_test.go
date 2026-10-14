@@ -1,10 +1,9 @@
 package routing_test
 
-// The reported lifecycle (2026-10-08): "WebFetch funktioniert nicht.
-// WebSearch funktioniert perfekt" — the real sequence a client like
-// Claude Code drives is search FIRST, then fetch a URL THE SEARCH
-// RETURNED. The fetched URL never appeared in a user message; its only
-// ride into prior context is the synthesized web_search tool result that
+// The lifecycle this pins: a client like Claude Code searches FIRST, then
+// fetches a URL THE SEARCH RETURNED. The fetched URL never appeared in a user
+// message; its only ride into prior context is the synthesized web_search
+// tool result that
 // rode the round-trip's user-role message. That is exactly what
 // priorContextURLs documents ("synthesized tool results ride user-role
 // messages, so their URLs count for later fetches") — this test pins the
@@ -133,7 +132,7 @@ func TestExecute_SearchResultURLIsFetchable(t *testing.T) {
 	t.Errorf("trace missing web_fetch emulated-tool event: %+v", trace.Events())
 }
 
-// The CROSS-TURN form (the actual reported bug): turn 2's history carries
+// The CROSS-TURN form: turn 2's history carries
 // turn 1's synthesized blocks inside an ASSISTANT message (the wire
 // replays them as assistant content) — the fetch of a URL from turn 1's
 // search results must still pass the prior-context guard.
@@ -224,7 +223,7 @@ func (p *crossTurnFetchProvider) Stream(ctx context.Context, req ir.Request) (<-
 	return nil, func() {}, nil
 }
 
-// The child-op model attribution (2026-10-08 Logs fix): an emulated-tool
+// The child-op model attribution: an emulated-tool
 // op names the provider+model whose round issued the call, a failover op
 // names the model its target attempted — the Logs page renders the model
 // column from these.

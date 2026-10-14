@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Stepwise device flow (X20) — the form the admin API drives: StartDeviceLogin
+// Stepwise device flow — the form the admin API drives: StartDeviceLogin
 // surfaces the user_code and verification URL to the operator (the blocking
 // LoginFromDevice keeps them internal, but the operator must enter the code on
 // the verification page — a UI-driven flow has to show it), and Poll performs
@@ -21,22 +21,21 @@ import (
 // LoginFromDevice (auth.go) delegates to these primitives; the wire behavior
 // is identical (shared start/poll/exchange code paths).
 
-// DeviceSession is one stepwise device login (X20). Created by
-// StartDeviceLogin; consumed via Poll until approved or failed. Safe for one
-// poller goroutine; a concurrent Poll inside the interval window coalesces
-// onto the in-flight (or just-completed) round trip instead of hitting the
-// issuer a second time.
+// DeviceSession is one stepwise device login. Created by StartDeviceLogin;
+// consumed via Poll until approved or failed. Safe for one poller goroutine; a
+// concurrent Poll inside the interval window coalesces onto the in-flight (or
+// just-completed) round trip instead of hitting the issuer a second time.
 type DeviceSession struct {
-	// DeviceAuthID + UserCode are the X20 wire pair the poll body carries.
+	// DeviceAuthID + UserCode are the wire pair the poll body carries.
 	DeviceAuthID string
 	UserCode     string
 	// VerificationURL is where the operator enters the code: {issuer}/codex/device.
 	VerificationURL string
-	// Interval is the parsed poll interval — a STRING on the wire (X20),
+	// Interval is the parsed poll interval — a STRING on the wire, in
 	// seconds. Callers pace their Poll calls to it.
 	Interval time.Duration
 
-	// deadline is the X20 hard cap for the whole flow (CLI: 15 min).
+	// deadline is the hard cap for the whole flow (CLI: 15 min).
 	deadline time.Time
 
 	auth *authClient
@@ -58,12 +57,12 @@ type deviceFlight struct {
 	err      error
 }
 
-// StartDeviceLogin requests the device code (X20) and returns the session the
-// caller drives with Poll. A 404 on the usercode request is device-login
-// disabled — an operator error, not a retry candidate.
+// StartDeviceLogin requests the device code and returns the session the caller
+// drives with Poll. A 404 on the usercode request is device-login disabled — an
+// operator error, not a retry candidate.
 func (a *authClient) StartDeviceLogin(ctx context.Context, timeout time.Duration) (*DeviceSession, error) {
 	if timeout <= 0 {
-		timeout = 15 * time.Minute // X20 hard cap (CLI: 15 min)
+		timeout = 15 * time.Minute // hard cap (CLI: 15 min)
 	}
 	var uc struct {
 		DeviceAuthID string `json:"device_auth_id"`
@@ -77,7 +76,7 @@ func (a *authClient) StartDeviceLogin(ctx context.Context, timeout time.Duration
 	if err != nil {
 		var ee *endpointError
 		if errors.As(err, &ee) && ee.status == http.StatusNotFound {
-			// X20: 404 on the usercode request = device login disabled.
+			// 404 on the usercode request = device login disabled.
 			return nil, &DeviceLoginDisabledError{Detail: "issuer answered 404 on the device-code request"}
 		}
 		return nil, err
@@ -128,7 +127,7 @@ func (s *DeviceSession) Poll(ctx context.Context) (bool, LoginResult, error) {
 	}
 	if time.Now().After(s.deadline) {
 		s.mu.Unlock()
-		return false, LoginResult{}, fmt.Errorf("codex: device login timed out (X20)")
+		return false, LoginResult{}, fmt.Errorf("codex: device login timed out")
 	}
 	if !s.lastPoll.IsZero() && time.Since(s.lastPoll) < s.Interval {
 		s.mu.Unlock()
@@ -174,7 +173,7 @@ func (s *DeviceSession) Poll(ctx context.Context) (bool, LoginResult, error) {
 	return false, LoginResult{}, nil
 }
 
-// deviceApproval is the X20 success payload from the poll endpoint: the
+// deviceApproval is the success payload from the poll endpoint: the
 // SERVER-provided PKCE pair consumed by the exchange.
 type deviceApproval struct {
 	authorizationCode string
@@ -182,7 +181,7 @@ type deviceApproval struct {
 }
 
 // pollIssuer performs the issuer round trip: 403/404 = pending (nil approval,
-// nil error), any other non-2xx = fatal, 2xx = approval (X20).
+// nil error), any other non-2xx = fatal, 2xx = approval.
 func (s *DeviceSession) pollIssuer(ctx context.Context) (*deviceApproval, error) {
 	var pollResp struct {
 		AuthorizationCode string `json:"authorization_code"`
@@ -196,14 +195,14 @@ func (s *DeviceSession) pollIssuer(ctx context.Context) (*deviceApproval, error)
 	if err != nil {
 		var ee *endpointError
 		if errors.As(err, &ee) && (ee.status == http.StatusForbidden || ee.status == http.StatusNotFound) {
-			// pending — keep polling (X20). RFC 8628 slow_down is NOT
+			// pending — keep polling. RFC 8628 slow_down is NOT
 			// special-cased, matching the blocking flow's documented stance.
 			return nil, nil
 		}
 		return nil, err
 	}
 	if pollResp.AuthorizationCode == "" || pollResp.CodeVerifier == "" {
-		return nil, errors.New("codex: device approval response missing authorization_code/code_verifier (server-provided PKCE, X20)")
+		return nil, errors.New("codex: device approval response missing authorization_code/code_verifier (server-provided PKCE)")
 	}
 	return &deviceApproval{authorizationCode: pollResp.AuthorizationCode, codeVerifier: pollResp.CodeVerifier}, nil
 }

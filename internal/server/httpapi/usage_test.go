@@ -1,10 +1,10 @@
 package httpapi
 
-// Task 5 Gap #3 (plan Analysis C schema): the request-completion path
+// The request-completion path
 // increments usage_daily — the Overview dashboard's data source. Tests
 // are spec-derived: the schema contract is the (day, client_key_id,
 // provider_id, model) tuple with the five counters; the writer must fire
-// on success AND failure rows (Analysis E: every observable request
+// on success AND failure rows (every observable request
 // counts), never break the already-sent response.
 
 import (
@@ -29,7 +29,7 @@ func usageRows(t *testing.T, e *env) []storage.UsageDaily {
 
 // Success path: a non-streaming chat request increments requests (+1),
 // input/output tokens, and cache-read tokens from the upstream usage
-// (O4 usage semantics, translated by the codec into IR usage).
+// (usage semantics, translated by the codec into IR usage).
 func TestUsageDaily_IncrementedOnChatSuccess(t *testing.T) {
 	e := newEnv(t)
 	e.mock.Enqueue(mockJSON(t, http.StatusOK, string(golden(t, "openai/chat-response.json"))))
@@ -63,8 +63,8 @@ func TestUsageDaily_IncrementedOnChatSuccess(t *testing.T) {
 	}
 }
 
-// Failure path: a failed request is still an observable request (Analysis
-// E) — requests+1 AND failures+1 on the same tuple.
+// Failure path: a failed request is still an observable request —
+// requests+1 AND failures+1 on the same tuple.
 func TestUsageDaily_IncrementedOnFailure(t *testing.T) {
 	e := newEnv(t)
 	e.mock.Enqueue(mockFail(t, 500, string(golden(t, "openai/error.json"))))
@@ -80,7 +80,7 @@ func TestUsageDaily_IncrementedOnFailure(t *testing.T) {
 }
 
 // Streaming path: the terminal usage from the SSE frame increments the
-// same counters (O4 stream_options.include_usage).
+// same counters (stream_options.include_usage).
 func TestUsageDaily_IncrementedOnStreamSuccess(t *testing.T) {
 	e := newEnv(t)
 	e.mock.Enqueue(mockSSE(t, string(golden(t, "openai/chat-stream.sse"))))

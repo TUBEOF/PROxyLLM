@@ -1,8 +1,8 @@
 package firecrawl
 
-// Emulator adapter contract tests (RED-GREEN per Analysis F). The adapter
-// implements routing.Emulator (plan §6.2) on top of the v2 client. All
-// expectations derive from plan facts F1-F3, the golden fixtures under
+// Emulator adapter contract tests, RED-GREEN. The adapter
+// implements routing.Emulator on top of the v2 client. All
+// expectations derive from the Firecrawl v2 API facts, the golden fixtures under
 // testdata/golden/firecrawl/ (docs.firecrawl.dev, accessed 2026-09-10), and
 // the routing.Emulator contract in internal/routing/emulation.go — never
 // from adapter code behavior.
@@ -49,7 +49,7 @@ func newEmuUpstream(t *testing.T, c *emuCapture, bodies ...string) *httptest.Ser
 }
 
 // 1. Search maps ServerToolConfig domain filters onto the documented
-// include/exclude lists (F2) and returns web[] entries as IR search items.
+// include/exclude lists and returns web[] entries as IR search items.
 func TestEmulator_SearchMapsDomainFiltersAndResults(t *testing.T) {
 	var c emuCapture
 	srv := newEmuUpstream(t, &c, `{"success":true,"data":{"web":[
@@ -119,7 +119,7 @@ func TestEmulator_SearchWithoutFilters(t *testing.T) {
 	}
 }
 
-// 3. Fetch maps a scrape (F3) with markdown format onto the normalized
+// 3. Fetch maps a scrape with markdown format onto the normalized
 // WebFetchContent payload (text source, text/plain media type).
 func TestEmulator_FetchScrapesMarkdown(t *testing.T) {
 	var c emuCapture
@@ -201,7 +201,7 @@ func TestEmulator_UpstreamErrorSurfaces(t *testing.T) {
 	}
 }
 
-// 6. A success:false body is an error too (documented contract, F5).
+// 6. A success:false body is an error too (documented contract).
 func TestEmulator_SuccessFalseIsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

@@ -1,6 +1,6 @@
 package webui
 
-// Spec: GET /api/admin/logs/stream (Logs-page redesign, 2026-10-06) —
+// Spec: GET /api/admin/logs/stream (Logs-page redesign) —
 // SSE: hello → running snapshot → log events; heartbeat comments; client
 // disconnect unsubscribes (no leak); GET needs no CSRF header (the
 // session cookie suffices — native EventSource); unwired Stream →

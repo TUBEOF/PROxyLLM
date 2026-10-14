@@ -7,7 +7,7 @@
 
 PROxyLLM's correctness lives in wire-protocol fidelity: two client
 surfaces, multiple upstream protocols, streaming state machines, fallback
-routing. The user doctrine (2026-09-10, binding): "Tests, Verifikation ist
+routing. The test doctrine (binding): "Tests, Verifikation ist
 ein sehr wichtiger Punkt" — verification is the top priority, including
 independent deep code reviews and visual verification of the WebUI.
 
@@ -26,7 +26,7 @@ only reproduces code behavior is a defect.
    deltas, interleaved tool calls, pings, mid-stream errors, unknown event
    types) over real HTTP; full client→proxy→mock round trips incl.
    cancellation and slow-consumer backpressure.
-4. **E2E acceptance (Phase 1 gate)**: official OpenAI SDK client AND
+4. **E2E acceptance gate**: official OpenAI SDK client AND
    Claude Code against the proxy; live smoke ENV-gated
    (`PROXYLLM_SMOKE=1`), never in default CI.
 5. **Blocking CI gates**: gofmt/vet/golangci-lint, `go test -race`, tsc/
@@ -40,12 +40,13 @@ only reproduces code behavior is a defect.
   module starts with a live, cited research pass.
 - **Independent deep code reviews** — no code merged by its author alone;
   reviewer did not write the code. Charter: correctness vs spec, race/
-  backpressure analysis on streaming paths, security vs Analysis G,
+  backpressure analysis on streaming paths, the security concept,
   test-quality audit, docs consistency. Blocking findings fixed and
   re-reviewed before the phase gate.
 - **Visual regression for the WebUI (mandatory)** — Playwright screenshot
-  tests vs UpGuard kit baselines, multi-viewport, empty/hover/focus states,
-  design-rule assertions (tokens-only colors, no emoji, dark-only).
+  tests against the console's own rendered baselines, multi-viewport,
+  empty/hover/focus states, design-rule assertions (tokens-only colors, no
+  emoji, dark-only).
 - **Verification report per phase** — tests run + results, review findings
   + resolutions, visual diffs, budget numbers.
 

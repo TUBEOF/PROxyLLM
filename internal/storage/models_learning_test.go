@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// Spec: automatic capabilities (2026-09-21, ADR-010 amendment) — a real
+// Spec: automatic capabilities (ADR-010) — a real
 // upstream capability-gap rejection LEARNS the missing capability into the
 // model row's capabilities blob (vision=false), located by the upstream pair
 // (provider + wire name). A pinned flag (the blob's "pinned" object, set by

@@ -6,7 +6,7 @@ import (
 	"errors"
 )
 
-// Spec: Phase 2 research facts S-1/S-6/S-7/S-10 (session design): the raw
+// Spec: the session design — the raw
 // 256-bit session ID lives ONLY in the cookie; this table stores its
 // SHA-256 hash as the PK. The auth middleware generates IDs and enforces
 // the 30 min idle / 12 h absolute windows from these timestamps
@@ -49,21 +49,21 @@ func (s *Store) GetSession(ctx context.Context, idHash string) (*Session, error)
 }
 
 // TouchSession updates last_seen_at only — the idle window restarts per
-// request while the absolute cap stays fixed (S-6).
+// request while the absolute cap stays fixed.
 func (s *Store) TouchSession(ctx context.Context, idHash string, now int64) error {
 	_, err := s.db.ExecContext(ctx,
 		`UPDATE webui_sessions SET last_seen_at = ? WHERE id_hash = ?`, now, idHash)
 	return err
 }
 
-// DeleteSession removes one session row (logout, S-10). Idempotent: the
+// DeleteSession removes one session row (logout). Idempotent: the
 // outcome "logged out" is reached whether or not the row still existed.
 func (s *Store) DeleteSession(ctx context.Context, idHash string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM webui_sessions WHERE id_hash = ?`, idHash)
 	return err
 }
 
-// DeleteSessionsForAdmin removes every session of one admin — the S-8
+// DeleteSessionsForAdmin removes every session of one admin — the
 // server-side revocation on privilege/password change — and returns the
 // number removed.
 func (s *Store) DeleteSessionsForAdmin(ctx context.Context, adminID string) (int64, error) {

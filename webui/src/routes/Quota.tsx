@@ -9,7 +9,7 @@ import { IconBoxes, IconPlug, IconRefresh } from '../icons';
 // Live source (the ollama.com settings scrape) renders the session/
 // weekly bars with reset timers + plan tier; accounts without a scrape
 // render the LOCAL month window (labeled) — never fabricated metrics.
-// Live updates (2026-10-06): the card list polls itself (POLL_MS).
+// Live updates: the card list polls itself (POLL_MS).
 // Health badge: breaker/quota cooldown from the routing HealthTracker.
 
 const POLL_MS = 5000;

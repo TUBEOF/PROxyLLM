@@ -1,6 +1,6 @@
 package storage
 
-// Live-updates cursor (2026-10-06): the log page polls for rows AFTER a
+// Live-updates cursor: the log page polls for rows AFTER a
 // known id (incremental feed) instead of repaging — `after` is the last
 // seen row id, the query returns newer rows newest-first.
 

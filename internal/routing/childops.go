@@ -2,12 +2,12 @@ package routing
 
 import "github.com/tubeof/proxyllm/internal/translate/ir"
 
-// Child operations (2026-10-07 Logs page): the upstream operations the
-// operator needs as their own log rows rather than as trace-only detail —
-// a chain failover, an image description produced by a vision fallback model
-// (ADR-014), and an emulated web-tool call. This mapper is the single source
-// of truth for that mapping; the persist path (httpapi.writeRequestLog →
-// storage.InsertChildLogs) consumes it.
+// Child operations: the upstream operations the operator needs as their own
+// log rows rather than as trace-only detail — a chain failover, an image
+// description produced by a vision fallback model (ADR-014), and an emulated
+// web-tool call. This mapper is the single source of truth for that mapping;
+// the persist path (httpapi.writeRequestLog → storage.InsertChildLogs)
+// consumes it.
 //
 // A same-provider retry is deliberately NOT a row: it is one attempt of the
 // same operation, not a separable one, and a retry storm floods the log.
@@ -26,11 +26,11 @@ const (
 
 	// OpCapabilityFallback: the rule chain was exhausted on capability gaps
 	// and the configured capability fallback models were consulted
-	// (ADR-010 / 2026-09-21 model fallback). Detail carries the capability
+	// (ADR-010). Detail carries the capability
 	// family (e.g. "vision").
 	OpCapabilityFallback OpKind = "capability_fallback"
 
-	// OpEmulatedTool: a server tool was served by the §6.2 emulation layer
+	// OpEmulatedTool: a server tool was served by the emulation layer
 	// (the model's tool call answered via the Firecrawl fallback). To carries
 	// the tool name, Detail the invocation summary (query/url, outcome).
 	OpEmulatedTool OpKind = "emulated_tool"
@@ -82,7 +82,7 @@ type ChildOp struct {
 // in trace order. Only the op kinds above are selected; a request that
 // succeeded through its primary provider yields no ops.
 //
-// Model attribution (2026-10-08 Logs fix): attempt events carry the
+// Model attribution: attempt events carry the
 // provider+wire model actually dispatched, so the walk feeds the attempts
 // into the ops — a capability-fallback op names the fallback model its walk
 // served (the next attempt's model), a failover names the model the target

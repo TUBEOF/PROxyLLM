@@ -1,15 +1,12 @@
 package httpapi
 
-// Anthropic-surface RED tests: POST /v1/messages (incl. ?beta=true, C1),
-// POST /v1/messages/count_tokens (A2/C1 heuristic marking), and the
-// Anthropic-shaped GET /v1/models (C1/C3). Derived from plan §5.1/§5.3,
-// wire facts A2/A5/A13/C1-C5, golden fixtures testdata/golden/anthropic/*
-// plus testdata/golden/openai/* (the mock upstream speaks OpenAI chat
-// wire — these tests define the cross-surface translation contract:
-// Anthropic client in, OpenAI upstream, Anthropic response out).
-//
-// RED state: package httpapi does not exist yet (build failure proves RED
-// for every test in this file).
+// Anthropic-surface RED tests: POST /v1/messages (incl. ?beta=true), POST
+// /v1/messages/count_tokens (heuristic marking), and the Anthropic-shaped
+// GET /v1/models. Derived from the wire contracts, golden fixtures
+// testdata/golden/anthropic/* plus testdata/golden/openai/* (the mock
+// upstream speaks OpenAI chat wire — these tests define the cross-surface
+// translation contract: Anthropic client in, OpenAI upstream, Anthropic
+// response out).
 
 import (
 	"encoding/json"
@@ -36,7 +33,7 @@ func newClaudeEnv(t *testing.T) *env {
 }
 
 // claudeStreamReq returns the golden Anthropic request with stream:true
-// added (SSE request per A5). Fails loudly if the golden anchor string
+// added (an SSE request). Fails loudly if the golden anchor string
 // ever moves, so the test can never silently degrade to non-streaming.
 func claudeStreamReq(t *testing.T) string {
 	t.Helper()
@@ -52,7 +49,7 @@ func claudeStreamReq(t *testing.T) string {
 	return req
 }
 
-// postAnthropic sends one authenticated POST with x-api-key (A14) — the
+// postAnthropic sends one authenticated POST with x-api-key — the
 // header family Anthropic clients actually send.
 func (e *env) postAnthropic(t *testing.T, path, body string) (int, string) {
 	t.Helper()
@@ -66,7 +63,7 @@ func (e *env) postAnthropic(t *testing.T, path, body string) (int, string) {
 }
 
 // getWith sends one authenticated GET carrying an extra header (e.g.
-// anthropic-version per C3).
+// anthropic-version).
 func (e *env) getWith(t *testing.T, path, header, value string) (int, string) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, e.srv.URL+path, nil)
@@ -115,11 +112,11 @@ func sseEventData(body, event string) string {
 
 // --- POST /v1/messages (non-streaming, cross-surface) ---
 
-// 1. Fixture round trip (cross-surface per OP-2): an Anthropic Messages
+// 1. Fixture round trip (cross-surface): an Anthropic Messages
 // request routed to an OpenAI-wire upstream must come back as a
 // protocol-conform Anthropic message — stop_reason tool_use translated
 // from upstream finish_reason tool_calls, text + tool_use blocks
-// assembled, usage with explicit cache fields (Analysis D).
+// assembled, usage with explicit cache fields.
 func TestMessages_FixtureRoundTrip(t *testing.T) {
 	e := newClaudeEnv(t)
 	e.mock.Enqueue(mockJSON(t, http.StatusOK, string(golden(t, "openai/chat-response.json"))))
@@ -145,7 +142,7 @@ func TestMessages_FixtureRoundTrip(t *testing.T) {
 		t.Fatalf("response not JSON: %v (%s)", err, body)
 	}
 	if resp.Type != "message" {
-		t.Errorf("type = %q, want message (A13 message envelope)", resp.Type)
+		t.Errorf("type = %q, want the message envelope", resp.Type)
 	}
 	if resp.Role != "assistant" {
 		t.Errorf("role = %q, want assistant", resp.Role)
@@ -178,7 +175,7 @@ func TestMessages_FixtureRoundTrip(t *testing.T) {
 
 	// Usage: upstream prompt/completion tokens map to input/output, and
 	// the Anthropic cache usage fields must be present explicitly (zeros
-	// where unknown — Analysis D, never silently dropped).
+	// where unknown — never silently dropped).
 	var usage struct {
 		InputTokens  int `json:"input_tokens"`
 		OutputTokens int `json:"output_tokens"`
@@ -194,10 +191,10 @@ func TestMessages_FixtureRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, ok := usageFields["cache_creation_input_tokens"]; !ok {
-		t.Errorf("usage missing cache_creation_input_tokens (A11 explicit field): %s", body)
+		t.Errorf("usage missing cache_creation_input_tokens (explicit field): %s", body)
 	}
 	if _, ok := usageFields["cache_read_input_tokens"]; !ok {
-		t.Errorf("usage missing cache_read_input_tokens (A11 explicit field): %s", body)
+		t.Errorf("usage missing cache_read_input_tokens (explicit field): %s", body)
 	}
 }
 
@@ -239,7 +236,7 @@ func TestMessages_UpstreamSeesChatWire(t *testing.T) {
 	}
 }
 
-// 3. Streaming relay (A5/A6/C2): upstream chat-wire SSE deltas surface as
+// 3. Streaming relay: upstream chat-wire SSE deltas surface as
 // named Anthropic events in the canonical order, ending with
 // message_stop; tool_calls deltas become a sequential tool_use block
 // with input_json_delta fragments.
@@ -261,20 +258,20 @@ func TestMessages_StreamRelay(t *testing.T) {
 		return false
 	}
 	if !has("message_start") || !has("content_block_delta") {
-		t.Errorf("SSE events = %v, want message_start and content_block_delta (A5/A6)", events)
+		t.Errorf("SSE events = %v, want message_start and content_block_delta", events)
 	}
 	if len(events) == 0 || events[len(events)-1] != "message_stop" {
-		t.Errorf("last event = %v, want message_stop terminating the stream (A6)", events)
+		t.Errorf("last event = %v, want message_stop terminating the stream", events)
 	}
 	if !strings.Contains(body, "Hello") || !strings.Contains(body, " world") {
 		t.Errorf("relayed stream missing upstream text deltas: %s", body)
 	}
 	if !strings.Contains(body, "tool_use") || !strings.Contains(body, "input_json_delta") {
-		t.Errorf("tool_calls deltas not translated to tool_use block + input_json_delta (A7): %s", body)
+		t.Errorf("tool_calls deltas not translated to tool_use block + input_json_delta: %s", body)
 	}
 }
 
-// 4. Mid-stream upstream failure (A13/Analysis E failover discipline):
+// 4. Mid-stream upstream failure (failover discipline):
 // once streaming has begun, an upstream connection drop terminates with
 // a protocol-conform Anthropic error event — never a mid-stream provider
 // swap, never a bare Go error string.
@@ -288,7 +285,7 @@ func TestMessages_StreamMidStreamError(t *testing.T) {
 		t.Fatalf("status = %d, want 200 (SSE already started, body %s)", status, body)
 	}
 	if !strings.Contains(body, "event: error") {
-		t.Fatalf("mid-stream failure produced no error event (A13): %s", body)
+		t.Fatalf("mid-stream failure produced no error event: %s", body)
 	}
 	data := sseEventData(body, "error")
 	if data == "" {
@@ -305,7 +302,7 @@ func TestMessages_StreamMidStreamError(t *testing.T) {
 		t.Fatalf("error event data not JSON: %v (%s)", err, data)
 	}
 	if ev.Error.Type == "" || ev.Error.Message == "" {
-		t.Errorf("error event missing error.type/error.message (A13): %s", data)
+		t.Errorf("error event missing error.type/error.message: %s", data)
 	}
 }
 
@@ -324,7 +321,7 @@ func TestMessages_StreamMidStreamErrorReportsHealthFailure(t *testing.T) {
 		t.Fatalf("status = %d, want 200 (SSE already started, body %s)", status, body)
 	}
 	if !strings.Contains(body, "event: error") {
-		t.Fatalf("mid-stream failure produced no error event (A13): %s", body)
+		t.Fatalf("mid-stream failure produced no error event: %s", body)
 	}
 
 	// The mid-stream failure was reported: 1 failure so far, threshold 3.
@@ -338,9 +335,9 @@ func TestMessages_StreamMidStreamErrorReportsHealthFailure(t *testing.T) {
 	}
 }
 
-// 5. count_tokens heuristic (A2/C1): with an OpenAI-shaped upstream the
+// 5. count_tokens heuristic: with an OpenAI-shaped upstream the
 // native Anthropic token counting is impossible, so the heuristic
-// estimate (chars/4, Analysis D) must answer — marked as heuristic, never
+// estimate (chars/4) must answer — marked as heuristic, never
 // presented as an exact count.
 func TestMessages_CountTokensHeuristic(t *testing.T) {
 	e := newClaudeEnv(t)
@@ -360,22 +357,22 @@ func TestMessages_CountTokensHeuristic(t *testing.T) {
 		t.Errorf("input_tokens = %d, want a positive heuristic estimate", resp.InputTokens)
 	}
 	if resp.Estimation != "heuristic" {
-		t.Errorf("estimation = %q, want \"heuristic\" marking (A2/C1 — never silently exact)", resp.Estimation)
+		t.Errorf("estimation = %q, want the \"heuristic\" marking — never silently exact", resp.Estimation)
 	}
 }
 
-// --- GET /v1/models shape switching (C1/C3) ---
+// --- GET /v1/models shape switching ---
 
-// 6. Model discovery serves BOTH shapes on the same path (C1): with the
+// 6. Model discovery serves BOTH shapes on the same path: with the
 // anthropic-version header the Anthropic list shape (data with
 // id/type/display_name + first_id/has_more/last_id), without it the
-// OpenAI list shape (object:"list") per O9.
+// OpenAI list shape (object:"list").
 func TestMessages_ModelsDiscoveryBothShapes(t *testing.T) {
 	e := newEnv(t)
 	e.seedModel(t, "gpt-5", nil)
 	e.seedModel(t, "gpt-5-mini", nil)
 
-	// Anthropic shape (C1 fixture shape testdata/golden/anthropic/models.json).
+	// Anthropic shape (fixture: testdata/golden/anthropic/models.json).
 	status, body := e.getWith(t, "/v1/models", "anthropic-version", "2023-06-01")
 	if status != http.StatusOK {
 		t.Fatalf("anthropic models status = %d, want 200 (body %s)", status, body)
@@ -397,10 +394,10 @@ func TestMessages_ModelsDiscoveryBothShapes(t *testing.T) {
 	for _, m := range anth.Data {
 		ids[m.ID] = true
 		if m.Type != "model" {
-			t.Errorf("anthropic model type = %q, want model (C1)", m.Type)
+			t.Errorf("anthropic model type = %q, want model", m.Type)
 		}
 		if m.DisplayName == "" {
-			t.Errorf("model %s missing display_name (C1)", m.ID)
+			t.Errorf("model %s missing display_name", m.ID)
 		}
 	}
 	if !ids["gpt-5"] || !ids["gpt-5-mini"] {
@@ -410,7 +407,7 @@ func TestMessages_ModelsDiscoveryBothShapes(t *testing.T) {
 		t.Errorf("anthropic envelope = %s/%v/%s, want gpt-5/false/gpt-5-mini", anth.FirstID, anth.HasMore, anth.LastID)
 	}
 
-	// OpenAI shape (O9) without the header.
+	// OpenAI shape without the header.
 	status, body = e.get(t, "/v1/models")
 	if status != http.StatusOK {
 		t.Fatalf("openai models status = %d, want 200 (body %s)", status, body)
@@ -422,14 +419,14 @@ func TestMessages_ModelsDiscoveryBothShapes(t *testing.T) {
 		t.Fatalf("openai models body not JSON: %v (%s)", err, body)
 	}
 	if openai.Object != "list" {
-		t.Errorf("openai models object = %q, want list (O9)", openai.Object)
+		t.Errorf("openai models object = %q, want list", openai.Object)
 	}
 }
 
 // --- error shape on the Anthropic surface ---
 
-// 7. No-route (§5.3): a request for a model with no rule answers with the
-// Anthropic error envelope {type:"error", error:{type,message}} (A13).
+// 7. No-route: a request for a model with no rule answers with the
+// Anthropic error envelope {type:"error", error:{type,message}}.
 func TestMessages_NoRoute(t *testing.T) {
 	e := newEnv(t)
 	req := `{"model":"unknown-model","max_tokens":10,"messages":[{"role":"user","content":"hi"}]}`
@@ -448,14 +445,14 @@ func TestMessages_NoRoute(t *testing.T) {
 		t.Fatalf("no-route body not Anthropic-shaped: %v (%s)", err, body)
 	}
 	if wireErr.Type != "error" {
-		t.Errorf("top-level type = %q, want error (A13)", wireErr.Type)
+		t.Errorf("top-level type = %q, want error", wireErr.Type)
 	}
 	if wireErr.Error.Type == "" || wireErr.Error.Message == "" {
-		t.Errorf("error object missing type/message (A13): %s", body)
+		t.Errorf("error object missing type/message: %s", body)
 	}
 }
 
-// 8. ?beta=true path match (C1): Claude Code addresses /v1/messages with
+// 8. ?beta=true path match: Claude Code addresses /v1/messages with
 // a beta query string — the same handler must serve it.
 func TestMessages_BetaTruePathMatch(t *testing.T) {
 	e := newClaudeEnv(t)
@@ -475,8 +472,8 @@ func TestMessages_BetaTruePathMatch(t *testing.T) {
 	}
 }
 
-// 9. Auth-disabled path through httpapi (Analysis G control 1, deferred
-// review finding n5): with the middleware's ENV opt-out applied, requests
+// 9. Auth-disabled path through httpapi: with the middleware's ENV
+// opt-out applied, requests
 // with NO key at all pass on both surfaces — Bearer/x-api-key absent —
 // while the same requests against the default (auth-on) env are rejected.
 func TestMessages_AuthDisabledNoKeyPath(t *testing.T) {
@@ -552,7 +549,7 @@ func TestMessages_HealthCooldownAnswersOverloadedNot404(t *testing.T) {
 		t.Fatal("precondition: breaker must be open after 3 failures")
 	}
 
-	// Anthropic surface: 529 overloaded_error (A13 envelope).
+	// Anthropic surface: 529 overloaded_error (error envelope).
 	status, body := e.postAnthropic(t, "/v1/messages", string(golden(t, "anthropic/message-request.json")))
 	if status != 529 {
 		t.Fatalf("status = %d, want 529 (body %s)", status, body)
@@ -565,7 +562,7 @@ func TestMessages_HealthCooldownAnswersOverloadedNot404(t *testing.T) {
 		} `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(body), &a13); err != nil {
-		t.Fatalf("body not A13 JSON: %v (%s)", err, body)
+		t.Fatalf("body not the Anthropic error JSON: %v (%s)", err, body)
 	}
 	if a13.Type != "error" || a13.Error.Type != "overloaded_error" || a13.Error.Message == "" {
 		t.Errorf("envelope = %+v, want type=error, error.type=overloaded_error, message set", a13)
@@ -601,7 +598,7 @@ func TestChat_HealthCooldownAnswers503Not404(t *testing.T) {
 		} `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(body), &o10); err != nil {
-		t.Fatalf("body not O10 JSON: %v (%s)", err, body)
+		t.Fatalf("body not the OpenAI error JSON: %v (%s)", err, body)
 	}
 	if o10.Error.Type == "" || o10.Error.Message == "" {
 		t.Errorf("error = %+v, want type and message set", o10.Error)
@@ -660,11 +657,11 @@ func TestMessages_ToolOnlyHistoryEncodesEmptyStringContent(t *testing.T) {
 // type: <nil>" 400: Claude Code appends a role:"system" message to
 // messages (SessionStart-hook output, injected reminders). The Anthropic
 // codec decodes it into ir.RoleSystem; the OpenAI chat encoder's role
-// switch previously had no RoleSystem case, so the zero-value wireContent
-// marshaled as "content":null and Ollama's OpenAI-compatibility endpoint
-// answered 400 (capture: real Claude Code client against the proxy,
-// 2026-10-06; repro also live-confirmed on the deployed instance). The
-// system message must reach the upstream wire as a system-role message
+// switch must carry a RoleSystem case: without one the zero-value wireContent
+// marshals as "content":null and Ollama's OpenAI-compatibility endpoint
+// answers 400 (reproduced with a real Claude Code client against the
+// proxy). The system message must reach the upstream wire as a system-role
+// message
 // carrying its text.
 func TestMessages_SystemRoleHistoryEncodesSystemMessageContent(t *testing.T) {
 	e := newClaudeEnv(t)
@@ -698,12 +695,12 @@ func TestMessages_SystemRoleHistoryEncodesSystemMessageContent(t *testing.T) {
 	}
 }
 
-// Context-marker strip must extend to the compat lookup (review finding
-// I1): a suffixed request routes to the base model, and the compat policy
+// Context-marker strip must extend to the compat lookup: a suffixed
+// request routes to the base model, and the compat policy
 // lives on the BASE row — the marker must not silently bypass the
-// operator's thinking handling / clamps (the lookup before this fix
-// keyed on the typed name and found no row, so the zero-value defaults
-// ran instead of the operator's policy). Pinned on the visible wire
+// operator's thinking handling / clamps (a lookup keyed on the typed name
+// finds no row, so the zero-value defaults would run instead of the
+// operator's policy). Pinned on the visible wire
 // effect: the base row's max_tokens_clamp must cap the suffixed
 // request's max_completion_tokens, and its thinking_handling=block must
 // refuse the request with 400 (the marker's presence must not restore

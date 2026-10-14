@@ -8,10 +8,10 @@ import (
 	"testing"
 )
 
-// Spec: plan Analysis C schema (webui_admins: id, username UNIQUE,
-// password_hash) + Analysis G control 1 (WebUI login, Argon2id) + research
-// S-8 (privilege changes renew sessions — the session layer needs the admin
-// row id). The password hash is opaque to this layer: the auth layer derives
+// Spec: schema (webui_admins: id, username UNIQUE, password_hash), WebUI
+// login with Argon2id, and privilege changes that renew sessions (the
+// session layer needs the admin row id). The password hash is opaque to
+// this layer: the auth layer derives
 // it via Argon2Hasher; storage only persists and resolves it.
 
 func TestAdmins_CountZeroOnFreshStore(t *testing.T) {
@@ -102,7 +102,7 @@ func TestAdmins_UpdatePassword(t *testing.T) {
 	}
 }
 
-// TestAdmins_EnsureFirstAdminParallelBootstrap: the TOCTOU fix (Analysis G):
+// TestAdmins_EnsureFirstAdminParallelBootstrap: the count-then-insert race:
 // two concurrent first-admin bootstraps race the count-then-insert window —
 // SQLite serializes writers, but only inside ONE transaction. Exactly one
 // racer must win; the loser gets a conflict error, never a silent second

@@ -11,8 +11,8 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
-// Chat stream-encoder contract tests, RED-GREEN per Analysis F. The encoder
-// must produce the chat-completions SSE wire format (facts O4, O12) such
+// Chat stream-encoder contract tests, RED-GREEN. The encoder
+// must produce the chat-completions SSE wire format such
 // that the package's own stream decoder reconstructs the canonical events
 // (round-trip discipline: the decoder is fixture-verified against
 // developers.openai.com, so a passing round trip proves wire conformance).
@@ -39,7 +39,7 @@ func encodeChatAll(t *testing.T, evs []ir.StreamEvent) []byte {
 
 // fullChatSequenceEvents is the canonical event sequence matching the golden
 // openai/chat-stream.sse fixture (text + tool_use, index-assembled
-// tool_calls per O4).
+// tool_calls).
 func fullChatSequenceEvents() []ir.StreamEvent {
 	return []ir.StreamEvent{
 		{Type: ir.Start, Response: &ir.Response{
@@ -108,7 +108,7 @@ func TestChatStreamEncode_WireShape(t *testing.T) {
 	}
 }
 
-// Tool calls assemble by index (O4): id/name on the anchor chunk, argument
+// Tool calls assemble by index: id/name on the anchor chunk, argument
 // fragments carry only index + function.arguments. The wire index is an
 // encoder-owned counter starting at 0 (fixture line 7), independent of IR
 // block indices.
@@ -165,7 +165,7 @@ func TestChatStreamEncode_FinishAndUsage(t *testing.T) {
 	}
 }
 
-// ir.Error maps onto a chunk carrying a top-level error object (O10).
+// ir.Error maps onto a chunk carrying a top-level error object.
 func TestChatStreamEncode_ErrorEvent(t *testing.T) {
 	evs := []ir.StreamEvent{
 		{Type: ir.Start, Response: &ir.Response{ID: "chatcmpl-1", Model: "gpt-5"}},
@@ -184,7 +184,7 @@ func TestChatStreamEncode_ErrorEvent(t *testing.T) {
 	}
 }
 
-// Comments (upstream keepalives, H2-2) relay as wire comment lines.
+// Comments (upstream keepalives) relay as wire comment lines.
 func TestChatStreamEncode_CommentRelay(t *testing.T) {
 	evs := []ir.StreamEvent{{Type: ir.Comment}}
 	wire := string(encodeChatAll(t, evs))

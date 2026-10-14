@@ -12,7 +12,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
-// Executor tool-call round-trip tests for the §6.2 Firecrawl emulation:
+// Executor tool-call round-trip tests for the Firecrawl emulation:
 // when a request carries emulated web tools (Emulated marker from the
 // emulate-firecrawl compat policy) and the model answers with a tool call
 // against one of them, the executor loops: Firecrawl → tool result →
@@ -32,8 +32,8 @@ import (
 //   - max_uses exceeded → IsError result with error_code
 //     "max_uses_exceeded", not an upstream error
 
-// fakeEmulator scripts the Firecrawl answers for the round-trip tests
-// (Analysis F mock discipline: behavior scripted up front).
+// fakeEmulator scripts the Firecrawl answers for the round-trip tests:
+// behavior is scripted up front.
 type fakeEmulator struct {
 	searchAnswers []string // JSON array of web results, one per search call
 	fetchAnswers  []string // JSON page content, one per fetch call
@@ -141,7 +141,7 @@ func TestExecute_EmulatedWebSearchRoundTrip(t *testing.T) {
 	}
 
 	// The client sees the final answer plus the server-tool blocks the
-	// proxy synthesized (protocol-conform §6.2: never silently dropped).
+	// proxy synthesized (protocol-conform: never silently dropped).
 	if len(resp.Content) < 2 {
 		t.Fatalf("content = %d parts, want >= 2 (tool use + result before the answer)", len(resp.Content))
 	}
@@ -196,7 +196,7 @@ func TestExecute_EmulatedWebSearchRoundTrip(t *testing.T) {
 		}
 	}
 
-	// Emulation must be traced — never silent (§6.2/§6.4).
+	// Emulation must be traced — never silent.
 	found := false
 	for _, ev := range trace.Events() {
 		if ev.Type == routing.EventEmulatedTool {
@@ -449,7 +449,7 @@ func TestExecute_EmulatedFetchHonorsMaxContentTokens(t *testing.T) {
 }
 
 func TestExecute_EmulatedFetchRejectsURLNotInContext(t *testing.T) {
-	// Security rule (§6.2 / fixture meta): web_fetch may only fetch URLs
+	// Security rule: web_fetch may only fetch URLs
 	// that appeared in prior conversation context — never a URL the model
 	// invented (SSRF/prompt-injection guard). Violations produce a
 	// protocol-conform error result (url_not_in_prior_context), not an
@@ -515,13 +515,13 @@ func (p *urlNotInContextProvider) Stream(ctx context.Context, req ir.Request) (<
 
 func TestExecute_EmulatedMaxUsesExceeded(t *testing.T) {
 	// max_uses exceeded → error result block with error_code
-	// max_uses_exceeded (A10), never an upstream error, and the loop
+	// max_uses_exceeded, never an upstream error, and the loop
 	// continues so the model sees the budget exhaustion and answers.
 	//
-	// Spec note (documented misread fix): max_uses=N allows N invocations;
-	// the (N+1)th call is refused with max_uses_exceeded (fixture
-	// server-tool-web-search-response.json + A10). With max: 1 the model
-	// issues exactly ONE call, which MaxUses=1 legitimately allows — so
+	// Spec note: max_uses=N allows N invocations; the (N+1)th call is refused
+	// with max_uses_exceeded (fixture server-tool-web-search-response.json).
+	// With max: 1 the model issues exactly ONE call, which MaxUses=1
+	// legitimately allows — so
 	// the provider must call twice (max: 2) for the SECOND call to hit the
 	// budget and produce the error result.
 	p := &loopingProvider{answer: `{"query":"q"}`, name: "web_search", max: 2}
@@ -583,14 +583,13 @@ func itoa(n int) string {
 	return strconv.Itoa(n)
 }
 
-// TestExecute_EmulatorNilAnswersUnavailable: 4b — the CLAUDE.md degrade
+// TestExecute_EmulatorNilAnswersUnavailable: the CLAUDE.md degrade
 // contract: "no Firecrawl key → web-tool emulation returns documented
 // 'unavailable' errors". With the emulate policy applied (tool def carries
 // the Emulated marker) but no emulator configured, a model tool call against
 // the emulated tool must be answered with a protocol-conform error result
 // (error_code "unavailable") and the loop re-dispatches so the model can
-// recover — instead of passing the unexecutable tool call through to the
-// client (RED today: pass-through).
+// recover — never passing the unexecutable tool call through to the client.
 func TestExecute_EmulatorNilAnswersUnavailable(t *testing.T) {
 	p := &emulProvider{}
 	e := roundTripExecutor(p, nil) // policy emulate, no emulator configured
@@ -636,7 +635,7 @@ func TestExecute_EmulatorNilAnswersUnavailable(t *testing.T) {
 		t.Errorf("re-dispatched tool result content = %+v, want {\"error_code\":\"unavailable\"}", tr.Content[0])
 	}
 
-	// Emulated-tool answers must be traced — never silent (§6.4).
+	// Emulated-tool answers must be traced — never silent.
 	found := false
 	for _, ev := range trace.Events() {
 		if ev.Type == routing.EventEmulatedTool {

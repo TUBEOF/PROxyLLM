@@ -1,10 +1,12 @@
-/* UpGuard — Admin Dashboard Component Kit
-   A reusable, token-bound component layer for dark admin/monitoring dashboards.
-   Built on the design-system tokens (../../colors_and_type.css); never overrides
-   tokens. Composes with the marketing kit (../app/kit.css) where useful, but is
-   standalone — it declares its own surface reset so component files load alone.
-   Stats boards and charts bind to the dashboard chart tokens; the single green
-   accent stays the only chromatic accent. */
+/* PROxyLLM — Console Component Kit
+   The component layer for the console: token-bound rules for the app
+   shell, widgets, tables, forms, controls, overlays and the request log.
+   Built on the design-system tokens (./colors_and_type.css, the runtime
+   copy of design/colors_and_type.css); it reads tokens and never
+   redefines one. It is standalone — it declares its own surface reset so
+   a single component file renders alone. One accent: the stats boards,
+   charts and status pills all bind to the accent and status tokens, and
+   no rule here introduces a colour of its own. */
 
 @import url("./colors_and_type.css");
 
@@ -63,7 +65,10 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 /* Sidebar */
 .sidebar{width:240px;border-right:1px solid var(--border);background:oklch(11% 0.011 250 / 70%);backdrop-filter:blur(var(--blur-glass));display:flex;flex-direction:column;position:sticky;top:0;height:100vh;transition:width .25s ease-out;overflow:hidden}
 .sidebar.collapsed{width:64px}
-.sidebar-brand{display:flex;align-items:center;gap:10px;padding:0 20px;height:var(--nav-height);border-bottom:1px solid var(--border);text-decoration:none;flex-shrink:0}
+/* The brand row is a link; without a colour of its own the anchor would fall
+   back to the UA's link colour (the browser's blue), which no part of this
+   system uses. It inherits like every other nav link. */
+.sidebar-brand{display:flex;align-items:center;gap:10px;padding:0 20px;height:var(--nav-height);border-bottom:1px solid var(--border);color:var(--fg);text-decoration:none;flex-shrink:0}
 .sidebar.collapsed .sidebar-brand .name{display:none}
 .sidebar-brand .dot{width:12px;height:12px;border-radius:var(--radius-full);background:var(--accent);flex-shrink:0;animation:status-ping 2s cubic-bezier(0,0,.2,1) infinite}
 .sidebar-brand .name{color:#fff;font-family:var(--font-display);font-weight:var(--fw-bold);font-size:16px;white-space:nowrap}
@@ -362,7 +367,11 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 .overlay-host{position:relative} /* component files render overlays inline */
 
 .modal-backdrop{position:fixed;inset:0;background:oklch(0% 0 0 / 60%);backdrop-filter:blur(4px);z-index:200;display:flex;align-items:center;justify-content:center;padding:24px}
-.modal{width:100%;max-width:480px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface-elevated);backdrop-filter:blur(var(--blur-card));box-shadow:0 24px 60px oklch(0% 0 0 / 50%);overflow:hidden}
+/* The modal centres itself: the SPA renders .modal as a SIBLING of
+   .modal-backdrop (a demo page nests it inside), so it inherits none of the
+   backdrop's flex centring. Fixed at the viewport centre, on the token
+   layer's own --z-modal, above the backdrop's own z-index:200. */
+.modal{position:fixed;z-index:var(--z-modal);top:50%;left:50%;transform:translate(-50%,-50%);margin:0;width:100%;max-width:480px;border:1px solid var(--border);border-radius:var(--radius-lg);background:var(--surface-elevated);backdrop-filter:blur(var(--blur-card));box-shadow:0 24px 60px oklch(0% 0 0 / 50%);overflow:hidden}
 .modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:18px 20px;border-bottom:1px solid var(--border)}
 .modal-head h3{font-family:var(--font-display);font-size:18px;font-weight:var(--fw-semibold);margin:0}
 .modal-head p{color:var(--muted);font-size:13px;margin:4px 0 0}
@@ -428,7 +437,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
   .sidebar-brand .dot,.status-dot.up::after{animation:none}
 }
 
-/* Alias editor (2026-10-08): the interactive alias→model map — rows of
+/* Alias editor: the interactive alias→model map — rows of
    alias text input + model picker. Replaces the raw-JSON textarea. */
 .alias-editor{display:flex;flex-direction:column;gap:8px}
 .alias-row{display:flex;align-items:center;gap:8px}
@@ -461,19 +470,19 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 .logs-table .gutter-spacer{display:inline-block;width:18px;height:1px}
 /* (The conversation-adjacency chain marks were removed 2026-10-08 — the
    gutter renders ONLY the parent→sub-op tree: how requests relate.) */
-/* The tree rail's own tone. `--accent-dim` is a 12%-alpha wash meant for soft
-   fills; against the dark row surface it rendered nearly invisible, which is
-   why the chaining read as noise instead of structure. Hue 143 stays inside the
-   accent window the design-rules test enforces. */
-.logs-table{--rail:oklch(70% 0.17 143 / 72%)}
+/* The tree rail's tone is the token layer's --rail. `--accent-dim` is a
+   12%-alpha wash meant for soft fills; against the dark row surface it
+   rendered nearly invisible, which is why the chaining read as noise
+   instead of structure. Hue 143 stays inside the accent window the
+   design-rules test enforces. */
 
-/* --- Sub-operations (2026-10-07) --- */
+/* --- Sub-operations --- */
 /* A child row hangs under its parent and is drawn as a tree — a continuous
    line down the gutter with an elbow into each child, so a fallback reads as
    belonging to the request above it instead of floating in a list. The child
    keeps its parent's column count, so its cells line up under the parent's for
    a line-by-line comparison.
-   It OPENS (2026-10-10): the row is a button — a sub-operation has its own
+   It OPENS: the row is a button — a sub-operation has its own
    detail view, because what it sent and received lives in a payload of its own.
    Hence a pointer cursor, a hover that is visibly different from the resting
    state, and a keyboard focus ring. */
@@ -531,7 +540,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 .child-op-list{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column;gap:6px}
 .child-op-list li{display:block}
 .child-op-detail{display:block;margin-top:2px;font-size:11px;color:var(--muted)}
-/* The drawer's sub-op entries are buttons too (2026-10-10): same destination
+/* The drawer's sub-op entries are buttons too: same destination
    as the nested table row, so they get the same affordances. */
 .child-op-open{display:block;width:100%;text-align:left;background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;border-radius:4px}
 .child-op-open:disabled{cursor:default}
@@ -570,7 +579,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 .b-dot-spin{animation:b-dot-pulse 1.2s ease-in-out infinite}
 @keyframes b-dot-pulse{0%,100%{opacity:.35}50%{opacity:1}}
 /* ============================================================
-   USER MENU (2026-10-08) — the topbar avatar's dropdown
+   USER MENU — the topbar avatar's dropdown
    ============================================================ */
 
 .user-menu{position:absolute;right:0;top:calc(100% + 8px);z-index:170;min-width:210px;

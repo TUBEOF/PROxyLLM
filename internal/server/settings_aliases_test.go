@@ -1,7 +1,7 @@
 package server
 
-// Spec-derived settings → runtime tests (plan §6.4 C6 / Analysis C top
-// layer / docs/configuration.md layer 4): the settings KV (WebUI-editable,
+// Spec-derived settings → runtime tests (docs/configuration.md layer 4):
+// the settings KV (WebUI-editable,
 // SPA key `model_aliases`) is the DB override layer — values stored there
 // must reach the live router at assembly AND on every successful settings
 // write without restart. The alias map is a runtime swap (SetAliases), the

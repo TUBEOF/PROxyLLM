@@ -1,9 +1,9 @@
 # Translation Matrix (Reference)
 
-Canonical field mapping between the four protocol shapes PROxyLLM speaks
-(plan §6.1). This is the reference for the canonical-IR hub-and-spoke
-translation engine (Analysis D): each protocol contributes a codec pair;
-crossing protocols means two codecs + the IR.
+Canonical field mapping between the four protocol shapes PROxyLLM speaks.
+This is the reference for the canonical-IR hub-and-spoke translation engine
+(ADR-004): each protocol contributes a codec pair; crossing protocols means two
+codecs + the IR.
 
 Legend for non-mappable fields: fields that exist on one protocol only
 ride in the per-request **passthrough map** — re-emitted verbatim when the
@@ -47,7 +47,7 @@ non-Claude targets — see the compat table below.
 ## Compat policy effects (non-Claude targets)
 
 Per-model compatibility settings (`models.compat` in the DB, WebUI
-"Models & Compatibility" editor; plan §6.4) govern the translation on the
+"Models & Compatibility" editor) govern the translation on the
 Anthropic surface:
 
 | Setting | Values | Effect on translation |
@@ -86,6 +86,6 @@ Anthropic surface:
 
 ## Source basis
 
-Mapping derived from the official protocol docs (plan §2, facts A1–A14,
-O1–O12, L1–L6, verified live 2026-09-10) — the same facts the golden
-fixtures in `testdata/golden/` annotate.
+Mapping derived from the official protocol documentation of each surface — the
+same sources the golden fixtures in `testdata/golden/` cite, each with the URL and
+the date it was read.

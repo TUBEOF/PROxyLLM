@@ -1,10 +1,10 @@
 package httpapi
 
-// Wire-name resolution contract tests (2026-09-21 model identity): a
+// Wire-name resolution contract tests (model identity): a
 // prefixed routing ID ("myhost/glm-5.3") resolves to the upstream wire name
 // ("glm-5.3") for dispatch — through the models-table row when present,
 // through the last-slash fallback otherwise. The client-facing response
-// echoes the routing ID (OP-2), and the route_trace records the resolution
+// echoes the routing ID, and the route_trace records the resolution
 // (model_resolved event, version 4).
 
 import (
@@ -59,7 +59,7 @@ func TestWireModel_RowNameWins(t *testing.T) {
 		t.Errorf("upstream model = %q, want the row's wire name glm-5.3-wire", upstream.Model)
 	}
 
-	// OP-2: the client sees the routing ID, not the wire name.
+	// The client sees the routing ID, not the wire name.
 	if !strings.Contains(body, `"model":"myhost/glm-5.3"`) {
 		t.Errorf("client echo missing routing ID: %s", body)
 	}

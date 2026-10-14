@@ -13,8 +13,8 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/sse"
 )
 
-// streamDecoder decodes the OpenAI chat-completions SSE stream (facts O4,
-// O12) into canonical IR events, using the shared WHATWG SSE reader.
+// streamDecoder decodes the OpenAI chat-completions SSE stream into
+// canonical IR events, using the shared WHATWG SSE reader.
 //
 // Chat streaming is data-only SSE terminated by the [DONE] sentinel. One
 // wire chunk can map to zero, one, or two canonical events, so decoded
@@ -28,10 +28,10 @@ import (
 //     and flush as ONE thinking block (BlockStart/Delta/BlockStop) right
 //     before the stream's terminal events. The Anthropic/IR wire cannot
 //     re-open a closed content block, and reasoning fragments can arrive
-//     interleaved with content (rapid-mlx L-06 class of upstreams), so a
-//     fragment-position replay would fragment the text — the buffered
-//     single-block shape is lossless and wire-conform.
-//   - tool_calls entries assemble by index (O4): a new index closes the
+//     interleaved with content (a class of OpenAI-compat upstreams emits
+//     them that way), so a fragment-position replay would fragment the
+//     text — the buffered single-block shape is lossless and wire-conform.
+//   - tool_calls entries assemble by index: a new index closes the
 //     open block and opens a tool_use block (ID/name on the first entry);
 //     argument fragments → Delta(tool_input)
 //   - the finish_reason chunk → BlockStop (stop reason recorded)
@@ -178,7 +178,7 @@ func (d *streamDecoder) mapChunk(w *wireChunk) {
 				Delta: ir.DeltaPayload{Kind: ir.DeltaText, Text: *ch.Delta.Content.Str}})
 		}
 	} else if ch.Delta != nil && len(ch.Delta.ToolCalls) > 0 {
-		// Parallel tool calls (O4): one chunk can carry several
+		// Parallel tool calls: one chunk can carry several
 		// tool_calls entries, each assembling by its OWN index — loop
 		// over all entries. Blocks stay open until finish_reason: a
 		// later chunk can resume any index (interleaved fragments), so
@@ -201,11 +201,11 @@ func (d *streamDecoder) mapChunk(w *wireChunk) {
 				d.toolBlocks[tc.Index] = block
 				d.queue = append(d.queue, ir.StreamEvent{Type: ir.BlockStart, Index: block,
 					Part: ir.ToolCallPart{ID: tc.ID, Name: tc.Function.Name}})
-				// The ANCHOR delta may already carry arguments (ollama.com/v1
-				// One-shot shape: the whole JSON string in one chunk; spec O4
-				// allows appends to a fresh index too). Dropping it produces
-				// a tool_use with empty input — clients reject that as
-				// invalid tool parameters.
+				// The ANCHOR delta may already carry the complete arguments
+				// — one-shot shape (ollama.com/v1): the whole JSON string in
+				// one chunk, where the spec allows appends to a fresh index
+				// too. Dropping it produces a tool_use with empty input —
+				// clients reject that as invalid tool parameters.
 				if tc.Function.Arguments != "" {
 					d.queue = append(d.queue, ir.StreamEvent{Type: ir.Delta, Index: block,
 						Delta: ir.DeltaPayload{Kind: ir.DeltaToolInput, PartialJSON: tc.Function.Arguments}})
@@ -242,13 +242,13 @@ func (d *streamDecoder) mapChunk(w *wireChunk) {
 		d.flushReasoning()
 	}
 	// A chunk may carry usage alongside or without choices (stream_options
-	// include_usage, O4); it closes out the MessageDelta.
+	// include_usage); it closes out the MessageDelta.
 	d.emitUsage(w.Usage)
 }
 
-// maxReasoningBuffer bounds the buffered reasoning trace (security review
-// 2026-09-22): a runaway upstream pumping delta.reasoning fragments
-// indefinitely must not grow decoder memory without limit. A trace beyond
+// maxReasoningBuffer bounds the buffered reasoning trace: a runaway upstream
+// pumping delta.reasoning fragments indefinitely must not grow decoder
+// memory without limit. A trace beyond
 // the cap is TRUNCATED (dropped fragments, not flushed mid-stream — a
 // mid-stream flush would violate block sequencing: the text block is still
 // open, and a new content_block_start before its stop is a wire

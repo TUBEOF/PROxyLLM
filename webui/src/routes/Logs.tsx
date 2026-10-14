@@ -101,8 +101,8 @@ export default function Logs() {
   const canNext = offset + pageSize < total;
 
   // Render shapes: children expand inline directly under their parent
-  // request as nested `child` shapes (2026-10-07). Chain marks are GONE
-  // (2026-10-08 owner decision): conversation adjacency chained unrelated
+  // request as nested `child` shapes. Chain marks are GONE
+  //: conversation adjacency chained unrelated
   // requests (same system prompt ⇒ same conv id) — the gutter now renders
   // ONLY the parent→sub-op tree, i.e. how requests relate (retry /
   // fallback / emulated web tool), not which chat they belong to.
@@ -154,7 +154,7 @@ export default function Logs() {
   }, [logs, data]);
 
   // Exactly one drawer at a time: the two views are a step and the request it
-  // belongs to, and each links to the other (2026-10-10).
+  // belongs to, and each links to the other.
   const openTrace = useCallback((l: RequestLog) => {
     setSelectedChild(null);
     setSelected(l);
@@ -176,7 +176,7 @@ export default function Logs() {
   const openChildRef = useRef(openChild);
   openChildRef.current = openChild;
 
-  // Capture switch (2026-10-10): the same KV the request path reads per
+  // Capture switch: the same KV the request path reads per
   // request, so a flip takes effect on the next request with no restart. It
   // writes through the generic settings API — no bespoke endpoint for one
   // boolean.
@@ -364,7 +364,7 @@ export default function Logs() {
   );
 }
 
-// buildShapes was removed (2026-10-08 owner decision): the conversation-
+// buildShapes was removed: the conversation-
 // adjacency chain marks chained UNRELATED requests — the `sys:` fallback key
 // groups by (client key, system prompt), so every turn of every CLI session
 // shared one conv id and the gutter linked everything into one line. The
@@ -389,7 +389,7 @@ function intraRowHealed(row: RequestLog): boolean {
 
 // PayloadSection renders a captured body — the conversation a request carried
 // and the answer it produced, or, with owner="child", what one sub-operation
-// sent and received (2026-10-10). Fetched when the drawer opens rather than
+// sent and received. Fetched when the drawer opens rather than
 // shipped with the row: a payload is prompt-sized, and the list is polled every
 // few seconds.
 //
@@ -471,7 +471,7 @@ function CapturedBlock({ title, body }: { title: string; body: string }) {
   );
 }
 
-// ChildDetail is one sub-operation's own view (2026-10-10): what the step was
+// ChildDetail is one sub-operation's own view: what the step was
 // (kind, model, account), when it ran, and — the reason the row opens at all —
 // what it sent and received. The parent request is one button away: the step
 // answers "what did this do", the request answers "what was said".
@@ -641,7 +641,7 @@ function LogDetail({ selected, subOps, names, onOpenChild }: { selected: Request
             <ul className="child-op-list">
               {subOps.map((c) => (
                 <li key={c.id}>
-                  {/* Each entry opens that step's own view (2026-10-10) — the
+                  {/* Each entry opens that step's own view — the
                       same destination as its nested row in the table. */}
                   <button
                     type="button"

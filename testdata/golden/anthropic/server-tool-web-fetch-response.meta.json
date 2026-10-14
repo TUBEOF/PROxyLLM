@@ -2,6 +2,5 @@
   "fixture": "server-tool-web-fetch-response.json",
   "source": "https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/web-fetch-tool",
   "accessed": "2026-10-11",
-  "facts": ["A3", "A8", "A9", "A10"],
   "notes": "web_fetch_tool_result: content is a SINGLE web_fetch_result object (asymmetry vs web_search's array), holding url, a nested document content block (source.type text|base64, media_type, data), title, citations, retrieved_at (RFC 3339). PDFs arrive as source.type base64 with media_type application/pdf. RE-READ 2026-10-11 (page now served from platform.claude.com): max_content_tokens is ENFORCED behaviour, not a hint — 'If the fetched content exceeds this limit, the tool truncates it'; the limit applies to text content, never to binary content such as PDFs, and the parameter is optional. Every document block the reference shows carries source.data, so a success result with a data-less document is not a shape it produces. Newer tool versions exist (web_fetch_20260209 dynamic filtering, _20260309 cache bypass, _20260318 response inclusion); the repo passes the dated type string through verbatim, so this fixture's basic _20250910 shape remains the one the emulation emits."
 }

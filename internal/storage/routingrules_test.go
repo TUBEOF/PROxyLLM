@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-// Spec: plan Analysis C schema (routing_rules: match_model, match_capabilities,
-// chain, priority, enabled) + Analysis E (rule state lives in the DB, WebUI-
-// editable). The accessors must round-trip every field and preserve the
+// Spec: schema (routing_rules: match_model, match_capabilities, chain,
+// priority, enabled); rule state lives in the DB, WebUI-editable. The
+// accessors must round-trip every field and preserve the
 // deterministic rule order the router depends on (priority DESC, registration
 // order for ties).
 
@@ -136,7 +136,7 @@ func TestRoutingRule_Delete(t *testing.T) {
 func TestRoutingRule_EmptyChainRejected(t *testing.T) {
 	s := openTokenStore(t)
 
-	// Analysis E: a rule without a chain can never resolve — refuse at the
+	// A rule without a chain can never resolve — refuse at the
 	// persistence boundary, not in the router.
 	err := s.PutRoutingRule(context.Background(), RoutingRule{ID: "rule-1", MatchModel: "x", Chain: nil})
 	if err == nil {

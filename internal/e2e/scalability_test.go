@@ -1,6 +1,6 @@
 package e2e
 
-// Scalability (2026-10-10). Two claims, chosen so they do not depend on which
+// Scalability. Two claims, chosen so they do not depend on which
 // machine runs them:
 //
 //  1. Authentication no longer costs a KDF per request. An ABSOLUTE latency

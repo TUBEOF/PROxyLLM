@@ -8,17 +8,16 @@ import (
 	"testing/fstest"
 )
 
-// RED tests for the SPA serving layer (plan §9, Phase 2 research E-1..E-4,
-// §5 decision, P-1..P-5). Derived from the research contracts, never from
-// implementation behavior:
+// RED tests for the SPA serving layer. Derived from the serving contracts,
+// never from implementation behavior:
 //
-//   - E-3: the embedded FS plugs into the stock file server; the spa
-//     handler only decorates the fallback decision.
-//   - §5:  GET, no matching file, not under /v1/ or /api/, Accept
+//   - the embedded FS plugs into the stock file server; the spa handler
+//     only decorates the fallback decision.
+//   - a GET with no matching file, not under /v1/ or /api/, whose Accept
 //     includes text/html → index.html with 200 (the SPA renders its own
 //     404 view). Everything else → 404.
-//   - P-1..P-5: every WebUI response carries the strict CSP + security
-//     headers. API responses (non-SPA paths) carry the same base headers.
+//   - every WebUI response carries the strict CSP + security headers.
+//     API responses (non-SPA paths) carry the same base headers.
 //
 // The handler takes an fs.FS so tests run against a synthetic dist tree —
 // no dependency on a Node build.
@@ -34,7 +33,7 @@ func newTestSPA(t *testing.T) http.Handler {
 	return NewSPAHandler(dist)
 }
 
-// E-3 / §5: a real asset path serves the file.
+// A real asset path serves the file.
 func TestSPA_ServesAsset(t *testing.T) {
 	h := newTestSPA(t)
 	rec := httptest.NewRecorder()
@@ -47,7 +46,7 @@ func TestSPA_ServesAsset(t *testing.T) {
 	}
 }
 
-// E-3 / §5: index.html serves directly.
+// index.html serves directly.
 func TestSPA_ServesIndex(t *testing.T) {
 	h := newTestSPA(t)
 	rec := httptest.NewRecorder()
@@ -60,7 +59,7 @@ func TestSPA_ServesIndex(t *testing.T) {
 	}
 }
 
-// §5: a deep link that matches no file falls back to index.html — 200, not
+// A deep link that matches no file falls back to index.html — 200, not
 // 404 — so the SPA renders the route (and its own 404 view for unknown
 // paths) client-side.
 func TestSPA_DeepLinkFallsBackToIndex(t *testing.T) {
@@ -79,7 +78,7 @@ func TestSPA_DeepLinkFallsBackToIndex(t *testing.T) {
 	}
 }
 
-// §5: non-GET, non-HTML, /v1//api paths never fall back — they 404.
+// Non-GET, non-HTML, /v1//api paths never fall back — they 404.
 func TestSPA_NoFallbackForAPIOrNonGET(t *testing.T) {
 	h := newTestSPA(t)
 	cases := []struct {
@@ -104,8 +103,8 @@ func TestSPA_NoFallbackForAPIOrNonGET(t *testing.T) {
 	}
 }
 
-// P-1..P-5: the CSP + security headers ride on SPA responses. The exact
-// policy is pinned by the research (research §4 P-3): default-src 'self',
+// The CSP + security headers ride on SPA responses. The exact policy is
+// pinned: default-src 'self',
 // script-src 'self', style-src 'self', img-src 'self' data:, font-src
 // 'self', connect-src 'self', object-src 'none', base-uri 'self',
 // form-action 'self', frame-ancestors 'none'.

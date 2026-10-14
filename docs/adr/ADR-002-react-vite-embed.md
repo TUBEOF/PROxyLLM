@@ -7,8 +7,8 @@
 
 The WebUI must cover OAuth flow UI (start/poll/callback states), live
 stats, log viewer with route_trace detail, routing/compat editor — plus fit
-the UpGuard design system (pure CSS/HTML dashboard kit, dark-only, single
-green accent). It must embed into the single Go binary (Analysis B).
+the console's design system (pure CSS/HTML component kit, dark-only, single
+green accent). It must embed into the single Go binary.
 
 ## Options considered
 
@@ -24,9 +24,10 @@ green accent). It must embed into the single Go binary (Analysis B).
 ## Decision
 
 **React 18 + Vite + TypeScript**, built to static assets, embedded via
-`go:embed`. Design contract: `colors_and_type.css` verbatim as token layer,
-`ui_kits/dashboard/kit.css` as component layer (class names unchanged),
-fonts self-hosted (SIL OFL). No UI framework library.
+`go:embed`. Design contract: `design/colors_and_type.css` verbatim as token
+layer (its runtime copy under `webui/src/styles/`), `webui/src/styles/kit.css`
+as component layer (class names unchanged), fonts self-hosted (SIL OFL). No UI
+framework library.
 
 Embedding pattern (verified live 2026-09-10, Flipt engineering blog):
 `//go:embed all:dist/*` — the `all:` prefix includes `_`/`.`-prefixed
@@ -36,13 +37,14 @@ assets — adapted into `http.FS()` and served with an SPA fallback to
 ## Consequences
 
 - Bundle budget ≤ 200 KB gzip initial load, CI-enforced.
-- Visual regression tests (Playwright) against UpGuard kit baselines are a
-  blocking CI gate (Analysis F doctrine).
+- Visual regression tests (Playwright) against the console's own baselines:
+  the design-rule assertions block a PR, the screenshot comparison reports
+  (diff artifact + one sticky PR comment).
 - Plain React SPA with an SPA-fallback handler — no SSR framework, no
   Next.js; the Flipt post-mortem confirms SSR export formats fight the
   embed.FS model.
 
-## Implementation notes (Phase 2, 2026-09-13)
+## Implementation notes
 
 **Embed shape.** The directive lives in `webui/embed.go` as
 `//go:embed all:dist` — without a trailing `/*`: patterns are resolved
@@ -68,7 +70,7 @@ props are applied through the CSSOM (`element.style.setProperty`), not by
 emitting a `<style>` element or a `style:` attribute string — the
 `style-src` directive governs `<style>` elements and `style` attributes,
 so `'self'`-only is correct for the SPA. Verified against MDN's CSP
-documentation and the CSP spec's matching algorithm during Phase 2
+documentation and the CSP spec's matching algorithm
 research (§4 P-4). An `<img src="data:">` would still need `img-src data:`;
 the routes use inline SVG components instead, so the shipped CSP keeps
 `data:` in `img-src` only as documented headroom.

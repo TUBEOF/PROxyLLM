@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 
-// AliasEditor (2026-10-08): the interactive model alias map — rows of
+// AliasEditor: the interactive model alias map — rows of
 // alias → model-target pairs instead of the raw JSON textarea. Every alias
 // is one row: a text input (the alias clients send, e.g. "sonnet") and a
 // model picker (the registered model it routes to) with a free-text escape

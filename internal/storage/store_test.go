@@ -31,7 +31,7 @@ func TestOpen_MigrationsApplied(t *testing.T) {
 		t.Errorf("applied migrations: got %d want %d", count, len(migrations))
 	}
 
-	// All Phase 0 tables exist and are queryable.
+	// All core tables exist and are queryable.
 	for _, table := range []string{
 		"config", "providers", "provider_tokens", "models", "routing_rules",
 		"client_keys", "webui_admins", "request_logs", "usage_daily",
@@ -95,7 +95,7 @@ func TestOpen_WALAndForeignKeys(t *testing.T) {
 	}
 }
 
-// TestOpen_ConnectionPoolHandlesConcurrency (2026-10-10, ADR-016): the single
+// TestOpen_ConnectionPoolHandlesConcurrency (ADR-016): the single
 // connection ADR-003 chose was a SQLITE_BUSY mitigation. ADR-016 replaced it with
 // a small pool plus the pragmas that make a pool safe, so the property to pin is
 // not the number but the behaviour — concurrent readers and writers must all

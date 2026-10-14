@@ -1,6 +1,6 @@
 package storage
 
-// HMAC-based client-key hashes (2026-10-10).
+// HMAC-based client-key hashes.
 //
 // A client key is 256 bits of CSPRNG output (see auth.GenerateClientKey), and
 // Argon2id exists to make a LOW-ENTROPY secret expensive to guess — there is

@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
-// Spec: plan Analysis C config layering — "defaults → config file → ENV →
-// WebUI/DB overrides (highest, exportable as config file)". The config table
-// is the DB-override layer the Phase 2 settings page reads and writes
-// (§6.4's global non-Claude switch anthropic_surface_non_claude lives here,
+// Spec: config layering — "defaults → config file → ENV → WebUI/DB
+// overrides (highest, exportable as config file)". The config table is the
+// DB-override layer the settings page reads and writes (the global
+// non-Claude switch anthropic_surface_non_claude lives here,
 // as do retention/auth settings the WebUI exposes).
 
 func TestConfigValue_RoundTrip(t *testing.T) {

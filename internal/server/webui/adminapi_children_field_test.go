@@ -1,6 +1,6 @@
 package webui
 
-// I3 regression (2026-10-07 review): a failed sub-operation read must not
+// A failed sub-operation read must not
 // look like "this request had no fallbacks" — that is the observability lie
 // the feature exists to prevent. The envelope therefore carries an explicit
 // unavailable marker, and this pure helper is the single place that decides

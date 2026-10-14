@@ -11,7 +11,6 @@ import (
 // names to declare a 1M-context override. The marker is a client-side
 // hint, never part of the model identity: the deployed instance answered
 // 404 not_found_error "No route for the requested model" for
-// "ollama-cloud/glm-5.3-flash[1m]" (live repro 2026-10-06). Routing must
 // strip the marker to the base model, record a "context_override" trace
 // event (never silent), and pass the base name down the chain.
 //

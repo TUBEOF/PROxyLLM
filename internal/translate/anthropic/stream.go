@@ -11,8 +11,8 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/sse"
 )
 
-// streamDecoder decodes the Anthropic Messages SSE stream (facts A5–A7,
-// A13) into canonical IR events, using the shared WHATWG SSE reader.
+// streamDecoder decodes the Anthropic Messages SSE stream into canonical IR
+// events, using the shared WHATWG SSE reader.
 type streamDecoder struct {
 	reader *sse.Reader
 	// done reports whether message_stop (Done) or a terminal error event
@@ -80,8 +80,8 @@ type wireStreamError struct {
 }
 
 // mapEvent converts one dispatched SSE event's JSON data into a canonical
-// event. Unknown event types surface as Comment events (A5: clients must
-// tolerate future types; the relay logs them).
+// event. Unknown event types surface as Comment events: clients must
+// tolerate future types, and the relay logs them.
 func (d *streamDecoder) mapEvent(data string) (ir.StreamEvent, error) {
 	var w wireStreamEvent
 	if err := json.Unmarshal([]byte(data), &w); err != nil {
@@ -120,7 +120,7 @@ func (d *streamDecoder) mapEvent(data string) (ir.StreamEvent, error) {
 				ev.Delta = ir.DeltaPayload{Kind: ir.DeltaToolInput, PartialJSON: w.Delta.PartialJSON}
 			default:
 				// Unknown delta types tolerate the same way unknown event
-				// types do (A5 discipline applies to nested discriminators).
+				// types do; the same rule covers nested discriminators.
 				return ir.StreamEvent{Type: ir.Comment}, nil
 			}
 		}

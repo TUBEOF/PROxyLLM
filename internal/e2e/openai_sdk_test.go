@@ -1,9 +1,9 @@
 package e2e
 
-// OpenAI official-SDK E2E tests (Phase 1 DoD, Task #19): openai-go v3
+// OpenAI official-SDK E2E tests: openai-go v3
 // drives chat completions, Responses, and models discovery against the
-// assembled proxy. Acceptance derived from plan §5.1 (surface contract),
-// O5–O8/O9/O10 (wire facts), and the golden fixtures — NOT from
+// assembled proxy. Acceptance derived from the surface contract,
+// the OpenAI wire facts, and the golden fixtures — NOT from
 // implementation behavior. The mock upstream speaks OpenAI chat wire, so
 // the chat surface is a straight relay and the Responses surface proves
 // the bidirectional IR translation.
@@ -19,7 +19,7 @@ import (
 
 // 1. Chat round trip: the official SDK client creates a chat completion
 // through the proxy against the scripted mock upstream and relays the golden
-// answer — text, tool calls, finish reason, usage (O2/O3/O12) — verbatim.
+// answer — text, tool calls, finish reason, usage — verbatim.
 func TestOpenAISDK_ChatRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
@@ -42,7 +42,7 @@ func TestOpenAISDK_ChatRoundTrip(t *testing.T) {
 	if cc.Choices[0].Message.Content != "I'll check the weather for you." {
 		t.Errorf("content = %q, want the golden assistant text relayed", cc.Choices[0].Message.Content)
 	}
-	// Golden tool call (O3): id, function name, JSON-string arguments.
+	// Golden tool call: id, function name, JSON-string arguments.
 	calls := cc.Choices[0].Message.ToolCalls
 	if len(calls) != 1 {
 		t.Fatalf("tool calls = %d, want the golden single tool call", len(calls))
@@ -62,7 +62,7 @@ func TestOpenAISDK_ChatRoundTrip(t *testing.T) {
 }
 
 // 2. Chat streaming: NewStreaming yields the relayed upstream deltas and
-// the terminal usage frame (O4) — the SDK assembles the full text.
+// the terminal usage frame — the SDK assembles the full text.
 func TestOpenAISDK_ChatStreaming(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
@@ -92,7 +92,7 @@ func TestOpenAISDK_ChatStreaming(t *testing.T) {
 
 // 3. Responses API round trip: the official SDK creates a Response
 // through the proxy; the proxy decodes Responses wire → IR, routes to the
-// chat-wire mock, and re-encodes IR → Responses (O5).
+// chat-wire mock, and re-encodes IR → Responses.
 func TestOpenAISDK_ResponsesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
@@ -113,7 +113,7 @@ func TestOpenAISDK_ResponsesRoundTrip(t *testing.T) {
 	}
 }
 
-// 4. Responses streaming: the SDK stream surfaces the ordered O7 semantic
+// 4. Responses streaming: the SDK stream surfaces the ordered Responses semantic
 // sequence response.created → output_text.delta → response.completed with
 // terminal usage, AND the golden stream's tool_calls translated into
 // function_call output items (arguments deltas assembled, call id/name
@@ -130,7 +130,7 @@ func TestOpenAISDK_ResponsesStreaming(t *testing.T) {
 	defer func() { _ = stream.Close() }()
 
 	// Ordering is asserted with a phase counter: each milestone must first
-	// appear AFTER its predecessor, so the O7 sequence cannot pass as a set.
+	// appear AFTER its predecessor, so the sequence cannot pass as a set.
 	const (
 		phaseWantCreated = 1
 		phaseWantText    = 2
@@ -198,7 +198,7 @@ func TestOpenAISDK_ResponsesStreaming(t *testing.T) {
 }
 
 // 5. Models discovery: Models.List resolves the stored model rows through
-// the proxy in the O9 shape (the SDK's typed page decode proves the
+// the proxy in the documented list shape (the SDK's typed page decode proves the
 // shape).
 func TestOpenAISDK_ModelsList(t *testing.T) {
 	ctx := context.Background()
@@ -221,7 +221,7 @@ func TestOpenAISDK_ModelsList(t *testing.T) {
 }
 
 // 6. No-route error surfaces as a typed SDK APIError with a 4xx status
-// (§5.3, O10) — never a 5xx or a transport error.
+// — never a 5xx or a transport error.
 func TestOpenAISDK_NoRouteTypedError(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
@@ -235,6 +235,6 @@ func TestOpenAISDK_NoRouteTypedError(t *testing.T) {
 		t.Fatal("no-route request unexpectedly succeeded")
 	}
 	if status := httpNoRouteStatus(t, err); status < 400 || status >= 500 {
-		t.Errorf("no-route status = %d, want 4xx (§5.3)", status)
+		t.Errorf("no-route status = %d, want 4xx", status)
 	}
 }

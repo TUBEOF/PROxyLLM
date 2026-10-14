@@ -1,9 +1,11 @@
 package auth
 
-// Client-key auth: RED tests derived from plan §5.1 (auth extraction per
-// surface + C5/A14 both-headers reality), Analysis G control 1 (Argon2id-only,
-// display-once secrets, revocation immediate), §5.3 (protocol-conform 401
-// bodies per surface, O10/A13), and the client_keys schema (Analysis C).
+// Client-key auth: RED tests covering key generation and the middleware
+// surface (auth extraction per
+// surface, both header families being real in the wild,
+// Argon2id-only hashing,
+// display-once secrets, revocation immediate, protocol-conform 401
+// bodies per surface, and the client_keys schema).
 // Never from implementation behavior.
 
 import (
@@ -67,7 +69,7 @@ func do(t *testing.T, url string, hdr string, value string) (int, string) {
 	return resp.StatusCode, string(body)
 }
 
-// 1. Key shape (§5.1): pk_<prefix>_<secret> with a 256-bit secret
+// 1. Key shape: pk_<prefix>_<secret> with a 256-bit secret
 // (43 unpadded base64url chars); two generations never collide.
 func TestGenerateKey_Shape(t *testing.T) {
 	k1, err := GenerateClientKey()
@@ -172,7 +174,7 @@ func TestMultipleKeys_ListAndVerify(t *testing.T) {
 	}
 }
 
-// 4. Scopes round trip (Analysis C scopes column): stored scopes survive
+// 4. Scopes round trip (the scopes column): stored scopes survive
 // create and retrieval (routing rule 1 consumes them later).
 func TestScopes_RoundTrip(t *testing.T) {
 	st := newTestStore(t)
@@ -218,8 +220,8 @@ func TestRevoke(t *testing.T) {
 	}
 }
 
-// 6. Middleware header extraction per §5.1: Bearer on the OpenAI surface
-// (O1), x-api-key on the Anthropic surface (A14), and — because C5 says
+// 6. Middleware header extraction: Bearer on the OpenAI surface,
+// x-api-key on the Anthropic surface, and — because
 // both header families are real in the wild — Bearer on the Anthropic
 // surface too. Missing/wrong/malformed credentials → 401.
 func TestMiddleware_AuthExtraction(t *testing.T) {
@@ -241,7 +243,7 @@ func TestMiddleware_AuthExtraction(t *testing.T) {
 	}{
 		{"Bearer", "Authorization", "Bearer " + secret, http.StatusOK},
 		{"x-api-key", "x-api-key", secret, http.StatusOK},
-		{"Bearer recognized on both surfaces (C5)", "Authorization", "Bearer " + secret, http.StatusOK},
+		{"Bearer recognized on both surfaces", "Authorization", "Bearer " + secret, http.StatusOK},
 		{"no header → 401", "", "", http.StatusUnauthorized},
 		{"wrong secret → 401", "Authorization", "Bearer pk_deadbeef_deadbeefdeadbeefdeadbeefdeadbeefdeadbeefde", http.StatusUnauthorized},
 		{"malformed Bearer (no space) → 401", "Authorization", "Bearer" + secret, http.StatusUnauthorized},
@@ -256,9 +258,9 @@ func TestMiddleware_AuthExtraction(t *testing.T) {
 	}
 }
 
-// 7. Protocol-conform 401 bodies per surface (§5.3): OpenAI
-// error.type/code/message (O10) on /v1/chat/completions; Anthropic
-// error.type/message (A13) on /v1/messages.
+// 7. Protocol-conform 401 bodies per surface: OpenAI
+// error.type/code/message on /v1/chat/completions; Anthropic
+// error.type/message on /v1/messages.
 func TestMiddleware_401BodyPerSurface(t *testing.T) {
 	st := newTestStore(t)
 	mw := NewMiddleware(st)
@@ -268,7 +270,7 @@ func TestMiddleware_401BodyPerSurface(t *testing.T) {
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 
-	// OpenAI surface shape (O10).
+	// OpenAI surface shape.
 	status, body := do(t, srv.URL+"/v1/chat/completions", "Authorization", "Bearer pk_no_no_no")
 	if status != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", status)
@@ -287,7 +289,7 @@ func TestMiddleware_401BodyPerSurface(t *testing.T) {
 		t.Errorf("openai 401 body missing type/message: %s", body)
 	}
 
-	// Anthropic surface shape (A13): {"type":"error","error":{...}}.
+	// Anthropic surface shape: {"type":"error","error":{...}}.
 	status, body = do(t, srv.URL+"/v1/messages", "x-api-key", "pk_no_no_no")
 	if status != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", status)
@@ -353,7 +355,7 @@ func TestMiddleware_Disabled(t *testing.T) {
 	}
 }
 
-// 10. last_used_at (Analysis C schema field): a successful verification
+// 10. last_used_at (a schema field): a successful verification
 // stamps it, so the WebUI can show staleness.
 func TestLastUsed_UpdatedOnSuccessfulAuth(t *testing.T) {
 	st := newTestStore(t)

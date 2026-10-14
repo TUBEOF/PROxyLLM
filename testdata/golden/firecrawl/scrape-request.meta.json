@@ -2,6 +2,5 @@
   "fixture": "scrape-request.json",
   "source": "https://docs.firecrawl.dev/api-reference/endpoint/scrape",
   "accessed": "2026-09-10",
-  "facts": ["F1", "F3"],
   "notes": "POST https://api.firecrawl.dev/v2/scrape with url + formats."
 }

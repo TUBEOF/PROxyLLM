@@ -156,3 +156,42 @@ pays one description per turn: with nothing better to route to, the rescue is
 the only way to serve the request at all. A caption cache keyed by image
 content is the step that would remove that cost; it is deliberately not in this
 change.
+
+## Addendum 2026-10-14: the description is computed once
+
+The cost the paragraph above names was real and the operator kept paying it. A
+client re-sends its own transcript on every turn, image parts included, so a
+conversation that carried a screenshot re-described the same bytes again and
+again for as long as it lived. Descriptions are now cached, keyed on the image's
+decoded bytes.
+
+Three properties decide whether such a cache works at all, and each is the
+opposite of the obvious:
+
+- **The key uses the base prompt, never the composed one.** The instruction the
+  describer receives appends the client's latest turn, so keying on what was
+  actually sent would miss on every turn — the trap that makes a caption cache
+  cost more than it saves.
+- **What is cached is the finished replacement text**, not the bare description,
+  so the substituted position stays byte-identical turn over turn. An upstream
+  prompt cache matches on an exact byte prefix; a history position whose text
+  changes between turns invalidates everything after it.
+- **The key carries the client key.** The describer is shown that client's
+  question as a steering hint and its answer can quote what it was shown, so a
+  shared bucket would let one client's wording ride into another's request.
+
+A failure is never cached, and a failed description still leaves the original
+image in place.
+
+**The rescue now runs before the dispatch when it can.** If every candidate's
+model row has learned it cannot see images and every image already has a
+description, the images are replaced before the chain is walked: the rejection
+that would have triggered the rescue is a known outcome rather than a discovery,
+and paying a round trip for it buys nothing. The reactive path stays for the
+first turn, which is what teaches the model row in the first place.
+
+**A cache hit writes no log row.** The sub-operation log lists operations, and a
+description that was already known is the absence of one. The substitution is
+still recorded — as a trace event, in the request's own detail view — because a
+description that silently replaced an image would be exactly the kind of
+unobservable behaviour this ADR exists to prevent.

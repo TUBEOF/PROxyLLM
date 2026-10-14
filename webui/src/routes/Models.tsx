@@ -13,7 +13,7 @@ import type {
 import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
 
-// The relocated Settings-editor key (2026-10-06): model-surface policy,
+// The relocated Settings-editor key: model-surface policy,
 // not compat knobs. (The alias-map key moved to Routing, 2026-10-08.)
 const NON_CLAUDE_KEY = 'anthropic_surface_non_claude';
 const NON_CLAUDE_VALUES = ['allow', 'warn', 'block'] as const;
@@ -22,13 +22,13 @@ import { IconPlus } from '../icons';
 
 // "Models" (plan §9) — the central per-model editor: identity, provider
 // link, capabilities, priority. The compat knobs are NOT editable anymore
-// (2026-10-06, owner decision "Alles raus, automatisch"): the per-model
+//: the per-model
 // policy derives from the row's capabilities server-side (thinking
 // handling, cache markers, server-tool emulation, clamps — every
 // application still recorded in route_trace, never silent). Legacy compat
 // blobs on existing rows keep working as read-only overrides.
 //
-// Layout (2026-09-22): provider-grouped collapsible sections with model
+// Layout: provider-grouped collapsible sections with model
 // CARDS (not a flat table) — the per-model test button needs a card-level
 // footer, and the grouping matches how operators think (per account). Each
 // card carries a Test button: one minimal "Sag OK" round trip against the
@@ -148,7 +148,7 @@ export default function Models() {
       setFormError(null);
       const caps: Record<string, unknown> = { tools: Object.keys(form.capabilities).filter((k) => form.capabilities[k]) };
       // Operator save = manual selection: every flag written here is
-      // pinned so the automatic capability learning (2026-09-21) stops
+      // pinned so the automatic capability learning stops
       // overwriting it. Unchecking removes the pin (learning resumes).
       const pinned: Record<string, boolean> = {};
       for (const flag of CAPABILITY_FLAGS) {
@@ -216,7 +216,7 @@ export default function Models() {
 
   // Surface policy (relocated from the removed Settings page, 2026-10-06):
   // the non-Claude gate — model-surface policy, not compat knobs. The
-  // model alias map moved to Routing (2026-10-08): it rewrites the
+  // model alias map moved to Routing: it rewrites the
   // client-requested name BEFORE any rule matches, which is routing
   // configuration, not model policy.
   const { data: settingsData, reload: reloadSettings } = useAdminData<SettingsResponse>(
@@ -243,7 +243,7 @@ export default function Models() {
     [saveSwitch, reloadSettings],
   );
 
-  // Model test (2026-09-22): one minimal round trip per model card. State
+  // Model test: one minimal round trip per model card. State
   // is per-model: pending + the last result. Latency is NOT rendered in
   // the result badge (wall-clock noise in screenshots); the status text
   // alone carries the outcome.
@@ -273,7 +273,7 @@ export default function Models() {
     [],
   );
 
-  // Provider grouping (2026-09-22): models bucket by their provider, in
+  // Provider grouping: models bucket by their provider, in
   // provider-listing order; providers without models appear with an empty
   // hint so the grouping never hides an account.
   const groups = useMemo(() => {
@@ -427,7 +427,7 @@ export default function Models() {
           </div>
         ) : (
           <div className="w-full">
-            {/* Provider-grouped collapsible sections (2026-09-22): each
+            {/* Provider-grouped collapsible sections: each
                 provider is one <details> (native, no JS state — the
                 v1.0.x screenshot lesson favors structural primitives),
                 its models render as cards in a grid. Block layout only. */}

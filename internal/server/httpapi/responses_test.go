@@ -1,20 +1,16 @@
 package httpapi
 
-// OpenAI Responses-surface RED tests: POST /v1/responses (O5–O8,
-// user-confirmed v1 scope in plan §5.1). The proxy decodes the
-// Responses-wire client request into IR, routes through the chat-wire
-// mock upstream (custom provider class), and re-encodes the upstream IR
-// into Responses wire for the client — so the enqueued scripts speak
-// openai/chat-response.json / openai/chat-stream.sse while the client
-// sends testdata/golden/openai/responses-request.json and receives
-// Responses-shaped output.
+// OpenAI Responses-surface RED tests: POST /v1/responses (the v1 scope).
+// The proxy decodes the Responses-wire client request into IR, routes
+// through the chat-wire mock upstream (custom provider class), and
+// re-encodes the upstream IR into Responses wire for the client — so the
+// enqueued scripts speak openai/chat-response.json / openai/chat-stream.sse
+// while the client sends testdata/golden/openai/responses-request.json and
+// receives Responses-shaped output.
 //
-// Streaming relays the Responses semantic events (O7): response.created,
+// Streaming relays the Responses semantic events: response.created,
 // response.output_text.delta, response.function_call_arguments.delta,
 // response.completed, carrying the terminal upstream usage.
-//
-// RED state: package httpapi does not exist yet (build failure proves RED
-// for every test in this file).
 
 import (
 	"encoding/json"
@@ -32,7 +28,7 @@ type sseEvent struct {
 }
 
 // parseSSEEvents splits an SSE body into (event name, data) pairs. Frames
-// without an event: line carry "" (O4 data-only frames are tolerated on
+// without an event: line carry "" (data-only frames are tolerated on
 // this surface too).
 func parseSSEEvents(body string) []sseEvent {
 	var out []sseEvent
@@ -57,7 +53,7 @@ func parseSSEEvents(body string) []sseEvent {
 
 // 1. Fixture round trip: a golden Responses request routed to a mock
 // chat-wire upstream answering with the golden chat response must
-// surface the answer as a completed Responses object (O5): typed output
+// surface the answer as a completed Responses object: typed output
 // items, relayed text, and upstream usage mapped into Responses usage.
 func TestResponses_FixtureRoundTrip(t *testing.T) {
 	e := newEnv(t)
@@ -88,10 +84,10 @@ func TestResponses_FixtureRoundTrip(t *testing.T) {
 		t.Fatalf("response not JSON: %v (%s)", err, body)
 	}
 	if resp.Object != "response" {
-		t.Errorf("object = %q, want response (O5)", resp.Object)
+		t.Errorf("object = %q, want response", resp.Object)
 	}
 	if resp.Status != "completed" {
-		t.Errorf("status = %q, want completed (O5)", resp.Status)
+		t.Errorf("status = %q, want completed", resp.Status)
 	}
 	if resp.Model != "gpt-5" {
 		t.Errorf("model = %q, want gpt-5", resp.Model)
@@ -113,7 +109,7 @@ func TestResponses_FixtureRoundTrip(t *testing.T) {
 		}
 	}
 	if !haveMessage {
-		t.Errorf("output items = %+v, want at least one type:message item (O5)", resp.Output)
+		t.Errorf("output items = %+v, want at least one type:message item", resp.Output)
 	}
 	if !strings.Contains(textOut, "I'll check the weather for you.") {
 		t.Errorf("output_text = %q, want the upstream assistant text relayed", textOut)
@@ -125,7 +121,7 @@ func TestResponses_FixtureRoundTrip(t *testing.T) {
 
 // 2. The mock upstream must receive the translated request in the OpenAI
 // chat wire shape: model, non-streaming, messages carrying the Responses
-// input items (incl. the get_weather function-call history, O6/O3).
+// input items (incl. the get_weather function-call history).
 func TestResponses_UpstreamSeesChatWire(t *testing.T) {
 	e := newEnv(t)
 	e.mock.Enqueue(mockJSON(t, http.StatusOK, string(golden(t, "openai/chat-response.json"))))
@@ -158,11 +154,11 @@ func TestResponses_UpstreamSeesChatWire(t *testing.T) {
 		t.Fatalf("upstream messages = %d, want the translated input items", len(upstream.Messages))
 	}
 	if !strings.Contains(reqs[0].Body, "get_weather") {
-		t.Errorf("upstream body missing the get_weather tool history (O6): %s", reqs[0].Body)
+		t.Errorf("upstream body missing the get_weather tool history: %s", reqs[0].Body)
 	}
 }
 
-// 3. Streaming relay (O7): the client sees the Responses semantic events —
+// 3. Streaming relay: the client sees the Responses semantic events —
 // response.created, response.output_text.delta with the upstream text
 // deltas relayed, terminal response.completed carrying the streamed
 // terminal usage (1250/128).
@@ -211,24 +207,24 @@ func TestResponses_StreamRelay(t *testing.T) {
 		}
 	}
 	if !created {
-		t.Error("stream missing response.created (O7)")
+		t.Error("stream missing response.created")
 	}
 	if !delta {
-		t.Error("stream missing response.output_text.delta (O7)")
+		t.Error("stream missing response.output_text.delta")
 	}
 	joined := strings.Join(deltas, "")
 	if !strings.Contains(joined, "Hello") || !strings.Contains(joined, " world") {
 		t.Errorf("relayed deltas = %q, want the upstream Hello/world text deltas", joined)
 	}
 	if completed != len(parseSSEEvents(body))-1 {
-		t.Errorf("response.completed at index %d of %d, want it terminal (O7)", completed, len(parseSSEEvents(body)))
+		t.Errorf("response.completed at index %d of %d, want it terminal", completed, len(parseSSEEvents(body)))
 	}
 	if terminalUsage.InputTokens != 1250 || terminalUsage.OutputTokens != 128 {
 		t.Errorf("terminal usage = %d/%d, want 1250/128 from the streamed final chunk", terminalUsage.InputTokens, terminalUsage.OutputTokens)
 	}
 }
 
-// 4. Tool-call stream (O7): upstream chat tool_calls deltas translate to
+// 4. Tool-call stream: upstream chat tool_calls deltas translate to
 // Responses function_call items with function-call argument deltas.
 func TestResponses_ToolCallStream(t *testing.T) {
 	e := newEnv(t)
@@ -252,7 +248,7 @@ func TestResponses_ToolCallStream(t *testing.T) {
 		argDeltas = append(argDeltas, d.Delta)
 	}
 	if len(argDeltas) == 0 {
-		t.Fatalf("no response.function_call_arguments.delta events — tool call not translated to a Responses function_call (O7): %s", body)
+		t.Fatalf("no response.function_call_arguments.delta events — tool call not translated to a Responses function_call: %s", body)
 	}
 	joined := strings.Join(argDeltas, "")
 	if !strings.Contains(joined, "location") {
@@ -260,9 +256,9 @@ func TestResponses_ToolCallStream(t *testing.T) {
 	}
 }
 
-// 5. Mid-stream upstream failure (Analysis E failover discipline): once
+// 5. Mid-stream upstream failure (failover discipline): once
 // streaming has begun, an upstream connection drop terminates with the
-// protocol-conform Responses error event (O7: FLAT {type,code,message}
+// protocol-conform Responses error event (FLAT {type,code,message}
 // shape) — never a mid-stream provider swap, never a bare Go error string.
 func TestResponses_StreamMidStreamError(t *testing.T) {
 	e := newEnv(t)
@@ -280,12 +276,12 @@ func TestResponses_StreamMidStreamError(t *testing.T) {
 			continue
 		}
 		if errEvent != nil {
-			t.Errorf("multiple error events in %s — error must be terminal (O7)", body)
+			t.Errorf("multiple error events in %s — error must be terminal", body)
 		}
 		errEvent = &parseSSEEvents(body)[i]
 	}
 	if errEvent == nil {
-		t.Fatalf("mid-stream failure produced no error event (O7): %s", body)
+		t.Fatalf("mid-stream failure produced no error event: %s", body)
 	}
 	var wireErr struct {
 		Type    string `json:"type"`
@@ -296,7 +292,7 @@ func TestResponses_StreamMidStreamError(t *testing.T) {
 		t.Fatalf("error event data not JSON: %v (%s)", err, errEvent.data)
 	}
 	if wireErr.Type != "error" {
-		t.Errorf("error event type = %q, want \"error\" (O7 flat shape)", wireErr.Type)
+		t.Errorf("error event type = %q, want the flat \"error\" shape", wireErr.Type)
 	}
 	if wireErr.Message == "" {
 		t.Errorf("error event missing message: %s", errEvent.data)
@@ -304,7 +300,7 @@ func TestResponses_StreamMidStreamError(t *testing.T) {
 	// Terminal discipline: nothing after the error event.
 	events := parseSSEEvents(body)
 	if len(events) > 0 && events[len(events)-1].name != "error" {
-		t.Errorf("events continue after the terminal error event (B2 discipline): %s", body)
+		t.Errorf("events continue after the terminal error event: %s", body)
 	}
 }
 
@@ -336,8 +332,8 @@ func TestResponses_StreamMidStreamErrorReportsHealthFailure(t *testing.T) {
 	}
 }
 
-// 6. No-route (§5.3): a request for a model with no rule → 4xx with the
-// OpenAI error shape (O10).
+// 6. No-route: a request for a model with no rule → 4xx with the
+// OpenAI error shape.
 func TestResponses_NoRoute(t *testing.T) {
 	e := newEnv(t)
 	status, body := e.post(t, "/v1/responses", `{"model":"unknown-model","input":"hi"}`)
@@ -351,7 +347,7 @@ func TestResponses_NoRoute(t *testing.T) {
 		} `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(body), &wireErr); err != nil {
-		t.Fatalf("no-route body not O10-shaped: %v (%s)", err, body)
+		t.Fatalf("no-route body not the OpenAI error shape: %v (%s)", err, body)
 	}
 	if wireErr.Error.Message == "" || wireErr.Error.Type == "" {
 		t.Errorf("no-route error body missing fields: %s", body)

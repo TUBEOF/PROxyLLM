@@ -1,7 +1,7 @@
 package provider
 
-// LiveRegistry is a Registry whose provider set can be replaced at runtime
-// (Task 5 Gap #2, plan §5.2): the WebUI saves a provider, the admin API
+// LiveRegistry is a Registry whose provider set can be replaced at runtime:
+// the WebUI saves a provider, the admin API
 // reloads the set from the store, and the next request resolves against
 // the NEW set — without a restart. The static registry's panic-on-duplicate
 // contract fits assembly-time construction, not live edits.

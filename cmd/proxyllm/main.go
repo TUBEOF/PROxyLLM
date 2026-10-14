@@ -1,8 +1,6 @@
-// Command proxyllm runs the PROxyLLM LLM proxy server.
-//
-// Phase 0 scope: parse layered configuration, initialize storage, wire the
-// HTTP mux, and serve a health endpoint. Providers, translation, and the
-// admin WebUI land in later phases.
+// Command proxyllm runs the PROxyLLM LLM proxy server: it parses the layered
+// configuration, initializes storage, wires the HTTP mux, the provider
+// stack, and the admin WebUI, and serves the API surfaces.
 package main
 
 import (
@@ -32,13 +30,13 @@ func loadMasterKey(cfg *config.Config) ([]byte, error) {
 }
 
 // serverOptions assembles the server wiring options from config. The
-// web-tool emulator (plan §6.2) activates only when a Firecrawl API key is
+// web-tool emulator activates only when a Firecrawl API key is
 // configured: without one there is nothing to emulate with, and the
 // emulation loop then degrades to the documented "unavailable" error
 // results. Never silently off — the caller logs the state.
 func serverOptions(cfg *config.Config, masterKey []byte) []server.Option {
 	opts := []server.Option{
-		// Mount the admin API (plan §5.2): the master key doubles as the
+		// Mount the admin API: the master key doubles as the
 		// session/CSRF HMAC secret — the same bytes that sealed the
 		// storage envelope, so WebUI sessions and at-rest secrets break
 		// and rotate together.
@@ -147,7 +145,7 @@ func run() error {
 	// the envelope — a store with neither is a store that cannot create keys.
 	store.SetKeyHasher(storage.NewKeyHasher(masterKey))
 
-	// Web-tool emulation state (plan §6.2 + ADR-010) is loud in both
+	// Web-tool emulation state (ADR-010) is loud in both
 	// directions: the ENV key is the legacy configuration path (no
 	// web-tool account in the DB wins), degraded (documented "unavailable"
 	// error results) without either. The server decides which source
@@ -162,11 +160,11 @@ func run() error {
 		return err
 	}
 
-	// Timeout policy (phase-3 research T-1..T-3): a streaming proxy must
+	// Timeout policy: a streaming proxy must
 	// NOT set ReadTimeout/WriteTimeout — they are absolute per-connection
 	// deadlines that kill legitimate long SSE streams (no per-Write
 	// deadline access from ServeHTTP). Stream liveness is enforced by the
-	// executor's relayed-bytes watchdog (C2), not the server socket. What
+	// executor's relayed-bytes watchdog, not the server socket. What
 	// the server does set: the Slowloris guard on headers and the
 	// keep-alive idle bound.
 	httpSrv := &http.Server{

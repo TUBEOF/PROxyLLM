@@ -7,7 +7,7 @@ import (
 )
 
 // Spec: ADR-009 — per-type shared provider settings and the global routing
-// strategy ride the config-KV override layer (Analysis C top layer; same
+// strategy ride the config-KV override layer (the top config layer; same
 // storage pattern as model_aliases). Reads degrade to safe defaults on
 // corrupted rows (last-known-good contract: never de-route on store
 // noise); validation lives at the write boundaries.

@@ -1,11 +1,12 @@
 package e2e
 
-// Anthropic official-SDK E2E tests (Phase 1 DoD, Task #19): the SDK that
+// Anthropic official-SDK E2E tests: the SDK that
 // backs Claude Code's ANTHROPIC_BASE_URL gateway path drives the proxy's
-// Anthropic surface. Acceptance derived from plan §5.1/§6.4 + wire facts
-// A2/A5–A7/A13/C1 — never from implementation behavior. The mock upstream
+// Anthropic surface. Acceptance derived from the surface contracts, the
+// compat-policy shape, and the Anthropic wire facts — never from
+// implementation behavior. The mock upstream
 // speaks OpenAI chat wire, so every round trip here is the cross-surface
-// OP-2 translation (Anthropic client in, OpenAI upstream, Anthropic
+// translation (Anthropic client in, OpenAI upstream, Anthropic
 // response out).
 
 import (
@@ -18,10 +19,10 @@ import (
 	"github.com/anthropics/anthropic-sdk-go"
 )
 
-// 1. Claude Code message round trip (C1): Messages.New through the proxy
+// 1. Claude Code message round trip: Messages.New through the proxy
 // against the chat-wire mock returns a protocol-conform Anthropic message
 // with the golden answer translated — text block, tool_use block, stop_reason
-// tool_use, usage — proving the full cross-surface OP-2 translation.
+// tool_use, usage — proving the full cross-surface translation.
 func TestAnthropicSDK_MessagesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	e := newEnv(t)
@@ -48,8 +49,8 @@ func TestAnthropicSDK_MessagesRoundTrip(t *testing.T) {
 	if !strings.Contains(text.String(), "I'll check the weather for you.") {
 		t.Errorf("text blocks = %q, want the golden answer translated", text.String())
 	}
-	// Golden tool call translated into a tool_use block (A3): id, name,
-	// input JSON — chat tool_calls (O3) map bidirectionally.
+	// Golden tool call translated into a tool_use block: id, name,
+	// input JSON — chat tool_calls map bidirectionally.
 	if tool == nil {
 		t.Fatalf("no tool_use block, want the golden tool call translated")
 	}
@@ -67,7 +68,7 @@ func TestAnthropicSDK_MessagesRoundTrip(t *testing.T) {
 	}
 }
 
-// 2. Claude Code streaming (A5–A7, C2): Messages.NewStreaming yields the
+// 2. Claude Code streaming: Messages.NewStreaming yields the
 // ordered event sequence message_start → content_block_delta(text) →
 // message_delta → message_stop with the upstream deltas relayed. Ordering is
 // asserted with a phase counter so the sequence cannot pass as an unordered
@@ -127,7 +128,7 @@ func TestAnthropicSDK_MessagesStreaming(t *testing.T) {
 	}
 }
 
-// 3. Count tokens (A2/C1): the SDK's CountTokens call resolves through
+// 3. Count tokens: the SDK's CountTokens call resolves through
 // the proxy — a heuristic answer for a chat-wire upstream, marked
 // estimation (the proxy must answer, never fail, on a non-Anthropic
 // upstream).
@@ -145,7 +146,7 @@ func TestAnthropicSDK_CountTokens(t *testing.T) {
 	if count.InputTokens <= 0 {
 		t.Errorf("input_tokens = %d, want a positive heuristic estimate", count.InputTokens)
 	}
-	// The heuristic answer must be marked as an estimation (§5.1: never
+	// The heuristic answer must be marked as an estimation (never
 	// silently native-looking on a non-Anthropic upstream). MessageTokensCount
 	// carries the raw response, so the marker is pinned on the wire itself.
 	if !strings.Contains(count.RawJSON(), `"estimation":"heuristic"`) {
@@ -153,8 +154,8 @@ func TestAnthropicSDK_CountTokens(t *testing.T) {
 	}
 }
 
-// 4. THE Phase 1 DoD acceptance (§6.4, OP-2): a Claude Code client
-// request with extended thinking (A12) routed to a NON-Claude model whose
+// 4. THE acceptance case (cross-surface compat policy): a Claude Code client
+// request with extended thinking routed to a NON-Claude model whose
 // compat policy is `thinking_handling: "strip"`. The request must succeed
 // (thinking never reaches the chat-wire upstream), the upstream must see
 // NO thinking artifacts, and the request log's route_trace must show the
@@ -200,7 +201,7 @@ func TestAnthropicSDK_ThinkingStripOnNonClaude(t *testing.T) {
 	}
 }
 
-// 5. Thinking block (§6.4): with thinking_handling:"block", a thinking
+// 5. Thinking block: with thinking_handling:"block", a thinking
 // request is refused with a protocol-conform 4xx error carrying the
 // documented message — and NO upstream request is dispatched.
 func TestAnthropicSDK_ThinkingBlockOnNonClaude(t *testing.T) {
@@ -222,20 +223,20 @@ func TestAnthropicSDK_ThinkingBlockOnNonClaude(t *testing.T) {
 		t.Fatalf("SDK returned %v, want an API error", err)
 	}
 	if apiErr.StatusCode < 400 || apiErr.StatusCode >= 500 {
-		t.Errorf("block status = %d, want 4xx (§5.3)", apiErr.StatusCode)
+		t.Errorf("block status = %d, want 4xx", apiErr.StatusCode)
 	}
-	// A13 shape: the error envelope must carry the Anthropic error type the
+	// The error envelope must carry the Anthropic error type the
 	// proxy maps ErrThinkingBlocked to (400 invalid_request_error), so
 	// Claude Code surfaces a protocol-conform refusal, not a generic 4xx.
 	if got := string(apiErr.Type()); got != "invalid_request_error" {
-		t.Errorf("block error type = %q, want invalid_request_error (A13)", got)
+		t.Errorf("block error type = %q, want invalid_request_error", got)
 	}
 	if reqs := e.mock.Requests(); len(reqs) != 0 {
 		t.Errorf("upstream saw %d requests, want 0 (block refuses before dispatch)", len(reqs))
 	}
 }
 
-// 6. No-route error (§5.3): an unknown model surfaces as a typed SDK
+// 6. No-route error: an unknown model surfaces as a typed SDK
 // APIError with a 4xx status in the Anthropic error shape.
 func TestAnthropicSDK_NoRouteTypedError(t *testing.T) {
 	ctx := context.Background()
@@ -250,6 +251,6 @@ func TestAnthropicSDK_NoRouteTypedError(t *testing.T) {
 		t.Fatal("no-route request unexpectedly succeeded")
 	}
 	if status := httpStatusOfAnthropic(t, err); status < 400 || status >= 500 {
-		t.Errorf("no-route status = %d, want 4xx (§5.3)", status)
+		t.Errorf("no-route status = %d, want 4xx", status)
 	}
 }

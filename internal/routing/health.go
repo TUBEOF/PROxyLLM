@@ -6,11 +6,10 @@ import (
 	"time"
 )
 
-// HealthTracker is the circuit-breaker state behind the health gate
-// (plan Analysis E step 5: consecutive failures → cooldown, exponential
-// backoff, probe recovery). Consecutive failures open the breaker for an
-// exponentially growing cooldown; a successful request closes it and
-// resets the backoff (probe recovery).
+// HealthTracker is the circuit-breaker state behind the health gate:
+// consecutive failures → cooldown, exponential backoff, probe recovery.
+// Consecutive failures open the breaker for an exponentially growing cooldown;
+// a successful request closes it and resets the backoff (probe recovery).
 //
 // The tracker is deliberately conservative and small: routing skips cooled
 // providers rather than deprioritizing them (deterministic ordering), and
@@ -27,8 +26,8 @@ type HealthTracker struct {
 	// doubles it up to MaxCooldown.
 	BaseCooldown time.Duration
 
-	// MaxCooldown caps the exponential backoff (FO-3 ceiling scaled from
-	// its 2-4 s retry ceiling to a breaker-level pause).
+	// MaxCooldown caps the exponential backoff — the retry ceiling scaled
+	// up from its 2-4 s to a breaker-level pause.
 	MaxCooldown time.Duration
 
 	// now is the clock, injectable for tests (deterministic, no sleeps).
@@ -54,7 +53,7 @@ type healthEntry struct {
 // — a later success clears it, and the Quota page refresh updates it).
 const defaultQuotaReprobe = time.Hour
 
-// NewHealthTracker returns a tracker with the defaults derived from FO-3:
+// NewHealthTracker returns a tracker with the operational defaults:
 // open after 3 consecutive failures, first cooldown 5 s, doubling to a
 // 5 min cap.
 func NewHealthTracker() *HealthTracker {
@@ -97,10 +96,11 @@ func (h *HealthTracker) clock() time.Time {
 func countsTowardHealth(c Classification, status int) bool {
 	switch c.Class {
 	case ClassCapabilityGap, ClassContextWindow, ClassContentFilter,
-		ClassInsufficientQuota, ClassClientAbort:
+		ClassInsufficientQuota, ClassClientAbort, ClassNetwork:
 		// insufficient_quota has a longer path of its own: ReportQuotaExhausted
 		// cools the account for the window the upstream announced, which a
-		// consecutive-failure counter cannot express.
+		// consecutive-failure counter cannot express. ClassNetwork never
+		// reached the provider at all — the path was broken, not the service.
 		return false
 	case ClassClientError:
 		// Invalid credentials are an account fact; a malformed request is not.
@@ -160,7 +160,7 @@ func (h *HealthTracker) ReportSuccess(providerID string) {
 }
 
 // ReportQuotaExhausted cools one account on a class insufficient_quota
-// rejection (2026-10-06): until is the upstream-announced reset window
+// rejection: until is the upstream-announced reset window
 // when known (Retry-After / announced reset), else the zero time — which
 // maps to the default hourly re-probe. The report never counts toward
 // the breaker's consecutive failures.

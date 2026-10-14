@@ -1,8 +1,8 @@
 // The SSE writer side of this package: emits WHATWG-conform event frames
-// (facts SSE-1..SSE-7, phase-1 research §1) with one flush per event (C2:
-// relay as-it-arrives) and the HTTP/2 comment trick (facts H2-2/H2-3,
-// phase-1 research §2): WriteHeader is followed by a single spec-ignored
-// `: ok` comment frame — comments produce a DATA frame that releases the
+// (https://html.spec.whatwg.org/multipage/server-sent-events.html) with one
+// flush per event so bytes reach the client as they arrive, and applies the
+// HTTP/2 comment trick: WriteHeader is followed by a single spec-ignored
+// `: ok` comment frame — the comment produces a DATA frame that releases the
 // HEADERS frame HTTP/2-aware reverse proxies otherwise hold back.
 package sse
 
@@ -34,7 +34,7 @@ func NewWriter(w io.Writer) *Writer {
 	return sw
 }
 
-// WriteHeader delegates to the sink's WriteHeader and emits the H2-2 header
+// WriteHeader delegates to the sink's WriteHeader and emits the header
 // comment (`: ok`), flushing once — releasing the HTTP/2 HEADERS frame
 // behind proxies before any event is due. Without an http.ResponseWriter
 // sink only the comment frame is written.
@@ -61,19 +61,20 @@ func (w *Writer) WriteHeader(status int) {
 }
 
 // headerComment emits the `: ok` comment frame exactly once; explicit
-// frames before WriteHeader still see it first (H2-3).
+// frames before WriteHeader still see it first.
 func (w *Writer) headerComment() {
 	if w.header {
 		return
 	}
 	w.header = true
 	// A failing header comment must not break the stream; the first real
-	// frame's error propagates (C2 maps it to client disconnect).
+	// frame's error propagates instead (a write error means the client
+	// disconnected).
 	_ = w.write(": ok\n\n")
 }
 
 // Event writes one named event: `event:` + `data:` lines and the dispatching
-// blank line (SSE-5), flushing after the frame.
+// blank line, flushing after the frame.
 func (w *Writer) Event(name, data string) error {
 	return w.frame(fmt.Sprintf("event: %s\n", name), data)
 }
@@ -83,11 +84,10 @@ func (w *Writer) Data(data string) error {
 	return w.frame("", data)
 }
 
-// Comment writes a `:` comment line (SSE-3) — spec-ignored by clients, but
-// producing a relayed DATA frame that resets the client's silence watchdog
-// (C2). One flush per comment. Non-empty text separates with one space
-// (the reader strips exactly one, SSE-4); a bare comment emits the minimal
-// `:` line.
+// Comment writes a `:` comment line — spec-ignored by clients, but producing
+// a relayed DATA frame that resets the client's silence watchdog. One flush
+// per comment. Non-empty text separates with one space (the reader strips
+// exactly one); a bare comment emits the minimal `:` line.
 func (w *Writer) Comment(text string) error {
 	if text != "" {
 		text = " " + text
@@ -104,7 +104,7 @@ func (w *Writer) Raw(frame string) error {
 // frame assembles an event frame: the event line (when named), the data
 // payload split into one `data:` line per embedded newline (a raw newline
 // must never leak into the wire as a forged field line; the reader rejoins
-// the lines with one LF per field, SSE-5), and the dispatch blank line.
+// the lines with one LF per field), and the dispatch blank line.
 func (w *Writer) frame(eventLine, data string) error {
 	if !w.header {
 		w.headerComment()
@@ -120,7 +120,7 @@ func (w *Writer) frame(eventLine, data string) error {
 	return w.write(b.String())
 }
 
-// write emits one complete frame and flushes (C2).
+// write emits one complete frame and flushes.
 func (w *Writer) write(frame string) error {
 	if _, err := io.WriteString(w.w, frame); err != nil {
 		return fmt.Errorf("sse: write frame: %w", err)

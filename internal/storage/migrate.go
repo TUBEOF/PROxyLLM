@@ -80,7 +80,7 @@ var migrations = []string{
 		failures          INTEGER NOT NULL DEFAULT 0,
 		PRIMARY KEY (day, client_key_id, provider_id, model)
 	);`,
-	// v2: Phase 2 WebUI support — per-type non-secret provider config,
+	// v2: WebUI support — per-type non-secret provider config,
 	// hashed-at-rest WebUI sessions, and an index backing the log-viewer
 	// filter queries. Append-only: v1 statements are never edited.
 	`ALTER TABLE providers ADD COLUMN config TEXT NOT NULL DEFAULT '{}';`,
@@ -119,7 +119,17 @@ var migrations = []string{
 	`ALTER TABLE request_logs ADD COLUMN features TEXT NOT NULL DEFAULT '{}';`,
 	`CREATE INDEX IF NOT EXISTS idx_request_logs_conversation ON request_logs(conversation_id);`,
 	`CREATE INDEX IF NOT EXISTS idx_request_logs_convkey ON request_logs(client_key_id, conv_key, id);`,
-	// Logs-page sub-operations (2026-10-07). A request's separable upstream
+	// The single-column indexes above cover the equality filter but not the
+	// requested order, so a filtered log page sorts its whole match set before
+	// taking one page. Measured against 200k rows: the unfiltered first page —
+	// the one the open Logs page repeats — walks the ts index and stops at the
+	// limit in 0.02 ms, while a filtered page costs 7-16 ms. Not worth another
+	// index: every one of them is write amplification on the insert path of
+	// every proxied request, and these two are interactive rather than repeated.
+	// The fix, if a filtered page ever becomes a hot read, is a composite
+	// (filter column, ts) index — and this measurement is what should justify
+	// it. See docs/deployment.md for the query plans.
+	// Logs-page sub-operations. A request's separable upstream
 	// operations — a chain failover, a capability (vision) fallback model
 	// walk, an emulated web-tool call, a same-provider retry — get their own
 	// row here instead of living only inside the parent's route_trace. A
@@ -141,7 +151,7 @@ var migrations = []string{
 	);`,
 	`CREATE INDEX IF NOT EXISTS idx_request_child_logs_parent ON request_child_logs(parent_id);`,
 
-	// v7: request payloads (2026-10-10 Logs page). The conversation a request
+	// v7: request payloads (Logs page). The conversation a request
 	// carried and the answer it produced, so the log can be read rather than
 	// only counted. A table of its own, not columns on request_logs: the list
 	// query runs on every page poll and must not drag megabytes of prompt text

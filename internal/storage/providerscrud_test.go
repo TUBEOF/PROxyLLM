@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-// Spec: plan Analysis C schema — providers(id, type, name) with per-type
-// config; §5.2 admin API needs full CRUD (the WebUI provider page creates,
+// Spec: schema — providers(id, type, name) with per-type config; the admin
+// API needs full CRUD (the WebUI provider page creates,
 // edits, lists, deletes). The `config` column carries the provider's
 // NON-SECRET settings (base_url, model catalog options) as plain JSON —
 // secrets NEVER live here, only in provider_tokens behind the AES-256-GCM
-// envelope (Analysis G control 2: "secrets never in config exports").
+// envelope ("secrets never in config exports").
 
 func TestProvider_GetAndList(t *testing.T) {
 	s := openTokenStore(t)
@@ -130,8 +130,8 @@ func TestProvider_DeleteUnknownNotFound(t *testing.T) {
 func TestProvider_ConfigRejectsSecretShapedKeys(t *testing.T) {
 	s := openTokenStore(t)
 
-	// Defense-in-depth for Analysis G control 2: if the config blob already
-	// carries a secret-shaped key at the storage boundary, refuse it — a
+	// Defense-in-depth for the no-secrets-in-config rule: if the config blob
+	// already carries a secret-shaped key at the storage boundary, refuse it — a
 	// WebUI bug must not be able to persist a plaintext credential even if
 	// the API layer's validation were bypassed.
 	err := s.PutProvider(context.Background(), Provider{

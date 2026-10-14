@@ -1,11 +1,11 @@
 package ir
 
-// Local input-token estimation. Moved here from httpapi (2026-10-09) so
-// both consumers share one source of truth: the count_tokens surface
-// (/v1/messages/count_tokens, C1's heuristic marking) and the routing
-// executor's capability-fallback context gate, which must compare an
-// incoming request against a fallback model's declared window BEFORE
-// dispatching a conversation that model cannot hold.
+// Local input-token estimation. Both consumers share one source of truth:
+// the count_tokens surface (/v1/messages/count_tokens, which marks the
+// result as an estimate) and the routing executor's capability-fallback
+// context gate, which must compare an incoming request against a fallback
+// model's declared window BEFORE dispatching a conversation that model
+// cannot hold.
 //
 // It is deliberately a heuristic, never presented as an exact count: a
 // real tokenizer per provider would be a much larger dependency, and the
@@ -14,11 +14,12 @@ package ir
 
 // EstimateTokens estimates the request's input tokens as chars/4 over
 // system + messages + tool schemas, calibrated against the observed
-// ~4 chars/token ratio (Analysis D). Images are not char-countable and
-// take a flat per-image allowance (the count_tokens contract, C1) — the
-// estimate is therefore a LOWER bound for image-heavy requests, which is
-// safe: an under-estimate lets a dispatch through, where the FO-6
-// context-window class fails it over instead of terminating.
+// ~4 chars/token ratio. Images are not char-countable and take a flat
+// per-image allowance (what the count_tokens surface does) — the estimate is
+// therefore a LOWER bound for image-heavy requests, which is safe: an
+// under-estimate lets a dispatch through, where the upstream's
+// context-window rejection fails it over to the next model instead of
+// terminating the request.
 func (r Request) EstimateTokens() int {
 	chars := 0
 	for _, sp := range r.System {

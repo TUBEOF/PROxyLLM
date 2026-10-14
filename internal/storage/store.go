@@ -55,7 +55,7 @@ func Open(cfg config.StorageConfig) (*Store, error) {
 		return nil, fmt.Errorf("storage: open %s: %w", cfg.Path, err)
 	}
 
-	// A small pool, not a single connection (2026-10-10, ADR-016). One connection
+	// A small pool, not a single connection (ADR-016). One connection
 	// serializes EVERY query in the process — reads included — which is fine at
 	// low traffic and a throughput ceiling at high traffic: the request path runs
 	// six to ten of them per request, none of which needs to wait for another

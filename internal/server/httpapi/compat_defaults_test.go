@@ -1,6 +1,6 @@
 package httpapi
 
-// R5 (2026-10-06): the compat editor is REMOVED from the WebUI — the
+// The compat editor is REMOVED from the WebUI — the
 // policy defaults are internal and CAPABILITY-AWARE. compatFor derives:
 //   - thinking → map-to-reasoning-effort when the model row's blob says
 //     thinking:true, else the strip default;

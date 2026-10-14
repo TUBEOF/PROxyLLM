@@ -25,7 +25,7 @@ import (
 //	         can be added without a format change)
 //	[2:2+k]  key_id (skipped on open; empty in v1)
 //	[..12]   fresh random 96-bit nonce — generated per encryption; nonce
-//	         reuse breaks GCM (verified best practice, accessed 2026-09-10)
+//	         reuse breaks GCM
 //	[..+16]  GCM authentication tag
 //	[..]     ciphertext
 //

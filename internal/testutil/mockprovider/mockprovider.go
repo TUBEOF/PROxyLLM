@@ -2,7 +2,7 @@
 // OpenAI-compatible chat-completions wire over real HTTP (the same wire
 // custom.New consumes), so client → proxy → upstream round trips exercise
 // the genuine provider stack: httpx transport, SSE decoding, error mapping,
-// cancellation, and bounded-channel backpressure (plan Analysis F).
+// cancellation, and bounded-channel backpressure.
 package mockprovider
 
 import (
@@ -70,7 +70,7 @@ func (s *Script) JSONResponse(status int, body string, headers map[string]string
 }
 
 // Fail makes the script a non-2xx response carrying an OpenAI-shaped error
-// body, optionally with a Retry-After header (O10).
+// body, optionally with a Retry-After header.
 func (s *Script) Fail(status int, body string, retryAfter string) *Script {
 	var headers map[string]string
 	if retryAfter != "" {
@@ -96,7 +96,7 @@ func (s *Script) Chunk(data string) *Script {
 	return s
 }
 
-// Comment appends an SSE comment frame (A5 keep-alive).
+// Comment appends an SSE comment frame (keep-alive).
 func (s *Script) Comment(text string) *Script {
 	s.mode = modeStream
 	s.frames = append(s.frames, frame{kind: "comment", data: text})
@@ -121,7 +121,7 @@ func (s *Script) Delay(d time.Duration) *Script {
 
 // Abort appends a hard connection drop (panic(http.ErrAbortHandler)) — the
 // mid-stream transport failure the failover discipline must surface as a
-// terminal ir.Error event (FO-1).
+// terminal ir.Error event.
 func (s *Script) Abort() *Script {
 	s.mode = modeStream
 	s.frames = append(s.frames, frame{kind: "abort"})
@@ -238,7 +238,7 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 }
 
 // serveStream relays the scripted frames, flushing after each one so the
-// client observes genuine incremental arrival (C2 pacing), and honoring
+// client observes genuine incremental arrival (pacing), and honoring
 // request-context cancellation for delays.
 func (s *Server) serveStream(w http.ResponseWriter, r *http.Request, sc *Script) {
 	h := w.Header()

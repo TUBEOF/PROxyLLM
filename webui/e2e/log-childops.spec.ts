@@ -1,4 +1,4 @@
-// Logs page sub-operations (2026-10-07): assertion-only specs — no
+// Logs page sub-operations: assertion-only specs — no
 // baselines involved, so this suite is green locally as well as in CI.
 // Fixturesrv derives the child rows from the seeded traces with the server's
 // own mapping, so these assertions exercise the real content.
@@ -146,7 +146,7 @@ test('an emulated web-tool child masks its credential-shaped detail', async ({ p
   await expect(list).not.toContainText('sk-live-e2efixture1234');
 });
 
-// The row OPENS (2026-10-10). A sub-row used to be inert, so the tool exchange
+// The row OPENS. A sub-row used to be inert, so the tool exchange
 // that answered a call inside the request was unreachable from the log — the
 // operator could see that a web tool ran but not what it said.
 test('a sub-row opens its own view with what the step sent and received', async ({ page }) => {

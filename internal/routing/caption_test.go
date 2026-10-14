@@ -30,9 +30,9 @@ import (
 // was handed, so a test can assert what each model actually saw.
 type recordingProvider struct {
 	id         string
-	errs       []error // per-Complete result (exhausted → success)
-	streamErrs []error // per-Stream dispatch error
-	text       string  // Complete's answer text ("" → a default description)
+	errs       []error  // per-Complete result (exhausted → success)
+	streamErrs []error  // per-Stream dispatch error
+	text       string   // Complete's answer text ("" → a default description)
 	usage      ir.Usage // what every Complete reports as its spend
 
 	calls int

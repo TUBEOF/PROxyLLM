@@ -1,6 +1,6 @@
 package routing
 
-// Per-account circuit and account-attributed trace events (2026-10-10).
+// Per-account circuit and account-attributed trace events.
 //
 // Spec: a web-tool account that is down or misconfigured used to be retried
 // FIRST on every call, paying its failure (up to the call budget) before the

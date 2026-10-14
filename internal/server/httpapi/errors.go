@@ -1,8 +1,8 @@
 package httpapi
 
-// Dual-surface error model (plan §5.3): protocol-conform bodies on both
-// surfaces — the OpenAI error shape (O10) on the OpenAI-family surfaces
-// and the Anthropic error envelope (A13) on the messages surface — with
+// Dual-surface error model: protocol-conform bodies on both surfaces —
+// the OpenAI error shape on the OpenAI-family surfaces and the Anthropic
+// error envelope on the messages surface — with
 // upstream status codes preserved where they exist and never a bare Go
 // error string. Upstream credentials are never echoed: error bodies are
 // assembled from the mapped UpstreamError fields only (the transport never
@@ -45,7 +45,7 @@ const (
 	errTypeUpstream       = "upstream_error"
 )
 
-// writeOpenAIError emits the O10 error shape:
+// writeOpenAIError emits the OpenAI error shape:
 // {"error":{"message":..,"type":..,"code":null,"param":null}}.
 func writeOpenAIError(w http.ResponseWriter, status int, errType, message string) {
 	w.Header().Set("Content-Type", "application/json")
@@ -53,7 +53,7 @@ func writeOpenAIError(w http.ResponseWriter, status int, errType, message string
 	writeJSONErrorBody(w, errType, message, errType)
 }
 
-// writeJSONErrorBody writes the O10 object with code mirroring the type
+// writeJSONErrorBody writes the OpenAI error object with code mirroring the type
 // (internal errors carry no distinct machine code; upstream body codes are
 // relayed by writeUpstreamError below).
 func writeJSONErrorBody(w http.ResponseWriter, errType, message, code string) {
@@ -64,7 +64,7 @@ func writeJSONErrorBody(w http.ResponseWriter, errType, message, code string) {
 	_, _ = w.Write([]byte(body))
 }
 
-// writeAnthropicError emits the A13 error envelope:
+// writeAnthropicError emits the Anthropic error envelope:
 // {"type":"error","error":{"type":..,"message":..}}.
 func writeAnthropicError(w http.ResponseWriter, status int, errType, message string) {
 	w.Header().Set("Content-Type", "application/json")
@@ -90,7 +90,7 @@ type errorWriter struct {
 
 	// overloadStatus is the surface's retryable-unavailability mapping
 	// for routing.ErrChainOverloaded (every chain provider in health
-	// cooldown): 529/overloaded_error per A13 on the Anthropic surface,
+	// cooldown): 529/overloaded_error on the Anthropic surface,
 	// 503 on the OpenAI surfaces (docs/api-reference.md error model —
 	// "upstream overload maps to 529 semantics (overloaded_error)").
 	// Zero means the surface has no overload mapping (unused).
@@ -98,7 +98,7 @@ type errorWriter struct {
 	overloadType   string
 }
 
-// openAIErrorWriter answers O10-shaped bodies.
+// openAIErrorWriter answers OpenAI-shaped error bodies.
 func openAIErrorWriter() errorWriter {
 	return errorWriter{
 		write:          writeOpenAIError,
@@ -107,7 +107,7 @@ func openAIErrorWriter() errorWriter {
 	}
 }
 
-// anthropicErrorWriter answers A13-shaped envelopes.
+// anthropicErrorWriter answers Anthropic-shaped error envelopes.
 func anthropicErrorWriter() errorWriter {
 	return errorWriter{
 		write:          writeAnthropicError,
@@ -116,13 +116,13 @@ func anthropicErrorWriter() errorWriter {
 	}
 }
 
-// writeRouteError maps a pipeline error to the wire per §5.3:
+// writeRouteError maps a pipeline error to the wire:
 //
 //   - routing.ErrThinkingBlocked → 400, protocol-conform rejection
 //   - routing.ErrNoRoute → 404, the model has no route
 //   - routing.ErrChainOverloaded → the surface's retryable overload
 //     mapping (529 overloaded_error on Anthropic, 503 on OpenAI)
-//   - upstream errors keep their status (429 stays 429 O10); transport
+//   - upstream errors keep their status (429 stays 429); transport
 //     failures (status 0) become 502 bad gateway; exhausted chains fall
 //     back to the last upstream classification, else 500
 //
@@ -213,7 +213,7 @@ func mapRouteError(err error) (int, string, string) {
 	return http.StatusInternalServerError, errTypeUpstream, redactedMessage(err)
 }
 
-// upstreamErrorFields extracts the O10/A13 type + message from the
+// upstreamErrorFields extracts the wire type + message from the
 // upstream error chain, defaulting the type for transport failures that
 // carry none.
 func upstreamErrorFields(err error) (string, string) {

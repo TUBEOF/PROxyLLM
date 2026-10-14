@@ -11,10 +11,10 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
-// Server-tool contract tests (RED-GREEN per Analysis F). Every assertion
+// Server-tool contract tests (RED-GREEN). Every assertion
 // derives from testdata/golden/anthropic/server-tool-web-*.json
 // (provenance: docs.anthropic.com web-search-tool / web-fetch-tool pages,
-// accessed 2026-09-12, facts A3/A8/A9/A10).
+// accessed 2026-09-12).
 
 func TestDecodeRequest_WebSearchToolDef(t *testing.T) {
 	raw := testutil.LoadGolden(t, "anthropic/server-tool-web-search-request.json")
@@ -37,8 +37,8 @@ func TestDecodeRequest_WebSearchToolDef(t *testing.T) {
 		t.Errorf("name = %q, want web_search", tool.Name)
 	}
 
-	// The §6.2 emulation layer enforces these knobs (max_uses, domain
-	// filters, user_location) — they must decode (fixture facts A8/A10).
+	// The web-tool emulation layer enforces these knobs (max_uses, domain
+	// filters, user_location) — they must decode.
 	st := tool.ServerTool
 	if st == nil {
 		t.Fatal("ServerTool config missing")
@@ -167,7 +167,7 @@ func TestDecodeResponse_WebSearchError(t *testing.T) {
 	if !ok {
 		t.Fatalf("content[1] = %T, want ir.ServerToolResultPart", resp.Content[1])
 	}
-	// Error shape: content is a single error object, NOT an array (A10).
+	// Error shape: content is a single error object, NOT an array.
 	if !res.IsError {
 		t.Error("result must decode as error")
 	}
@@ -255,7 +255,7 @@ func TestDecodeResponse_WebFetchError(t *testing.T) {
 
 func TestEncodeResponse_ServerToolBlocks(t *testing.T) {
 	// Round-trip: encode IR server-tool parts back into wire blocks and
-	// re-decode — the shapes must survive Anthropic→Anthropic (C3).
+	// re-decode — the shapes must survive Anthropic→Anthropic.
 	resp := ir.Response{
 		ID:         "msg_test",
 		Model:      "claude-sonnet-5",
@@ -329,11 +329,10 @@ func wireBlockOfType(t *testing.T, blocks []any, typ string) map[string]any {
 	return found
 }
 
-// TestEncodeResponse_WebFetchMatchesTheReferenceBlock closes the coverage gap
-// that let three earlier web_fetch fixes miss: nothing asserted the ENCODED
-// wire shape. TestEncodeResponse_ServerToolBlocks round-trips through the same
-// codec, so encoder and decoder agree with each other by construction and a
-// shape defect is invisible.
+// TestEncodeResponse_WebFetchMatchesTheReferenceBlock asserts the ENCODED
+// wire shape directly. Round-tripping through the same codec would let
+// encoder and decoder agree with each other by construction, so a shape
+// defect stays invisible.
 //
 // This test instead encodes the fixture's own IR and compares the emitted
 // block to the block the reference response carries. ADR-006: the fixture is
@@ -444,7 +443,7 @@ func TestEncodeRequest_ServerToolDef(t *testing.T) {
 	}
 }
 
-// Server-tool STREAM decode (facts A5–A7, verified live 2026-09-12 via
+// Server-tool STREAM decode (verified live 2026-09-12 via
 // platform.claude.com/docs/en/build-with-claude/streaming):
 //   - server_tool_use content_block_start carries id + name with an EMPTY
 //     "input":{} — the input arrives via input_json_delta

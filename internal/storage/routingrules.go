@@ -7,8 +7,8 @@ import (
 	"fmt"
 )
 
-// RoutingRule is one persisted routing rule (plan Analysis C schema +
-// Analysis E rule model, extended by ADR-009). Chain is the ordered
+// RoutingRule is one persisted routing rule (the DB-owned rule model,
+// extended by ADR-009). Chain is the ordered
 // fallback chain of provider IDs OR provider types (a type entry expands to
 // all registered accounts of that type at resolve time); the router
 // resolves it against the live registry at request time.

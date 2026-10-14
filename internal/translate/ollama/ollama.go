@@ -1,7 +1,7 @@
 // Package ollama implements the Ollama native /api/chat codec pair
-// against the canonical IR (plan Analysis D). Wire shapes derive from the
-// golden fixtures in testdata/golden/ollama/ (docs.ollama.com + OP-4
-// pinning, accessed 2026-09-10, facts L7–L11).
+// against the canonical IR. Wire shapes derive from the
+// golden fixtures in testdata/golden/ollama/ (docs.ollama.com, accessed
+// 2026-09-10).
 package ollama
 
 import (
@@ -20,8 +20,8 @@ type Codec struct{}
 
 // DecodeRequest decodes an Ollama /api/chat request body into the IR.
 // The system role message decodes into System[0]; tools are
-// OpenAI-function-shaped (L7); the think parameter accepts bool or an
-// effort string (L7).
+// OpenAI-function-shaped; the think parameter accepts bool or an
+// effort string.
 func (Codec) DecodeRequest(raw []byte) (ir.Request, error) {
 	var w wireRequest
 	if err := json.Unmarshal(raw, &w); err != nil {
@@ -34,7 +34,7 @@ func (Codec) DecodeRequest(raw []byte) (ir.Request, error) {
 	if w.Think != nil && w.Think.on() {
 		// Ollama thinking levels (high/medium/low/max) or true map onto the
 		// IR enabled flag; a budget number is not expressible on the wire
-		// side, so decode stays qualitative (L7).
+		// side, so decode stays qualitative.
 		req.Thinking = &ir.ThinkingConfig{Enabled: true}
 	}
 	for _, wm := range w.Messages {
@@ -47,7 +47,7 @@ func (Codec) DecodeRequest(raw []byte) (ir.Request, error) {
 				msg.Parts = append(msg.Parts, ir.TextPart{Text: wm.Content})
 			}
 			for _, img := range wm.Images {
-				// Ollama carries images as raw base64 strings (L5).
+				// Ollama carries images as raw base64 strings.
 				msg.Parts = append(msg.Parts, ir.ImagePart{Source: "base64", Data: img})
 			}
 			req.Messages = append(req.Messages, msg)
@@ -88,12 +88,12 @@ func (Codec) DecodeRequest(raw []byte) (ir.Request, error) {
 
 // EncodeRequest encodes an IR request into an Ollama /api/chat body.
 // stream is always emitted explicitly — Ollama defaults stream to true when
-// the field is absent (L8). Thinking maps to the think parameter:
-// adaptive → true, enabled with a budget → the closest effort level (L7).
+// the field is absent. Thinking maps to the think parameter:
+// adaptive → true, enabled with a budget → the closest effort level.
 func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 	w := wireRequest{
 		Model:  req.Model,
-		Stream: req.Stream, // no omitempty: L8 requires explicit stream:false
+		Stream: req.Stream, // no omitempty: stream:false must be explicit
 	}
 	if req.Thinking != nil && req.Thinking.Enabled {
 		switch {
@@ -166,10 +166,10 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 }
 
 // DecodeResponse decodes an Ollama /api/chat response body into the IR.
-// Ollama responses carry no ID — one is synthesized from model+created_at
-// (L9). done_reason normalizes to the IR stop reason (OP-4 residual risk on
-// value strings). Usage maps prompt_eval_count/eval_count/
-// prompt_eval_cached_count (L11).
+// Ollama responses carry no ID — one is synthesized from model+created_at.
+// done_reason normalizes to the IR stop reason (its value strings are only
+// loosely pinned, so an unrecognized value falls back to end_turn). Usage
+// maps prompt_eval_count/eval_count/prompt_eval_cached_count.
 func (Codec) DecodeResponse(raw []byte) (ir.Response, error) {
 	var w wireResponse
 	if err := json.Unmarshal(raw, &w); err != nil {
@@ -188,7 +188,7 @@ func (Codec) DecodeResponse(raw []byte) (ir.Response, error) {
 		resp.Content = append(resp.Content, ir.TextPart{Text: w.Message.Content})
 	}
 	for _, wtc := range w.Message.ToolCalls {
-		// Ollama tool_calls arguments are JSON objects, not strings (L10).
+		// Ollama tool_calls arguments are JSON objects, not strings.
 		resp.Content = append(resp.Content, ir.ToolCallPart{
 			Name:  wtc.Function.Name,
 			Input: wtc.Function.Arguments,
@@ -233,7 +233,7 @@ func (Codec) EncodeResponse(resp ir.Response) ([]byte, error) {
 // ---- wire types (mirror the golden fixtures) ----
 
 // wireThink is the think parameter: bool or an effort string
-// (high/medium/low/max, L7).
+// (high/medium/low/max).
 type wireThink struct {
 	Bool *bool
 	Str  *string
@@ -283,7 +283,7 @@ type wireMessage struct {
 }
 
 // wireToolCall mirrors Ollama's response tool_calls entries: function-shaped
-// with OBJECT arguments (L10). Requests never carry tool_calls entries.
+// with OBJECT arguments. Requests never carry tool_calls entries.
 type wireToolCall struct {
 	Function wireToolCallFunction `json:"function"`
 }
@@ -294,7 +294,7 @@ type wireToolCallFunction struct {
 	Arguments   json.RawMessage `json:"arguments,omitempty"`
 }
 
-// wireTool is the request tool definition, OpenAI-function-shaped (L7).
+// wireTool is the request tool definition, OpenAI-function-shaped.
 type wireTool struct {
 	Type     string           `json:"type"`
 	Function wireToolFunction `json:"function"`
@@ -309,7 +309,7 @@ type wireToolFunction struct {
 type wireRequest struct {
 	Model    string        `json:"model"`
 	Messages []wireMessage `json:"messages"`
-	Stream   bool          `json:"stream"` // always explicit (L8)
+	Stream   bool          `json:"stream"` // always explicit, never omitted
 	Think    *wireThink    `json:"think,omitempty"`
 	Tools    []wireTool    `json:"tools,omitempty"`
 }
@@ -331,8 +331,8 @@ type wireResponse struct {
 
 // ---- conversions ----
 
-// effortFromBudget maps an IR thinking budget (A12 budget_tokens) onto the
-// Ollama effort levels (L7). The mapping is a documented heuristic: Ollama
+// effortFromBudget maps an IR thinking budget (budget_tokens) onto the
+// Ollama effort levels. The mapping is a documented heuristic: Ollama
 // levels are qualitative, budget numbers are not; thresholds follow the
 // common tiering of extended-thinking budgets.
 func effortFromBudget(budget int) string {
@@ -348,7 +348,7 @@ func effortFromBudget(budget int) string {
 	}
 }
 
-// effortFor picks the think effort for a request: the §6.4 compat-policy
+// effortFor picks the think effort for a request: the compat-policy
 // mapping (ir.ReasoningEffort, set by routing) wins over the codec's own
 // budget heuristic — the policy layer owns the decision so it is
 // observable in route_trace, never silent.
@@ -368,7 +368,7 @@ func stopReasonFromWire(s string) ir.StopReason {
 	case "length":
 		return ir.StopMaxTokens
 	default:
-		// done_reason value strings are OP-4 residual risk; unknown values
+		// done_reason value strings are only loosely pinned; unknown values
 		// decode to the neutral natural-completion reason.
 		return ir.StopEndTurn
 	}
@@ -396,7 +396,7 @@ func usageFromWire(w wireResponse) ir.Usage {
 }
 
 // synthesizeID derives a stable non-empty response ID from model+created_at
-// — Ollama responses carry no ID field (L9).
+// — Ollama responses carry no ID field.
 func synthesizeID(model, createdAt string) string {
 	sum := sha256.Sum256([]byte(model + "\x00" + createdAt))
 	return "ollama-" + hex.EncodeToString(sum[:8])

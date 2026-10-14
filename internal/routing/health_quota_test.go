@@ -1,8 +1,8 @@
 package routing_test
 
-// Quota-exhaustion cooldown (2026-10-06 self-healing gap): the
-// insufficient_quota class failed over but never marked the account —
-// every subsequent request paid the rejection again until 3 CONSECUTIVE
+// Quota-exhaustion cooldown: the insufficient_quota class failed over but
+// never marked the account — every subsequent request paid the rejection again
+// until 3 CONSECUTIVE
 // failures tripped the generic breaker. The contract: a quota exhaustion
 // report puts THAT account into cooldown (no consecutive-failure
 // preconditions), the health gate skips it, a known reset window sets the

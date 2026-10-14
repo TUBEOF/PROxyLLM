@@ -7,7 +7,7 @@
 
 Routing decides, per request, which provider/model chain serves it:
 capability-based fallback, health-aware failover, Claude Code alias
-resolution, per-model compatibility policies (Analysis E).
+resolution, per-model compatibility policies.
 
 ## Decision
 
@@ -18,7 +18,7 @@ resolution, per-model compatibility policies (Analysis E).
    configured primary models).
 3. **Capability filter** — from request content: web_search, web_fetch,
    code_execution, streaming, thinking. Vision is deliberately NOT gated
-   here (2026-09-21): a vision request goes out, and a real upstream
+   here: a vision request goes out, and a real upstream
    rejection fails over. The context window is likewise not gated on the
    rule chain — the fallback walk gates on it instead (ADR-013).
 4. **Chain resolution** — ordered provider/model fallback chain; providers

@@ -2,6 +2,5 @@
   "fixture": "count-tokens-request.json / count-tokens-response.json",
   "source": "https://docs.anthropic.com/en/api/messages",
   "accessed": "2026-09-10",
-  "facts": ["A2"],
   "notes": "count_tokens counts messages + system + tools. Response field: input_tokens."
 }

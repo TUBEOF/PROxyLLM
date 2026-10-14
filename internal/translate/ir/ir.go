@@ -1,18 +1,17 @@
 // Package ir defines the canonical internal representation (IR) that all
-// protocol codecs translate to and from. Plan Analysis D: hub-and-spoke —
-// every protocol contributes a codec pair instead of N·(N−1) pairwise
-// converters, so adding a provider adds one codec pair, never changes the
-// others.
+// protocol codecs translate to and from. Hub-and-spoke: every protocol
+// contributes a codec pair instead of N·(N−1) pairwise converters, so adding
+// a provider adds one codec pair, never changes the others.
 //
-// Design rules (plan Analysis D, binding):
+// Design rules (binding):
 //   - Lossless-ish with explicit degradation: wire fields with no IR
 //     equivalent ride in per-level extras maps and are re-emitted on
 //     same-protocol round trips; crossing protocols drops them with a
 //     debug log naming the exact field path. Documented per field in
 //     docs/reference/translation-matrix.md (written with the codecs).
 //   - Thinking blocks carry opaque signatures verbatim; codecs never
-//     fabricate signature material (A12).
-//   - Cache markers are structural IR state, not passthrough (C4).
+//     fabricate signature material.
+//   - Cache markers are structural IR state, not passthrough.
 package ir
 
 import (
@@ -30,9 +29,9 @@ const (
 	RoleTool      Role = "tool" // OpenAI tool result messages
 )
 
-// StopReason normalizes the terminal reason across protocols
-// (Anthropic A4: end_turn/tool_use/max_tokens/stop_sequence/pause_turn/
-// refusal/model_context_window_exceeded; OpenAI O12: stop/length/tool_calls/
+// StopReason normalizes the terminal reason across protocols (Anthropic:
+// end_turn/tool_use/max_tokens/stop_sequence/pause_turn/refusal/
+// model_context_window_exceeded; OpenAI: stop/length/tool_calls/
 // content_filter; Ollama done_reason).
 type StopReason string
 
@@ -47,16 +46,16 @@ const (
 	StopContextWindow StopReason = "model_context_window_exceeded"
 )
 
-// CacheControl is the Anthropic prompt-caching marker (A11) — structural IR
-// state so Anthropic→Anthropic requests forward it verbatim (C4) and other
-// directions drop it with a logged degradation.
+// CacheControl is the Anthropic prompt-caching marker — structural IR state
+// so Anthropic→Anthropic requests forward it verbatim and other directions
+// drop it with a logged degradation.
 type CacheControl struct {
 	Type string // "ephemeral"
 	TTL  string // "5m" | "1h"; "" = protocol default
 }
 
 // Part is a typed content part. Variants are closed: text, image, tool call,
-// tool result, thinking (Analysis D).
+// tool result, thinking.
 type Part interface{ part() }
 
 // TextPart is textual content (or a system prompt block).
@@ -65,8 +64,8 @@ type TextPart struct {
 	CacheControl *CacheControl
 }
 
-// ImagePart unifies Anthropic image blocks (base64 or URL source, A3) and
-// OpenAI image_url parts (URL or data: URI, O11). The two wire forms are
+// ImagePart unifies Anthropic image blocks (base64 or URL source) and
+// OpenAI image_url parts (URL or data: URI). The two wire forms are
 // semantically interchangeable; codecs normalize on decode and reconstruct
 // the protocol-appropriate form on encode.
 type ImagePart struct {
@@ -99,7 +98,8 @@ type ToolResultPart struct {
 }
 
 // ThinkingPart is extended-thinking content with its opaque signature
-// (Anthropic A12) or OpenAI reasoning items with encrypted_content (O8).
+// (the Anthropic block form) or OpenAI reasoning items with
+// encrypted_content.
 // Signatures ride verbatim — never fabricated, never recomputed.
 type ThinkingPart struct {
 	Thinking  string
@@ -114,9 +114,9 @@ func (ThinkingPart) part()         {}
 func (ServerToolUsePart) part()    {}
 func (ServerToolResultPart) part() {}
 
-// ServerToolUsePart is an Anthropic server-tool invocation (A8/A9): unlike
-// ToolCallPart it executes on provider infrastructure (or, when emulated
-// via §6.2, on the proxy's Firecrawl layer) and needs no client tool_result.
+// ServerToolUsePart is an Anthropic server-tool invocation: unlike
+// ToolCallPart it executes on provider infrastructure (or, when emulated, on
+// the proxy's web-tool backend) and needs no client tool_result.
 // Input is the raw tool input object; Name is the stable family name
 // ("web_search" / "web_fetch").
 type ServerToolUsePart struct {
@@ -163,7 +163,7 @@ type ServerToolResultPart struct {
 	ErrorCode string // set when IsError
 
 	// Web_search carries an array of results; web_fetch a single page
-	// object — the wire asymmetry is normalized here (§6.2 fixtures).
+	// object — the wire asymmetry is normalized here.
 	Search []WebSearchResultItem
 	Fetch  *WebFetchContent
 }
@@ -176,9 +176,8 @@ type Message struct {
 	Parts []Part
 }
 
-// UserLocation is the web_search approximate-geolocation hint (A8,
-// verified live 2026-09-12: type "approximate" + city/region/country/
-// timezone).
+// UserLocation is the web_search approximate-geolocation hint: type
+// "approximate" plus city/region/country/timezone.
 type UserLocation struct {
 	Type     string // "approximate"
 	City     string
@@ -187,7 +186,7 @@ type UserLocation struct {
 	Timezone string
 }
 
-// ServerToolConfig carries the server-tool definition knobs the §6.2
+// ServerToolConfig carries the server-tool definition knobs the web-tool
 // emulation layer enforces (max_uses, domain filters, user_location,
 // citations, max_content_tokens). All optional; zero values = provider
 // defaults.
@@ -201,25 +200,26 @@ type ServerToolConfig struct {
 }
 
 // Tool is a tool definition. Client tools are function-shaped; server
-// tools (Anthropic A8/A9) carry a dated type string in the family
-// web_search_20250305 / web_fetch_20250910 — the family name, not the
-// date suffix, is the stable identity.
+// tools carry a dated type string in the family web_search_20250305 /
+// web_fetch_20250910 — the family name, not the date suffix, is the stable
+// identity.
 type Tool struct {
 	Name        string
 	Description string
 	InputSchema json.RawMessage
 
 	// Type is the server-tool type string ("" for regular client tools).
-	// It rides verbatim for Anthropic→Anthropic round trips (C3 open-list
-	// rule); the compat policy maps it to a capability or an emulated
-	// client tool (§6.2).
+	// It rides verbatim for Anthropic→Anthropic round trips: the wire type
+	// is an open list, so an unrecognized value has to survive re-encode.
+	// The compat policy maps a known family to a capability or an emulated
+	// client tool.
 	Type string
 
 	// ServerTool carries the server-tool definition knobs when Type is a
 	// server-tool family; nil for client tools.
 	ServerTool *ServerToolConfig
 
-	// Emulated marks a tool definition the §6.2 emulation layer injected
+	// Emulated marks a tool definition the emulation layer injected
 	// (or converted from a native server-tool def under the
 	// emulate-firecrawl compat policy). The executor's tool-call
 	// round-trip loop recognizes model tool calls against it and answers
@@ -230,7 +230,7 @@ type Tool struct {
 }
 
 // serverToolFamilyPrefixes maps wire type-string prefixes to the stable
-// server-tool family name (A8: dated suffixes rotate, families don't).
+// server-tool family name: dated suffixes rotate, families don't.
 var serverToolFamilyPrefixes = []string{"web_search_", "web_fetch_"}
 
 // ServerToolName returns the stable server-tool family name for a
@@ -261,7 +261,7 @@ type ToolChoice struct {
 	Name string // required when Type == ToolChoiceTool
 }
 
-// ThinkingConfig is the extended-thinking request parameter (A12):
+// ThinkingConfig is the extended-thinking request parameter:
 // budget_tokens >= 1024 when Enabled, or adaptive mode.
 type ThinkingConfig struct {
 	Enabled      bool
@@ -269,10 +269,10 @@ type ThinkingConfig struct {
 	Adaptive     bool
 }
 
-// EffortFromBudget maps a thinking budget_tokens to a reasoning-effort level
-// (§6.4 map-to-reasoning-effort). Tiers follow the shared codec heuristic
-// (high >= 8192, medium >= 4096, low > 0); a zero budget has no effort
-// mapping ("" — callers keep their protocol default).
+// EffortFromBudget maps a thinking budget_tokens to a reasoning-effort level.
+// Tiers follow the shared codec heuristic (high >= 8192, medium >= 4096,
+// low > 0); a zero budget has no effort mapping ("" — callers keep their
+// protocol default).
 func EffortFromBudget(budget int) string {
 	switch {
 	case budget >= 8192:
@@ -294,8 +294,8 @@ type Request struct {
 	Temperature   *float64
 	TopP          *float64
 
-	// System holds block-form system prompt parts (C4: Anthropic system
-	// arrays forward exactly; a plain string decodes to one TextPart).
+	// System holds block-form system prompt parts (Anthropic system arrays
+	// forward exactly; a plain string decodes to one TextPart).
 	// OpenAI instructions decode into System[0].
 	System []TextPart
 
@@ -305,15 +305,15 @@ type Request struct {
 	Thinking   *ThinkingConfig
 	Stream     bool
 
-	// ReasoningEffort is the explicit reasoning-effort hint (§6.4
-	// map-to-reasoning-effort: the compat policy maps a thinking budget
-	// here; "" = unset). Provider codecs prefer it over deriving effort
-	// from Thinking.BudgetTokens themselves — the policy layer owns the
-	// decision so it is observable in route_trace, never silent.
+	// ReasoningEffort is the explicit reasoning-effort hint (the compat
+	// policy maps a thinking budget here; "" = unset). Provider codecs
+	// prefer it over deriving effort from Thinking.BudgetTokens themselves —
+	// the policy layer owns the decision so it is observable in route_trace,
+	// never silent.
 	ReasoningEffort string
 
 	// ThinkingRequested records the compat layer's verdict on the CLIENT's
-	// request (§6.4): whether it enabled extended thinking (enabled or
+	// request: whether it enabled extended thinking (enabled or
 	// adaptive) BEFORE the policy rewrote the parameter — a stripped or
 	// mapped parameter must not erase the client's intent. No codec emits it
 	// on the wire; the RESPONSE path reads it to decide whether the target's
@@ -344,7 +344,8 @@ type Response struct {
 }
 
 // Usage is the normalized token accounting across protocols. Cache fields
-// map Anthropic A11 / Ollama prompt_eval_cached_count; absent elsewhere →
+// map the Anthropic cache_creation_input_tokens / cache_read_input_tokens
+// counters and Ollama prompt_eval_cached_count; absent elsewhere →
 // explicit zeros.
 type Usage struct {
 	InputTokens              int `json:"input_tokens"`
@@ -353,19 +354,20 @@ type Usage struct {
 	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 	ReasoningTokens          int `json:"reasoning_tokens,omitempty"`
 
-	// Server-tool request counters (A8 usage: server_tool_use.web_search_requests
-	// / web_fetch_requests). Explicit zeros like the cache fields; emulated
+	// Server-tool request counters (server_tool_use.web_search_requests
+	// / web_fetch_requests in the Anthropic usage object). Explicit zeros
+	// like the cache fields; emulated
 	// invocations count against these too so clients see honest accounting.
 	WebSearchRequests int `json:"web_search_requests,omitempty"`
 	WebFetchRequests  int `json:"web_fetch_requests,omitempty"`
 
-	// Estimated marks heuristic counts (count_tokens fallback, C1).
+	// Estimated marks heuristic counts (count_tokens fallback).
 	Estimated bool `json:"-"`
 }
 
 // UpstreamError is a normalized upstream/API error.
 type UpstreamError struct {
-	HTTPStatus int    `json:"-"` // 0 when the error came from a stream event (A13)
+	HTTPStatus int    `json:"-"` // 0 when the error came from a stream event
 	Type       string `json:"type,omitempty"`
 	Code       string `json:"code,omitempty"`
 	Message    string `json:"message,omitempty"`

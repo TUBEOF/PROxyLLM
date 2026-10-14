@@ -1,6 +1,6 @@
 package storage
 
-// Client-key hashing (2026-10-10): a keyed MAC derived from the master key for
+// Client-key hashing: a keyed MAC derived from the master key for
 // 256-bit client secrets, Argon2id still for admin passwords, and a legacy
 // Argon2id row that keeps verifying.
 //

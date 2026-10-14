@@ -37,7 +37,7 @@ const (
 )
 
 // RequestPayloadLoggingKey is the switch for capturing each request's
-// conversation and answer beside its log row (2026-10-10 Logs page). "0"
+// conversation and answer beside its log row (Logs page). "0"
 // disables it; absent means on — being able to read what a request said is the
 // point of the capture, and the switch exists so an operator can turn it off
 // rather than have to live without it.

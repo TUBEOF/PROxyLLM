@@ -6,7 +6,7 @@ alternative to overloaded existing proxies.
 [![CI](https://github.com/TUBEOF/PROxyLLM/actions/workflows/ci.yml/badge.svg)](https://github.com/TUBEOF/PROxyLLM/actions/workflows/ci.yml)
 [![Release](https://github.com/TUBEOF/PROxyLLM/actions/workflows/release.yml/badge.svg)](https://github.com/TUBEOF/PROxyLLM/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Go version](https://img.shields.io/badge/go-1.26-blue.svg)](go.mod)
+[![Go version](https://img.shields.io/badge/go-1.27-blue.svg)](go.mod)
 
 ## What it does
 
@@ -36,8 +36,9 @@ Core properties:
   capability-based routing, health-aware failover, retry/backoff — and
   *observable, never silent* fallback transitions
 - **Security by default**: WebUI login and per-client API keys default-on,
-  provider credentials AES-256-GCM-encrypted at rest, client keys stored as
-  Argon2id hashes only, structured logs through a tested redaction layer
+  provider credentials AES-256-GCM-encrypted at rest, client keys stored as keyed
+  MACs (display-once secrets, verified in microseconds), structured logs through a
+  tested redaction layer
 - **Streaming-first**: incremental SSE relay, no full buffering, backpressure
   via bounded channels, cancellation propagated end-to-end
 - **Single service**: one static CGO-free binary (embedded WebUI) + one
@@ -53,11 +54,8 @@ docker compose up -d
 curl http://localhost:8080/healthz
 ```
 
-While this repository is private, that raw URL needs an authenticated
-curl (`-H "Authorization: token <PAT>"`) — or copy
-[`docker/compose.yaml`](docker/compose.yaml) from a checkout. From a
-checkout, `make docker` builds the image locally and runs the same
-compose file against it.
+Or copy [`docker/compose.yaml`](docker/compose.yaml) from a checkout; `make docker`
+builds the image locally and runs the same compose file against it.
 
 Open `http://localhost:8080` for the admin WebUI (first-run bootstrap).
 Create a client key (**Keys**), then point your client at the proxy:

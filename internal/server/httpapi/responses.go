@@ -1,9 +1,9 @@
 package httpapi
 
-// POST /v1/responses (plan §5.1, wire facts O5–O8): the OpenAI Responses
+// POST /v1/responses: the OpenAI Responses
 // surface. The client body decodes through the Responses codec into IR,
 // routes through the chat-wire upstream (custom provider class), and
-// re-encodes into Responses wire — semantic streaming events per O7.
+// re-encodes into Responses wire — semantic streaming events.
 
 import (
 	"net/http"
@@ -57,8 +57,8 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Model identity (2026-09-21): resolve the chain entries' routing ID to
-	// the wire name; req.Model stays the client-facing ID (OP-2 echo + log).
+	// Model identity: resolve the chain entries' routing ID to the wire
+	// name; req.Model stays the client-facing ID (echoed to the client + logged).
 	resolveTrace := &routing.Trace{}
 	chain = a.resolveChainWireModels(ctx, chain, resolveTrace)
 
@@ -78,7 +78,7 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// OP-2: echo the requested model name (see messages.go).
+	// Echo the requested model name (see messages.go).
 	resp.Model = req.Model
 	// Capture the answer the client is about to receive (see capture.go).
 	captureResponse(ctx, resp)
@@ -102,7 +102,7 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 }
 
 // streamResponses relays an upstream stream as Responses semantic events
-// (O7: response.created → output_text.delta / function_call_arguments
+// (response.created → output_text.delta / function_call_arguments
 // deltas → response.completed carrying the terminal usage).
 func (a *api) streamResponses(w http.ResponseWriter, r *http.Request, keyID string, req ir.Request, chain []routing.ChainEntry, traces ...*routing.Trace) {
 	// Declare the event-stream response up front, before any dispatch

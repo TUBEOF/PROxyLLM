@@ -42,12 +42,12 @@ type AuthConfig struct {
 	Disabled bool
 }
 
-// FirecrawlConfig holds the web-tool fallback settings (plan §6.2). Only
+// FirecrawlConfig holds the web-tool fallback settings. Only
 // non-secret surface lives here; the API key is read straight from ENV
 // (FirecrawlAPIKeyFromEnv) so config dumps can never leak it — the same
 // discipline as the storage master key.
 type FirecrawlConfig struct {
-	// BaseURL overrides the Firecrawl API host (F1); empty selects the
+	// BaseURL overrides the Firecrawl API host; empty selects the
 	// client's documented default. Intended for self-hosted instances and
 	// tests.
 	BaseURL string

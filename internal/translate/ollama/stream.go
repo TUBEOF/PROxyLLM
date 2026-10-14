@@ -11,8 +11,8 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
-// streamDecoder decodes the Ollama /api/chat NDJSON stream (L6 pinned via
-// the golden fixture, OP-4) into canonical IR events.
+// streamDecoder decodes the Ollama /api/chat NDJSON stream (pinned via
+// the golden fixture) into canonical IR events.
 //
 // Each line is a standalone JSON object with a partial message. The final
 // line carries done:true, done_reason, and the usage counts. Block
@@ -100,7 +100,7 @@ func (d *streamDecoder) mapChunk(w *wireResponse) {
 	}
 	for _, wtc := range w.Message.ToolCalls {
 		d.openBlock("tool", ir.ToolCallPart{Name: wtc.Function.Name})
-		// Ollama delivers tool arguments as complete JSON objects (L10);
+		// Ollama delivers tool arguments as complete JSON objects;
 		// they arrive as one fragment, not assembled wire deltas.
 		d.queue = append(d.queue, ir.StreamEvent{Type: ir.Delta, Index: d.openIndex,
 			Delta: ir.DeltaPayload{Kind: ir.DeltaToolInput, PartialJSON: string(wtc.Function.Arguments)}})

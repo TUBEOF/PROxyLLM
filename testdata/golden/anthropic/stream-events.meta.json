@@ -2,6 +2,5 @@
   "fixture": "stream-events.sse",
   "source": "https://docs.anthropic.com/en/api/messages-streaming",
   "accessed": "2026-09-10",
-  "facts": ["A5", "A6", "A7"],
-  "notes": "Raw SSE byte stream per the documented streaming sequence: message_start, content_block_start, content_block_delta with text_delta/input_json_delta/thinking_delta/signature_delta variants, content_block_stop, message_delta, message_stop, ping. Wire format: one event per data line, 'event:' + 'data:' fields, LF line endings, CRLF also legal (SSE-1). The paired .expected.json holds the canonical ir.StreamEvent sequence this stream must decode to."
+  "notes": "Raw SSE byte stream per the documented streaming sequence: message_start, content_block_start, content_block_delta with text_delta/input_json_delta/thinking_delta/signature_delta variants, content_block_stop, message_delta, message_stop, ping. Wire format: one event per data line, 'event:' + 'data:' fields, LF line endings, CRLF also legal. The paired .expected.json holds the canonical ir.StreamEvent sequence this stream must decode to."
 }

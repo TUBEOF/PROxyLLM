@@ -32,6 +32,17 @@ webui/dist/*
 go.work
 go.work.sum
 
+# Agent tooling — local working files, never part of the project.
+# The exception is the project's own design skill: it is a shared artifact that
+# agents discover on their own, so it ships with the project like any other doc.
+.claude/*
+!.claude/skills/
+CLAUDE.md
+.codegraph/
+.remember/
+.superpowers/
+docs/superpowers/
+
 # Editor / OS
 .idea/
 .vscode/

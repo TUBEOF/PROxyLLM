@@ -4,7 +4,7 @@ import (
 	"context"
 )
 
-// Spec: plan Analysis C schema — usage_daily aggregates per (day, key,
+// Spec: usage_daily aggregates per (day, key,
 // provider, model) tuple. The proxy's request-completion path increments;
 // the Overview dashboard queries day ranges. Honest empty state: a
 // matching-free range returns an empty slice, never an error.

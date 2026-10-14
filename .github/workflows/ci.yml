@@ -57,6 +57,14 @@ jobs:
         with:
           version: v2.14.0
 
+      # A test that is deleted, weakened or skipped still reports green, so the
+      # suite can rot without a single failure. This refuses those changes; it
+      # needs the base branch, which the default shallow checkout does not have.
+      - name: test erosion
+        run: |
+          git fetch --no-tags --depth=1 origin main
+          go run ./cmd/checktests -base origin/main
+
   # Gate 2+3: unit + contract tests with race detector — blocking
   test:
     runs-on: ubuntu-24.04
@@ -176,9 +184,9 @@ jobs:
       # not fail a check. Building the SPA above stays here regardless — the Go
       # embed needs real assets.
 
-  # Benchmark job (plan §8): perf budgets are measured on main so the
+  # Benchmark job: perf budgets are measured on main so the
   # numbers are visible per commit and regressions trend in the log. NOT
-  # blocking here — plan §8: "regressions block release, not every PR";
+  # blocking here — regressions block release, not every PR;
   # release.yml runs the same budget test as a hard release gate.
   # main-only (2026-10-10): a PR's perf numbers are noise — the runner is
   # shared and a same-branch re-run can differ by an order of magnitude — so

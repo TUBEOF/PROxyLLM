@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// Spec: §9 /logs route — bulk table with pagination and filters (model,
-// provider, status, time range) over request_logs; §5.2 admin API serves the
+// Spec: the /logs route — bulk table with pagination and filters (model,
+// provider, status, time range) over request_logs; the admin API serves the
 // redacted rows. ListRequestLogs (existing) answers "latest N" only, which
 // cannot back a filterable, page-countable viewer.
 

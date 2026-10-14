@@ -1,19 +1,18 @@
 // Package sse implements a WHATWG-compliant Server-Sent Events reader
 // shared by the SSE-speaking codecs (anthropic, openai).
 //
-// Rules implemented (WHATWG SSE specification, facts SSE-1..SSE-7,
-// research digest 2026-09-10):
-//   - Lines terminate on CRLF, LF, or lone CR (SSE-1).
-//   - A leading UTF-8 BOM on the stream is stripped (SSE-2).
+// Rules implemented (WHATWG SSE specification):
+//   - Lines terminate on CRLF, LF, or lone CR.
+//   - A leading UTF-8 BOM on the stream is stripped.
 //   - Lines starting with ":" are comments — surfaced as comment events
-//     so codecs can relay them (SSE-3, keepalive C2 / H2-2), without
-//     disturbing the pending event (SSE-5).
+//     so codecs can relay them (upstream keepalives included), without
+//     disturbing the pending event.
 //   - Fields split at the first colon; one leading space of the value is
-//     stripped (SSE-4).
+//     stripped.
 //   - A blank line dispatches the pending event; an empty data buffer
-//     dispatches nothing (SSE-5).
-//   - Multiple data lines concatenate with "\n" between them (SSE-7).
-//   - A pending, undispatched event at EOF is discarded (SSE-6).
+//     dispatches nothing.
+//   - Multiple data lines concatenate with "\n" between them.
+//   - A pending, undispatched event at EOF is discarded.
 package sse
 
 import (
@@ -30,14 +29,14 @@ type Event struct {
 	// Name is the "event" field value; "" when absent.
 	Name string
 
-	// Data is the concatenated data buffer (SSE-7).
+	// Data is the concatenated data buffer, one line per data field.
 	Data string
 
 	// Comment carries the text after ":" on a comment line (IsComment
 	// events carry nothing else).
 	Comment string
 
-	// IsComment marks comment lines (SSE-3).
+	// IsComment marks comment lines.
 	IsComment bool
 }
 
@@ -52,21 +51,21 @@ type Reader struct {
 }
 
 // NewReader returns a Reader consuming r. Reading is incremental — events
-// are yielded as soon as their terminating blank line arrives (SSE-7: no
-// stream buffering beyond the pending event).
+// are yielded as soon as their terminating blank line arrives, with no
+// stream buffering beyond the pending event.
 func NewReader(r io.Reader) *Reader {
 	return &Reader{br: bufio.NewReaderSize(r, 64*1024), first: true}
 }
 
 // Next returns the next comment or dispatched event. It returns io.EOF at
-// clean stream end (pending event discarded per SSE-6); other errors are
+// clean stream end (a pending event is discarded); other errors are
 // passed through from the underlying stream.
 func (r *Reader) Next() (Event, error) {
 	for {
 		line, err := r.readLine()
 		if err == io.EOF {
-			// SSE-6: an event that never reached its dispatching blank
-			// line is discarded, not dispatched.
+			// An event that never reached its dispatching blank line is
+			// discarded, not dispatched.
 			r.reset()
 			return Event{}, io.EOF
 		}
@@ -78,7 +77,7 @@ func (r *Reader) Next() (Event, error) {
 			r.first = false
 		}
 		if len(line) == 0 {
-			// Blank line: dispatch (SSE-5).
+			// Blank line: dispatch the pending event.
 			if r.hasData {
 				ev := Event{Name: r.name, Data: strings.Join(r.data, "\n")}
 				r.reset()
@@ -91,7 +90,7 @@ func (r *Reader) Next() (Event, error) {
 			continue
 		}
 		if line[0] == ':' {
-			// Comment (SSE-3): ignored per spec, surfaced for relay.
+			// Comment: ignored per spec, surfaced for relay.
 			return Event{IsComment: true, Comment: string(line[1:])}, nil
 		}
 		field, value := splitField(line)
@@ -116,7 +115,7 @@ func (r *Reader) reset() {
 }
 
 // splitField splits a field line at the first colon, stripping one leading
-// space from the value (SSE-4).
+// space from the value.
 func splitField(line []byte) (field, value string) {
 	if i := bytes.IndexByte(line, ':'); i >= 0 {
 		return string(line[:i]), strings.TrimPrefix(string(line[i+1:]), " ")
@@ -125,8 +124,8 @@ func splitField(line []byte) (field, value string) {
 }
 
 // readLine reads one line, accepting CRLF, LF, and lone CR as line
-// terminators (SSE-1). At EOF it returns the partial line together with
-// io.EOF; the caller discards it (SSE-6).
+// terminators. At EOF it returns the partial line together with io.EOF;
+// the caller discards it.
 func (r *Reader) readLine() ([]byte, error) {
 	var line []byte
 	for {

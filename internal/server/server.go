@@ -1,6 +1,6 @@
 // Package server wires the live proxy: httpapi surfaces behind auth
 // middleware, routing rules loaded from the store, providers from the
-// caller, and the health endpoint (plan §4.1/§5.1, Analysis G control 1).
+// caller, and the health endpoint.
 package server
 
 import (
@@ -54,7 +54,7 @@ func WithProvider(p provider.Provider) Option {
 	return func(o *serverOptions) { o.providers = append(o.providers, p) }
 }
 
-// WithMasterKey mounts the admin API (plan §5.2): the master key is the
+// WithMasterKey mounts the admin API: the master key is the
 // session/CSRF HMAC secret — the same bytes that sealed the storage
 // envelope — so the WebUI backend only exists when the operator's key
 // material is wired in. Without it the admin logic is unreachable: /api/admin/*
@@ -63,8 +63,8 @@ func WithMasterKey(key []byte) Option {
 	return func(o *serverOptions) { o.masterKey = key }
 }
 
-// WithEmulator wires the web-tool emulator (plan §6.2 Firecrawl fallback)
-// into the routing executor. Without it, emulated web tools degrade to the
+// WithEmulator wires the web-tool emulator into the routing executor.
+// Without it, emulated web tools degrade to the
 // documented "unavailable" error results — never silently absent.
 func WithEmulator(emu routing.Emulator) Option {
 	return func(o *serverOptions) { o.emulator = emu }
@@ -101,7 +101,7 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 
 	// Provider registry: static providers join once; stored provider rows
 	// (WebUI-edited) are constructed here and re-registered on every
-	// admin-API provider write (Task 5 Gap #2) — no restart. Web-tool
+	// admin-API provider write — no restart. Web-tool
 	// emulators (firecrawl accounts, ADR-010) come back separately for the
 	// executor pool.
 	reg := provider.NewLiveRegistry()
@@ -113,7 +113,7 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		return nil, err
 	}
 
-	// Routing rules live in the store (Analysis E: rule state is
+	// Routing rules live in the store (rule state is
 	// WebUI-editable, not in-memory registration).
 	rules, err := loadRoutingRules(context.Background(), store)
 	if err != nil {
@@ -153,7 +153,7 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 			}
 			return row.ProviderID, true
 		}),
-		// The other half of ADR-014's learning (owner decision 2026-10-11).
+		// The other half of ADR-014's learning.
 		// The executor writes vision:false on a capability_gap and NOTHING read
 		// it back, so an image in a conversation re-triggered the
 		// describe-the-image rescue on every turn. A row that knows it cannot
@@ -162,7 +162,7 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		routing.WithModelVisionLookup(modelVisionLookup(store)),
 	)
 
-	// Capability fallback models (2026-09-21 automatic capabilities): the
+	// Capability fallback models (ADR-010 automatic capabilities): the
 	// stored vision_fallback KV holds MODEL IDs resolved to chain entries
 	// here (provider + wire name); a read failure logs and leaves the
 	// fallback unset (never de-route on store noise — the model_aliases
@@ -193,7 +193,7 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		ModelVisionLookup: modelVisionLookup(store),
 	})
 
-	// Client-facing surfaces behind client-key auth (Analysis G control 1).
+	// Client-facing surfaces behind client-key auth.
 	authOpts := []auth.Option{}
 	if cfg.Auth.Disabled {
 		authOpts = append(authOpts, auth.WithAuthDisabled())
@@ -211,16 +211,16 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		Router:   router,
 		Executor: exec,
 		Stream:   liveLogs,
-		// R5 emulation default: emulate-firecrawl when a web-tool account
+		// Emulation default: emulate-firecrawl when a web-tool account
 		// exists; the provider reload refreshes the bool live.
 		HasWebToolAccounts: webToolAccountsPresent(store),
 	})
 	// The proxy API mounts at /v1/ (every httpapi route lives there), so the
 	// SPA can own the root: a browser hitting / gets the WebUI without a
 	// client key — the WebUI session is the WebUI's auth, not the client
-	// key's (plan §9, §5.2).
+	// key's.
 	s.mux.Handle("/v1/", authMiddleware.Wrap(handler))
-	// R5: the provider reloads refresh the emulation-presence bool (the
+	// The provider reloads refresh the emulation-presence bool (the
 	// emulation default derives from the live account set).
 	refreshWebToolPresence := func() {
 		if fn := webToolAccountsPresent(store); handler != nil {
@@ -228,7 +228,7 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		}
 	}
 
-	// Admin API (plan §5.2): mounted only when the master key is wired —
+	// Admin API: mounted only when the master key is wired —
 	//
 	// Without the master key there is no admin surface to mount — but the
 	// path must still answer with the auth gate's uniform 401, never the
@@ -303,7 +303,7 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 				}
 			},
 			ReloadFallbacks: func() {
-				// 2026-09-21 automatic capabilities: the vision_fallback KV
+				// Automatic capabilities (ADR-010): the vision_fallback KV
 				// write pushes the freshly resolved MODEL entries into the
 				// live executor (same last-known-good contract — a failed
 				// read keeps the live fallback). The web-tool pool order
@@ -332,10 +332,10 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		s.mux.Handle("/api/admin/", authMiddleware.Wrap(http.NotFoundHandler()))
 	}
 
-	// The embedded SPA owns everything else (plan §9): assets serve
-	// directly, deep links fall back to index.html (Phase 2 research §5
-	// option 2), and /v1/ + /api/ never reach it — their mux patterns are
-	// more specific, and the handler excludes them defensively anyway.
+	// The embedded SPA owns everything else: assets serve directly, deep
+	// links fall back to index.html, and /v1/ + /api/ never reach it —
+	// their mux patterns are more specific, and the handler excludes them
+	// defensively anyway.
 	s.mux.Handle("/", webui.NewSPAHandler(embeddedUI()))
 
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
@@ -372,7 +372,7 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 //     ENV-wired emulator (o.emulator; the legacy PROXYLLM_FIRECRAWL_API_KEY
 //     path) or nil (the documented "unavailable" degrade state);
 //   - otherwise → the EmulatorPool over the STORED web_search/web_fetch
-//     fallback KVs (ADR-010 decision 3, consumed as of 2026-10-06): each
+//     fallback KVs (ADR-010 decision 3): each
 //     list names ACCOUNT IDs in priority order; unknown entries skip with
 //     a warn; an empty/unresolvable list keeps the registry insertion
 //     order. Single-account pools behave exactly like the pre-ADR-010
@@ -407,7 +407,7 @@ func buildEmulatorPool(ctx context.Context, accounts []NamedEmulator, envEmulato
 }
 
 // namedToEmulatorEntries keeps the account ids: they are what the pool's trace
-// events name and what its per-account circuit is keyed by (2026-10-10). A
+// events name and what its per-account circuit is keyed by. A
 // position-keyed circuit would forget a cooling account as soon as the operator
 // reordered the list.
 func namedToEmulatorEntries(named []NamedEmulator) []routing.EmulatorEntry {
@@ -436,7 +436,7 @@ func loadAndReplaceProviders(ctx context.Context, store *storage.Store, logger *
 
 // loadModelAliases reads the SPA's `model_aliases` settings blob (JSON
 // object alias→model-id) from the settings KV, then folds in every
-// provider TYPE's aliases from the shared type settings (2026-09-21: type
+// provider TYPE's aliases from the shared type settings (type
 // settings may carry an "aliases" map — the per-type editor writes it).
 // The KV entry wins on collision: it stays the operator's global escape
 // hatch over the per-type UI. An absent key is the normal state (empty
@@ -522,7 +522,7 @@ func loadRoutingRules(ctx context.Context, store *storage.Store) ([]routing.Rule
 
 // embeddedUI projects the embedded dist FS down to its root so the SPA
 // handler's fs.Stat("index.html") resolves (embed.FS roots everything under
-// the dist/ prefix; research E-2).
+// the dist/ prefix).
 func embeddedUI() fs.FS {
 	sub, err := fs.Sub(embedui.Dist, "dist")
 	if err != nil {
@@ -538,7 +538,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
 
-// handleHealth serves GET /healthz (Phase 0 contract, kept verbatim).
+// handleHealth serves GET /healthz, the endpoint the container healthcheck probes.
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

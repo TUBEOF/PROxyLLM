@@ -37,8 +37,8 @@ func TestCaptionCache_EvictsLeastRecentlyUsedAtTheBound(t *testing.T) {
 
 // A payload that is not canonical base64 cannot be decoded, so the key falls
 // back to the text. That must still be stable across calls — a key that
-// changed would re-describe the same image forever, which is the bug this
-// cache exists to remove.
+// changed would re-describe the same image forever, which is exactly what this
+// cache exists to prevent.
 func TestCaptionCache_NonCanonicalBase64IsStillKeyedAndHit(t *testing.T) {
 	c := newCaptionCache(4)
 	// The OpenAI codec keeps a data URI's payload verbatim, invalid base64
@@ -56,16 +56,18 @@ func TestCaptionCache_NonCanonicalBase64IsStillKeyedAndHit(t *testing.T) {
 	}
 }
 
-// The key names content, so two encodings of the same bytes agree — which is
-// what unifies an image fetched from a URL with the same image sent inline.
-func TestCaptionCache_KeyIsContentAddressedAcrossEncodings(t *testing.T) {
-	// "hello" as canonical base64, and the same bytes with different padding
-	// conventions, decode to the same digest.
-	plain := ir.ImagePart{Data: "aGVsbG8="}
-	if captionImageKey("k", "v", plain) != captionImageKey("k", "v", plain) {
-		t.Error("the same payload produced two different keys")
+// The key names content, and only content: the same bytes reach one entry
+// however they were labelled on the way in, and a byte that differs produces a
+// different one. That is what unifies an image fetched from a URL with the same
+// image sent inline — the media type a client happened to declare is not part of
+// what the picture is.
+func TestCaptionCache_KeyFollowsTheBytesAndNothingElse(t *testing.T) {
+	plain := ir.ImagePart{Source: "base64", MediaType: "image/png", Data: "aGVsbG8="}
+	labelledDifferently := ir.ImagePart{Source: "url", MediaType: "image/jpeg", Data: "aGVsbG8="}
+	if captionImageKey("k", "v", plain) != captionImageKey("k", "v", labelledDifferently) {
+		t.Error("the same bytes produced two keys; the source and media type must not enter the key")
 	}
-	other := ir.ImagePart{Data: "aGVsbG9z"}
+	other := ir.ImagePart{Source: "base64", MediaType: "image/png", Data: "aGVsbG9z"}
 	if captionImageKey("k", "v", plain) == captionImageKey("k", "v", other) {
 		t.Error("different image bytes collided")
 	}

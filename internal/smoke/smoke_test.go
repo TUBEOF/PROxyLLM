@@ -1,32 +1,32 @@
 package smoke
 
-// ENV-gated live smoke tests (Phase 1 DoD, Task #19; plan §8 step 7):
+// ENV-gated live smoke tests:
 // PROXYLLM_SMOKE=1 opts in — they SKIP by default and NEVER run in the
-// default CI suite. They pin the two research gaps the docs leave open:
+// default CI suite. They pin the two wire details the docs leave open:
 //
-//   - OP-3: the Codex refresh-grant body at {issuer}/oauth/token (X5) and
-//     the ChatGPT backend request shape at {backend}/codex/responses (X7)
-//     — the provider mirrors the authorization-code grant shape (X9);
+//   - the Codex refresh-grant body at {issuer}/oauth/token and
+//     the ChatGPT backend request shape at {backend}/codex/responses
+//     — the provider mirrors the authorization-code grant shape;
 //     the smoke verifies it against the LIVE issuer and reports the
 //     observed shape so findings become pinned notes.
-//   - OP-4: the Ollama native stream wire format — NDJSON lines with
-//     done/done_reason (L6) — against a LIVE Ollama endpoint
+//   - the Ollama native stream wire format — NDJSON lines with
+//     done/done_reason — against a LIVE Ollama endpoint
 //     (PROXYLLM_SMOKE_OLLAMA_URL, default the local
 //     http://localhost:11434).
 //
 // Credentials come exclusively from ENV (never files, never config):
-//   - OP-3 needs PROXYLLM_SMOKE_CODEX_REFRESH_TOKEN (a real refresh token)
-//     and optionally PROXYLLM_SMOKE_CODEX_ISSUER (default
+//   - the Codex smoke needs PROXYLLM_SMOKE_CODEX_REFRESH_TOKEN (a real
+//     refresh token) and optionally PROXYLLM_SMOKE_CODEX_ISSUER (default
 //     https://auth.openai.com) + PROXYLLM_SMOKE_CODEX_BACKEND (default
 //     https://chatgpt.com/backend-api). The refresh token is used ONLY to
 //     exercise the rotation; the smoke never logs it.
-//   - OP-4 needs an Ollama instance; the local default needs no key.
+//   - the Ollama smoke needs an Ollama instance; the local default needs no key.
 //     PROXYLLM_SMOKE_OLLAMA_MODEL picks the model (default: first tag
-//     from /api/tags), PROXYLLM_SMOKE_OLLAMA_KEY the bearer (L2).
+//     from /api/tags), PROXYLLM_SMOKE_OLLAMA_KEY the bearer.
 //
 // Smoke discipline: these tests NEVER assert on opaque token values and
 // never echo raw upstream bodies; failures print status codes and decoded
-// field names only (the §5.3 redaction doctrine applies to smokes too).
+// field names only (the redaction doctrine applies to smokes too).
 
 import (
 	"context"
@@ -49,7 +49,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/openai"
 )
 
-// smokeEnabled reports whether the operator opted in (§8: never default).
+// smokeEnabled reports whether the operator opted in (never default).
 func smokeEnabled(t *testing.T) bool {
 	t.Helper()
 	if os.Getenv("PROXYLLM_SMOKE") != "1" {
@@ -82,7 +82,7 @@ func smokeHTTPClient() *http.Client {
 
 // newSmokeStore opens the encrypted production store in a temp dir with a
 // fixed test-only envelope key, so the token triple rides the exact
-// production persistence path (OA-2).
+// production persistence path.
 func newSmokeStore(t *testing.T) *storage.Store {
 	t.Helper()
 	const keyHex = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"
@@ -103,9 +103,9 @@ func newSmokeStore(t *testing.T) *storage.Store {
 	return st
 }
 
-// smokeChatRequest is the minimal request used for the OP-3 backend smoke
+// smokeChatRequest is the minimal request used for the Codex backend smoke
 // (the provider's own encoder turns it into the production Responses
-// shape, X7).
+// shape).
 func smokeChatRequest() ir.Request {
 	return ir.Request{
 		Model:     "gpt-5",
@@ -117,7 +117,7 @@ func smokeChatRequest() ir.Request {
 }
 
 // ---------------------------------------------------------------------------
-// OP-3: Codex refresh grant + ChatGPT backend request shape
+// Codex refresh grant + ChatGPT backend request shape
 // ---------------------------------------------------------------------------
 
 // newSmokeCodexAuth seeds the token store exactly like a completed browser
@@ -144,11 +144,11 @@ func newSmokeCodexAuth(t *testing.T) codex.Auth {
 	})
 }
 
-// TestSmoke_CodexRefreshGrant verifies the OP-3 refresh-grant hypothesis
-// (mirror the authorization-code grant at {issuer}/oauth/token, X9)
+// TestSmoke_CodexRefreshGrant verifies the refresh-grant hypothesis
+// (mirror the authorization-code grant at {issuer}/oauth/token)
 // against the LIVE issuer. A failure here means the documented hypothesis
-// is wrong — the finding must be escalated (plan §2.9), not worked around
-// in the test.
+// is wrong — the finding must be escalated and reported, not worked
+// around in the test.
 func TestSmoke_CodexRefreshGrant(t *testing.T) {
 	if !smokeEnabled(t) {
 		return
@@ -158,12 +158,12 @@ func TestSmoke_CodexRefreshGrant(t *testing.T) {
 
 	// The hypothesis under test: the mirrored grant rotates the pair.
 	if err := auth.Refresh(ctx); err != nil {
-		t.Fatalf("OP-3 refresh grant rejected by live issuer: %v\n"+
-			"the mirrored grant shape (X9) does not match the live issuer — escalate per plan §2.9, do not adapt the test",
+		t.Fatalf("Codex refresh grant rejected by live issuer: %v\n"+
+			"the mirrored grant shape does not match the live issuer — escalate, do not adapt the test",
 			err)
 	}
 
-	// Rotation must have persisted a fresh access token (X18 lazy read
+	// Rotation must have persisted a fresh access token (lazy read
 	// path now short-circuits on a valid, un-expired token).
 	tok, err := auth.AccessToken(ctx)
 	if err != nil {
@@ -173,15 +173,15 @@ func TestSmoke_CodexRefreshGrant(t *testing.T) {
 		t.Fatal("access token empty after successful rotation")
 	}
 	if tok.AccountID == "" {
-		t.Error("account id empty — the id_token chatgpt_account_id claim (X15) was not extractable")
+		t.Error("account id empty — the id_token chatgpt_account_id claim was not extractable")
 	}
 }
 
-// TestSmoke_CodexBackendShape verifies the OP-3 backend request shape: a
+// TestSmoke_CodexBackendShape verifies the backend request shape: a
 // rotated access token performs a minimal request against the LIVE ChatGPT
 // backend and gets a protocol answer (never a transport failure or silent
 // hang) — pinning that the backend accepts the mirror headers
-// (Originator/User-Agent/Chatgpt-Account-Id, X14/X15/X24).
+// (Originator/User-Agent/Chatgpt-Account-Id).
 func TestSmoke_CodexBackendShape(t *testing.T) {
 	if !smokeEnabled(t) {
 		return
@@ -207,17 +207,17 @@ func TestSmoke_CodexBackendShape(t *testing.T) {
 
 	resp, err := p.Complete(ctx, smokeChatRequest())
 	if err != nil {
-		// Distinguish the two failure families (OP-3 escalation needs the
+		// Distinguish the two failure families (escalation needs the
 		// right hypothesis to falsify): a live backend ANSWERING with an
 		// unexpected shape (UpstreamError with an HTTP status) falsifies the
-		// mirrored request shape (X7/X14/X15/X24); an error WITHOUT one is a
+		// mirrored request shape; an error WITHOUT one is a
 		// transport/network failure (offline, DNS, TLS) and says nothing
 		// about the shape hypothesis.
 		var upErr *provider.UpstreamError
 		if errors.As(err, &upErr) && upErr.HTTPStatus > 0 {
-			t.Fatalf("OP-3 backend answered HTTP %d — the mirrored backend shape does not match the live backend; escalate per plan §2.9", upErr.HTTPStatus)
+			t.Fatalf("Codex backend answered HTTP %d — the mirrored backend shape does not match the live backend; escalate", upErr.HTTPStatus)
 		}
-		t.Fatalf("OP-3 backend request failed before any HTTP answer (transport failure or credential rotation failure): %v\n"+
+		t.Fatalf("Codex backend request failed before any HTTP answer (transport failure or credential rotation failure): %v\n"+
 			"this is not a shape mismatch — check reachability and the refresh token before escalating the shape hypothesis", err)
 	}
 	if len(resp.Content) == 0 {
@@ -226,11 +226,11 @@ func TestSmoke_CodexBackendShape(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// OP-4: Ollama native stream wire format
+// Ollama native stream wire format
 // ---------------------------------------------------------------------------
 
 // TestSmoke_OllamaNativeStream pins the native /api/chat NDJSON wire
-// format (L6): every line a standalone JSON object, the final line
+// format: every line a standalone JSON object, the final line
 // carrying done:true + done_reason + full usage counts. The smoke records
 // the observed done_reason value so the residual risk (unknown value
 // strings) is pinned by observation, not assumption.
@@ -286,7 +286,7 @@ func TestSmoke_OllamaNativeStream(t *testing.T) {
 			break
 		}
 		if err != nil {
-			t.Fatalf("NDJSON stream decode: %v — the pinned wire assumptions (L6/L10) do not match the live stream; escalate per plan §2.9", err)
+			t.Fatalf("NDJSON stream decode: %v — the pinned wire assumptions do not match the live stream; escalate", err)
 		}
 		if ev.Type == ir.MessageDelta && ev.MessageDelta != nil {
 			sawTerminal = true
@@ -297,10 +297,10 @@ func TestSmoke_OllamaNativeStream(t *testing.T) {
 	if !sawTerminal {
 		t.Fatal("stream ended without a terminal message_delta (done:true frame)")
 	}
-	t.Logf("OP-4 pinned: done_reason=%q usage input/output=%d/%d", doneReason, finalUsage.InputTokens, finalUsage.OutputTokens)
+	t.Logf("Ollama native stream pinned: done_reason=%q usage input/output=%d/%d", doneReason, finalUsage.InputTokens, finalUsage.OutputTokens)
 }
 
-// firstOllamaTag picks the first model tag from /api/tags (L3) so the
+// firstOllamaTag picks the first model tag from /api/tags so the
 // smoke runs against whatever the local instance hosts.
 func firstOllamaTag(t *testing.T, base string) string {
 	t.Helper()
@@ -382,7 +382,7 @@ func TestSmoke_OllamaCloudOpenAIStream(t *testing.T) {
 			break
 		}
 		if err != nil {
-			t.Fatalf("SSE stream decode: %v — the pinned wire assumptions (O4, reasoning buffering) do not match the live stream; escalate per plan §2.9", err)
+			t.Fatalf("SSE stream decode: %v — the pinned wire assumptions (data-only SSE, reasoning buffering) do not match the live stream; escalate", err)
 		}
 		if ev.Type == ir.BlockStart {
 			switch ev.Part.(type) {

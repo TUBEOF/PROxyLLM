@@ -11,8 +11,8 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
-// Stream-encoder contract tests, RED-GREEN per Analysis F. The encoder must
-// produce the Anthropic Messages SSE wire format (facts A5–A7, A13) such
+// Stream-encoder contract tests, RED-GREEN. The encoder must
+// produce the Anthropic Messages SSE wire format such
 // that the package's own stream decoder reconstructs the canonical events
 // (round-trip discipline: the decoder is fixture-verified against
 // docs.anthropic.com, so a passing round trip proves wire conformance).
@@ -32,8 +32,9 @@ func encodeAll(t *testing.T, evs []ir.StreamEvent) []byte {
 }
 
 // fullSequenceEvents is the canonical event sequence matching the golden
-// anthropic/stream-events.sse fixture (text + thinking + tool_use, A6
-// ordering, signature_delta before the thinking block's content_block_stop).
+// anthropic/stream-events.sse fixture (text + thinking + tool_use, the
+// documented stream order, signature_delta before the thinking block's
+// content_block_stop).
 func fullSequenceEvents() []ir.StreamEvent {
 	return []ir.StreamEvent{
 		{Type: ir.Start, Response: &ir.Response{
@@ -74,7 +75,7 @@ func TestStreamEncode_FullSequenceRoundTrip(t *testing.T) {
 }
 
 // The wire shape must carry the documented event names and empty-init
-// content blocks (A5/A6), not just round-trip semantically: assert the exact
+// content blocks, not just round-trip semantically: assert the exact
 // SSE lines for the start of the stream.
 func TestStreamEncode_WireShape(t *testing.T) {
 	evs := []ir.StreamEvent{
@@ -108,7 +109,7 @@ func TestStreamEncode_WireShape(t *testing.T) {
 	}
 }
 
-// ir.Error maps onto the terminal error SSE event (A13).
+// ir.Error maps onto the terminal error SSE event.
 func TestStreamEncode_ErrorEvent(t *testing.T) {
 	evs := []ir.StreamEvent{
 		{Type: ir.Start, Response: &ir.Response{ID: "msg_1", Model: "claude-sonnet-5"}},
@@ -130,7 +131,7 @@ func TestStreamEncode_ErrorEvent(t *testing.T) {
 	}
 }
 
-// Comments (upstream keepalives, H2-2) relay as wire comment lines.
+// Comments (upstream keepalives) relay as wire comment lines.
 func TestStreamEncode_CommentRelay(t *testing.T) {
 	evs := []ir.StreamEvent{
 		{Type: ir.Comment},

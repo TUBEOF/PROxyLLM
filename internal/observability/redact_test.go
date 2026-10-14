@@ -166,8 +166,7 @@ func TestRedact_MultipleSecretsOneLine(t *testing.T) {
 }
 
 // TestRedact_UnprefixedCredentialHeaders pins coverage for raw API keys in
-// credential-header positions that carry no recognized sk-/fc-/pk_ prefix
-// (Phase 0 review finding: these previously survived redaction).
+// credential-header positions that carry no recognized sk-/fc-/pk_ prefix.
 func TestRedact_UnprefixedCredentialHeaders(t *testing.T) {
 	r := NewRedactor()
 	cases := []string{
@@ -199,7 +198,7 @@ func TestRedact_AWSKeys(t *testing.T) {
 		t.Errorf("AWS access key survived: %q", got)
 	}
 	// The paired secret access key must be masked too — a test asserting
-	// only the key ID would mask this gap (re-review finding, 2026-09-10).
+	// only the key ID would mask this gap.
 	if strings.Contains(got, "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY") {
 		t.Errorf("AWS secret access key survived: %q", got)
 	}
@@ -263,7 +262,7 @@ func TestRedact_Base64Boundary(t *testing.T) {
 	}
 }
 
-// ADR-012 usage cookies (2026-10-06): the ollama.com __Secure-session
+// ADR-012 usage cookies: the ollama.com __Secure-session
 // value is masked in its header form and as a bare JSON pair.
 func TestRedact_OllamaSessionCookie(t *testing.T) {
 	r := NewRedactor()

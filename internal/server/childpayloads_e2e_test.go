@@ -1,6 +1,6 @@
 package server
 
-// End-to-end, through a fully assembled server (2026-10-10 Logs page): an
+// End-to-end, through a fully assembled server (Logs page): an
 // emulated web_search must end with a child row whose OWN payload an operator
 // can open — the query the step sent and the result it got back — and that
 // result body must NOT be in route_trace.

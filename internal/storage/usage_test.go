@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
-// Spec: plan Analysis C schema — usage_daily(day, client_key_id, provider_id,
-// model, input_tokens, output_tokens, cache_read_tokens, requests, failures)
-// is the Overview dashboard's data source (§9: KPI cards + charts need honest
-// aggregates, never fabricated metrics). The proxy's request-log path
+// Spec: usage_daily(day, client_key_id, provider_id, model, input_tokens,
+// output_tokens, cache_read_tokens, requests, failures) is the Overview
+// dashboard's data source (KPI cards + charts need honest aggregates, never
+// fabricated metrics). The proxy's request-log path
 // increments rows per completion; the WebUI queries day ranges.
 
 func TestUsageDaily_IncrementAccumulates(t *testing.T) {

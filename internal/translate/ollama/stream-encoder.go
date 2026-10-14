@@ -14,8 +14,8 @@ import (
 )
 
 // streamEncoder encodes canonical IR events into the Ollama /api/chat NDJSON
-// stream wire format (pinned via the golden fixture ollama/chat-stream.ndjson,
-// OP-4; facts L10-L11): one standalone JSON object per line, no SSE framing.
+// stream wire format (pinned via the golden fixture ollama/chat-stream.ndjson):
+// one standalone JSON object per line, no SSE framing.
 // Wire conformance is enforced via round trips through the package's
 // fixture-verified stream decoder.
 //
@@ -35,7 +35,7 @@ import (
 //   - Delta(tool_input) → tool fragments accumulate; the tool line carries
 //     message.tool_calls[{function:{name, arguments}}] and is emitted once
 //     the accumulated arguments form a complete JSON value (the wire delivers
-//     exactly one complete JSON object per entry, L10 — IR fragments are
+//     exactly one complete JSON object per entry — IR fragments are
 //     assembled, partial JSON never reaches the wire split, because
 //     json.Marshal validates RawMessage content)
 //   - BlockStop(tool) → the tool line if the accumulated arguments never
@@ -43,7 +43,7 @@ import (
 //     kinds close implicitly on the next line's payload
 //   - MessageDelta → the done line: done:true, done_reason via
 //     stopReasonToWire, and the usage counts (prompt_eval_count,
-//     prompt_eval_cached_count, eval_count, L11). Durations are provider
+//     prompt_eval_cached_count, eval_count). Durations are provider
 //     telemetry with no IR channel and are never emitted.
 //   - Done → the done line if MessageDelta did not arrive (the wire requires
 //     a terminal done:true line; without it a downstream decoder hangs until
@@ -55,8 +55,8 @@ import (
 // no tool IDs (the wire format has no id field) and no fragment boundaries
 // (arguments are delivered as one complete JSON object per entry).
 //
-// Each Write flushes when the sink implements http.Flusher (C2: relay
-// as-it-arrives).
+// Each Write flushes when the sink implements http.Flusher, so bytes reach
+// the client as they arrive.
 type streamEncoder struct {
 	w io.Writer
 
@@ -122,7 +122,7 @@ func (e *streamEncoder) Write(ctx context.Context, ev ir.StreamEvent) error {
 			}
 			e.toolArgs.WriteString(ev.Delta.PartialJSON)
 			// The wire carries exactly one complete JSON object per
-			// tool_calls entry (L10); emit only once the assembled
+			// tool_calls entry; emit only once the assembled
 			// arguments are a complete value. json.Marshal validates
 			// RawMessage content, so partial JSON must never ride the wire.
 			if !json.Valid([]byte(e.toolArgs.String())) {
@@ -132,7 +132,7 @@ func (e *streamEncoder) Write(ctx context.Context, ev ir.StreamEvent) error {
 			return e.emitToolLine()
 		default:
 			// signature deltas have no wire channel (signatures are an
-			// Anthropic-only concept; never fabricated, A12).
+			// Anthropic-only concept; never fabricated).
 			return nil
 		}
 	case ir.BlockStop:
@@ -161,11 +161,11 @@ func (e *streamEncoder) Write(ctx context.Context, ev ir.StreamEvent) error {
 		return e.writeDone(nil)
 	case ir.Error, ir.Ping, ir.Comment:
 		// No NDJSON wire channel for errors or keepalives (the wire format
-		// has no error event, L10); the stream stays valid. Downstream
+		// has no error event); the stream stays valid. Downstream
 		// consumers see the stream end at the next terminal event.
 		return nil
 	default:
-		// Unknown event kinds stay off the wire (A5 discipline).
+		// Unknown event kinds stay off the wire.
 		return nil
 	}
 }
@@ -215,7 +215,7 @@ func (e *streamEncoder) writeDone(md *ir.MessageDeltaPayload) error {
 }
 
 // writeLine marshals one NDJSON object, writes it with its newline, and
-// flushes (C2). It stamps created_at with the runtime timestamp (the wire
+// flushes. It stamps created_at with the runtime timestamp (the wire
 // timestamp of this response).
 func (e *streamEncoder) writeLine(w wireResponse) error {
 	w.CreatedAt = time.Now().UTC().Format(time.RFC3339Nano)

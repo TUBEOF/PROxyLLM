@@ -12,8 +12,8 @@ import (
 )
 
 // streamEncoder encodes canonical IR events into the Anthropic Messages SSE
-// wire format (facts A5–A7, A13; docs.anthropic.com/en/api/messages-streaming,
-// accessed 2026-09-10): named `event:` lines with one JSON `data:` payload,
+// wire format (docs.anthropic.com/en/api/messages-streaming, accessed
+// 2026-09-10): named `event:` lines with one JSON `data:` payload,
 // each event terminated by a dispatching blank line. Wire conformance is
 // pinned by the golden fixture anthropic/stream-events.sse and enforced via
 // round trips through the package's fixture-verified stream decoder.
@@ -30,13 +30,13 @@ import (
 //   - MessageDelta → message_delta (stop_reason + stop_sequence:null in
 //     .delta, usage at the top level)
 //   - Done → message_stop
-//   - Error → error (nested {type, message} object, A13)
+//   - Error → error (nested {type, message} object)
 //   - Comment → a wire comment line (`:…`, kept alive by relay consumers)
-//   - unknown event/delta kinds → a wire comment line (A5 discipline: never
-//     fail the stream over a kind this build does not know)
+//   - unknown event/delta kinds → a wire comment line (never fail the stream
+//     over a kind this build does not know)
 //
-// Each Write flushes when the sink implements http.Flusher (C2: relay
-// as-it-arrives).
+// Each Write flushes when the sink implements http.Flusher, so bytes reach
+// the client as they arrive.
 type streamEncoder struct {
 	w io.Writer
 }
@@ -98,7 +98,7 @@ func (e *streamEncoder) encode(ev ir.StreamEvent) (string, json.RawMessage, erro
 	case ir.Delta:
 		d, ok := encodeStreamDelta(ev.Delta)
 		if !ok {
-			// Unknown delta kinds tolerate like unknown wire types (A5).
+			// Unknown delta kinds tolerate like unknown wire types.
 			return "", nil, nil
 		}
 		return marshal(wireBlockDeltaEvent{Type: "content_block_delta", Index: ev.Index, Delta: d})
@@ -131,7 +131,7 @@ func (e *streamEncoder) encode(ev ir.StreamEvent) (string, json.RawMessage, erro
 		}
 		return marshal(wireErrorEvent{Type: "error", Error: we})
 	default:
-		// Unknown event kinds relay as wire comments (A5 discipline).
+		// Unknown event kinds relay as wire comments.
 		return "", nil, nil
 	}
 }
@@ -174,9 +174,9 @@ func encodeContentBlock(p ir.Part) (json.RawMessage, error) {
 	case ir.ServerToolUsePart:
 		// Same empty-init discipline as tool_use: the wire
 		// content_block_start carries "input":{} and the input arrives
-		// via input_json_delta (verified live 2026-09-12,
-		// platform.claude.com/docs/en/build-with-claude/streaming) —
-		// never omitted, despite the omitempty on the shared wireBlock.
+		// via input_json_delta, as documented under
+		// platform.claude.com/docs/en/build-with-claude/streaming — never
+		// omitted, despite the omitempty on the shared wireBlock.
 		input := pt.Input
 		if len(input) == 0 || string(input) == "null" {
 			input = json.RawMessage("{}")
@@ -196,7 +196,7 @@ func encodeContentBlock(p ir.Part) (json.RawMessage, error) {
 	}
 }
 
-// encodeStreamDelta maps a delta payload onto its wire delta type (A7).
+// encodeStreamDelta maps a delta payload onto its wire delta type.
 func encodeStreamDelta(d ir.DeltaPayload) (wireStreamDelta, bool) {
 	switch d.Kind {
 	case ir.DeltaText:

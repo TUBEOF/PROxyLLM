@@ -1,9 +1,9 @@
 package server
 
-// RED tests for the admin-API wiring into the live server (plan §5.2, §9:
-// the WebUI backend sits under /api/admin/ on the SAME mux as the proxy
-// surfaces, and routing-rule writes must reach the LIVE router without
-// restart — Analysis E: rule state is DB-owned and WebUI-editable).
+// RED tests for the admin-API wiring into the live server: the WebUI backend
+// sits under /api/admin/ on the SAME mux as the proxy surfaces, and
+// routing-rule writes must reach the LIVE router without a restart —
+// rule state is DB-owned and WebUI-editable.
 //
 // Contract pinned by these tests:
 //   - WithMasterKey mounts the admin API: /api/admin/bootstrap answers
@@ -94,7 +94,7 @@ func bootstrapAdmin(t *testing.T, ts *httptest.Server) wiringLogin {
 	return login
 }
 
-// adminCall issues a session-authenticated admin call (C-3/C-4: cookies,
+// adminCall issues a session-authenticated admin call (cookies,
 // X-CSRF-Token, and Content-Type on every mutation).
 func adminCall(t *testing.T, ts *httptest.Server, method, path, body string, l wiringLogin) *http.Response {
 	t.Helper()
@@ -345,7 +345,7 @@ func TestServer_RoutingWriteReloadsLiveRouter(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Task 5 Gap #2: live provider construction + re-registration
+// Live provider construction + re-registration
 // ---------------------------------------------------------------------------
 
 // 4. Startup construction: a provider row stored in the DB (via the admin
@@ -360,7 +360,7 @@ func TestServer_StoredProviderRoutesWithoutWithProvider(t *testing.T) {
 	cfg := newConfig(t)
 
 	// The mock upstream is an httptest loopback server — exercise the
-	// documented private-address opt-out (Analysis G control 5).
+	// documented private-address opt-out.
 	t.Setenv("PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS", "1")
 
 	st, err := storage.Open(cfg.Storage)
@@ -372,7 +372,7 @@ func TestServer_StoredProviderRoutesWithoutWithProvider(t *testing.T) {
 	upstream := mockprovider.New(t)
 	// The API key lives in the encrypted token store (provider_tokens,
 	// kind "access_token"), never in the provider config — storage
-	// rejects secret-shaped config keys by design (Analysis G control 2).
+	// rejects secret-shaped config keys by design.
 	envelope, err := storage.NewEnvelope(wiringMasterKey(t))
 	if err != nil {
 		t.Fatalf("new envelope: %v", err)
@@ -446,7 +446,7 @@ func TestServer_ProviderWriteReloadsLiveRegistry(t *testing.T) {
 	cfg := newConfig(t)
 
 	// The PUTed provider targets an httptest loopback URL — the documented
-	// private-address opt-out (Analysis G control 5).
+	// private-address opt-out.
 	t.Setenv("PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS", "1")
 
 	st, err := storage.Open(cfg.Storage)
@@ -462,7 +462,7 @@ func TestServer_ProviderWriteReloadsLiveRegistry(t *testing.T) {
 	}
 
 	// The PUTed api_key lands in the encrypted token store, which refuses
-	// plaintext writes without the envelope (Analysis G control 2) —
+	// plaintext writes without the envelope —
 	// attach it, mirroring production where main.go seals the store
 	// before server assembly.
 	envelope, err := storage.NewEnvelope(wiringMasterKey(t))

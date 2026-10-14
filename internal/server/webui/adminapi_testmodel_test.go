@@ -1,6 +1,6 @@
 package webui
 
-// Model test endpoint contract tests (2026-09-22 Models page):
+// Model test endpoint contract tests (Models page):
 //   - Unwired TestModel (no master key / harness) answers the uniform 404,
 //     identical to the sync-run degrade contract.
 //   - A wired test returns the result wire shape {ok, latency_ms, reply,

@@ -1,6 +1,6 @@
 package routing_test
 
-// Implicit model routes (ADR-011, 2026-09-22): when no enabled routing
+// Implicit model routes (ADR-011): when no enabled routing
 // rule matches the post-alias model name, the router consults an injected
 // model lookup — a models-table row routes to that row's provider as a
 // one-entry chain, traced as implicit_route. Guards from the ADR:
@@ -156,7 +156,7 @@ func TestImplicitRoute_KeyScopeWins(t *testing.T) {
 }
 
 func TestImplicitRoute_AliasResolvesFirst(t *testing.T) {
-	// C6: the alias maps the client-facing name to the routing identity;
+	// The alias maps the client-facing name to the routing identity;
 	// the implicit lookup must see the post-alias name.
 	reg := provider.NewRegistry()
 	reg.Register(&stubProvider{id: "acc-1", caps: provider.Capabilities{}})

@@ -1,6 +1,6 @@
 package server
 
-// Captured request payloads (2026-10-10 Logs page): the conversation a request
+// Captured request payloads (Logs page): the conversation a request
 // carried and the answer it produced are stored beside its log row and served
 // on demand, so a log entry can be read rather than only counted.
 //

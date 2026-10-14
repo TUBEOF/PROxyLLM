@@ -7,8 +7,8 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
-// Server-tool emulation policy tests (RED-GREEN). Derived from plan §6.2
-// (tool emulation / Firecrawl fallback) and §6.4 (server_tool_emulation:
+// Server-tool emulation policy tests (RED-GREEN). Derived from the
+// emulation policy semantics (server_tool_emulation:
 // native / emulate-firecrawl / off):
 //
 //   - native: server-tool defs ride untouched (the routed provider has
@@ -98,7 +98,7 @@ func TestApplyCompat_EmulationEmulate_ConvertsServerToolDefs(t *testing.T) {
 		t.Errorf("client tools must not be touched: %+v", got.Tools[1])
 	}
 
-	// Traced — never silent (§6.4).
+	// Traced — never silent.
 	found := false
 	for _, ev := range trace.Events() {
 		if ev.Type == "compat_policy" && ev.From == "server_tool_emulation" {
@@ -149,7 +149,7 @@ func TestApplyCompat_EmulationOff_RemovesServerToolDefs(t *testing.T) {
 }
 
 func TestApplyCompat_EmulationDefaultIsNative(t *testing.T) {
-	// Unset policy = native (§6.4: "" = native) — same as an explicit one.
+	// Unset policy = native ("" = native) — same as an explicit one.
 	req := emulationReq()
 	got, _, err := routing.ApplyCompat(routing.Compat{}, req)
 	if err != nil {

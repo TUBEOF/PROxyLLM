@@ -1,12 +1,12 @@
 package e2e
 
-// End-to-end acceptance harness (Phase 1 DoD, Task #19): the OFFICIAL
+// End-to-end acceptance harness: the OFFICIAL
 // client SDKs — openai-go v3 and anthropic-sdk-go — drive a fully
 // assembled proxy (auth middleware, httpapi, router, executor) over real
 // HTTP against a mock upstream. This is the acceptance layer above the
 // httpapi tests: it proves the SDK client → proxy → mock-upstream round
 // trip works with zero hand-rolled HTTP, the way real clients run against
-// PROxyLLM in production (plan §5.1, Analysis F E2E doctrine).
+// PROxyLLM in production.
 //
 // SDK facts (live-verified against the pinned module sources,
 // 2026-09-12):
@@ -15,7 +15,7 @@ package e2e
 //   - anthropic-sdk-go base URL is the bare server root; the method path
 //     carries /v1/messages. Retries default to 2 — pinned to 0.
 //
-// Derived from plan §5.1/§5.3 + §6.4 (compat policy, route_trace) and the
+// Derived from the surface contracts, the compat-policy/route_trace shape, and the
 // golden fixtures under testdata/golden/ — never from implementation
 // behavior.
 
@@ -94,7 +94,7 @@ func newEnv(t *testing.T, rules ...routing.Rule) *env {
 	}))
 
 	// One shared HealthTracker gates the router and receives executor
-	// reports (review M1 discipline).
+	// reports, so both see the same health state.
 	health := routing.NewHealthTracker()
 	router := routing.NewRouter(routing.Config{Rules: rules},
 		routing.WithRegistry(reg), routing.WithHealth(health))
@@ -106,7 +106,7 @@ func newEnv(t *testing.T, rules ...routing.Rule) *env {
 
 	h := httpapi.New(httpapi.Params{Store: st, Router: router, Executor: exec})
 
-	// Production parity (2026-10-10): main derives the client-key hasher from
+	// Production parity: main derives the client-key hasher from
 	// the master key, so a store without one would write legacy Argon2id rows and
 	// every authenticated request in this suite would pay the KDF — a cost no
 	// production request pays, and one that made the latency budgets measure the
@@ -122,7 +122,7 @@ func newEnv(t *testing.T, rules ...routing.Rule) *env {
 	// typically set. The SDK folds the env token into a default
 	// `Authorization: Bearer ...` header that survives our WithAPIKey option
 	// (which only adds X-Api-Key), and the proxy's documented header
-	// precedence (Bearer wins, §5.1 C5) would then authenticate the AMBIENT
+	// precedence (Bearer wins) would then authenticate the AMBIENT
 	// token instead of the test key. Empty string suppresses the env default
 	// (LookupEnv + `v != ""` guard in the SDK's DefaultClientOptions).
 	t.Setenv("ANTHROPIC_API_KEY", "")
@@ -227,7 +227,7 @@ func mockSSE(t *testing.T, raw string) *mockprovider.Script {
 }
 
 // traceCompatEvent scans a request_logs route_trace for one compat_policy
-// event with the given setting/value pair (§6.4: the trace shape is
+// event with the given setting/value pair (the trace shape is
 // {"events":[{"type":"compat_policy","from":<setting>,"to":<value>}]}).
 func traceCompatEvent(t *testing.T, raw json.RawMessage, setting, value string) bool {
 	t.Helper()

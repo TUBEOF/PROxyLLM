@@ -1,5 +1,5 @@
 // Package translate defines the codec contracts every protocol implements
-// against the canonical IR (plan Analysis D). Concrete codecs live in
+// against the canonical IR. Concrete codecs live in
 // subpackages (openai, anthropic, ollama); this package owns the shared
 // interfaces and cross-codec test helpers.
 package translate
@@ -33,22 +33,22 @@ type RequestEncoder interface {
 }
 
 // StreamDecoder turns a protocol wire byte stream into the canonical event
-// sequence. Implementations are pushdown state machines (Analysis D):
-// they own tool-call/JSON-fragment assembly state and enforce ordering.
+// sequence. Implementations are pushdown state machines: they own
+// tool-call/JSON-fragment assembly state and enforce ordering.
 //
-// Events must be emitted promptly as they arrive (SSE-7: no block
-// buffering); Read blocks until the next event, returns io.EOF at clean
-// stream end, and returns a terminal ir.Error event before EOF on upstream
-// failure.
+// Events must be emitted promptly as they arrive; a decoder never holds an
+// event back to batch it. Read blocks until the next event, returns io.EOF
+// at clean stream end, and returns a terminal ir.Error event before EOF on
+// upstream failure.
 type StreamDecoder interface {
 	// Read returns the next canonical event from the wire stream.
 	Read(ctx context.Context) (ir.StreamEvent, error)
 }
 
 // StreamEncoder writes canonical events to a client connection in protocol
-// wire form, flushing per event (C2: relay as-it-arrives; H2-2: the SSE
-// writer emits a spec-ignored comment after the header to release HTTP/2
-// HEADERS frames).
+// wire form, flushing per event so bytes reach the client as they arrive.
+// The SSE writer also emits a spec-ignored comment right after the header,
+// which releases the HTTP/2 HEADERS frame a proxy would otherwise hold back.
 type StreamEncoder interface {
 	// Write emits one event and flushes.
 	Write(ctx context.Context, ev ir.StreamEvent) error

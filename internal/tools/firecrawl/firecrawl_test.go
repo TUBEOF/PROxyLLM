@@ -1,7 +1,8 @@
 package firecrawl
 
 // Firecrawl v2 client contract tests. Expectations derive exclusively from
-// plan facts F1-F3 and the golden fixtures under testdata/golden/firecrawl/
+// the Firecrawl v2 API facts and the golden fixtures under
+// testdata/golden/firecrawl/
 // (sourced from docs.firecrawl.dev, accessed 2026-09-10) — never from client
 // code behavior.
 
@@ -51,7 +52,7 @@ func newUpstream(t *testing.T, c *capture, status int, body string) *httptest.Se
 	return srv
 }
 
-// 1. Search contract (F2): POST {base}/v2/search, Bearer auth (F1), the
+// 1. Search contract: POST {base}/v2/search, Bearer auth, the
 // golden request body on the wire, response decoded per the golden fixture.
 func TestSearch_Contract(t *testing.T) {
 	var c capture
@@ -68,7 +69,7 @@ func TestSearch_Contract(t *testing.T) {
 		t.Fatalf("Search: %v", err)
 	}
 
-	// Wire assertions per F1/F2.
+	// Wire assertions per the documented v2 search shape.
 	if c.method != http.MethodPost {
 		t.Errorf("method = %q, want POST", c.method)
 	}
@@ -82,7 +83,7 @@ func TestSearch_Contract(t *testing.T) {
 		t.Errorf("Content-Type = %q, want application/json", c.ct)
 	}
 
-	// The encoded request must carry the golden fields (F2).
+	// The encoded request must carry the golden fields.
 	var sent map[string]any
 	if err := json.Unmarshal([]byte(c.body), &sent); err != nil {
 		t.Fatalf("sent body not JSON: %v\n%s", err, c.body)
@@ -119,7 +120,7 @@ func TestSearch_Contract(t *testing.T) {
 	}
 }
 
-// 2. Scrape contract (F3): POST {base}/v2/scrape with the golden request
+// 2. Scrape contract: POST {base}/v2/scrape with the golden request
 // body; response markdown + metadata decoded per the golden fixture.
 func TestScrape_Contract(t *testing.T) {
 	var c capture
@@ -164,7 +165,7 @@ func TestScrape_Contract(t *testing.T) {
 	}
 }
 
-// 3. Default base URL is the production API host (F1).
+// 3. Default base URL is the production API host.
 func TestNew_DefaultBaseURL(t *testing.T) {
 	cl := New("", "fc-key", nil)
 	if cl.BaseURL() != "https://api.firecrawl.dev" {
@@ -172,7 +173,7 @@ func TestNew_DefaultBaseURL(t *testing.T) {
 	}
 }
 
-// 4. Error semantics (F5): non-2xx surfaces as a typed error carrying the
+// 4. Error semantics: non-2xx surfaces as a typed error carrying the
 // status; the client never fabricates success from a failed response.
 func TestSearch_ErrorSurfacesStatus(t *testing.T) {
 	var c capture
@@ -215,7 +216,7 @@ func TestSearch_TransportErrorDistinct(t *testing.T) {
 }
 
 // 6. success:false on a 2xx is still an error — the flag is the documented
-// contract (F2/F3), not the status code alone.
+// contract, not the status code alone.
 func TestScrape_SuccessFalseIsError(t *testing.T) {
 	var c capture
 	srv := newUpstream(t, &c, http.StatusOK, `{"success":false,"error":"scrape failed"}`)

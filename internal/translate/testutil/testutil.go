@@ -1,5 +1,5 @@
 // Package testutil provides shared golden-fixture helpers for codec contract
-// tests (ADR-006, plan Analysis F). It is a normal (non _test) package so
+// tests (ADR-006). It is a normal (non _test) package so
 // every protocol suite can import it; nothing outside tests may use it.
 //
 // All helpers resolve fixture paths relative to testdata/golden/ at the

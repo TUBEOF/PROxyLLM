@@ -1,12 +1,11 @@
 package routing_test
 
-// Capability-gap classification contract tests (2026-09-21 automatic
-// capabilities): an upstream 400 whose message names an unsupported input
-// modality (image, in this spec) is NOT a generic client error — the
-// request is fine, the model just lacks the capability. Spec: user decision
-// 2026-09-21 — a request failing because the model cannot serve a
-// capability (e.g. image input) must fail over to the configured fallback
-// models instead of terminating. The signal is necessarily heuristic:
+// Capability-gap classification contract tests: an upstream 400 whose message
+// names an unsupported input modality (image, in this spec) is NOT a generic
+// client error — the request is fine, the model just lacks the capability.
+// A request failing because the model cannot serve a capability (e.g. image
+// input) must fail over to the configured fallback models instead of
+// terminating. The signal is necessarily heuristic:
 // vendors word these rejections differently, so the matcher consults the
 // message text AND the body code, both redacted upstream sources.
 
@@ -48,7 +47,7 @@ func TestClassifyError_CapabilityGap(t *testing.T) {
 
 func TestClassifyError_Generic400StaysClientError(t *testing.T) {
 	// A 400 WITHOUT a capability signal is still the request's fault —
-	// terminal, unchanged (FO-2).
+	// terminal, unchanged.
 	c := routing.ClassifyError(&provider.UpstreamError{
 		HTTPStatus: 400, Message: "max_tokens must be greater than 0"}, routing.PreStream)
 	if c.Class != routing.ClassClientError || c.Action != routing.ActionTerminal {
@@ -57,7 +56,7 @@ func TestClassifyError_Generic400StaysClientError(t *testing.T) {
 }
 
 func TestClassifyError_CapabilityGapMidStreamIsTerminal(t *testing.T) {
-	// FO-1 outranks everything: mid-stream never retries or swaps.
+	// Position outranks everything: mid-stream never retries or swaps.
 	c := routing.ClassifyError(&provider.UpstreamError{
 		HTTPStatus: 400, Message: "image input not supported"}, routing.MidStream)
 	if c.Action != routing.ActionTerminal {

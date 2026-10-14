@@ -2,6 +2,5 @@
   "fixture": "chat-stream.ndjson",
   "source": "https://docs.ollama.com/api/chat",
   "accessed": "2026-09-10",
-  "facts": ["L10"],
   "notes": "NDJSON stream: each line is a standalone JSON object with partial message.content (empty object framing: no SSE 'data:' lines). Final chunk carries done:true, done_reason, and full usage counts. The paired .expected.json holds the canonical ir.StreamEvent sequence."
 }

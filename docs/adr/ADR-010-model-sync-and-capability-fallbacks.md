@@ -70,7 +70,7 @@ Three gaps surfaced operating the WebUI:
    all-failed surfaces the last error as the documented "unavailable"
    result).
 
-   **Wiring fix (2026-10-06):** the claim above is now true as written —
+   **Wiring note:** the claim above holds as written —
    the web lists were stored and validated since their introduction but
    the pool build ignored them (registry insertion order won, and
    `EmulatorPool.SetSearch/SetFetch` had no production caller). Pool

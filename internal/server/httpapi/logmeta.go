@@ -42,7 +42,7 @@ type logMeta struct {
 	ConvKey  string // deterministic conversation derivation input
 	RunID    string // "" until beginRequest registered an in-flight entry
 
-	// Payload capture (2026-10-10 Logs page): the conversation the request
+	// Payload capture (Logs page): the conversation the request
 	// carried and the answer it produced, held as IR values until the log row
 	// is written. Holding the values — rather than encoded text — is the point:
 	// encoding and redaction are real work, and they belong off the request path

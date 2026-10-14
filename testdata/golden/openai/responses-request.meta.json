@@ -3,10 +3,10 @@
   "source": "https://developers.openai.com/api/reference/resources/responses/methods/create",
   "accessed": "2026-09-10",
   "facts": [
-    "O5: input is a string or an item array; item type 'message' (EasyInputMessage) carries role + content; 'instructions' is a separate top-level field",
+    "input is a string or an item array; item type 'message' (EasyInputMessage) carries role + content; 'instructions' is a separate top-level field",
     "FunctionCall input item: {type:'function_call', call_id, name, arguments (JSON string)}",
     "function_call_output input item: {type:'function_call_output', call_id, output}",
-    "O6/O3-responses: FunctionTool is FLAT in the Responses API: {type:'function', name, description, parameters, strict} — no nested 'function' wrapper",
+    "FunctionTool is FLAT in the Responses API: {type:'function', name, description, parameters, strict} — no nested 'function' wrapper",
     "reasoning.effort enum: none | minimal | low | medium | high | xhigh | max",
     "tool_choice strings: auto | none | required (object forms exist for hosted tools / custom)",
     "max_output_tokens is the Responses-API output limit field"

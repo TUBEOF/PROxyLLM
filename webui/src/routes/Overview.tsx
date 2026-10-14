@@ -68,12 +68,12 @@ function Ring({ pct }: { pct: number }) {
   );
 }
 
-// POLL_MS is the Overview's live-update poll interval (2026-10-06).
+// POLL_MS is the Overview's live-update poll interval.
 const POLL_MS = 5000;
 
 export default function Overview() {
   // Last 30 days, inclusive — the honest window the usage endpoint serves.
-  // Live updates (2026-10-06): the snapshot poll replaces the manual
+  // Live updates: the snapshot poll replaces the manual
   // reload; the day-window recomputes only when a poll crosses midnight
   // (the data itself is keyed by day, so a stale window label is the only
   // cost — acceptable against a hidden-tab-paused poll).

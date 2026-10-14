@@ -1,6 +1,6 @@
 package httpapi
 
-// C1 regression (2026-10-07 review): the emulation detail is
+// The emulation detail is
 // upstream-influenced text (a Firecrawl error string, a model-supplied URL)
 // and the child row is a curated surface of its own — it must be masked
 // before it is stored, exactly like ErrorRedacted. A route-level reason

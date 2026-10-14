@@ -268,7 +268,7 @@ func TestResolveChain_StrategyPrecedence(t *testing.T) {
 	}
 }
 
-// fill_first is today's behavior, named: no rotation, ordered chain. For
+// fill_first is the pre-existing behavior, named: no rotation, ordered chain. For
 // exact-ID chains nothing changes at all.
 func TestResolveChain_FillFirstKeepsOrder(t *testing.T) {
 	reg := provider.NewRegistry()

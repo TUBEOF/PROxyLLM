@@ -18,21 +18,21 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
-// Custom OpenAI-compatible provider contract tests, RED-GREEN (plan §4.1,
-// Analysis F). Expectations derive from the golden fixtures captured from
-// the official OpenAI API reference (O1–O4, accessed 2026-09-10) and the
-// provider interface contract (FO-1/FO-2, C2) — never from provider code
+// Custom OpenAI-compatible provider contract tests, RED-GREEN.
+// Expectations derive from the golden fixtures captured from
+// the official OpenAI API reference (accessed 2026-09-10) and the
+// provider interface contract — never from provider code
 // behavior.
 //
 // Wire facts pinned here:
-//   - O1: auth is `Authorization: Bearer <key>`.
-//   - O2: chat completions POST to {base}/chat/completions.
-//   - O4: streaming is data-only SSE terminated by [DONE]; the codec emits
+//   - auth is `Authorization: Bearer <key>`.
+//   - chat completions POST to {base}/chat/completions.
+//   - streaming is data-only SSE terminated by [DONE]; the codec emits
 //     `"stream":true` for stream requests (chat-completions `stream` is
 //     omitted when false — openai.go wire tag).
-//   - FO-2: non-2xx maps to *provider.UpstreamError carrying HTTP status,
-//     body error.type/code, and Retry-After seconds (O10).
-//   - C2/FO-1: cancel aborts the upstream request; a mid-stream upstream
+//   - non-2xx maps to *provider.UpstreamError carrying HTTP status,
+//     body error.type/code, and Retry-After seconds.
+//   - cancel aborts the upstream request; a mid-stream upstream
 //     break becomes a terminal ir.Error event, never a retried dispatch.
 
 const testAPIKey = "test-key-123"
@@ -59,7 +59,7 @@ func newProvider(t *testing.T, handler http.HandlerFunc) (*custom.Provider, *htt
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	// baseURL carries the version prefix; the provider appends
-	// /chat/completions (O2).
+	// /chat/completions.
 	return custom.New("custom-openai", srv.URL+"/v1", testAPIKey, provider.Capabilities{
 		Streaming: true,
 		Tools:     true,
@@ -109,8 +109,8 @@ func drainEvents(t *testing.T, events <-chan ir.StreamEvent) []ir.StreamEvent {
 }
 
 // TestComplete_RoundTrip: a 2xx chat-completions body decodes to the IR via
-// the OpenAI codec; auth is Bearer (O1); the request rides the chat
-// completions path (O2) with the model stamped.
+// the OpenAI codec; auth is Bearer; the request rides the chat
+// completions path with the model stamped.
 func TestComplete_RoundTrip(t *testing.T) {
 	pr, _ := newProvider(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -120,7 +120,7 @@ func TestComplete_RoundTrip(t *testing.T) {
 			t.Errorf("path = %s, want %s", r.URL.Path, want)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer "+testAPIKey {
-			t.Errorf("Authorization = %q, want Bearer %q (O1)", got, testAPIKey)
+			t.Errorf("Authorization = %q, want Bearer %q", got, testAPIKey)
 		}
 		body := decodeSentBody(t, r)
 		if body["model"] != "gpt-5" {
@@ -147,8 +147,8 @@ func TestComplete_RoundTrip(t *testing.T) {
 }
 
 // TestComplete_UpstreamError: a non-2xx response maps to
-// *provider.UpstreamError with the two FO-2 classification tiers — HTTP
-// status plus the body error object — and Retry-After seconds (O10).
+// *provider.UpstreamError with the two classification tiers — HTTP
+// status plus the body error object — and Retry-After seconds.
 func TestComplete_UpstreamError(t *testing.T) {
 	pr, _ := newProvider(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "7")
@@ -171,13 +171,13 @@ func TestComplete_UpstreamError(t *testing.T) {
 		t.Error("Message must carry the upstream error message")
 	}
 	if up.RetryAfter != 7*time.Second {
-		t.Errorf("RetryAfter = %v, want 7s (Retry-After header, O10)", up.RetryAfter)
+		t.Errorf("RetryAfter = %v, want 7s (Retry-After header)", up.RetryAfter)
 	}
 }
 
 // TestComplete_TransportError: a failure before any response (connection
 // refused) is a transport error, NOT an UpstreamError — routing classifies
-// those as early-stream retryable via the zero-status path (FO-2).
+// those as early-stream retryable via the zero-status path.
 func TestComplete_TransportError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	srv.Close() // connection refused from here on
@@ -194,7 +194,7 @@ func TestComplete_TransportError(t *testing.T) {
 }
 
 // TestStream_Events: the SSE fixture replays to the canonical event
-// sequence from the .expected.json fixture (O4); the request body carries
+// sequence from the .expected.json fixture; the request body carries
 // stream:true.
 func TestStream_Events(t *testing.T) {
 	pr, _ := newProvider(t, func(w http.ResponseWriter, r *http.Request) {
@@ -221,7 +221,7 @@ func TestStream_Events(t *testing.T) {
 
 // TestStream_MidStreamFailure: an upstream break after the first event is
 // terminal — a terminal ir.Error event, then channel close. Never a
-// dispatch error (FO-1: mid-stream failures are never retried or swapped).
+// dispatch error (mid-stream failures are never retried or swapped).
 func TestStream_MidStreamFailure(t *testing.T) {
 	pr, _ := newProvider(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -252,7 +252,7 @@ func TestStream_MidStreamFailure(t *testing.T) {
 	}
 	last := got[len(got)-1]
 	if last.Type != ir.Error {
-		t.Fatalf("last event = %s, want a terminal ir.Error event (FO-1)", last.Type)
+		t.Fatalf("last event = %s, want a terminal ir.Error event", last.Type)
 	}
 	if last.Error == nil || last.Error.Message == "" {
 		t.Error("terminal error event must carry the upstream failure message")
@@ -260,8 +260,8 @@ func TestStream_MidStreamFailure(t *testing.T) {
 }
 
 // TestStream_Cancel: the cancel func aborts the upstream request and closes
-// the event channel promptly (client disconnect → upstream cancellation,
-// C2) — no error event, no goroutine hang on a full channel.
+// the event channel promptly (client disconnect → upstream cancellation)
+// — no error event, no goroutine hang on a full channel.
 func TestStream_Cancel(t *testing.T) {
 	pr, _ := newProvider(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -305,7 +305,7 @@ func TestStream_Cancel(t *testing.T) {
 				return // closed — contract satisfied
 			}
 		case <-deadline:
-			t.Fatal("cancel must close the event channel promptly (C2)")
+			t.Fatal("cancel must close the event channel promptly")
 		}
 	}
 }

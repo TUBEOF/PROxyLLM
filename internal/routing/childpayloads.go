@@ -1,11 +1,11 @@
 package routing
 
-// Per-sub-operation payloads (2026-10-10 Logs page): a sub-operation's own
-// detail view needs what THAT step sent and received — the tool call and its
-// result, the instruction a describer received and the caption it produced.
-// The parent request's capture already shows the conversation and the answer,
-// but it cannot answer "what did the fallback step actually do": the caption
-// text and the tool result exist only transiently inside the routing code.
+// Per-sub-operation payloads: a sub-operation's own detail view needs what
+// THAT step sent and received — the tool call and its result, the instruction
+// a describer received and the caption it produced. The parent request's
+// capture already shows the conversation and the answer, but it cannot answer
+// "what did the fallback step actually do": the caption text and the tool
+// result exist only transiently inside the routing code.
 //
 // Two shape decisions:
 //

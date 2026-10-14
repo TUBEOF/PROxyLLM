@@ -1,6 +1,6 @@
 package server
 
-// Retention for captured request payloads (2026-10-10 Logs page).
+// Retention for captured request payloads.
 //
 // Capturing a conversation per request is only defensible if something bounds
 // how long it is kept. The per-payload size cap bounds one row; this bounds the

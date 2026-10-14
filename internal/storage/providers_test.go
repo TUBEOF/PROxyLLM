@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// Spec: plan Analysis C schema (providers: id, type, name) — the FK target
-// for models and provider_tokens. EnsureProvider is the exported seeding
-// path the httpapi harness and the Phase 2 WebUI provider CRUD build on:
+// Spec: schema (providers: id, type, name) — the FK target for models and
+// provider_tokens. EnsureProvider is the exported seeding path the httpapi
+// harness and the WebUI provider CRUD build on:
 // idempotent upsert (ON CONFLICT), never silently renaming an existing
 // provider of a different type.
 

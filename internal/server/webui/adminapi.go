@@ -1,10 +1,9 @@
 package webui
 
-// Admin API (plan §5.2): the WebUI SPA's only backend, mounted under
-// /api/admin/. Session auth + CSRF are the committed auth layer's
-// (Phase 2 research §10): login/logout/bootstrap delegate to
-// auth.SessionManager, every resource handler runs behind RequireAdmin.
-// Error model: uniform {"error": ...} JSON bodies (Analysis G: never
+// Admin API: the WebUI SPA's only backend, mounted under /api/admin/.
+// Session auth + CSRF are the auth layer's: login/logout/bootstrap
+// delegate to auth.SessionManager, every resource handler runs behind
+// RequireAdmin. Error model: uniform {"error": ...} JSON bodies (never
 // distinguish failure causes to the client), ErrNotFound → 404,
 // ErrInvalid → 400, everything else → 500.
 
@@ -35,8 +34,8 @@ import (
 // the *Envelope, so the caller (cmd/proxyllm) must pass the key here.
 // ReloadRouting re-runs rule loading into the live router after every
 // successful routing-rule write; ReloadProviders re-registers the stored
-// provider set after every successful provider write (Task 5 Gap #2:
-// WebUI provider edits reach the live registry without a restart — the
+// provider set after every successful provider write: WebUI provider
+// edits reach the live registry without a restart — the
 // exact contract TestServer_ProviderWriteReloadsLiveRegistry pins).
 // ReloadSettings re-loads the settings KV into the live runtime after every
 // successful settings write (model aliases → router.SetAliases) — the DB
@@ -52,8 +51,8 @@ type AdminParams struct {
 	// router.SetStrategy) — same live-swap contract as ReloadSettings.
 	ReloadStrategy func()
 	// ReloadFallbacks pushes the capability fallback lists into the live
-	// runtime after every successful fallback write (2026-09-21 automatic
-	// capabilities: vision_fallback model IDs → executor.SetCapabilityFall-
+	// runtime after every successful fallback write (automatic capabilities:
+	// vision_fallback model IDs → executor.SetCapabilityFall-
 	// backs; the web-tool lists are picked up by the provider reload's pool
 	// rebuild — same live-swap contract).
 	ReloadFallbacks func()
@@ -61,7 +60,7 @@ type AdminParams struct {
 	// now" button). nil when the sync is not wired (no master key).
 	SyncNow func(ctx context.Context) (storage.ModelSyncState, error)
 	// TestModel answers one minimal "Sag OK" round trip against the model
-	// row's provider (2026-09-22 Models page test button). nil when not
+	// row's provider (the Models page test button). nil when not
 	// wired (no master key) — the endpoint answers the uniform 404.
 	TestModel func(ctx context.Context, modelID string) (TestModelResult, error)
 	// HealthSnapshot names the per-account cooldown reason for the Quota
@@ -156,7 +155,7 @@ func (a *AdminAPI) Handler() http.Handler {
 	mux.Handle("GET /api/admin/providers", a.sessions.RequireAdmin(http.HandlerFunc(a.listProviders)))
 	mux.Handle("PUT /api/admin/providers/{id}", a.sessions.RequireAdmin(http.HandlerFunc(a.putProvider)))
 	mux.Handle("DELETE /api/admin/providers/{id}", a.sessions.RequireAdmin(http.HandlerFunc(a.deleteProvider)))
-	// OAuth device flow (X20, plan §5.2): start surfaces the operator pair
+	// OAuth device flow: start surfaces the operator pair
 	// (user_code + verification URL); poll performs ONE issuer round trip
 	// per call, throttled to the issuer interval. There is deliberately NO
 	// /oauth/callback admin route — the device flow needs no inbound
@@ -166,14 +165,14 @@ func (a *AdminAPI) Handler() http.Handler {
 	mux.Handle("POST /api/admin/providers/{id}/oauth/start", a.sessions.RequireAdmin(http.HandlerFunc(a.oauthStart)))
 	mux.Handle("POST /api/admin/providers/{id}/oauth/poll", a.sessions.RequireAdmin(http.HandlerFunc(a.oauthPoll)))
 
-	// Model IDs are prefixed routing identities (2026-09-21 model
+	// Model IDs are prefixed routing identities (model
 	// identity, "ollamacloud/glm-5.3") — the {id...} wildcard captures the
 	// full multi-segment ID (legacy unprefixed IDs match it too). The test
 	// route puts the ID last ({...} wildcards must end the pattern).
 	mux.Handle("GET /api/admin/models", a.sessions.RequireAdmin(http.HandlerFunc(a.listModels)))
 	mux.Handle("PUT /api/admin/models/{id...}", a.sessions.RequireAdmin(http.HandlerFunc(a.putModel)))
 	mux.Handle("DELETE /api/admin/models/{id...}", a.sessions.RequireAdmin(http.HandlerFunc(a.deleteModel)))
-	// Model test (2026-09-22): one minimal "Sag OK" round trip per model
+	// Model test: one minimal "Sag OK" round trip per model
 	// row — the Models page's test button.
 	mux.Handle("POST /api/admin/models/test/{id...}", a.sessions.RequireAdmin(http.HandlerFunc(a.testModelHandler)))
 
@@ -196,7 +195,7 @@ func (a *AdminAPI) Handler() http.Handler {
 
 	mux.Handle("GET /api/admin/usage", a.sessions.RequireAdmin(http.HandlerFunc(a.getUsage)))
 	mux.Handle("GET /api/admin/logs", a.sessions.RequireAdmin(http.HandlerFunc(a.getLogs)))
-	// Captured conversation + answer for one log row (2026-10-10): fetched on
+	// Captured conversation + answer for one log row: fetched on
 	// demand when the drawer opens, never as part of the list — the list is
 	// polled and must not carry payloads with it.
 	mux.Handle("GET /api/admin/log-payload", a.sessions.RequireAdmin(http.HandlerFunc(a.getLogPayload)))
@@ -208,7 +207,7 @@ func (a *AdminAPI) Handler() http.Handler {
 	mux.Handle("GET /api/admin/accounts/usage", a.sessions.RequireAdmin(http.HandlerFunc(a.getAccountUsage)))
 	mux.Handle("POST /api/admin/accounts/usage/refresh/{id...}", a.sessions.RequireAdmin(http.HandlerFunc(a.accountsUsageRefresh)))
 
-	// Live updates (2026-10-06): the Dashboard's assembled snapshot —
+	// Live updates: the Dashboard's assembled snapshot —
 	// one GET per poll instead of the page's multi-request mount.
 	mux.Handle("GET /api/admin/overview", a.sessions.RequireAdmin(http.HandlerFunc(a.getOverview)))
 
@@ -220,7 +219,7 @@ func (a *AdminAPI) Handler() http.Handler {
 	// honest username the UI shows after a refresh), the password change
 	// verifies the current password (Argon2id, dummy-hash timing
 	// equalization like HandleLogin), then revokes every OTHER session of
-	// this admin (S-8 server-side revocation; this session survives so the
+	// this admin — server-side revocation; this session survives so the
 	// operator is not logged out of the very tab that changed it).
 	mux.Handle("GET /api/admin/me", a.sessions.RequireAdmin(http.HandlerFunc(a.getMe)))
 	mux.Handle("PUT /api/admin/password", a.sessions.RequireAdmin(http.HandlerFunc(a.putPassword)))
@@ -240,7 +239,7 @@ func (a *AdminAPI) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	// Read the body ONCE here, then hand the replayed request to HandleLogin
 	// below — a decoded body cannot be re-read, and bootstrap must end in a
 	// real login response (cookies + CSRF token).
-	r.Body = http.MaxBytesReader(w, r.Body, 4<<10) // Analysis G: bounded input
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10) // bounded input
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request")
@@ -263,7 +262,7 @@ func (a *AdminAPI) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	// TOCTOU fix (Analysis G): count + insert run in ONE transaction — a
+	// TOCTOU-safe: count + insert run in ONE transaction — a
 	// concurrent second bootstrap loses the race and gets ErrConflict, never
 	// a silent second admin row.
 	if err := a.store.EnsureFirstAdmin(r.Context(), newAdminID(), req.Username, hash); err != nil {
@@ -328,7 +327,7 @@ func (a *AdminAPI) getMe(w http.ResponseWriter, r *http.Request) {
 
 // putPassword changes the session admin's password: current-password
 // verification (Argon2id + timing equalization), then the hash update and
-// the S-8 revocation of every OTHER session of this admin — stolen or
+// the revocation of every OTHER session of this admin — stolen or
 // forgotten tabs die with the old password, the requesting session stays.
 func (a *AdminAPI) putPassword(w http.ResponseWriter, r *http.Request) {
 	adminID := auth.AdminIDFromContext(r.Context())
@@ -336,7 +335,7 @@ func (a *AdminAPI) putPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 4<<10) // Analysis G: bounded input
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10) // bounded input
 	var req struct {
 		Current string `json:"current_password"`
 		New     string `json:"new_password"`
@@ -383,7 +382,7 @@ func (a *AdminAPI) putPassword(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
-	// S-8 revocation: every OTHER session of this admin dies with the old
+	// Revocation: every OTHER session of this admin dies with the old
 	// password. This session's own row survives.
 	_, _ = a.store.DeleteOtherSessionsForAdmin(r.Context(), adminID, auth.SessionIDHashFromContext(r.Context()))
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -436,7 +435,7 @@ func (a *AdminAPI) putProvider(w http.ResponseWriter, r *http.Request) {
 		Config json.RawMessage `json:"config"`
 		// APIKey is the optional top-level credential field. The provider
 		// config must never carry it (the storage layer rejects
-		// secret-shaped config keys — Analysis G control 2); the admin
+		// secret-shaped config keys); the admin
 		// API routes it into the encrypted token store instead (kind
 		// "access_token", the same row the device flow persists).
 		APIKey string `json:"api_key"`
@@ -457,7 +456,7 @@ func (a *AdminAPI) putProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Canonical provider types + URL/issuer validation incl. the
-	// private-address SSRF guard (Task 5 Gap #2, Analysis G control 5).
+	// private-address SSRF guard.
 	if _, err := ParseProviderConfig(req.Type, req.Config); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -505,7 +504,7 @@ func (a *AdminAPI) deleteProvider(w http.ResponseWriter, r *http.Request) {
 	delete(a.oauthFlows, r.PathValue("id"))
 	a.oauthMu.Unlock()
 	// DeleteProvider cascades models + tokens, so the live registry must
-	// drop the provider too (Task 5 Gap #2: deletes take effect without
+	// drop the provider too (deletes take effect without
 	// a restart).
 	if a.reloadProviders != nil {
 		a.reloadProviders()
@@ -514,10 +513,10 @@ func (a *AdminAPI) deleteProvider(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// OAuth device flow (X20, plan §5.2)
+// OAuth device flow
 // ---------------------------------------------------------------------------
 
-// oauthFlowTimeout is the X20 hard cap for one device login (CLI: 15 min).
+// oauthFlowTimeout is the hard cap for one device login (the CLI allows 15 min).
 const oauthFlowTimeout = 15 * time.Minute
 
 // oauthStart begins (or restarts) the device login for a codex-oauth
@@ -575,7 +574,7 @@ func (a *AdminAPI) oauthStart(w http.ResponseWriter, r *http.Request) {
 	}
 	client := codex.NewAuthClient(codex.AuthConfig{
 		Issuer:     cfg.Issuer,
-		ClientID:   cfg.ClientID, // empty → pinned default (X13)
+		ClientID:   cfg.ClientID, // empty → pinned default
 		Store:      a.store,      // *storage.Store satisfies codex.TokenStore
 		ProviderID: id,
 	})
@@ -583,7 +582,7 @@ func (a *AdminAPI) oauthStart(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var disabled *codex.DeviceLoginDisabledError
 		if errors.As(err, &disabled) {
-			// X20: 404 on the usercode request = device login disabled — an
+			// 404 on the usercode request = device login disabled — an
 			// operator action, not a retry candidate.
 			writeError(w, http.StatusBadRequest, "device login is not available for this issuer")
 			return
@@ -1050,7 +1049,7 @@ func (a *AdminAPI) putModel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	// R5 (2026-10-06): the SPA never sends compat anymore (the policy is
+	// The SPA never sends compat anymore (the policy is
 	// derived server-side). An ABSENT field preserves the stored blob
 	// (the legacy read-only override must survive operator saves); an
 	// explicit field still replaces it. Presence, not value, is the signal.
@@ -1060,7 +1059,7 @@ func (a *AdminAPI) putModel(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// FK guarantee surfaced as a deterministic 400 — never a SQLite error
-	// string match (models.provider_id FK, plan Analysis C).
+	// string match (models.provider_id FK).
 	if _, err := a.store.GetProvider(r.Context(), req.ProviderID); err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			writeError(w, http.StatusBadRequest, "unknown provider")
@@ -1154,7 +1153,7 @@ func (a *AdminAPI) putRoutingRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Reload only after a successful write: a rejected rule must not
-	// perturb the live router (Analysis E — fallbacks are never silent,
+	// perturb the live router (fallbacks are never silent,
 	// and never half-applied either).
 	if a.reloadRouting != nil {
 		a.reloadRouting()
@@ -1189,7 +1188,7 @@ func (a *AdminAPI) createKey(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
-	// auth.CreateClientKey is THE display-once path (Analysis G control 1):
+	// auth.CreateClientKey is THE display-once path:
 	// it generates, Argon2id-hashes, persists, and returns the full key
 	// exactly once. This response is the only place the secret ever exists.
 	id, fullKey, err := auth.CreateClientKey(r.Context(), a.store, req.Name)
@@ -1301,7 +1300,7 @@ func (a *AdminAPI) getLogs(w http.ResponseWriter, r *http.Request) {
 		Since:      int64(since),
 		Until:      int64(until),
 	}
-	// Live-feed cursor (2026-10-06): after=<rowid> returns rows newer than
+	// Live-feed cursor: after=<rowid> returns rows newer than
 	// that id (newest-first, limit-capped) — the incremental poll the Logs
 	// page uses; total is meaningless then and omitted. Additive field:
 	// offset paging and the cursor can coexist.
@@ -1327,8 +1326,8 @@ func (a *AdminAPI) getLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, a.logsEnvelope(r.Context(), logs, total))
 }
 
-// logPayloadDTO is the captured conversation and answer of one log row
-// (2026-10-10). found=false means nothing was stored for that row — either
+// logPayloadDTO is the captured conversation and answer of one log row.
+// found=false means nothing was stored for that row — either
 // capture was off when it ran, or the row predates the feature; the UI says
 // which, so an empty viewer is never mistaken for an empty request.
 type logPayloadDTO struct {
@@ -1447,21 +1446,21 @@ func logChildrenField(byParent map[int64][]storage.ChildLog, err error, parents 
 		dtos := make([]childLogDTO, 0, len(ops))
 		for _, op := range ops {
 			dtos = append(dtos, childLogDTO{
-				ID:         op.ID,
-				ParentID:   op.ParentID,
-				TS:         op.TS,
-				Kind:       op.Kind,
-				ProviderID: op.ProviderID,
-				Model:      op.Model,
-				FromRef:    op.FromRef,
-				ToRef:      op.ToRef,
-				Detail:     op.Detail,
-				LatencyMS:  op.LatencyMS,
-				Usage:      op.Usage,
-				Protocol:   parent.Protocol,
+				ID:          op.ID,
+				ParentID:    op.ParentID,
+				TS:          op.TS,
+				Kind:        op.Kind,
+				ProviderID:  op.ProviderID,
+				Model:       op.Model,
+				FromRef:     op.FromRef,
+				ToRef:       op.ToRef,
+				Detail:      op.Detail,
+				LatencyMS:   op.LatencyMS,
+				Usage:       op.Usage,
+				Protocol:    parent.Protocol,
 				ClientKeyID: parent.ClientKeyID,
-				KeyName:    parent.KeyName,
-				KeyPrefix:  parent.KeyPrefix,
+				KeyName:     parent.KeyName,
+				KeyPrefix:   parent.KeyPrefix,
 				// A failover's from/to are account ids in the trace; the
 				// operator needs the account names. A ref that is not a
 				// known account (a model id, or a deleted row) passes
@@ -1490,7 +1489,7 @@ func (a *AdminAPI) rawLogChildren(ctx context.Context, logs []storage.RequestLog
 	return a.store.ListChildLogsForParents(ctx, ids)
 }
 
-// childLogDTO is one sub-operation of a request (Logs page, 2026-10-07):
+// childLogDTO is one sub-operation of a request (Logs page):
 // a failover, a capability (vision) fallback walk, or an emulated web-tool
 // call, carried beside its parent row.
 type childLogDTO struct {
@@ -1557,7 +1556,7 @@ func logsToDTO(logs []storage.RequestLog, names logNames) []logDTO {
 }
 
 // ---------------------------------------------------------------------------
-// Settings (config KV overrides — Analysis C top layer)
+// Settings (config KV overrides — the top config layer)
 // ---------------------------------------------------------------------------
 
 func (a *AdminAPI) listSettings(w http.ResponseWriter, r *http.Request) {
@@ -1625,7 +1624,7 @@ type providerDTO struct {
 	Config json.RawMessage `json:"config"`
 }
 
-// oauthStartDTO is the X20 operator pair the SPA renders during sign-in:
+// oauthStartDTO is the operator pair the SPA renders during sign-in:
 // the code to enter on the verification page, that page's URL, and the poll
 // pace the issuer prescribed. It carries no token material.
 type oauthStartDTO struct {
@@ -1636,13 +1635,13 @@ type oauthStartDTO struct {
 
 // oauthPollDTO is one poll outcome: pending (keep polling at the issuer
 // pace) or approved (tokens exchanged and persisted; account_id from the
-// id_token claim, X15). No token material ever rides this body.
+// id_token claim). No token material ever rides this body.
 type oauthPollDTO struct {
 	Status    string `json:"status"`
 	AccountID string `json:"account_id,omitempty"`
 }
 
-// modelDTO carries the per-model compat blob (§6.4) verbatim — the
+// modelDTO carries the per-model compat blob verbatim — the
 // "Models & Compatibility" editor's persistence backend. Origin is the
 // ADR-010 provenance badge ("manual" | "synced").
 type modelDTO struct {
@@ -1841,7 +1840,7 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = json.NewEncoder(w).Encode(body)
 }
 
-// writeError emits the uniform admin error shape (Analysis G): identical
+// writeError emits the uniform admin error shape: identical
 // structure for every failure, never echoing internal details.
 func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
@@ -1861,7 +1860,7 @@ func writeStoreError(w http.ResponseWriter, err error) {
 	}
 }
 
-// decodeBody parses one bounded JSON request body (Analysis G: every admin
+// decodeBody parses one bounded JSON request body (every admin
 // input is size-capped and must be valid JSON) with strict field checking:
 // unknown fields reject the request, not get silently dropped — the same
 // typo'd-field-must-fail-loudly contract putProvider already enforces. The

@@ -1,26 +1,26 @@
 package auth
 
-// WebUI session auth + CSRF middleware, implementing the committed Phase 2
-// research contract (docs/research/phase-2-best-practices.md §10):
-//   - S-1: 256-bit CSPRNG session IDs, SHA-256-hashed at rest
-//   - S-2/S-3: generic cookie name `id`, `__Host-id` when the request
+// WebUI session auth + CSRF middleware, implementing the session and CSRF
+// contract for the admin surface:
+//   - 256-bit CSPRNG session IDs, SHA-256-hashed at rest
+//   - generic cookie name `id`, `__Host-id` when the request
 //     arrived over TLS (per-request split)
-//   - S-4/S-5: HttpOnly, non-persistent, SameSite=Strict
-//   - S-6: strict mode — unknown IDs are rejected, never adopted
-//   - S-7: all session state server-side; the raw ID lives only in the cookie
-//   - S-8: a fresh session per login (renewal)
-//   - S-9: 30 min idle / 12 h absolute, enforced against DB timestamps
-//   - S-10: logout = row delete + cookie clear
-//   - C-1/C-2: CSRF token = random + HMAC-SHA-256(master key, sessionID‖random)
-//   - C-3: X-CSRF-Token required on mutations; a PRESENT Content-Type on a
+//   - HttpOnly, non-persistent, SameSite=Strict
+//   - strict mode — unknown IDs are rejected, never adopted
+//   - all session state server-side; the raw ID lives only in the cookie
+//   - a fresh session per login (renewal)
+//   - 30 min idle / 12 h absolute, enforced against DB timestamps
+//   - logout = row delete + cookie clear
+//   - CSRF token = random + HMAC-SHA-256(master key, sessionID‖random)
+//   - X-CSRF-Token required on mutations; a PRESENT Content-Type on a
 //     mutation must be application/json
-//   - C-4: simple content types on mutations → 415 (an ABSENT one is legal:
+//   - simple content types on mutations → 415 (an ABSENT one is legal:
 //     bodyless mutations — DELETEs, the oauth start/poll POSTs — carry no
 //     header, and no cross-site vector can omit it; a form post always
 //     carries urlencoded/text/plain, which still 415)
-//   - C-6: Origin (when present) must match scheme+host exactly → 403
+//   - Origin (when present) must match scheme+host exactly → 403
 //
-// Failure responses never distinguish causes (Analysis G: 401 bodies are
+// Failure responses never distinguish causes (the 401 bodies are
 // uniform) and upstream/credential material is never echoed.
 
 import (
@@ -41,19 +41,19 @@ import (
 )
 
 const (
-	// sessionCookieName is deliberately generic (S-2): it reveals nothing
+	// sessionCookieName is deliberately generic: it reveals nothing
 	// about the software in front of the proxy.
 	sessionCookieName = "id"
-	// csrfCookieName carries only the random half of the CSRF token (C-1);
+	// csrfCookieName carries only the random half of the CSRF token;
 	// the full token is returned to the SPA at login and echoed via the
 	// X-CSRF-Token header. JS-readable — NOT HttpOnly.
 	csrfCookieName = "csrf"
 
-	// S-9 windows, in seconds, enforced server-side against store timestamps.
+	// windows, in seconds, enforced server-side against store timestamps.
 	sessionIdleWindow  = 30 * 60
 	sessionAbsoluteCap = 12 * 60 * 60
 
-	// S-1: 256-bit session IDs. C-1: 128-bit CSRF randomness is plenty —
+	// 256-bit session IDs. 128-bit CSRF randomness is plenty —
 	// the MAC carries the security, the random only binds cookie↔header.
 	sessionIDBytes  = 32
 	csrfRandomBytes = 16
@@ -62,7 +62,7 @@ const (
 // dummyArgon2PHC is a well-formed Argon2id PHC string at OWASP-minimum
 // parameters whose digest matches nothing. Unknown usernames run a verify
 // against it so login timing cannot distinguish "no such user" from "wrong
-// password" (Analysis G: uniform 401 shape — body AND observable behavior).
+// password" (the 401 shape is uniform — body AND observable behavior).
 const dummyArgon2PHC = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA"
 
 // SessionManager owns the WebUI login/logout handlers and the admin
@@ -75,7 +75,7 @@ type SessionManager struct {
 }
 
 // NewSessionManager wires a manager over st with the CSRF master key
-// (32 bytes recommended; used only as an HMAC secret, C-1/C-2) and a clock.
+// (32 bytes recommended; used only as an HMAC secret) and a clock.
 func NewSessionManager(st *storage.Store, masterKey []byte, now func() int64) *SessionManager {
 	if now == nil {
 		now = func() int64 { return time.Now().Unix() }
@@ -114,14 +114,14 @@ func rawSessionIDFromContext(ctx context.Context) string {
 }
 
 // HandleLogin authenticates an admin (Argon2id) and issues a brand-new
-// session (S-8) plus the CSRF pair. Failures are uniform 401s.
+// session plus the CSRF pair. Failures are uniform 401s.
 func (sm *SessionManager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		writeAdminError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 4<<10) // Analysis G: bounded input
+	r.Body = http.MaxBytesReader(w, r.Body, 4<<10) // bounded input
 	var creds struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -183,7 +183,7 @@ func (sm *SessionManager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleLogout runs the full admin auth layers (a logout IS a mutation —
-// the CSRF checks apply), then deletes the session row (S-10) and clears
+// the CSRF checks apply), then deletes the session row and clears
 // both cookies.
 func (sm *SessionManager) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	sm.RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -197,9 +197,9 @@ func (sm *SessionManager) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	})).ServeHTTP(w, r)
 }
 
-// RequireAdmin wraps admin handlers with session auth (S-6/S-9: strict,
-// server-side windows) and, for state-changing methods, the CSRF layers
-// (C-3/C-4/C-6): application/json only, Origin match when present, valid
+// RequireAdmin wraps admin handlers with session auth (strict,
+// server-side windows) and, for state-changing methods, the CSRF layers:
+// application/json only, Origin match when present, valid
 // session-bound X-CSRF-Token.
 func (sm *SessionManager) RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -219,7 +219,7 @@ func (sm *SessionManager) RequireAdmin(next http.Handler) http.Handler {
 			return
 		}
 		now := sm.now()
-		// S-9: both windows checked server-side against store timestamps —
+		// both windows checked server-side against store timestamps —
 		// a doctored client clock is irrelevant.
 		if now-sess.LastSeenAt > sessionIdleWindow || now >= sess.AbsoluteExpiresAt {
 			writeAdminUnauthorized(w)
@@ -230,7 +230,7 @@ func (sm *SessionManager) RequireAdmin(next http.Handler) http.Handler {
 			return
 		}
 
-		// Token re-issue (C-1/C-2): the SPA holds the CSRF token only in
+		// Token re-issue: the SPA holds the CSRF token only in
 		// memory, so a page refresh loses it while the session lives on.
 		// The MAC needs the master key — the SPA cannot rebuild the token
 		// from the cookie's random half. Every authenticated response
@@ -245,12 +245,12 @@ func (sm *SessionManager) RequireAdmin(next http.Handler) http.Handler {
 		w.Header().Set("X-CSRF-Token", random+"."+csrfHMAC(sm.masterKey, raw, random))
 
 		if isMutation(r.Method) {
-			// C-4: reject simple content types — a cross-site form or
+			// reject simple content types — a cross-site form or
 			// text/plain fetch must never be processable without preflight.
 			// An ABSENT header is legal: bodyless mutations (DELETEs, the
 			// oauth start/poll POSTs) carry none, and fetch does not set a
 			// default — while every cross-site form vector always sends one.
-			// The CSRF token check below (C-5) gates those independently.
+			// The CSRF token check below gates those independently.
 			if ct := r.Header.Get("Content-Type"); ct != "" {
 				mt, _, err := mime.ParseMediaType(ct)
 				if err != nil || mt != "application/json" {
@@ -258,12 +258,12 @@ func (sm *SessionManager) RequireAdmin(next http.Handler) http.Handler {
 					return
 				}
 			}
-			// C-6: when Origin is present it must match scheme+host exactly.
+			// when Origin is present it must match scheme+host exactly.
 			if origin := r.Header.Get("Origin"); origin != "" && origin != requestOrigin(r) {
 				writeAdminError(w, http.StatusForbidden, "origin mismatch")
 				return
 			}
-			// C-5: the token is checked regardless of SameSite protection.
+			// the token is checked regardless of SameSite protection.
 			header := r.Header.Get("X-CSRF-Token")
 			random, mac, ok := strings.Cut(header, ".")
 			if !ok || !csrfConstantEqual(
@@ -283,7 +283,7 @@ func (sm *SessionManager) RequireAdmin(next http.Handler) http.Handler {
 // csrfRandomFor returns the CSRF random half for this session: the csrf
 // cookie's value when present (the common case — token stability across
 // requests), otherwise a freshly minted one, set as a replacement cookie.
-// The random alone authorizes nothing (C-2: the MAC carries the security);
+// The random alone authorizes nothing (the MAC carries the security);
 // it only binds cookie and header.
 func csrfRandomFor(w http.ResponseWriter, r *http.Request) (string, error) {
 	if c, err := r.Cookie(csrfCookieName); err == nil && c.Value != "" {
@@ -298,12 +298,29 @@ func csrfRandomFor(w http.ResponseWriter, r *http.Request) (string, error) {
 	return randomStr, nil
 }
 
-// csrfHMAC computes the MAC half of the CSRF token (C-1/C-2): HMAC over
-// the session cookie value and the random, keyed by the master key.
+// csrfDerivationLabel domain-separates this use of the master key from every
+// other one. The same bytes already key the credentials envelope and the client
+// key hasher; deriving a distinct key per use means a weakness in one of them can
+// never be a weakness in another. The version rides the label, so a future
+// rotation changes the label rather than the construction — every token minted
+// before it simply stops verifying, which for an ephemeral token costs one page
+// reload.
+const csrfDerivationLabel = "proxyllm.csrf-mac/v1"
+
+// csrfKey derives the CSRF MAC key. Derived once per call from a short secret,
+// never stored: the derivation is two HMAC rounds over a fixed label.
+func csrfKey(masterKey []byte) []byte {
+	mac := hmac.New(sha256.New, masterKey)
+	mac.Write([]byte(csrfDerivationLabel))
+	return mac.Sum(nil)
+}
+
+// csrfHMAC computes the MAC half of the CSRF token: HMAC over
+// the session cookie value and the random, under this use's own key.
 // Binding the MAC to the session id makes leaked tokens useless across
 // sessions.
 func csrfHMAC(masterKey []byte, sessionCookieValue, random string) string {
-	mac := hmac.New(sha256.New, masterKey)
+	mac := hmac.New(sha256.New, csrfKey(masterKey))
 	mac.Write([]byte(sessionCookieValue))
 	mac.Write([]byte(".")) // separator: base64url parts contain no '.'
 	mac.Write([]byte(random))
@@ -324,7 +341,7 @@ func csrfConstantEqual(wantB64, gotB64 string) bool {
 	return hmac.Equal(want, got)
 }
 
-// hashSessionID is the at-rest transformation (S-1/S-7): only the SHA-256
+// hashSessionID is the at-rest transformation: only the SHA-256
 // of the cookie value is ever persisted — the same function on both the
 // insert path (login) and the lookup path (RequireAdmin/logout).
 func hashSessionID(cookieValue string) string {
@@ -332,7 +349,7 @@ func hashSessionID(cookieValue string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// sessionCookieValue reads the session cookie under either name (S-3):
+// sessionCookieValue reads the session cookie under either name:
 // __Host-id when the login arrived over TLS, plain id otherwise.
 func sessionCookieValue(r *http.Request) string {
 	for _, name := range []string{"__Host-" + sessionCookieName, sessionCookieName} {
@@ -357,7 +374,7 @@ func isMutation(method string) bool {
 }
 
 // requestOrigin reconstructs this request's own origin (scheme://host) for
-// the C-6 exact-match comparison.
+// the exact-match comparison.
 func requestOrigin(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
@@ -370,29 +387,29 @@ func setSessionCookie(w http.ResponseWriter, value string, tlsArrival bool) {
 	name := sessionCookieName
 	secure := false
 	if tlsArrival {
-		// __Host- requires Secure + Path=/ + no Domain (S-3).
+		// __Host- requires Secure + Path=/ + no Domain.
 		name = "__Host-" + sessionCookieName
 		secure = true
 	}
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is set iff the request arrived over TLS (S-3 per-request split) — on plain HTTP a Secure cookie would never be sent back
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: Secure is set iff the request arrived over TLS (per-request split) — on plain HTTP a Secure cookie would never be sent back
 		Name:     name,
 		Value:    value,
 		Path:     "/",
-		HttpOnly: true, // S-4
+		HttpOnly: true,
 		Secure:   secure,
-		SameSite: http.SameSiteStrictMode, // S-5
-		// No Expires/Max-Age: non-persistent (S-4).
+		SameSite: http.SameSiteStrictMode,
+		// No Expires/Max-Age: non-persistent.
 	})
 }
 
 func setCSRFCookie(w http.ResponseWriter, value string, tlsArrival bool) {
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: deliberately not HttpOnly (C-1); Secure follows the S-3 TLS split like the session cookie
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: deliberately not HttpOnly; Secure follows the TLS split like the session cookie
 		Name:     csrfCookieName,
 		Value:    value,
 		Path:     "/",
 		Secure:   tlsArrival,
 		SameSite: http.SameSiteStrictMode,
-		// Deliberately NOT HttpOnly (C-1): the SPA must be able to read the
+		// Deliberately NOT HttpOnly: the SPA must be able to read the
 		// random half and echo the full token via X-CSRF-Token.
 	})
 }
@@ -415,7 +432,7 @@ func clearCSRFCookie(w http.ResponseWriter) {
 	})
 }
 
-// writeAdminUnauthorized is the uniform 401 (Analysis G): identical body
+// writeAdminUnauthorized is the uniform 401: identical body
 // whether the failure is a missing, unknown, idle-expired, or
 // absolutely-expired session — or bad login credentials.
 func writeAdminUnauthorized(w http.ResponseWriter) {

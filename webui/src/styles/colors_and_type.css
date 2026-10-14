@@ -1,85 +1,99 @@
 /* ============================================================
-   UpGuard — Design System Tokens
-   The single token layer for this system. Paste verbatim as the
-   first style layer; never override or extend with raw hex
-   outside this block. See DESIGN.md and brand.json for roles.
-   Mode: dark only (color-scheme: dark). Any light mode is
-   out-of-system and must be a separate explicit token layer.
-   Fonts: Inter + Plus Jakarta Sans — both SIL OFL licensed.
+   PROxyLLM — Design System Tokens
+   The single token layer for the console. Paste verbatim as the
+   first style layer; never override or extend it with raw values
+   outside this block. Roles: design/DESIGN.md. Machine profile:
+   design/brand.json. Agent inventory: the proxyllm-design skill.
+   Mode: dark only (color-scheme: dark); see the mode note below.
+   Values are authored in oklch. The sRGB column in the comments is
+   what a browser composites on screen — it is the approximation,
+   never the source.
    ============================================================ */
 
 :root {
   /* ==========================================================
-     BRAND / PRIMARY — the one accent
-     Role: CTA, links, logo dot, status-up, glows.
+     ACCENT — the one chromatic colour
+     Role: CTA, links, focus, status-up, the logo dot, glows.
+     Two steps only: the accent itself and the lighter gradient
+     stop of the primary button. Nothing else is chromatic.
      ========================================================== */
-  --primary-300: oklch(87% 0.18 145);  /* #86efac — light hover/active text */
-  --primary-400: oklch(80% 0.22 145);  /* #3fe077 — gradient stop (primary button lighter end) */
-  --primary-500: oklch(78% 0.20 144);  /* #3bd671 — brand accent */
-  --primary-600: oklch(72% 0.19 143);  /* #34c164 — pressed / active state */
-  --primary-700: oklch(50% 0.13 143);  /* #158140 — deep green */
-  --primary-800: oklch(42% 0.10 143);  /* #1c6636 — darkest green */
-  --primary-500-alpha: oklch(78% 0.20 144 / 35%); /* #3bd67159 — card-hover green shadow / glow */
+  --primary-400: oklch(80% 0.22 145);  /* #45e159 — lighter end of the primary-button gradient */
+  --primary-500: oklch(78% 0.20 144);  /* #56d75b — the accent */
+  --primary-500-alpha: oklch(78% 0.20 144 / 35%); /* translucent accent — card-hover border */
 
   /* ==========================================================
-     NEUTRAL SCALE — dark theme base
+     NEUTRAL SCALE — the dark theme's entire greyscale
      Role: background hierarchy, text, borders, surfaces.
      ========================================================== */
-  --neutral-50:  oklch(98% 0.002 250);  /* #fafbfc — lightest; rare inverse contexts */
-  --neutral-100: oklch(95% 0.005 250);  /* #f0f3f7 — inverse / light surfaces */
-  --neutral-200: oklch(90% 0.008 250);  /* #e2e8f0 — footer links, tagline */
-  --neutral-300: oklch(81% 0.012 250);  /* #cbd4e0 — nav links, secondary text */
-  --neutral-400: oklch(70% 0.015 250);  /* #a0adc0 — tertiary / disabled / chart comparison */
-  --neutral-500: oklch(56% 0.020 250);  /* #72849e — footer separator, meta */
-  --neutral-600: oklch(40% 0.018 250);  /* #4a5768 — button borders, ghost button border */
-  --neutral-700: oklch(28% 0.015 250);  /* #2d3540 — borders / dividers */
-  --neutral-800: oklch(20% 0.018 250);  /* #1c2634 — dropdown / card borders */
-  --neutral-900: oklch(14% 0.013 250);  /* #131b25 — glass card surface base */
-  --neutral-950: oklch(11% 0.011 250);  /* #111821 — page background */
+  --neutral-200: oklch(90% 0.008 250);  /* #dadee3 */
+  --neutral-300: oklch(81% 0.012 250);  /* #bbc2c9 */
+  --neutral-400: oklch(70% 0.015 250);  /* #989fa8 */
+  --neutral-500: oklch(56% 0.020 250);  /* #6c7680 */
+  --neutral-600: oklch(40% 0.018 250);  /* #414951 */
+  --neutral-700: oklch(28% 0.015 250);  /* #232a30 */
+  --neutral-800: oklch(20% 0.018 250);  /* #10171e */
+  --neutral-900: oklch(14% 0.013 250);  /* #060a0e */
+  --neutral-950: oklch(11% 0.011 250);  /* #030507 — the canvas */
 
   /* ==========================================================
-     SEMANTIC ROLES — six bound tokens
-     Use these as the public API; fallback to primary/neutral
-     ramps only when a finer nuance is needed.
+     SEMANTIC ROLES — the public API
+     Use these first; reach for the ramps only when a rule needs
+     a finer nuance than a role allows.
      ========================================================== */
   --bg:      var(--neutral-950);    /* page / canvas background */
-  --surface: oklch(13% 0.012 250 / 80%); /* translucent glass card surface + blur(10px) */
-  --surface-elevated: oklch(13% 0.013 250 / 96%); /* modal / drawer / toast backing — more opaque for contrast */
+  --surface: oklch(13% 0.012 250 / 80%); /* glass card surface + blur(10px) */
+  --surface-elevated: oklch(13% 0.013 250 / 96%); /* modal / drawer / menu / toast backing — more opaque for contrast */
   --fg:      oklch(90% 0.008 250);  /* primary text, high-emphasis UI */
   --muted:   var(--neutral-300);    /* secondary text, nav, help text */
   --border:  var(--neutral-700);    /* hairlines, card borders, dividers */
-  --accent:  var(--primary-500);   /* CTA, links, status-up, logo dot, glows */
-  --accent-dim: oklch(78% 0.20 144 / 12%); /* icon-circle / soft accent fill on dark surfaces */
+  --accent:  var(--primary-500);   /* CTA, links, focus, status-up, logo dot, glows */
+  --accent-dim: oklch(78% 0.20 144 / 12%); /* soft accent fill: icon circles, chip backgrounds */
 
   /* ==========================================================
      STATUS SEMANTICS
-     up = brand green; warn/down/paused/info are derived from
-     standard monitoring semantics — never a second accent.
+     up = the accent; the other four are the console's own status
+     tones — a warning is never the accent, an error is never a
+     second brand colour.
      ========================================================== */
-  --status-up:    var(--primary-500);   /* operational / healthy */
-  --status-down:  oklch(60% 0.20 25);   /* down / critical / failed (derived) */
-  --status-warn:  oklch(78% 0.15 75);   /* degraded / partial / soon-expiring (derived) */
-  --status-paused: oklch(62% 0.015 250); /* paused / inactive (derived) */
-  --status-info:  oklch(72% 0.09 230);  /* info / neutral hint (derived) */
+  --status-up:    var(--primary-500);   /* 200/OK */
+  --status-down:  oklch(60% 0.20 25);   /* #de3b3d — 4xx/5xx, failure, destructive */
+  --status-warn:  oklch(78% 0.15 75);   /* #efa831 — degraded, retry, failover */
+  --status-paused: oklch(62% 0.015 250); /* #80878f — paused, inactive */
+  --status-info:  oklch(72% 0.09 230);  /* #65afd2 — informational, sub-operations */
 
   /* ==========================================================
-     DASHBOARD / CHART / DATA TOKENS
-     Derived; never a second chromatic accent.
+     DATA SURFACES — charts, deltas, table rows
      ========================================================== */
   --chart-line:   var(--primary-500);   /* primary series / trend */
-  --chart-area:   oklch(78% 0.20 144 / 18%); /* chart fill under the line */
-  --chart-grid:   var(--neutral-700);   /* grid lines */
-  --chart-2:      var(--neutral-400);   /* comparison series 1 — neutral */
-  --chart-3:      var(--neutral-500);   /* comparison series 2 — neutral */
-  --metric-pos:   var(--primary-500);   /* positive delta / improvement */
-  --metric-neg:   oklch(60% 0.20 25);  /* negative delta / regression */
+  --chart-area:   oklch(78% 0.20 144 / 18%); /* fill under the line */
+  --chart-2:      var(--neutral-400);   /* comparison series — neutral, never a second accent */
+  --metric-pos:   var(--primary-500);   /* positive delta */
+  --metric-neg:   oklch(60% 0.20 25);  /* negative delta */
   --row-hover:    oklch(14% 0.013 250 / 60%); /* table row hover */
   --widget-head:  var(--neutral-400);   /* widget header text */
 
   /* ==========================================================
+     APP-SURFACE TOKENS
+     Named pieces of the console's own surfaces. They exist
+     because a rule needed a value darker (or quieter) than any
+     role above, not because a second palette was wanted.
+     ========================================================== */
+  /* Request-log tree rail: the parent→sub-operation lines. Opaque
+     enough to read as structure against the row surface; hue 143 is
+     inside the accent window, so the rail is the accent, quieter. */
+  --rail: oklch(70% 0.17 143 / 72%);
+  /* Token-counter column, input figure: at rest the number sits in the
+     table's own text colour, so it stays the quiet one of the triple. */
+  --text: var(--neutral-300);
+  /* Soft, achromatic wash used to mark a dragged/reordered row. */
+  --bg-elev: rgba(127, 127, 127, 0.12);
+
+  /* ==========================================================
      TYPOGRAPHY
-     Display ≠ body: Plus Jakarta Sans for headings; Inter for
-     everything else; JetBrains Mono for metrics/IDs only.
+     Display ≠ body: Plus Jakarta Sans for headings and page
+     titles, Inter for everything else, JetBrains Mono for
+     metrics, ids and timestamps. See DESIGN.md for what is
+     self-hosted in which directory.
      ========================================================== */
   --font-display: "Plus Jakarta Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-body:    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -88,56 +102,31 @@
   --font-size-body:    16px;   /* base body size */
   --line-height-body:  1.5;
 
-  /* Type scale (derived, ratio ~1.25) */
-  --fs-xs:   0.75rem;   /* 12px — captions, timestamps */
-  --fs-sm:   0.875rem;  /* 14px — nav links, dd buttons, widget headers */
-  --fs-base: 1rem;      /* 16px — body */
-  --fs-lg:   1.125rem;  /* 18px — footer links */
-  --fs-xl:   1.25rem;   /* 20px — small headings */
-  --fs-2xl:  1.5rem;    /* 24px — footer heading */
-  --fs-3xl:  1.875rem;  /* 30px */
-  --fs-display: clamp(2rem, 4.5vw, 3.5rem); /* hero headline */
-  --fs-hero-eyebrow: clamp(0.875rem, 1.2vw, 1rem);
+  /* Type scale (ratio ~1.25) — the steps the console renders */
+  --fs-xs:   0.75rem;   /* 12px — captions, pills, table meta */
+  --fs-sm:   0.875rem;  /* 14px — table cells, nav, buttons, drawer text */
+  --fs-base: 1rem;      /* 16px — body, provider cards */
 
-  --fw-light:   300;   /* footer tagline */
   --fw-regular: 400;   /* body, forms */
-  --fw-medium:  500;   /* dd buttons, labels */
-  --fw-semibold: 600;  /* headings, KPI values */
-  --fw-bold:    700;   /* mobile logo text */
-
-  /* ==========================================================
-     SPACING — base unit 0.25rem (4px)
-     ========================================================== */
-  --space-1: 0.25rem;  /* 4px  */
-  --space-2: 0.5rem;   /* 8px  */
-  --space-3: 0.75rem;  /* 12px */
-  --space-4: 1rem;     /* 16px */
-  --space-5: 1.25rem;  /* 20px */
-  --space-6: 1.5rem;   /* 24px */
-  --space-8: 2rem;     /* 32px */
-  --space-12: 3rem;    /* 48px */
-  --space-16: 4rem;    /* 64px */
-  --space-20: 5rem;    /* 80px — footer top padding */
-  --space-32: 8rem;    /* 128px — sm footer padding */
+  --fw-medium:  500;   /* labels, table primary cells */
+  --fw-semibold: 600;  /* headings, page titles, KPI values */
+  --fw-bold:    700;   /* wordmark, KPI values */
 
   /* ==========================================================
      RADIUS
      ========================================================== */
-  --radius-sm:  0.375rem;  /* 6px */
-  --radius-md:  0.5rem;    /* 8px  — dropdowns */
-  --radius-lg:  0.75rem;   /* 12px — cards */
-  --radius-xl:  0.75rem;   /* 12px */
-  --radius-full: 9999px;   /* pills, logo dot, round buttons */
+  --radius-sm:  0.375rem;  /* 6px  — inputs, chips, small controls */
+  --radius-md:  0.5rem;    /* 8px  — menus, icon buttons */
+  --radius-lg:  0.75rem;   /* 12px — cards, modals, drawers */
+  --radius-full: 9999px;   /* pills, dots, round buttons */
 
   /* ==========================================================
      SHADOWS / ELEVATION
      ========================================================== */
-  --shadow-glass: inset 0 1px 1px 1px oklch(100% 0 0 / 15%);  /* nav glass inset highlight */
-  --shadow-card-hover: 0 8px 25px oklch(78% 0.20 144 / 15%);  /* #3bd67126 — green glow lift */
+  --shadow-glass: inset 0 1px 1px 1px oklch(100% 0 0 / 15%);  /* glass inset highlight */
+  --shadow-card-hover: 0 8px 25px oklch(78% 0.20 144 / 15%);  /* accent glow lift */
   --shadow-btn-primary: inset 0 -4px 4px oklch(0% 0 0 / 10%), 0 0 14px oklch(100% 0 0 / 19%);
   --shadow-btn-hover: 0 1px 12.6px oklch(78% 0.20 144 / 20%), inset 0 -4px 4px oklch(0% 0 0 / 10%), 0 0 14px oklch(100% 0 0 / 19%);
-  --shadow-icon-glow: drop-shadow(0 0 23.9px oklch(78% 0.20 144 / 30%));
-  --shadow-icon-glow-hover: drop-shadow(0 0 23.9px oklch(78% 0.20 144 / 40%));
 
   /* ==========================================================
      GRADIENTS
@@ -145,46 +134,36 @@
   --gradient-primary: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-400) 100%);
   --gradient-primary-hover: linear-gradient(90deg, oklch(100% 0 0 / 0%) 0%, oklch(100% 0 0 / 50%) 100%), linear-gradient(0deg, var(--primary-500) 0%, var(--primary-400) 100%);
   --gradient-nav-glass: linear-gradient(oklch(11% 0.011 250 / 80%) 0%, oklch(14% 0.013 250 / 80%) 100%);
-  --gradient-footer: linear-gradient(oklch(78% 0.20 144 / 5%) 0%, oklch(11% 0.011 250 / 0%) 47.63%), var(--neutral-950);
-  --gradient-divider-h: linear-gradient(to right, transparent 0%, var(--neutral-700) 25%, var(--neutral-700) 75%, transparent 100%);
 
   /* ==========================================================
      LAYOUT
      ========================================================== */
-  --container-max: 1180px;
-  --container-max-lg: 1280px;
-  --nav-height: 72px;
+  --nav-height: 72px;   /* topbar and the brand row above the sidebar nav */
 
   /* ==========================================================
      MOTION
      ========================================================== */
-  --transition-base: 0.15s cubic-bezier(0.4, 0, 0.2, 1);  /* color/link transitions */
-  --transition-card: 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94); /* border/shadow/transform */
-  --transition-button: 0.3s ease-out;
-  --transition-dropdown: 0.2s;
-  --transition-ping: 2s cubic-bezier(0, 0, 0.2, 1);
+  --transition-base: 0.15s cubic-bezier(0.4, 0, 0.2, 1);  /* colour/background transitions */
+  --transition-button: 0.3s ease-out;  /* button hover */
 
   /* ==========================================================
      BLUR / GLASS
      ========================================================== */
-  --blur-glass: 2.5px;  /* backdrop-filter on nav */
-  --blur-card: 10px;    /* backdrop-filter on card-border-12 */
+  --blur-glass: 2.5px;  /* backdrop-filter on the topbar */
+  --blur-card: 10px;    /* backdrop-filter on glass cards and overlays */
 
   /* ==========================================================
-     Z-INDEX
+     Z-INDEX — the ladder the console stacks on
+     The two named layers are the ones more than one rule needs;
+     the overlays below them carry their own literal z-index
+     (user menu 170, drawer 160, modal backdrop 200) because each
+     is set once, in the rule that owns it.
      ========================================================== */
-  --z-dropdown: 50;
   --z-nav: 50;
-  --z-tooltip: 60;
-  --z-sidebar-mobile: 120;
-  --z-drawer-backdrop: 150;
-  --z-drawer: 160;
-  --z-modal-backdrop: 200;
   --z-modal: 210;
-  --z-toast: 220;
 }
 
-/* ---- Self-hosted fonts (relative paths; both SIL OFL licensed) ---- */
+/* ---- Self-hosted fonts (served from /fonts/, all three SIL OFL licensed) ---- */
 @font-face {
   font-family: "Inter";
   font-style: normal;
@@ -199,6 +178,30 @@
   font-display: swap;
   src: url(/fonts/plus-jakarta-sans-latin-wght-normal.woff2) format("woff2");
 }
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/fonts/jetbrains-mono-regular.woff2) format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(/fonts/jetbrains-mono-medium.woff2) format("woff2");
+}
+
+/* ---- Mode ----
+   Dark is the only appearance. There is deliberately no
+   `prefers-color-scheme: light` branch and no light token layer:
+   `html{color-scheme: dark}` in the component layer pins the
+   document, so a browser asking for light gets the same dark
+   canvas, inputs and scrollbars. A light mode would be a separate
+   token layer with its own --bg/--surface/--fg/--muted/--border/
+   --accent; deriving one by inverting these values is not this
+   system. */
 
 /* ---- Reduced motion ---- */
 @media (prefers-reduced-motion: reduce) {

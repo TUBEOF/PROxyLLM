@@ -1,9 +1,9 @@
 package mockprovider
 
-// MH-2 — the scripted-mock test matrix (plan Analysis F): every scenario the
+// — the scripted-mock test matrix: every scenario the
 // httpapi, failover, and cancellation suites need, exercised here at the
 // transport boundary over real HTTP. Expectations derive exclusively from
-// the golden fixtures and wire facts O2–O4/O10–O12 — never from provider
+// the golden fixtures and the OpenAI wire facts — never from provider
 // code behavior.
 
 import (
@@ -20,11 +20,11 @@ import (
 	ttestutil "github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
-// initialChunk is a spec-conform first chat.completion.chunk (O4): role
+// initialChunk is a spec-conform first chat.completion.chunk: role
 // announcement with empty content, finish_reason null.
 const initialChunk = `{"id":"chatcmpl-mock","object":"chat.completion.chunk","model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}`
 
-// finishChunk carries finish_reason "stop" (O12).
+// finishChunk carries finish_reason "stop".
 const finishChunk = `{"id":"chatcmpl-mock","object":"chat.completion.chunk","model":"mock-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}`
 
 // textDelta builds one content-delta chunk carrying s.
@@ -123,7 +123,7 @@ func TestStream_GoldenRoundTrip(t *testing.T) {
 	}
 }
 
-// 3. Comments relay and unknown event tolerance (A5 discipline): comment
+// 3. Comments relay and unknown event tolerance (discipline): comment
 // frames become ir.Comment events; an unknown named event with a decodable
 // JSON payload must not break the stream.
 func TestStream_CommentAndUnknownEventTolerance(t *testing.T) {
@@ -168,7 +168,7 @@ func TestStream_CommentAndUnknownEventTolerance(t *testing.T) {
 	}
 }
 
-// 4. Mid-stream upstream error (FO-1): an error chunk is terminal — an
+// 4. Mid-stream upstream error: an error chunk is terminal — an
 // ir.Error event, channel close, and never a Done after the error.
 func TestStream_MidStreamErrorIsTerminal(t *testing.T) {
 	srv := New(t)
@@ -202,7 +202,7 @@ func TestStream_MidStreamErrorIsTerminal(t *testing.T) {
 	}
 }
 
-// 5. Mid-stream connection abort (FO-1): the transport failure must surface
+// 5. Mid-stream connection abort: the transport failure must surface
 // as a terminal ir.Error event, never a silent close or a Done.
 func TestStream_MidStreamAbortSurfacesErrorEvent(t *testing.T) {
 	srv := New(t)
@@ -233,8 +233,8 @@ func TestStream_MidStreamAbortSurfacesErrorEvent(t *testing.T) {
 	}
 }
 
-// 6. Dispatch failure (FO-2): a non-2xx before any streamed byte maps to the
-// typed UpstreamError with both classification tiers + Retry-After (O10).
+// 6. Dispatch failure: a non-2xx before any streamed byte maps to the
+// typed UpstreamError with both classification tiers + Retry-After.
 func TestStream_DispatchErrorMapsToUpstreamError(t *testing.T) {
 	srv := New(t)
 	srv.Enqueue(NewScript().Fail(http.StatusTooManyRequests,
@@ -260,7 +260,7 @@ func TestStream_DispatchErrorMapsToUpstreamError(t *testing.T) {
 	}
 }
 
-// 7. Transport failure (FO-2 tier 1): no response at all must not surface
+// 7. Transport failure (tier 1): no response at all must not surface
 // as an UpstreamError — routing classifies zero-status separately.
 func TestComplete_TransportErrorIsNotUpstreamError(t *testing.T) {
 	srv := New(t)
@@ -277,7 +277,7 @@ func TestComplete_TransportErrorIsNotUpstreamError(t *testing.T) {
 	}
 }
 
-// 8. Cancellation (C2): cancel must close the event channel promptly; the
+// 8. Cancellation: cancel must close the event channel promptly; the
 // server-side delay is interrupted by the request context, not awaited.
 func TestStream_CancelClosesChannel(t *testing.T) {
 	srv := New(t)
@@ -312,7 +312,7 @@ func TestStream_CancelClosesChannel(t *testing.T) {
 	select {
 	case <-closed:
 	case <-time.After(2 * time.Second):
-		t.Fatal("stream channel did not close within 2s of cancel (C2)")
+		t.Fatal("stream channel did not close within 2s of cancel")
 	}
 }
 

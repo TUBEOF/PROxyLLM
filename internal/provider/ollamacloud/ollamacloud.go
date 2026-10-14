@@ -1,12 +1,12 @@
-// Package ollamacloud implements the Ollama Cloud provider (plan §4.1):
+// Package ollamacloud implements the Ollama Cloud provider:
 // the hosted OpenAI-compatible API at https://ollama.com/v1. It speaks the
-// OpenAI chat-completions wire (O1–O4) through the OpenAI codec and the
+// OpenAI chat-completions wire through the OpenAI codec and the
 // shared HTTP transport foundation. The OpenAI-compat surface is the
 // cloud API's primary chat transport (docs.ollama.com/api/
 // openai-compatibility — cloud access is base_url https://ollama.com/v1
 // with an OLLAMA_API_KEY bearer); the native /api/chat wire fragmented
-// interleaved thinking traces into separate content blocks (the
-// 2026-09-22 Claude Code rendering bug), which the OpenAI surface avoids.
+// interleaved thinking traces into separate content blocks (a Claude Code
+// rendering bug), which the OpenAI surface avoids.
 // Local Ollama servers attach via the custom-openai provider type.
 package ollamacloud
 
@@ -30,13 +30,13 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/openai"
 )
 
-// DefaultBaseURL is the hosted Ollama Cloud API root (L1). The /v1
+// DefaultBaseURL is the hosted Ollama Cloud API root. The /v1
 // version prefix rides the endpoint paths (custom-openai convention).
 const DefaultBaseURL = "https://ollama.com"
 
 // Provider is the Ollama Cloud provider: the OpenAI-compatible
-// /v1/chat/completions over HTTPS with Bearer auth (L2), data-only SSE
-// streaming (O4).
+// /v1/chat/completions over HTTPS with Bearer auth, data-only SSE
+// streaming.
 type Provider struct {
 	client  httpx.Client
 	id      string
@@ -62,7 +62,7 @@ func NewWithLogger(id, baseURL, apiKey string, caps provider.Capabilities, logge
 		client: httpx.Client{
 			BaseURL:    baseURL,
 			ChatPath:   "/v1/chat/completions", // OpenAI-compat endpoint
-			APIKey:     apiKey,                 // Bearer $OLLAMA_API_KEY (L2)
+			APIKey:     apiKey,                 // Bearer $OLLAMA_API_KEY
 			ErrorShape: httpx.ErrorOpenAI,
 			// Streaming transport: no total-body budget (long generations
 			// must not be cut off), but redirects re-validated against the
@@ -90,7 +90,7 @@ func (p *Provider) Type() string { return "ollama-cloud" }
 func (p *Provider) Capabilities() provider.Capabilities { return p.caps }
 
 // Complete performs one non-streaming /api/chat round trip. The request
-// body carries an explicit "stream":false (L8) — the codec emits it.
+// body carries an explicit "stream":false — the codec emits it.
 func (p *Provider) Complete(ctx context.Context, req ir.Request) (ir.Response, error) {
 	return p.client.Complete(ctx, req, p.codec.EncodeRequest, p.codec.DecodeResponse)
 }

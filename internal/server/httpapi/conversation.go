@@ -1,7 +1,7 @@
 package httpapi
 
-// Conversation identity for the request log (Logs-page redesign,
-// 2026-10-06): rows of one logical conversation chain in the WebUI gutter
+// Conversation identity for the request log (Logs-page redesign):
+// rows of one logical conversation chain in the WebUI gutter
 // and earn the healed marker on retries. Derivation ORDER (first hit
 // wins), unit-tested in conversation_test.go:
 //
@@ -23,8 +23,8 @@ package httpapi
 // The STORED id is conv_ + first 8 hex of sha256(convKey); convKey itself
 // persists (column conv_key) so the rolling-window lookup
 // (storage.RecentConversation, 30 min) reuses the prior conversation_id
-// instead of re-hashing. Only rows written after this patch carry ids —
-// no backfill (user decision 2026-10-06).
+// instead of re-hashing. Rows written before the change carry no id —
+// there is no backfill.
 
 import (
 	"crypto/sha256"

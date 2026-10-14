@@ -1,6 +1,6 @@
 package server
 
-// Capability-fallback wiring tests (2026-09-21 automatic capabilities):
+// Capability-fallback wiring tests (automatic capabilities):
 // the stored vision_fallback KV holds MODEL IDs; New resolves them into
 // executor chain entries (provider + wire name), the admin fallback write
 // live-swaps the resolved entries, and a real capability_gap upstream
@@ -590,8 +590,8 @@ func visionFallbackChat(t *testing.T, ts *httptest.Server, key string, textChars
 	return resp.StatusCode, body
 }
 
-// TestServer_VisionFallbackIgnoresTheVisionModelsContextWindow is the
-// regression for the reported scenario: a long agentic session that grows a
+// TestServer_VisionFallbackIgnoresTheVisionModelsContextWindow pins the
+// scenario the design exists for: a long agentic session that grows a
 // screenshot mid-conversation, while every configured vision model is far
 // smaller than the conversation.
 //

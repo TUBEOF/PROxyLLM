@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// Spec: the Logs page can show what a request carried and what came back
-// (2026-10-10). Payloads live in their own table keyed by the row they belong
+// Spec: the Logs page can show what a request carried and what came back.
+// Payloads live in their own table keyed by the row they belong
 // to, so the list query stays cheap; they are size-capped so one long agentic
 // session cannot put a multi-megabyte row on disk per request; and they are
 // pruned on a window, which is what keeps the cap from being a per-request

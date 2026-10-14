@@ -1,7 +1,7 @@
 // LogRow (Logs-page redesign, 2026-10-06): one table row of the request
 // log — the dense layout. Both a finished RequestLog and a running
 // pseudo-row render through this component (running = the `…`-badge row
-// with em-dash cells). Sub-operations (2026-10-07) render as their own
+// with em-dash cells). Sub-operations render as their own
 // rows hanging under their parent: a failover, a capability (vision)
 // fallback walk, or an emulated web-tool call. A sub-row keeps the parent's
 // column count so the eye can read down the table, but fills only the
@@ -143,10 +143,9 @@ function LogRowInner({
     // The child carries the same column count as its parent so its cells
     // sit directly under the parent's — the failover's target lines up
     // with the parent's provider, not in a merged blob. The MODEL column
-    // shows the model this op actually served/used (2026-10-08: the trace
-    // walk now attributes each op's model; empty → the meta as before).
+    // shows the model this op actually served/used.
     //
-    // The row OPENS (2026-10-10): a sub-operation has its own detail view,
+    // The row OPENS: a sub-operation has its own detail view,
     // because what it sent and received lives in a payload of its own — the
     // parent's conversation and answer cannot answer "what did this step do".
     // Hence a button role and a keyboard path, not decoration.

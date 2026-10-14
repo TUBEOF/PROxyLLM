@@ -6,8 +6,8 @@ import (
 	"strings"
 )
 
-// ChildLog is one persisted sub-operation of a request (Logs page,
-// 2026-10-07): a chain failover, a capability (vision) fallback model walk,
+// ChildLog is one persisted sub-operation of a request (Logs page):
+// a chain failover, a capability (vision) fallback model walk,
 // or an emulated web-tool call. It is derived from the parent request's
 // route_trace by routing.ChildOps and stored beside it so the operation is
 // visible as its own row (a same-provider retry is deliberately NOT a row

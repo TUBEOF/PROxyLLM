@@ -1,6 +1,6 @@
 package webui
 
-// Model test endpoint (2026-09-22 Models page): POST /api/admin/models/{id}/test
+// Model test endpoint (Models page): POST /api/admin/models/{id}/test
 // answers one minimal "Sag OK" round trip against the model row's provider
 // so the operator can verify an account actually serves the model. The
 // heavy lifting (registry lookup, the upstream call) is wired by

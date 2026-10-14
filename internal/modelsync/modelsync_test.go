@@ -6,7 +6,7 @@ package modelsync
 // dropped synced rows are deleted, and ID collisions with another
 // provider's row are skipped — one dead upstream never fails the run.
 //
-// Identity spec (2026-09-21): row IDs are prefixed with the provider type
+// Identity spec: row IDs are prefixed with the provider type
 // ("custom-openai/model-x"); the Name column carries the bare wire name.
 // The tests below assert the prefixed IDs accordingly.
 
@@ -249,8 +249,8 @@ func TestSync_NonListerProvidersIgnored(t *testing.T) {
 	}
 }
 
-// ---- 2026-10-06 context/capability auto-detection persistence ----
-// (plan task 3) Detected facts (provider.ModelInfo from ollamacloud
+// ---- context/capability auto-detection persistence ----
+// Detected facts (provider.ModelInfo from ollamacloud
 // /api/show, verified live 2026-10-06: glm-5.3-flash → context_length
 // 1048576, capabilities thinking/tools/vision) persist into model rows.
 // Operator pins win; manual rows are never touched.
@@ -286,7 +286,7 @@ func assertBlob(t *testing.T, label, raw string, want map[string]any) {
 }
 
 // New models import with the detected capabilities and context window
-// (plan contract, R5-amended 2026-10-06: capabilities
+// (capabilities
 // {"streaming":true,"tools":det,"vision":det,"thinking":det} + server
 // tools false; compat carries ONLY the detected context_window — the
 // thinking policy derives from the capability blob server-side, never a

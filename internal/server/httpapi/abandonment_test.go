@@ -3,7 +3,7 @@ package httpapi
 // A request the client walked away from is still a request: it gets a log row,
 // and that row says what ended it. Two markers, because "the client stopped
 // reading" and "a budget of ours ran out" are different facts — and neither is
-// a 200, which is what an abandoned stream used to be recorded as.
+// a 200: an abandoned stream is not a success.
 
 import (
 	"context"

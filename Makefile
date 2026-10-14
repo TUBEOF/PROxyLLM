@@ -5,7 +5,7 @@ BINARY := proxyllm
 # vet/test/lint runs. The explicit list is also what CI uses.
 GO_PKGS := ./cmd/... ./internal/... ./webui
 
-.PHONY: build test test-race lint lint-tool fmt vet run clean docker webui-install webui-build webui-lint webui-typecheck webui-assets
+.PHONY: build test test-race lint lint-tool fmt vet run clean docker webui-install webui-build webui-lint webui-typecheck webui-assets check-tests
 
 # The golangci-lint version CI pins (ci.yml, golangci-lint-action). Bumped
 # together with that pin or not at all: a linter newer or older than the gate
@@ -37,6 +37,12 @@ fmt:
 
 vet:
 	go vet $(GO_PKGS)
+
+# Guards the suite against erosion: a deleted test, a weakened one, a new skip
+# or a tautology fails; assertions that re-encode a production condition are
+# reported without failing.
+check-tests:
+	go run ./cmd/checktests
 
 run: build
 	./$(BINARY)
