@@ -300,7 +300,7 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 		{
 			Timestamp: base, ClientKeyID: "ckey-claude-code", ProviderID: "prv-openai",
 			Model: "claude-sonnet-5", Status: 200, LatencyMS: 842,
-			Usage:          json.RawMessage(`{"input_tokens":1204,"output_tokens":318,"cache_read_input_tokens":512}`),
+			Usage: json.RawMessage(`{"input_tokens":1204,"output_tokens":318,"cache_read_input_tokens":512}`),
 			// The emulated_tool detail carries a token-shaped value on
 			// purpose: the child row must render it masked, so the e2e
 			// suite proves the redaction end-to-end (review C1/I2).
@@ -332,7 +332,7 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 			// the cross-row heal chip renders (previous failed, this 2xx).
 			Timestamp: base - 895, ClientKeyID: "ckey-ci", ProviderID: "prv-ollama",
 			Model: "glm-5.3-flash", Status: 200, LatencyMS: 1180,
-			Usage:          json.RawMessage(`{"input_tokens":88211,"output_tokens":72,"cache_read_input_tokens":88128}`),
+			Usage: json.RawMessage(`{"input_tokens":88211,"output_tokens":72,"cache_read_input_tokens":88128}`),
 			// The vision fallback (ADR-014) in the order production records it:
 			// the chain fails on the image, a vision model describes it, the
 			// capability fallback is consulted, and the chain is retried with
@@ -353,8 +353,8 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 			// operation, not an operation that cost nothing.
 			Timestamp: base + 120, ClientKeyID: "ckey-claude-code", ProviderID: "prv-ollama",
 			Model: "glm-5.3-flash", Status: 200, LatencyMS: 940,
-			Usage: json.RawMessage(`{"input_tokens":88320,"output_tokens":58,"cache_read_input_tokens":0}`),
-			RouteTrace: json.RawMessage(`{"version":8,"events":[{"type":"model_resolved","from":"glm-5.3-flash","to":"ollama-cloud/glm-5.3-flash","provider_id":"prv-ollama"},{"type":"image_caption","provider_id":"prv-ollama","model":"glm-5.3-vl","cache_hit":true,"reason":"184 character(s) reused from the caption cache"},{"type":"capability_fallback","capability":"vision","reason":"chain exhausted on capability gaps; reused 1 cached description(s) and retrying the chain with the text in place of the image"},{"type":"attempt","provider_id":"prv-ollama","model":"glm-5.3-flash"}]}`),
+			Usage:          json.RawMessage(`{"input_tokens":88320,"output_tokens":58,"cache_read_input_tokens":0}`),
+			RouteTrace:     json.RawMessage(`{"version":8,"events":[{"type":"model_resolved","from":"glm-5.3-flash","to":"ollama-cloud/glm-5.3-flash","provider_id":"prv-ollama"},{"type":"image_caption","provider_id":"prv-ollama","model":"glm-5.3-vl","cache_hit":true,"reason":"184 character(s) reused from the caption cache"},{"type":"capability_fallback","capability":"vision","reason":"chain exhausted on capability gaps; reused 1 cached description(s) and retrying the chain with the text in place of the image"},{"type":"attempt","provider_id":"prv-ollama","model":"glm-5.3-flash"}]}`),
 			ConversationID: "conv_ca9e0f21", ConvKey: "sys:caption-cache",
 			Protocol: "anthropic", Features: json.RawMessage(`{"streaming":true,"tools":true,"thinking":false,"web_search":false,"web_fetch":false,"vision":true}`),
 		},

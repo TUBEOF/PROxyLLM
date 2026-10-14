@@ -35,11 +35,12 @@ WebUI (React + Vite + TypeScript, embedded into the binary):
     make webui-typecheck
 
 The Playwright visual baselines are rendered in CI, never locally. The assertion
-suite has no baselines and runs anywhere:
+suite has no baselines and runs anywhere. Rebuild the fixture **binary**, not just
+the SPA, before running it — it embeds `webui/dist`:
 
     go build -o webui/e2e/fixturesrv-bin ./webui/e2e/fixturesrv
     cd webui && npx playwright test -c playwright.config.ts \
-      e2e/design-rules.spec.ts e2e/log-childops.spec.ts
+      e2e/design-rules.spec.ts e2e/log-childops.spec.ts e2e/provider-type-form.spec.ts
 
 Live smoke tests exist and never run in CI: `PROXYLLM_SMOKE=1 go test ./internal/smoke/...`.
 
@@ -106,8 +107,10 @@ Live smoke tests exist and never run in CI: `PROXYLLM_SMOKE=1 go test ./internal
 ## Do not
 
 - Do not run `go test ./...` or `golangci-lint run ./...`.
-- Do not hand-edit `webui/dist/index.html`. It is a committed placeholder that lets a
-  fresh clone build without a Node toolchain; CI builds the real assets over it.
+- Do not commit a built `webui/dist/index.html`. It is a committed placeholder that
+  lets a fresh clone build without a Node toolchain, and `make webui-build` overwrites
+  it with the real bundle — so run `git checkout webui/dist/index.html` before
+  committing, and check `git diff origin/main -- webui/dist/index.html` is empty.
 - Do not commit secrets, tokens or `.env` contents. The master key never appears in a
   config blob.
 - Do not reformat or rename files outside the change's scope.
