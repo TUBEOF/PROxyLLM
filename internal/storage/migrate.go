@@ -159,6 +159,15 @@ var migrations = []string{
 		PRIMARY KEY (owner_kind, owner_id)
 	);`,
 	`CREATE INDEX IF NOT EXISTS idx_request_payloads_ts ON request_payloads(ts);`,
+
+	// v8: what a sub-operation cost. A child row could name where a step ran
+	// but not what it spent: the describer call's tokens and the emulated web
+	// call's duration existed only inside the parent request's totals, and the
+	// log could not say which of several steps the time went to. usage mirrors
+	// request_logs.usage (the same JSON object; '{}' when the step bills
+	// nothing) so the WebUI renders the same input/output/cache triple from it.
+	`ALTER TABLE request_child_logs ADD COLUMN latency_ms INTEGER NOT NULL DEFAULT 0;`,
+	`ALTER TABLE request_child_logs ADD COLUMN usage TEXT NOT NULL DEFAULT '{}';`,
 }
 
 func (s *Store) migrate() error {

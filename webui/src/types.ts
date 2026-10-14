@@ -168,6 +168,17 @@ export interface ChildLog {
   provider_kind?: string;
   from_name?: string;
   to_name?: string;
+  // What the step cost: token usage in the same shape a request row carries,
+  // and its duration. Present for a describer call and a web-tool call, absent
+  // for a transition.
+  usage?: unknown;
+  latency_ms?: number;
+  // Inherited from the request this step belongs to: the surface it arrived on
+  // and the client key that opened it.
+  protocol?: string;
+  client_key_id?: string;
+  key_name?: string;
+  key_prefix?: string;
 }
 
 export interface SettingsEntry {

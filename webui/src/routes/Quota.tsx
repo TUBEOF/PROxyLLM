@@ -39,6 +39,8 @@ function UsageBar({ label, pct, reset }: { label: string; pct: number | null; re
 function healthBadge(health: string | undefined): { label: string; cls: string } | null {
   if (health === 'quota_exhausted') return { label: 'quota', cls: 'warn' };
   if (health === 'breaker') return { label: 'cooling', cls: 'down' };
+  // Failing but still in rotation: the last failure before the breaker opens.
+  if (health === 'degraded') return { label: 'degraded', cls: 'warn' };
   return null;
 }
 

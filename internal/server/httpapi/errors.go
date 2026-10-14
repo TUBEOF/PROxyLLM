@@ -172,6 +172,31 @@ func mapRouteError(err error) (int, string, string) {
 		return http.StatusNotFound, errTypeNotFound,
 			"No route for the requested model. Add a routing rule or check the model name."
 	}
+	// A request that ended because its context did is not a routing failure:
+	// the client stopped reading, or a budget of ours ran out. The status is the
+	// log marker for which of the two (see abandonment.go) — a 499 never reaches
+	// a client, and a 504 is the honest answer when it is our own deadline.
+	if status, abandoned := mapAbandonment(err); abandoned {
+		if status == statusClientClosedRequest {
+			return status, errTypeUpstream, "The client closed the request before an answer was complete."
+		}
+		return status, errTypeUpstream, "The request exceeded the time allowed for it."
+	}
+	// Chain exhausted: the last attempt's status is the right answer only when
+	// there was one kind of failure — a single-provider chain's 429 must still
+	// read as 429 so the client backs off. A genuine mix has no single target to
+	// blame, and reporting the last one sends the client to the wrong place; the
+	// gateway is what could not deliver, and 502 says so (504 when a target ran
+	// out of time).
+	if mixed, timedOut, ok := routing.ChainFailure(err); ok && mixed {
+		if timedOut {
+			return statusAbandonedBudget, errTypeUpstream,
+				"Every route for this request failed; at least one ran out of time."
+		}
+		return http.StatusBadGateway, errTypeUpstream,
+			"Every route for this request failed, for different reasons."
+	}
+
 	// Upstream-classified errors: keep the status (429 stays 429), relay
 	// the typed body fields — never a bare Go error string, never the
 	// upstream credential (UpstreamError.Message never contains headers).

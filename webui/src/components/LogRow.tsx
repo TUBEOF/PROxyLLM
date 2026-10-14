@@ -13,7 +13,7 @@
 import { memo } from 'react';
 import type { KeyboardEvent } from 'react';
 import type { ChildLog, RequestLog, RunningRequest } from '../types';
-import { childCls, childMeta, childTitle } from './RouteTrace';
+import { childCls, childTitle } from './RouteTrace';
 
 export type LogRowShape =
   | { kind: 'done'; row: RequestLog; healed: boolean; childCount?: number }
@@ -65,8 +65,9 @@ function requestedModel(l: RequestLog): string {
 }
 
 // tokensCell parses the usage JSON into the TI/TO/CR triple (CR % =
-// cache-read over input).
-function tokensCell(usage: unknown): [string, string, string] {
+// cache-read over input). Shared by the request row, its steps and the step
+// drawer, so one row never disagrees with another about the same usage object.
+export function tokensCell(usage: unknown): [string, string, string] {
   if (usage === null || usage === undefined || typeof usage !== 'object') {
     return ['—', '—', '—'];
   }
@@ -85,6 +86,19 @@ function tokensCell(usage: unknown): [string, string, string] {
 export const tpsOf = (output: number | undefined, latencyMS: number): string => {
   if (latencyMS <= 0 || typeof output !== 'number') return '—';
   return (output / (latencyMS / 1000)).toFixed(1);
+};
+
+// keyDisplay names the client key a row was opened with: the operator's label
+// and its display prefix, falling back to the raw id so a deleted key still
+// says something actionable, and to a dash when the row has no key at all.
+// Shared by the request row and its steps, which inherit it from the request.
+export const keyDisplay = (
+  name: string | undefined,
+  prefix: string | undefined,
+  id: string | undefined,
+): string => {
+  if (name) return prefix ? `${name} (${prefix})` : name;
+  return id || '—';
 };
 
 const protocolLabel = (p: string | undefined): string => {
@@ -116,12 +130,16 @@ function LogRowInner({
 }) {
   if (shape.kind === 'child') {
     const c = shape.child;
-    const meta = childMeta(c);
     // PROVIDER/ACCOUNT name the endpoint THIS op ran on, which is the point of
     // a fallback row. The parent's columns would be wrong here: they describe
     // where the request started, not where a failover landed.
     const providerId = c.provider_id ?? '';
     const accountName = c.provider_name ?? c.provider_id ?? '';
+    // What the step itself spent, and what it cost. A transition has neither,
+    // and says so with a dash.
+    const cu = (c.usage ?? {}) as UsageShape;
+    const [cti, cto, ccr] = tokensCell(c.usage);
+    const childKeyText = keyDisplay(c.key_name, c.key_prefix, c.client_key_id);
     // The child carries the same column count as its parent so its cells
     // sit directly under the parent's — the failover's target lines up
     // with the parent's provider, not in a merged blob. The MODEL column
@@ -162,29 +180,37 @@ function LogRowInner({
             caption excerpt, `family: vision`) pushed the row taller than its
             parent and left the tree elbow floating between two baselines. The
             op's detail is not lost — it is the first thing the row's own
-            drawer shows. The MODEL column shows the model this op actually
-            served/used; an op with no model of its own falls back to a muted
-            one-liner rather than an empty cell. */}
-        <td className="primary child-model col-model" title={c.model || meta || undefined}>
-          {c.model || <span className="txt-muted">{meta || '—'}</span>}
+            drawer shows. The MODEL column names the model this op actually
+            used; an op that has none says so with a dash rather than falling
+            back to its detail text (a web-tool row would otherwise show the
+            search query in the model column). */}
+        <td className="primary child-model col-model" title={c.model || undefined}>
+          {c.model || <span className="txt-muted">—</span>}
         </td>
-        {/* A sub-operation carries only what it owns. PROVIDER/ACCOUNT name the
-            endpoint the op itself ran on (the drawer shows the same pair),
-            which is what makes a fallback row worth reading: it says which
-            account served the step, not which one the request started on.
-            Protocol, key, tokens, TPS and duration have no per-op value — they
-            belong to the request — and stay empty rather than inheriting the
-            parent's, which would attribute a fallback round to the primary
-            endpoint. */}
+        {/* A sub-operation shows what it owns and inherits what the request
+            owns. PROVIDER/ACCOUNT name the endpoint the op itself ran on — for
+            a web-tool call that is the emulating account, which is the answer
+            to "which provider served this". PROTOCOL and API KEY belong to the
+            request the step is part of, so they come from the parent row.
+            TOKENS, TPS and DURATION are the step's own: a describer call and a
+            web-tool call both take time, the describer also spends tokens, and
+            a transition spends nothing — which reads as a dash, never as a
+            blank cell. */}
         <td>{providerId && <span className="pill">{c.provider_kind ?? providerId}</span>}</td>
-        <td />
+        <td><span className="pill pill-warm">{protocolLabel(c.protocol)}</span></td>
         <td className="col-account" title={accountName}>
-          {accountName}
+          {accountName || '—'}
         </td>
-        <td />
-        <td />
-        <td />
-        <td />
+        <td className="mono col-key" title={childKeyText}>
+          {childKeyText}
+        </td>
+        <td className="mono col-tokens">
+          <span className="txt-muted">TI:</span> <span className="num-ti">{cti}</span>{' '}
+          <span className="txt-muted">TO:</span> <span className="num-to">{cto}</span>{' '}
+          <span className="txt-muted">CR:</span> <span className="num-cr">{ccr}</span>
+        </td>
+        <td className="mono num">{tpsOf(cu.output_tokens, c.latency_ms ?? 0)}</td>
+        <td className="mono num">{c.latency_ms ? `${c.latency_ms} ms` : '—'}</td>
         <td className="mono col-time">{fmtTime(c.ts)}</td>
       </tr>
     );
@@ -215,16 +241,14 @@ function LogRowInner({
   const st = statusBadge(l.status);
   const u = (l.usage ?? {}) as UsageShape;
   const [ti, to, cr] = tokensCell(l.usage);
-  const apiKey = l.key_name
-    ? l.key_prefix
-      ? `${l.key_name} (${l.key_prefix})`
-      : l.key_name
-    : l.client_key_id;
+  const apiKey = keyDisplay(l.key_name, l.key_prefix, l.client_key_id);
   // PROVIDER shows the endpoint TYPE ("Ollama Cloud"), ACCOUNT the name the
   // operator gave the account ("main-2"). Both fall back to the raw id so
-  // a deleted account still says something actionable.
-  const provider = l.provider_kind ?? l.provider_id;
-  const account = l.provider_name ?? l.provider_id;
+  // a deleted account still says something actionable — and to a dash when the
+  // request never reached an endpoint at all (a rejected route): a blank cell
+  // would read as "not loaded", a dash reads as "there is none".
+  const provider = l.provider_kind ?? l.provider_id ?? '';
+  const account = l.provider_name ?? l.provider_id ?? '';
   const requested = requestedModel(l);
   const conv = convShort(l.conversation_id);
 
@@ -243,9 +267,9 @@ function LogRowInner({
       <td className="primary col-model" title={requested !== l.model ? `requested ${requested}` : undefined}>
         {l.model}
       </td>
-      <td><span className="pill">{provider}</span></td>
+      <td>{provider && <span className="pill">{provider}</span>}</td>
       <td><span className="pill pill-warm">{protocolLabel(l.protocol)}</span></td>
-      <td className="col-account" title={account}>{account}</td>
+      <td className="col-account" title={account || undefined}>{account || '—'}</td>
       <td className="mono col-key" title={apiKey}>{apiKey}</td>
       <td className="mono col-tokens">
         <span className="txt-muted">TI:</span> <span className="num-ti">{ti}</span>{' '}

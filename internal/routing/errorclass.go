@@ -6,6 +6,7 @@
 package routing
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -99,6 +100,12 @@ const (
 	// ClassTransport: no HTTP response at all (connection refused, TLS
 	// reset, timeout) — retryable/failover pre-stream (FO-1).
 	ClassTransport Class = "transport"
+
+	// ClassClientAbort: the answer is no longer wanted. Either the client
+	// disconnected, or a budget of ours ran out. Terminal, because there is
+	// nobody left to hand a failover to, and never evidence about the
+	// provider — a cancelled request must not cool down a healthy account.
+	ClassClientAbort Class = "client_abort"
 )
 
 // Classification is the outcome of classifying one failed attempt.
@@ -136,6 +143,15 @@ type Classification struct {
 // only pre-stream. Enforced here, once, so the failover loop needs no
 // position knowledge of its own.
 func ClassifyError(err error, position FailurePosition) Classification {
+	// A cancellation is not an observation about the service. Either the client
+	// that asked for the answer is gone, or a budget of OURS ran out — and
+	// neither says anything about the provider. It is terminal because there is
+	// nobody left to hand a failover to, and it must not reach the health
+	// tracker: one abandoned request would otherwise cool down a healthy
+	// account for everyone.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return Classification{Class: ClassClientAbort, Action: ActionTerminal, FailurePosition: position}
+	}
 	c := classifyPreStream(err)
 	// FO-1: once content has been streamed, no class justifies a retry or
 	// a swap — the client holds a partial answer from this provider.

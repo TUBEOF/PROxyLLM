@@ -233,7 +233,8 @@ func TestChildOps_CarryModelAttribution(t *testing.T) {
 		{Type: routing.EventAttempt, ProviderID: "p1", Model: "model-a"},
 		{Type: routing.EventFailover, From: "p1", To: "p2", Reason: "chain failover after capability_gap"},
 		{Type: routing.EventAttempt, ProviderID: "p2", Model: "model-b"},
-		{Type: routing.EventEmulatedTool, To: "web_search", Reason: `query "q" → 3 result(s)`},
+		{Type: routing.EventEmulatedTool, ProviderID: "acc-firecrawl", To: "web_search",
+			Reason: `query "q" → 3 result(s) via acc-firecrawl`, LatencyMS: 412},
 	}
 	ops := routing.ChildOps(events)
 	if len(ops) != 2 {
@@ -242,8 +243,18 @@ func TestChildOps_CarryModelAttribution(t *testing.T) {
 	if ops[0].ProviderID != "p2" || ops[0].Model != "model-b" {
 		t.Errorf("failover op = %s/%s, want p2/model-b", ops[0].ProviderID, ops[0].Model)
 	}
-	if ops[1].ProviderID != "p2" || ops[1].Model != "model-b" {
-		t.Errorf("emulated-tool op = %s/%s, want p2/model-b (the round's dispatch context)", ops[1].ProviderID, ops[1].Model)
+	// The emulated-tool op names where the CALL went, not which model asked for
+	// it: the answer to "which web provider served this" is the emulating
+	// account, and naming the chat model there made the log claim a fallback
+	// that never happened.
+	if ops[1].ProviderID != "acc-firecrawl" {
+		t.Errorf("emulated-tool op provider = %q, want the account that served the call", ops[1].ProviderID)
+	}
+	if ops[1].Model != "" {
+		t.Errorf("emulated-tool op model = %q, want empty (the round's model is not where the call went)", ops[1].Model)
+	}
+	if ops[1].LatencyMS != 412 {
+		t.Errorf("emulated-tool op latency = %d, want the invocation's 412 ms", ops[1].LatencyMS)
 	}
 }
 

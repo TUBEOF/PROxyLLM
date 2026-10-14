@@ -102,8 +102,8 @@ func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry,
 			return finishEmulated(resp, synth, usage), nil
 		}
 		if round >= maxEmulationRounds {
-			trace.EmulatedTool("emulation_loop",
-				fmt.Sprintf("round cap %d reached; returning last upstream response", maxEmulationRounds))
+			trace.EmulatedTool("emulation_loop", "",
+				fmt.Sprintf("round cap %d reached; returning last upstream response", maxEmulationRounds), 0)
 			return finishEmulated(resp, synth, usage), nil
 		}
 		// The other half of the safety net: the loop's own deadline (set when the
@@ -111,9 +111,9 @@ func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry,
 		// request ends with it rather than with an error — the same posture the
 		// round cap takes.
 		if ctx.Err() != nil {
-			trace.EmulatedTool("emulation_loop",
+			trace.EmulatedTool("emulation_loop", "",
 				"emulation budget exhausted ("+e.cfg.EmulationTotalBudget.String()+
-					"); returning what the tools answered so far")
+					"); returning what the tools answered so far", 0)
 			return finishEmulated(resp, synth, usage), nil
 		}
 
@@ -169,10 +169,15 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 	use := ir.ServerToolUsePart(call)
 	res := ir.ServerToolResultPart{ToolUseID: call.ID, ToolName: call.Name}
 
+	// One invocation is one logged step, so the elapsed time covers everything
+	// this call did — the guards, the account walk and the emulator's answer.
+	started := e.cfg.now()
+	elapsed := func() int64 { return e.cfg.now().Sub(started).Milliseconds() }
+
 	fail := func(code, detail string) (ir.ServerToolUsePart, ir.ServerToolResultPart, ir.ToolResultPart) {
 		res.IsError = true
 		res.ErrorCode = code
-		trace.EmulatedTool(call.Name, "error "+code+": "+detail)
+		trace.EmulatedTool(call.Name, "", "error "+code+": "+detail, elapsed())
 		tr := ir.ToolResultPart{ToolUseID: call.ID, IsError: true,
 			Content: []ir.Part{ir.TextPart{Text: `{"error_code":` + strconvQuote(code) + `}`}}}
 		return use, res, tr
@@ -216,7 +221,7 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 		}
 		res.Search = items
 		uses[call.Name]++
-		trace.EmulatedTool(call.Name, emuSummary(fmt.Sprintf("query %q → %d result(s)", in.Query, len(items)), by))
+		trace.EmulatedTool(call.Name, by, emuSummary(fmt.Sprintf("query %q → %d result(s)", in.Query, len(items)), by), elapsed())
 
 	case "web_fetch":
 		if strings.TrimSpace(in.URL) == "" {
@@ -274,7 +279,7 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 		}
 		res.Fetch = fc
 		uses[call.Name]++
-		trace.EmulatedTool(call.Name, emuSummary("fetched "+in.URL, by))
+		trace.EmulatedTool(call.Name, by, emuSummary("fetched "+in.URL, by), elapsed())
 
 	default:
 		return fail(errCodeInvalidToolInput, "unknown emulated tool "+call.Name)

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 )
 
@@ -35,6 +36,17 @@ type ChildLog struct {
 	ToRef   string
 
 	Detail string
+
+	// LatencyMS is how long the step took, when it was a step that took time
+	// (a describer call, an emulated web-tool invocation). Zero for a
+	// transition, which is an event rather than an operation.
+	LatencyMS int64
+
+	// Usage is the token spend of the step, as the same JSON object
+	// request_logs carries. A web-tool call spends tokens on the model's side
+	// of the round trip, not here; a describer call spends what the vision
+	// model reported. Empty is stored as '{}' so the WebUI reads one shape.
+	Usage json.RawMessage
 }
 
 // InsertChildLogs appends a request's sub-operation rows, all under one
@@ -62,8 +74,8 @@ func (s *Store) InsertChildLogs(ctx context.Context, parentID int64, ops []Child
 	// instead of being read back off a shared connection (wrong if anything
 	// else wrote in between).
 	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO request_child_logs (parent_id, ts, kind, provider_id, model, from_ref, to_ref, detail)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO request_child_logs (parent_id, ts, kind, provider_id, model, from_ref, to_ref, detail, latency_ms, usage)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		RETURNING id`)
 	if err != nil {
 		return nil, err
@@ -71,9 +83,14 @@ func (s *Store) InsertChildLogs(ctx context.Context, parentID int64, ops []Child
 	defer func() { _ = stmt.Close() }()
 
 	for _, op := range ops {
+		usage := op.Usage
+		if len(usage) == 0 {
+			usage = json.RawMessage(`{}`)
+		}
 		var id int64
 		if err := stmt.QueryRowContext(ctx, parentID, op.TS, op.Kind,
-			op.ProviderID, op.Model, op.FromRef, op.ToRef, op.Detail).Scan(&id); err != nil {
+			op.ProviderID, op.Model, op.FromRef, op.ToRef, op.Detail,
+			op.LatencyMS, string(usage)).Scan(&id); err != nil {
 			return nil, err
 		}
 		ids = append(ids, id)
@@ -98,7 +115,7 @@ func (s *Store) ListChildLogsForParents(ctx context.Context, parentIDs []int64) 
 	// Placeholders are generated from the arg count only — no user text
 	// enters the SQL string.
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(parentIDs)), ",")
-	q := `SELECT id, parent_id, ts, kind, provider_id, model, from_ref, to_ref, detail FROM request_child_logs WHERE parent_id IN (` + placeholders + `) ORDER BY id` //nolint:gosec // placeholders are fixed literals; values stay bound args
+	q := `SELECT id, parent_id, ts, kind, provider_id, model, from_ref, to_ref, detail, latency_ms, usage FROM request_child_logs WHERE parent_id IN (` + placeholders + `) ORDER BY id` //nolint:gosec // placeholders are fixed literals; values stay bound args
 	args := make([]any, 0, len(parentIDs))
 	for _, id := range parentIDs {
 		args = append(args, id)
@@ -112,13 +129,14 @@ func (s *Store) ListChildLogsForParents(ctx context.Context, parentIDs []int64) 
 
 	for rows.Next() {
 		var c ChildLog
-		var providerID, model, fromRef, toRef, detail string
+		var providerID, model, fromRef, toRef, detail, usage string
 		if err := rows.Scan(&c.ID, &c.ParentID, &c.TS, &c.Kind, &providerID,
-			&model, &fromRef, &toRef, &detail); err != nil {
+			&model, &fromRef, &toRef, &detail, &c.LatencyMS, &usage); err != nil {
 			return nil, err
 		}
 		c.ProviderID, c.Model = providerID, model
 		c.FromRef, c.ToRef, c.Detail = fromRef, toRef, detail
+		c.Usage = json.RawMessage(usage)
 		out[c.ParentID] = append(out[c.ParentID], c)
 	}
 	return out, rows.Err()

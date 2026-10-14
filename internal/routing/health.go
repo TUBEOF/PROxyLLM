@@ -1,6 +1,7 @@
 package routing
 
 import (
+	"net/http"
 	"sync"
 	"time"
 )
@@ -82,10 +83,47 @@ func (h *HealthTracker) clock() time.Time {
 	return time.Now()
 }
 
+// countsTowardHealth reports whether a failed attempt is evidence about the
+// provider's health.
+//
+// Most failures are: a 5xx, a rate limit, a connection that died mid-answer.
+// Some are not, and counting those is what turns one bad request into an
+// outage. A model that cannot read images answers a 400 about its own
+// capability — the provider is healthy and answered correctly. A context-window
+// rejection says the request did not fit anywhere, a client error is the
+// caller's or our own fault, and a cancellation means nobody is waiting for the
+// answer any more. Three such requests in a row used to open the breaker for
+// every model on the account, including the text-only ones they never touched.
+func countsTowardHealth(c Classification, status int) bool {
+	switch c.Class {
+	case ClassCapabilityGap, ClassContextWindow, ClassContentFilter,
+		ClassInsufficientQuota, ClassClientAbort:
+		// insufficient_quota has a longer path of its own: ReportQuotaExhausted
+		// cools the account for the window the upstream announced, which a
+		// consecutive-failure counter cannot express.
+		return false
+	case ClassClientError:
+		// Invalid credentials are an account fact; a malformed request is not.
+		return status == http.StatusUnauthorized || status == http.StatusForbidden
+	default:
+		return true
+	}
+}
+
 // ReportFailure records one failed attempt for providerID. Reaching the
 // threshold opens the breaker (or extends the cooldown of an already
 // tripped breaker).
 func (h *HealthTracker) ReportFailure(providerID string) {
+	h.ReportFailureKind(providerID, "")
+}
+
+// ReportFailureKind is ReportFailure for a caller that knows how the attempt
+// failed. The kind scales the cooldown — an account that asked us to slow down
+// needs longer than one that answered with a server error — and the escalation
+// over opening cycles multiplies that, never the other way round: a kind-specific
+// duration that replaced the escalation instead of scaling it would re-probe a
+// dead account at a fixed interval for as long as it stayed dead.
+func (h *HealthTracker) ReportFailureKind(providerID string, kind Class) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	e := h.entries[providerID]
@@ -96,8 +134,20 @@ func (h *HealthTracker) ReportFailure(providerID string) {
 	e.consecutive++
 	if e.consecutive >= h.Threshold {
 		e.opens++
-		e.until = h.clock().Add(h.cooldown(e.opens))
+		e.until = h.clock().Add(h.cooldownFor(kind, e.opens))
 	}
+}
+
+// cooldownFor scales the escalating cooldown for the kind of failure that
+// opened the breaker.
+func (h *HealthTracker) cooldownFor(kind Class, opens int) time.Duration {
+	d := h.cooldown(opens)
+	if kind == ClassRateLimit {
+		// Saturation is not a blip: an account that answered 429 was serving
+		// other traffic and will keep doing so for a while.
+		d = min(d*2, h.MaxCooldown)
+	}
+	return d
 }
 
 // ReportSuccess records one successful attempt: the breaker closes and the
@@ -130,18 +180,39 @@ func (h *HealthTracker) ReportQuotaExhausted(providerID string, until time.Time)
 }
 
 // Reason names the active cooldown for the Quota page badge
-// ("quota_exhausted" | "breaker"; "" = healthy).
+// ("quota_exhausted" | "breaker" | "degraded"; "" = healthy).
+//
+// "degraded" is the band below the breaker: the account has been failing, has
+// not been taken out of rotation, and is worth looking at before it does. A
+// single threshold gives a cliff — nothing to see until the moment everything
+// stops working.
 func (h *HealthTracker) Reason(providerID string) string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	e := h.entries[providerID]
-	if e == nil || !h.cooling(e) {
+	if e == nil {
 		return ""
 	}
-	if h.clock().Before(e.quotaUntil) {
-		return "quota_exhausted"
+	if h.cooling(e) {
+		if h.clock().Before(e.quotaUntil) {
+			return "quota_exhausted"
+		}
+		return "breaker"
 	}
-	return "breaker"
+	if e.consecutive >= h.degradedAt() {
+		return "degraded"
+	}
+	return ""
+}
+
+// degradedAt is the failure count at which an account is worth flagging: the
+// last failure before the breaker opens. Derived from the threshold rather than
+// configured, so the two cannot drift apart.
+func (h *HealthTracker) degradedAt() int {
+	if h.Threshold <= 1 {
+		return h.Threshold
+	}
+	return h.Threshold - 1
 }
 
 // Cooldown reports whether providerID is currently in cooldown (breaker

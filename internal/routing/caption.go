@@ -119,11 +119,18 @@ func (c CaptionConfig) maxTokens() int {
 // original capability-gap error rather than a side effect of a rescue that
 // never happened.
 //
+// cacheOnly restricts the sources to the caption cache and makes the whole step
+// all-or-nothing: a request is only rewritten when every image is already
+// described. That is the pre-dispatch form, used when the chain is known blind
+// and the description is therefore certain to be needed — it saves the round
+// trip that would end in a rejection. A partial rewrite is never returned,
+// because it would show the model a conversation the client did not send.
+//
 // A per-image failure keeps that image in place instead of standing in a
 // placeholder. The request is then still valid for a vision-capable attempt,
 // and the worst case is an unchanged request, never a silently impoverished
 // one.
-func (e *Executor) captionImages(ctx context.Context, req ir.Request, trace *Trace) (ir.Request, ir.Usage, bool) {
+func (e *Executor) captionImages(ctx context.Context, req ir.Request, trace *Trace, cacheOnly bool) (ir.Request, ir.Usage, bool) {
 	refs := req.ImageRefs()
 	if len(refs) == 0 {
 		return req, ir.Usage{}, false
@@ -135,21 +142,71 @@ func (e *Executor) captionImages(ctx context.Context, req ir.Request, trace *Tra
 	cfg := e.currentCaptionConfig()
 
 	prompt := composeCaptionPrompt(cfg.prompt(), lastUserText(req), cfg.taskAware())
+	// The version covers what shapes a description regardless of the turn it
+	// was asked in: the base prompt and the describer list. The task-aware
+	// suffix is deliberately absent — it embeds the client's latest turn, so
+	// keying on it would miss on every turn.
+	version := captionVersion(cfg.prompt(), models)
+	clientKey := clientKeyIDFromContext(ctx)
 
-	descs := make([]*string, len(refs))
-	var usage ir.Usage
-	captioned := 0
+	// Resolve first: a remote image is fetched once, and the fetch is what
+	// yields the bytes the cache is keyed on.
+	inlines := make([]*ir.ImagePart, len(refs))
+	resolveErrs := make([]error, len(refs))
 	for i, ref := range refs {
 		inline, rerr := resolveImageForCaption(ctx, ref.Image)
 		if rerr != nil {
+			resolveErrs[i] = rerr
+			continue
+		}
+		inlines[i] = &inline
+	}
+
+	keys := make([]captionKey, len(refs))
+	hits := make([]*captionEntry, len(refs))
+	misses := 0
+	for i := range refs {
+		if inlines[i] == nil {
+			continue
+		}
+		keys[i] = captionImageKey(clientKey, version, *inlines[i])
+		if entry, ok := e.captions.get(keys[i]); ok {
+			hits[i] = entry
+			continue
+		}
+		misses++
+	}
+	if cacheOnly && misses > 0 {
+		// Nothing has been traced or changed yet, which is the point: a rescue
+		// that cannot describe every image leaves no trace of a substitution
+		// that did not happen.
+		return req, ir.Usage{}, false
+	}
+
+	descs := make([]*string, len(refs))
+	var usage ir.Usage
+	captioned, reused := 0, 0
+	for i := range refs {
+		if resolveErrs[i] != nil {
 			// The describer cannot be handed this image. Saying so is the only
 			// honest option: a provider that silently drops an image part
 			// would leave the vision model describing something it never
 			// received, and the answer would be built on that fiction.
-			trace.CapabilityFallback("vision", "image left in place: "+rerr.Error())
+			trace.CapabilityFallback("vision", "image left in place: "+resolveErrs[i].Error())
 			continue
 		}
-		text, entry, spent, err := e.captionImage(ctx, models, inline, prompt, cfg)
+		if hits[i] != nil {
+			text := hits[i].text
+			descs[i] = &text
+			captioned++
+			reused++
+			trace.ImageCaptionCached(hits[i].providerID, hits[i].model, len(text))
+			continue
+		}
+
+		started := e.cfg.now()
+		text, entry, spent, err := e.captionImage(ctx, models, *inlines[i], prompt, cfg)
+		latency := e.cfg.now().Sub(started).Milliseconds()
 		usage = addUsage(usage, spent)
 		if err != nil {
 			if entry.ProviderID != "" {
@@ -163,9 +220,13 @@ func (e *Executor) captionImages(ctx context.Context, req ir.Request, trace *Tra
 		// the image showed (ADR-014): the trace event is the timeline entry,
 		// the payload is the detail view — the instruction, the image's type
 		// and size, and the caption itself.
-		trace.ImageCaption(entry.ProviderID, entry.Model, len(text))
+		trace.ImageCaption(entry.ProviderID, entry.Model, len(text), latency, spent)
 		trace.CaptionPayload(entry.ProviderID, entry.Model, prompt,
-			inline.MediaType, inline.DecodedBytes(), text)
+			inlines[i].MediaType, inlines[i].DecodedBytes(), text)
+		e.captions.put(keys[i], &captionEntry{
+			key: keys[i], text: text,
+			providerID: entry.ProviderID, model: entry.Model,
+		})
 	}
 
 	if captioned == 0 {
@@ -173,9 +234,26 @@ func (e *Executor) captionImages(ctx context.Context, req ir.Request, trace *Tra
 			"chain exhausted on capability gaps; no configured vision model could describe the image")
 		return req, usage, false
 	}
-	trace.CapabilityFallback("vision",
-		"chain exhausted on capability gaps; described "+strconv.Itoa(captioned)+" image(s) and retrying the chain with the text in place of the image")
+	trace.CapabilityFallback("vision", rescueSummary(captioned, reused))
 	return req.ReplaceImages(refs, descs), usage, true
+}
+
+// rescueSummary states what the rescue did, in the terms the operator cares
+// about: how many images the answering model will see as text, and how many of
+// those cost nothing because they were already described.
+func rescueSummary(captioned, reused int) string {
+	const lead = "chain exhausted on capability gaps; "
+	switch {
+	case reused == captioned:
+		return lead + "reused " + strconv.Itoa(reused) +
+			" cached description(s) and retrying the chain with the text in place of the image"
+	case reused == 0:
+		return lead + "described " + strconv.Itoa(captioned) +
+			" image(s) and retrying the chain with the text in place of the image"
+	default:
+		return lead + "described " + strconv.Itoa(captioned-reused) + " image(s) and reused " +
+			strconv.Itoa(reused) + " cached one(s), then retrying the chain with the text in place of the image"
+	}
 }
 
 // resolveImageForCaption returns the image in the form the describer must be
@@ -277,8 +355,10 @@ func (e *Executor) captionImage(ctx context.Context, models []ChainEntry, img ir
 			err = errors.New("the vision model returned no text")
 		}
 		lastErr = err
-		e.reportFailure(entry.ProviderID)
-		e.reportQuota(entry.ProviderID, err, ClassifyError(err, PreStream))
+		c := ClassifyError(err, PreStream)
+		status, _, _ := AsUpstreamError(err)
+		e.reportFailureFor(entry.ProviderID, c, status)
+		e.reportQuota(entry.ProviderID, err, c)
 	}
 
 	if lastErr == nil {

@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
 // Trace is the route_trace of one request (plan Analysis E: every
@@ -160,6 +162,18 @@ type Event struct {
 	// LatencyMS is the attempt duration (per-attempt latency, FO-4).
 	LatencyMS int64 `json:"latency_ms,omitempty"`
 
+	// Usage is the token spend of the call an event describes, when it
+	// describes one (a described image, an answered tool call). It rides the
+	// event because the event is what the log writer turns into a sub-operation
+	// row, and that row must be able to state what the step cost.
+	Usage *ir.Usage `json:"usage,omitempty"`
+
+	// CacheHit marks an image_caption whose description came from the caption
+	// cache: the image was replaced, but no describer was called. Such an event
+	// is a substitution, not an operation — it carries no usage and no latency,
+	// and it produces no sub-operation row.
+	CacheHit bool `json:"cache_hit,omitempty"`
+
 	// ts is the event time (not serialized per event; the trace carries
 	// relative ordering, and events are appended in order).
 	ts time.Time
@@ -237,18 +251,34 @@ func (t *Trace) CapabilityFallback(capability, reason string) {
 	t.add(Event{Type: EventCapabilityFallback, Capability: capability, Reason: reason})
 }
 
-// ImageCaption records that a vision fallback model described an image and the
+// ImageCaption records that a vision model described an image and the
 // description was substituted into the request (ADR-014, never silent).
-func (t *Trace) ImageCaption(providerID, model string, chars int) {
+// latencyMS is the describer call, usage its token spend — the sub-operation
+// row the log derives from this event reports what the step cost.
+func (t *Trace) ImageCaption(providerID, model string, chars int, latencyMS int64, usage ir.Usage) {
+	spent := usage
 	t.add(Event{Type: EventImageCaption, ProviderID: providerID, Model: model,
+		LatencyMS: latencyMS, Usage: &spent,
 		Reason: strconv.Itoa(chars) + " character(s) described"})
+}
+
+// ImageCaptionCached records that an image was replaced by a description the
+// cache already held. The image bytes were seen before, so no describer was
+// called: the event names the model that produced the text originally, carries
+// no spend, and — because nothing went upstream — produces no log row.
+func (t *Trace) ImageCaptionCached(providerID, model string, chars int) {
+	t.add(Event{Type: EventImageCaption, ProviderID: providerID, Model: model,
+		CacheHit: true,
+		Reason:   strconv.Itoa(chars) + " character(s) reused from the caption cache"})
 }
 
 // EmulatedTool records a server-tool substitution by the §6.2 emulation
 // layer (never silent). detail carries the invocation summary (tool,
-// query/url, outcome).
-func (t *Trace) EmulatedTool(toolName, detail string) {
-	t.add(Event{Type: EventEmulatedTool, Reason: detail, To: toolName})
+// query/url, outcome); accountID names the emulating account that served the
+// call (empty when none did), latencyMS the invocation.
+func (t *Trace) EmulatedTool(toolName, accountID, detail string, latencyMS int64) {
+	t.add(Event{Type: EventEmulatedTool, ProviderID: accountID, Reason: detail,
+		To: toolName, LatencyMS: latencyMS})
 }
 
 // EmulatedToolAttempt records one account's outcome inside an emulated tool

@@ -169,14 +169,24 @@ func (a *api) streamChat(w http.ResponseWriter, r *http.Request, keyID string, r
 	// Mid-stream outcome correction (4a): dispatch success was reported
 	// at ExecuteStream; a stream that failed mid-stream still counts as
 	// a breaker failure.
-	a.executor.ReportStreamOutcome(lastProvider(execTrace), streamErr)
-
 	latency := time.Since(start).Milliseconds()
 	status := http.StatusOK
 	var errMsg string
 	if streamErr != nil {
 		// ErrorRedacted contract: credential shapes never persist raw.
 		errMsg = redactUpstreamMessage(streamErr.Message)
+	}
+	// An abandoned request is still logged — it really happened — but it is
+	// neither a success nor a failure for the provider, because nothing was
+	// learned about it. Reporting the dispatch success again here would clear a
+	// breaker the client's own departure had nothing to do with.
+	if gone, abandoned := abandonmentStatus(ctx); abandoned {
+		status = gone
+	} else {
+		// Mid-stream outcome correction (4a): dispatch success was reported at
+		// ExecuteStream; a stream that failed mid-stream still counts as a
+		// breaker failure.
+		a.executor.ReportStreamOutcome(lastProvider(execTrace), streamErr)
 	}
 	var usageArg *ir.Usage
 	if terminalUsage != nil {

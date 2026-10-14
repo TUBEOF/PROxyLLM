@@ -153,15 +153,26 @@ func (a *api) streamMessages(w http.ResponseWriter, r *http.Request, keyID strin
 	// Mid-stream outcome correction (4a): dispatch success was reported
 	// at ExecuteStream; a stream that failed mid-stream still counts as
 	// a breaker failure.
-	a.executor.ReportStreamOutcome(lastProvider(execTrace), streamErr)
-
 	var errMsg string
 	if streamErr != nil {
 		// ErrorRedacted contract: credential shapes never persist raw.
 		errMsg = redactUpstreamMessage(streamErr.Message)
 	}
+	// An abandoned request is still logged — it really happened — but it is
+	// neither a success nor a failure for the provider, because nothing was
+	// learned about it. Reporting the dispatch success again here would clear a
+	// breaker the client's own departure had nothing to do with.
+	status := http.StatusOK
+	if gone, abandoned := abandonmentStatus(ctx); abandoned {
+		status = gone
+	} else {
+		// Mid-stream outcome correction (4a): dispatch success was reported at
+		// ExecuteStream; a stream that failed mid-stream still counts as a
+		// breaker failure.
+		a.executor.ReportStreamOutcome(lastProvider(execTrace), streamErr)
+	}
 	a.writeRequestLog(ctx, keyID, req.Model, lastProvider(execTrace),
-		http.StatusOK, time.Since(start).Milliseconds(), terminalUsage,
+		status, time.Since(start).Milliseconds(), terminalUsage,
 		routeTrace(append(traces, execTrace)...), errMsg)
 }
 

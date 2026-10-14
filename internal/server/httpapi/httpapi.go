@@ -317,19 +317,21 @@ func requiredCapabilities(req ir.Request) provider.Capabilities {
 // Version 7 adds the emulated_tool_attempt event (2026-10-10: one account's
 // outcome inside an emulated web-tool invocation — the account walk is inside
 // the pool, so the log needs it to explain a web tool that found nothing).
+// Version 8 adds the per-operation facts the sub-operation rows report: the
+// describer call's latency and token usage, the emulating account and duration
+// of a web-tool call, and the cache-hit marker that distinguishes a substituted
+// description which cost nothing from one that was just produced.
 type chainTrace struct {
 	Version int               `json:"version"`
 	Events  []json.RawMessage `json:"events"`
 }
 
-// routeTraceVersion is the current route_trace schema version (v7 adds
-// emulated_tool_attempt — one account's outcome inside an emulated web-tool
-// invocation, 2026-10-10: the account walk happens inside the pool, and without
-// this the log could say a web tool ran but not why it found nothing; v6 added
-// the context_override event, the Claude Code "[1m]" marker strip, 2026-10-06;
-// previously 5 / implicit model routes ADR-011). The WebUI renders route_trace
-// as raw JSON, so bumps are additive.
-const routeTraceVersion = 7
+// routeTraceVersion is the current route_trace schema version (v8 adds the
+// per-operation facts — usage, latency and the cache-hit marker — that the
+// sub-operation rows of the log render; previously 7 / emulated_tool_attempt,
+// 6 / context_override, 5 / implicit model routes ADR-011). The WebUI renders
+// route_trace as raw JSON, so bumps are additive.
+const routeTraceVersion = 8
 
 // traceField is a request's marshalled route_trace plus the in-memory
 // sub-operation payloads that must never enter it (2026-10-10 Logs page).
@@ -404,6 +406,13 @@ const rollingConversationWindow = int64(1800) // 30 min, see conversation.go
 // in-flight entry (if any) is finished here, exactly once, carrying the
 // real rowid to the live stream.
 func (a *api) writeRequestLog(ctx context.Context, keyID, model, providerID string, status int, latencyMS int64, usage *ir.Usage, tf *traceField, errMsg string) {
+	// The record outlives the request by design. A client that hung up still
+	// made a request, and this row is the only trace of it — so the bookkeeping
+	// below (the row, its sub-operations, the usage counter) is detached from the
+	// request's cancellation instead of being abandoned with it. The values on
+	// the context are still the caller's: the log meta arrives through it.
+	ctx = context.WithoutCancel(ctx)
+
 	meta := metaFromCtx(ctx)
 
 	// The trace field carries both halves: the marshalled route_trace the row
@@ -578,6 +587,12 @@ func ChildOpsFromTrace(trace json.RawMessage) []storage.ChildLog {
 	}
 	out := make([]storage.ChildLog, 0, len(ops))
 	for _, op := range ops {
+		usage := json.RawMessage(`{}`)
+		if op.Usage != nil {
+			if raw, err := json.Marshal(op.Usage); err == nil {
+				usage = raw
+			}
+		}
 		out = append(out, storage.ChildLog{
 			TS:         time.Now().Unix(),
 			Kind:       string(op.Kind),
@@ -589,7 +604,9 @@ func ChildOpsFromTrace(trace json.RawMessage) []storage.ChildLog {
 			// the emulator's error text and a model-supplied URL) and this
 			// row is a curated surface of its own, so it passes the redactor
 			// exactly like ErrorRedacted — never a raw credential shape.
-			Detail: childRedactor.Redact(op.Detail),
+			Detail:    childRedactor.Redact(op.Detail),
+			LatencyMS: op.LatencyMS,
+			Usage:     usage,
 		})
 	}
 	return out

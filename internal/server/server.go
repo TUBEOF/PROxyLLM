@@ -185,6 +185,12 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		CapabilityFallbacks: capabilityFallbacks,
 		Caption:             resolveCaptionConfig(context.Background(), store),
 		OnCapabilityGap:     s.learnCapabilityGap,
+		// The same lookup the router uses, so the executor can decide BEFORE
+		// dispatch what the router can only decide about candidate order: when
+		// every candidate is known blind, an image request is going to be
+		// rejected, and an image whose description is already cached can skip
+		// that round trip entirely.
+		ModelVisionLookup: modelVisionLookup(store),
 	})
 
 	// Client-facing surfaces behind client-key auth (Analysis G control 1).

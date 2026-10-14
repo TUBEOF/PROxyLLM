@@ -19,6 +19,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/auth"
 	"github.com/tubeof/proxyllm/internal/provider"
 	"github.com/tubeof/proxyllm/internal/reqlog"
+	"github.com/tubeof/proxyllm/internal/routing"
 	"github.com/tubeof/proxyllm/internal/storage"
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
@@ -107,7 +108,12 @@ func (a *api) beginRequest(r *http.Request, protocol string, raw []byte, req ir.
 		meta.finish, runID = a.stream.Start(in)
 		meta.RunID = runID
 	}
-	r = r.WithContext(context.WithValue(r.Context(), logMetaCtxKey{}, meta))
+	// The client key identity is known here and nowhere else as cheaply, and
+	// the routing layer needs it for one thing: keeping cached image
+	// descriptions inside the client they came from. Every surface decodes
+	// through here, so this is where it enters the context.
+	ctx := routing.WithClientKeyID(r.Context(), auth.ClientKeyIDFromContext(r.Context()))
+	r = r.WithContext(context.WithValue(ctx, logMetaCtxKey{}, meta))
 	// The conversation is known here and nowhere else as cheaply. Only the
 	// reference is taken; encoding it is deferred to the payload write.
 	a.captureRequest(r.Context(), req)

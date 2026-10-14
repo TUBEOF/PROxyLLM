@@ -1405,7 +1405,7 @@ func (a *AdminAPI) logsEnvelope(ctx context.Context, logs []storage.RequestLog, 
 	// failure is explicit on the wire, so the WebUI can say so instead of
 	// showing a cleaned-up route.
 	byParent, childErr := a.rawLogChildren(ctx, logs)
-	kids, failed := logChildrenField(byParent, childErr, names)
+	kids, failed := logChildrenField(byParent, childErr, indexLogRows(out["logs"]), names)
 	if failed {
 		out["children_unavailable"] = true
 	}
@@ -1415,11 +1415,22 @@ func (a *AdminAPI) logsEnvelope(ctx context.Context, logs []storage.RequestLog, 
 	return out
 }
 
+// indexLogRows keys the already-projected rows by id, so a sub-operation can
+// read what it inherits from the request it belongs to without a second query.
+func indexLogRows(rows any) map[int64]logDTO {
+	list, _ := rows.([]logDTO)
+	out := make(map[int64]logDTO, len(list))
+	for _, r := range list {
+		out[r.ID] = r
+	}
+	return out
+}
+
 // logChildrenField is the single decision point for the `children` field:
 // an absent map (no children anywhere) yields no field and no failure; a
 // successful read projects; a read error yields no field and failed=true.
 // Pure, so the three states are unit-testable without a store.
-func logChildrenField(byParent map[int64][]storage.ChildLog, err error, names logNames) (field map[string][]childLogDTO, failed bool) {
+func logChildrenField(byParent map[int64][]storage.ChildLog, err error, parents map[int64]logDTO, names logNames) (field map[string][]childLogDTO, failed bool) {
 	if err != nil {
 		return nil, true
 	}
@@ -1428,6 +1439,11 @@ func logChildrenField(byParent map[int64][]storage.ChildLog, err error, names lo
 	}
 	out := make(map[string][]childLogDTO, len(byParent))
 	for parentID, ops := range byParent {
+		// A step of a request carries the request's own facts: which client key
+		// opened it and on which surface. Inheriting them here rather than
+		// storing them per step keeps one source of truth, and it works for
+		// rows written before this existed.
+		parent := parents[parentID]
 		dtos := make([]childLogDTO, 0, len(ops))
 		for _, op := range ops {
 			dtos = append(dtos, childLogDTO{
@@ -1440,6 +1456,12 @@ func logChildrenField(byParent map[int64][]storage.ChildLog, err error, names lo
 				FromRef:    op.FromRef,
 				ToRef:      op.ToRef,
 				Detail:     op.Detail,
+				LatencyMS:  op.LatencyMS,
+				Usage:      op.Usage,
+				Protocol:   parent.Protocol,
+				ClientKeyID: parent.ClientKeyID,
+				KeyName:    parent.KeyName,
+				KeyPrefix:  parent.KeyPrefix,
 				// A failover's from/to are account ids in the trace; the
 				// operator needs the account names. A ref that is not a
 				// known account (a model id, or a deleted row) passes
@@ -1487,6 +1509,21 @@ type childLogDTO struct {
 	ProviderKind string `json:"provider_kind,omitempty"`
 	FromName     string `json:"from_name,omitempty"`
 	ToName       string `json:"to_name,omitempty"`
+
+	// What the step cost, when it was a step that cost something. Tokens ride
+	// the same JSON object the request row carries, so the WebUI renders one
+	// shape for both; latency is milliseconds. A transition has neither.
+	LatencyMS int64           `json:"latency_ms,omitempty"`
+	Usage     json.RawMessage `json:"usage,omitempty"`
+
+	// Inherited from the request this step belongs to: the client key that
+	// opened it and the surface it arrived on. They are the request's facts,
+	// not the step's, so they are projected from the parent row instead of
+	// being stored again on every step.
+	Protocol    string `json:"protocol,omitempty"`
+	ClientKeyID string `json:"client_key_id,omitempty"`
+	KeyName     string `json:"key_name,omitempty"`
+	KeyPrefix   string `json:"key_prefix,omitempty"`
 }
 
 // logsToDTO projects request-log rows (the shared shape of both reads).

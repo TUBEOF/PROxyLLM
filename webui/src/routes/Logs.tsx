@@ -6,7 +6,7 @@ import { useLogStream } from '../hooks/useLogStream';
 import { Drawer } from '../components/Overlays';
 import { LiveBadge } from '../components/LiveBadge';
 import { IconChevronLeft, IconChevronRight } from '../icons';
-import { LogRow, tpsOf, type LogRowShape, type ParentShape } from '../components/LogRow';
+import { LogRow, keyDisplay, tokensCell, tpsOf, type LogRowShape, type ParentShape } from '../components/LogRow';
 import {
   ChainSummary,
   TraceTimeline,
@@ -487,6 +487,7 @@ function ChildDetail({
   onOpenParent: () => void;
 }) {
   const account = child.provider_name ?? (child.provider_id ? names.get(child.provider_id) : undefined);
+  const childTokens = tokensCell(child.usage);
   return (
     <div className="form">
       <div className="fieldset">
@@ -506,6 +507,20 @@ function ChildDetail({
           </dd>
           <dt className="muted">When</dt>
           <dd className="mono" style={{ margin: 0 }}>{fmtTime(child.ts)}</dd>
+          <dt className="muted">Duration</dt>
+          <dd className="mono" style={{ margin: 0 }}>
+            {child.latency_ms ? `${child.latency_ms} ms` : '—'}
+          </dd>
+          <dt className="muted">Tokens</dt>
+          <dd className="mono" style={{ margin: 0 }}>
+            <span className="txt-muted">TI:</span> {childTokens[0]}{' '}
+            <span className="txt-muted">TO:</span> {childTokens[1]}{' '}
+            <span className="txt-muted">CR:</span> {childTokens[2]}
+          </dd>
+          <dt className="muted">Key</dt>
+          <dd className="mono" style={{ margin: 0 }}>
+            {keyDisplay(child.key_name, child.key_prefix, child.client_key_id)}
+          </dd>
           <dt className="muted">Request</dt>
           <dd className="mono" style={{ margin: 0 }}>#{parent.id} · {parent.model}</dd>
         </dl>
