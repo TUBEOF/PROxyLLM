@@ -16,7 +16,7 @@ services:
   proxyllm:
     # Pin a release tag for reproducible deployments; :latest tracks the
     # newest release. IMAGE overrides the default for local development.
-    image: ${IMAGE:-ghcr.io/tubeof/proxyllm:v1.13.0}
+    image: ${IMAGE:-ghcr.io/tubeof/proxyllm:v1.14.0}
     # Run as root: the bind-mounted ./data is owned by the invoking user
     # (or created by Docker as root), and a fixed non-root UID inside the
     # container cannot be made to match every host — root sidesteps the
