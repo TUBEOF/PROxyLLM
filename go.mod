@@ -3,15 +3,16 @@ module github.com/tubeof/proxyllm
 go 1.27.0
 
 require (
-	github.com/anthropics/anthropic-sdk-go v1.72.0
-	github.com/openai/openai-go/v3 v3.61.0
-	golang.org/x/crypto v0.57.0
-	modernc.org/sqlite v1.58.0
+	github.com/anthropics/anthropic-sdk-go v1.80.0
+	github.com/openai/openai-go/v3 v3.77.0
+	golang.org/x/crypto v0.58.0
+	modernc.org/sqlite v1.60.1
 )
 
 require (
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
+	github.com/coder/websocket v1.8.15 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/invopop/jsonschema v0.14.0 // indirect
@@ -25,9 +26,9 @@ require (
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.48.0 // indirect
-	modernc.org/libc v1.75.6 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
+	modernc.org/libc v1.77.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
