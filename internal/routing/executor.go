@@ -76,7 +76,7 @@ type ExecutorConfig struct {
 	// the tool-call round-trip loop in Execute. Nil disables actual
 	// emulation but keeps the loop: model tool calls against emulated
 	// tools are answered with a protocol-conform "unavailable" error
-	// result (the CLAUDE.md degrade contract: no Firecrawl key →
+	// result (the ADR-015 degrade contract: no Firecrawl key →
 	// documented unavailable errors), then re-dispatched.
 	Emulator Emulator
 

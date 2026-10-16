@@ -55,4 +55,9 @@ webui/e2e/fixturesrv-bin.exe
 webui/e2e/.artifacts/
 webui/e2e/.artifacts-empty/
 webui/playwright-report/
+# Go build outputs at the repo root: the .exe line was not enough —
+# `go build ./webui/e2e/fixturesrv` from the root produced /fixturesrv,
+# which got committed (174825a) and grew the pack by 19 MB.
+/fixturesrv
+/fixturesrv-bin
 /fixturesrv.exe

@@ -65,7 +65,7 @@ func (a *api) handleChat(w http.ResponseWriter, r *http.Request) {
 // annotated (logmeta: protocol/features/conversation + in-flight
 // registration) — every writeRequestLog call site below reads the meta
 // from its context. GET /v1/models stays unlogged by design: no upstream
-// dispatch, no usage, no conversation context (see repo CLAUDE.md).
+// dispatch, no usage, no conversation context.
 func (a *api) runChat(w http.ResponseWriter, r *http.Request, raw []byte, req ir.Request) {
 	ew := openAIErrorWriter()
 

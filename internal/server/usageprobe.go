@@ -2,8 +2,8 @@ package server
 
 // Usage prober (ADR-012): fetches one account's usage/limit state from
 // ollama.com. The target is a FIXED host — operator or requester input
-// can never point it elsewhere (no SSRF surface; the CLAUDE.md SSRF
-// guard rule). The account's session cookie authenticates the scrape;
+// can never point it elsewhere (no SSRF surface; the SSRF guard rule,
+// docs/security.md). The account's session cookie authenticates the scrape;
 // the cookie and the page body are never logged (redactor + no log call
 // here at all).
 //

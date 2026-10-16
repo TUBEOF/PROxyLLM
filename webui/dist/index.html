@@ -1,18 +1,18 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
-    <title>PROxyLLM Console</title>
-    <!-- Classic Vite SPA mode (research P-1): one external hashed module
-         bundle, zero inline scripts — keeps the Go CSP at script-src
-         'self' without nonces or unsafe-inline. -->
-    <script type="module" crossorigin src="/assets/index-Cg_PYsmo.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/vendor-Bl5Jhv8K.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-BNMmTqbI.css">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PROxyLLM WebUI — not built</title>
   </head>
   <body>
-    <div id="root"></div>
+    <h1>WebUI assets are missing</h1>
+    <p>
+      This placeholder is committed so the Go binary builds without a Node toolchain. The real single-page app is
+      produced by the CI pipeline (<code>npm ci &amp;&amp; npm run build</code> in <code>webui/</code>) before
+      <code>go build</code>, which replaces this file via the <code>//go:embed all:dist</code> directive in
+      <code>webui/embed.go</code>. To build the WebUI locally, run <code>npm run build</code> in <code>webui/</code>
+      and rebuild the server.
+    </p>
   </body>
 </html>
