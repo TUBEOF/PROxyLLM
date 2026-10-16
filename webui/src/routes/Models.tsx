@@ -6,8 +6,8 @@ import type {
   ModelSyncRunResponse,
   ModelsResponse,
   ModelTestResponse,
-  Provider,
   ProvidersResponse,
+  ProviderTypesResponse,
   SettingsResponse,
 } from '../types';
 import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation } from '../hooks';
@@ -28,11 +28,12 @@ import { IconPlus } from '../icons';
 // application still recorded in route_trace, never silent). Legacy compat
 // blobs on existing rows keep working as read-only overrides.
 //
-// Layout: provider-grouped collapsible sections with model
-// CARDS (not a flat table) — the per-model test button needs a card-level
-// footer, and the grouping matches how operators think (per account). Each
-// card carries a Test button: one minimal "Sag OK" round trip against the
-// model's provider, minimal output (status + reply or plain-language
+// Layout: provider-TYPE-grouped collapsible sections with model CARDS (not
+// a flat table) — the per-model test button needs a card-level footer, and
+// the grouping matches how operators think (a provider type like "Ollama
+// Cloud", not the individual account; the account rides each model card).
+// Each card carries a Test button: one minimal "Sag OK" round trip against
+// the model's provider, minimal output (status + reply or plain-language
 // cause). Block layout throughout — no variable-length text in flex-wrap
 // lines above other content (the v1.0.1/v1.0.2 screenshot lesson).
 
@@ -72,8 +73,15 @@ export default function Models() {
     (signal) => apiCall<ProvidersResponse>('GET', '/api/admin/providers', undefined, signal),
     CONFIG_LIVE_MS,
   );
+  // The provider-type catalog: its labels and its order drive the grouping
+  // below (same source the Providers page renders).
+  const { data: typesData } = useLiveData<ProviderTypesResponse>(
+    (signal) => apiCall<ProviderTypesResponse>('GET', '/api/admin/provider-types', undefined, signal),
+    CONFIG_LIVE_MS,
+  );
   const models = useMemo(() => data?.models ?? [], [data]);
   const providers = useMemo(() => providersData?.providers ?? [], [providersData]);
+  const types = useMemo(() => typesData?.types ?? [], [typesData]);
   // providerNames: the sync summary names the accounts it touched; a
   // provider that has since been deleted falls back to its id.
   const providerNames = useMemo(
@@ -273,33 +281,51 @@ export default function Models() {
     [],
   );
 
-  // Provider grouping: models bucket by their provider, in
-  // provider-listing order; providers without models appear with an empty
-  // hint so the grouping never hides an account.
+  // Grouping: models bucket by their provider's TYPE — the operator's unit
+  // ("Ollama Cloud"), not the individual account — in the catalog's type
+  // order. Types with accounts but no models appear with an empty hint so
+  // the grouping never hides an account; models of deleted providers keep
+  // their own group.
   const groups = useMemo(() => {
-    const byProvider = new Map<string, Model[]>();
+    const typeOf = new Map(providers.map((p) => [p.id, p.type]));
+    const byType = new Map<string, Model[]>();
+    const dangling: Model[] = [];
     for (const m of models) {
-      const list = byProvider.get(m.provider_id) ?? [];
+      const typ = typeOf.get(m.provider_id);
+      if (typ === undefined) {
+        dangling.push(m);
+        continue;
+      }
+      const list = byType.get(typ) ?? [];
       list.push(m);
-      byProvider.set(m.provider_id, list);
+      byType.set(typ, list);
     }
-    const out: { provider: Provider; models: Model[] }[] = [];
+    const accountCount = new Map<string, number>();
     for (const p of providers) {
-      out.push({ provider: p, models: byProvider.get(p.id) ?? [] });
+      accountCount.set(p.type, (accountCount.get(p.type) ?? 0) + 1);
+    }
+    const out: { type: string; label: string; accounts: number; models: Model[] }[] = [];
+    const seen = new Set<string>();
+    const add = (typ: string, label: string) => {
+      seen.add(typ);
+      out.push({ type: typ, label, accounts: accountCount.get(typ) ?? 0, models: byType.get(typ) ?? [] });
+    };
+    for (const t of types) {
+      if (accountCount.has(t.type)) add(t.type, t.label);
+    }
+    // A type an account carries but the catalog does not know (renamed or
+    // removed type — the UI never hides data it was given).
+    for (const typ of accountCount.keys()) {
+      if (!seen.has(typ)) add(typ, typ);
     }
     // Models of deleted providers (dangling rows should not exist — the FK
-    // guarantees it — but the UI never hides data it was given).
-    const known = new Set(providers.map((p) => p.id));
-    for (const [pid, list] of byProvider) {
-      if (!known.has(pid)) {
-        // A dangling group: the provider row is gone (deleted, or a
-        // renamed id), so the id is all that remains. Named as such so the
-        // header does not read like a real account name.
-        out.push({ provider: { id: pid, type: '', name: `${pid} (unknown provider)`, config: null }, models: list });
-      }
+    // guarantees it — but the UI never hides data it was given). The card's
+    // account line names each row's provider id.
+    if (dangling.length > 0) {
+      out.push({ type: '', label: 'unknown provider', accounts: 0, models: dangling });
     }
     return out;
-  }, [models, providers]);
+  }, [models, providers, types]);
 
   const drawerError = formError ?? save.error ?? del.error;
   const drawerPending = save.pending || del.pending;
@@ -427,14 +453,17 @@ export default function Models() {
           </div>
         ) : (
           <div className="w-full">
-            {/* Provider-grouped collapsible sections: each
-                provider is one <details> (native, no JS state — the
+            {/* Provider-type-grouped collapsible sections: each TYPE is one
+                <details> (native, no JS state — the
                 v1.0.x screenshot lesson favors structural primitives),
                 its models render as cards in a grid. Block layout only. */}
             {groups.map((g) => (
-              <details key={g.provider.id} className="fieldset" style={{ marginBottom: 8 }} open={groups.length === 1}>
+              <details key={g.type || '__unknown__'} className="fieldset" style={{ marginBottom: 8 }} open={groups.length === 1}>
                 <summary style={{ cursor: 'pointer', fontWeight: 600, padding: '4px 0' }}>
-                  {g.provider.name} ({g.models.length} {g.models.length === 1 ? 'model' : 'models'})
+                  {g.label}
+                  {' ('}
+                  {g.accounts > 0 && `${g.accounts} ${g.accounts === 1 ? 'account' : 'accounts'} · `}
+                  {g.models.length} {g.models.length === 1 ? 'model' : 'models'})
                 </summary>
                 <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', marginTop: 8 }}>
                   {g.models.length === 0 && (
@@ -452,6 +481,11 @@ export default function Models() {
                         </div>
                         <div>
                           <span className="mono" style={{ fontSize: 'var(--fs-sm)' }}>{m.id}</span>
+                        </div>
+                        {/* The account the model belongs to: the section header
+                            names the type, so the card owns the account. */}
+                        <div className="muted" style={{ fontSize: 'var(--fs-sm)' }}>
+                          account: {providerNames.get(m.provider_id) ?? m.provider_id}
                         </div>
                         <div>
                           <span className={m.origin === 'synced' ? 'badge info' : 'badge paused'}>
