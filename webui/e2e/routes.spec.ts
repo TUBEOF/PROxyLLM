@@ -64,13 +64,16 @@ test.describe('signed in', () => {
   // 2026-09-22: the per-model Test button against the scripted prv-test
   // account — a deterministic "OK" answer (fixtureTestProvider), no live
   // upstream. Latency is not rendered, so the badge is stable across runs.
-  // The group's <details> starts collapsed (multiple fixture groups), so
-  // open it first.
+  // The page groups by provider TYPE (2026-10-16), and two fixture accounts
+  // share the custom-openai type, so the section no longer names the
+  // account: the CARD does. The group starts collapsed (multiple fixture
+  // groups), so open it first.
   test('models test button', async ({ page }) => {
     await page.goto('/models');
     await readyForCapture(page);
-    const card = page.locator('details', { hasText: 'Test target' });
-    await card.locator('summary').click();
+    const group = page.locator('details', { hasText: 'account: Test target' });
+    await group.locator('summary').first().click();
+    const card = group.locator('div.fieldset', { hasText: 'account: Test target' });
     await card.locator('button', { hasText: 'Test' }).first().click();
     await expect(
       page.locator('p[role="status"]', { hasText: 'OK' }),
