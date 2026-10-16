@@ -199,9 +199,9 @@ func (DecisionsCodec) EncodeRequest(req ir.DecisionRequest) ([]byte, error) {
 // --- response ---
 
 type decisionsResponseWire struct {
-	Model   string                  `json:"model"`
-	Answers []decisionsAnswerInWire `json:"answers"`
-	Usage   *decisionsUsageWire     `json:"usage"`
+	Model   string                `json:"model,omitempty"`
+	Answers []decisionsAnswerWire `json:"answers"`
+	Usage   *decisionsUsageWire   `json:"usage,omitempty"`
 }
 
 type decisionsUsageWire struct {
@@ -209,18 +209,25 @@ type decisionsUsageWire struct {
 	OutputTokens int `json:"output_tokens"`
 }
 
-type decisionsAnswerInWire struct {
-	Type          string  `json:"type"`
-	Name          string  `json:"name"`
-	Probability   float64 `json:"probability"`
-	Choice        string  `json:"choice"`
-	Score         float64 `json:"score"`
-	Confidence    float64 `json:"confidence"`
-	Probabilities []struct {
-		Value       json.RawMessage `json:"value"` // string (choice) or number (score level index)
-		Label       string          `json:"label"`
-		Probability float64         `json:"probability"`
-	} `json:"probabilities"`
+// decisionsAnswerWire serves both directions: pointers + omitempty make
+// the encode emit only the fields an answer's type owns (a choice entry
+// carries no probability/score; a predicate none of choice/score/
+// confidence — the guide's examples do the same), while decode fills
+// whatever the body holds.
+type decisionsAnswerWire struct {
+	Type          string              `json:"type"`
+	Name          string              `json:"name"`
+	Probability   *float64            `json:"probability,omitempty"`
+	Choice        string              `json:"choice,omitempty"`
+	Probabilities []decisionsProbWire `json:"probabilities,omitempty"`
+	Score         *float64            `json:"score,omitempty"`
+	Confidence    *float64            `json:"confidence,omitempty"`
+}
+
+type decisionsProbWire struct {
+	Value       json.RawMessage `json:"value"` // string (choice) or number (score level index)
+	Label       string          `json:"label,omitempty"`
+	Probability float64         `json:"probability"`
 }
 
 // DecodeResponse translates a Decisions response body into the IR decision
@@ -236,11 +243,16 @@ func (DecisionsCodec) DecodeResponse(raw []byte) (ir.DecisionResponse, error) {
 		out.Usage = &ir.Usage{InputTokens: w.Usage.InputTokens, OutputTokens: w.Usage.OutputTokens}
 	}
 	for _, a := range w.Answers {
-		ans := ir.DecisionAnswer{Name: a.Name, Confidence: a.Confidence}
+		ans := ir.DecisionAnswer{Name: a.Name}
+		if a.Confidence != nil {
+			ans.Confidence = *a.Confidence
+		}
 		switch a.Type {
 		case "predicate":
 			ans.Type = ir.DecisionPredicate
-			ans.Probability = a.Probability
+			if a.Probability != nil {
+				ans.Probability = *a.Probability
+			}
 		case "choice":
 			ans.Type = ir.DecisionChoice
 			ans.Choice = a.Choice
@@ -251,7 +263,9 @@ func (DecisionsCodec) DecodeResponse(raw []byte) (ir.DecisionResponse, error) {
 			}
 		case "score":
 			ans.Type = ir.DecisionScore
-			ans.Score = a.Score
+			if a.Score != nil {
+				ans.Score = *a.Score
+			}
 			for _, p := range a.Probabilities {
 				ans.Probabilities = append(ans.Probabilities, ir.DecisionProbability{
 					Value: rawValueString(p.Value), Label: p.Label, Probability: p.Probability,
@@ -271,36 +285,32 @@ func (DecisionsCodec) DecodeResponse(raw []byte) (ir.DecisionResponse, error) {
 // response body. The usage object is emitted only when the IR carries one —
 // the reference documents none for this API, and zeros would be a claim.
 func (DecisionsCodec) EncodeResponse(resp ir.DecisionResponse) ([]byte, error) {
-	out := decisionsResponseWire{Model: resp.Model, Answers: make([]decisionsAnswerInWire, 0, len(resp.Answers))}
+	out := decisionsResponseWire{Model: resp.Model, Answers: make([]decisionsAnswerWire, 0, len(resp.Answers))}
 	for _, a := range resp.Answers {
-		w := decisionsAnswerInWire{Name: a.Name}
+		w := decisionsAnswerWire{Name: a.Name}
 		switch a.Type {
 		case ir.DecisionPredicate:
 			w.Type = "predicate"
 			p := a.Probability
-			w.Probability = p
+			w.Probability = &p
 		case ir.DecisionChoice:
 			w.Type = "choice"
 			w.Choice = a.Choice
 			c := a.Confidence
-			w.Confidence = c
+			w.Confidence = &c
 			for _, pr := range a.Probabilities {
 				v, err := json.Marshal(pr.Value)
 				if err != nil {
 					return nil, fmt.Errorf("decisions: encode probability value: %w", err)
 				}
-				w.Probabilities = append(w.Probabilities, struct {
-					Value       json.RawMessage `json:"value"`
-					Label       string          `json:"label"`
-					Probability float64         `json:"probability"`
-				}{Value: v, Probability: pr.Probability})
+				w.Probabilities = append(w.Probabilities, decisionsProbWire{Value: v, Probability: pr.Probability})
 			}
 		case ir.DecisionScore:
 			w.Type = "score"
 			s := a.Score
-			w.Score = s
+			w.Score = &s
 			c := a.Confidence
-			w.Confidence = c
+			w.Confidence = &c
 			for _, pr := range a.Probabilities {
 				// Level indices ride as numbers on this wire; a value that
 				// is not a zero-based index stays a string rather than
@@ -309,11 +319,9 @@ func (DecisionsCodec) EncodeResponse(resp ir.DecisionResponse) ([]byte, error) {
 				if n, err := strconv.Atoi(pr.Value); err == nil {
 					v = json.RawMessage(strconv.Itoa(n))
 				}
-				w.Probabilities = append(w.Probabilities, struct {
-					Value       json.RawMessage `json:"value"`
-					Label       string          `json:"label"`
-					Probability float64         `json:"probability"`
-				}{Value: v, Label: pr.Label, Probability: pr.Probability})
+				w.Probabilities = append(w.Probabilities, decisionsProbWire{
+					Value: v, Label: pr.Label, Probability: pr.Probability,
+				})
 			}
 		case ir.DecisionRefusal:
 			w.Type = "refusal"
