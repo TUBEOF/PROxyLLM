@@ -29,19 +29,26 @@ aliases (logged) until fixed.
 ```json
 {
   "claude-sonnet-4-5": "gpt-5.2",
-  "sonnet": "ollama-cloud/gpt-oss:120b",
-  "haiku": "ollama-cloud/gpt-oss:120b"
+  "claude-sonnet-*": "ollama-cloud/gpt-oss:120b",
+  "claude-haiku-*": "ollama-cloud/gpt-oss:120b"
 }
 ```
 
-Bare family entries are worth adding: an alias key that appears as a token
-of a `claude-*` name serves every versioned ID of that family — `sonnet`
-covers `claude-sonnet-4-6`, `haiku` covers `claude-haiku-5-5`, and even the
-dated spelling `claude-3-5-sonnet-20241022`. Claude Code fires auxiliary
-requests of its own under those pinned IDs (the WebFetch summarize call,
-the auto-mode classifier); the IDs change with releases, so one entry per
-release would be a losing race. Exact entries always win over family
-entries.
+Wildcard entries are worth adding: an alias key may be a `*` pattern (`*`
+matches any run of characters), so `claude-sonnet-*` covers
+`claude-sonnet-4-6` and `claude-haiku-*` covers `claude-haiku-5-5` — the
+dated spelling `claude-3-5-sonnet-20241022` needs its own pattern. Claude
+Code fires auxiliary requests of its own under those pinned IDs (the
+WebFetch summarize call, the auto-mode classifier); the IDs change with
+releases, so one entry per release would be a losing race. An exact entry
+always wins over a pattern, and among overlapping patterns the one with
+the most literal characters does.
+
+**Migration (2026-10-16):** a bare key such as `sonnet` is an exact alias
+only — the former family token match is gone (it was a second, implicit
+match mechanism, and the confusion was the point of removing it). An
+operator who relied on it writes the pattern instead:
+`sonnet` → `claude-sonnet-*`.
 
 A name nothing maps still answers the reference's model-not-found
 envelope: `404` `not_found_error` with the message `model: <id>`. That

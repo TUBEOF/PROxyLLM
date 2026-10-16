@@ -116,6 +116,35 @@ test('a model cell is a single line on both the request and the sub-row', async 
   await expect(page.locator('td.cell-sub')).toHaveCount(0);
 });
 
+// An alias request keeps the client-typed name in the model cell and names
+// the configured target inline — the alias must be legible without opening
+// the drawer, and it must not cost the cell its single line (the row height
+// the tree elbow measures against). The seeded row's trace carries the hop
+// (`claude-sonnet-4-6` → `claude-sonnet-5`); the full hop rides the title.
+test('an alias request shows its configured target inline, on one line', async ({ page }) => {
+  await page.goto('/logs');
+  await readyForCapture(page);
+
+  const row = page.locator('tr.log-row', { hasText: 'claude-sonnet-4-6' }).first();
+  const cell = row.locator('td.col-model');
+  await expect(cell).toContainText('claude-sonnet-4-6');
+  await expect(cell.locator('.alias-hop')).toHaveText('alias → claude-sonnet-5');
+  await expect(cell).toHaveAttribute('title', 'claude-sonnet-4-6 → claude-sonnet-5');
+
+  // Every client rect of the cell's contents must share one top: the inline
+  // hop never wraps the cell onto a second line.
+  const tops = await cell.evaluate((el) => {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    return Array.from(range.getClientRects()).map((r) => Math.round(r.top));
+  });
+  expect(new Set(tops).size, 'the alias hop must not wrap the model cell').toBe(1);
+
+  // The drawer's Model field carries the same hop — the two views agree.
+  await row.click();
+  await expect(page.locator('.drawer .alias-hop')).toHaveText('alias → claude-sonnet-5');
+});
+
 // The seeded emulated-tool detail carries a token-shaped value. The row no
 // longer prints the op's detail (that is what made it two lines tall), so the
 // property is now pinned where the detail IS rendered: the request drawer's

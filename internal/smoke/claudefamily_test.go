@@ -5,13 +5,13 @@ package smoke
 //
 // Claude Code fires auxiliary requests under versioned Claude IDs its own
 // release pins (claude-sonnet-4-6, claude-haiku-5-5 — the WebFetch apply
-// call, the auto-mode classifier). The operator maps the family with bare
-// alias entries; this smoke pins that the whole production stack (router
-// with family aliases → executor → ollama-cloud provider → live upstream →
-// Anthropic-shaped response) serves such an ID with a real answer, and that
-// a name nothing maps answers the reference's model-not-found envelope
-// (404 + not_found_error + "model: <id>") — the shape Claude Code
-// classifies before it runs its own fallback.
+// call, the auto-mode classifier). The operator maps each family with a
+// wildcard alias entry (claude-haiku-*); this smoke pins that the whole
+// production stack (router with wildcard aliases → executor → ollama-cloud
+// provider → live upstream → Anthropic-shaped response) serves such an ID
+// with a real answer, and that a name nothing maps answers the reference's
+// model-not-found envelope (404 + not_found_error + "model: <id>") — the
+// shape Claude Code classifies before it runs its own fallback.
 //
 // Requires PROXYLLM_SMOKE=1 and PROXYLLM_SMOKE_OLLAMA_CLOUD_KEY.
 // PROXYLLM_SMOKE_OLLAMA_CLOUD_MODEL overrides the target model (default
@@ -36,7 +36,7 @@ import (
 
 // smokeClaudeFamilyEnv assembles the production stack over the live
 // upstream: one ollama-cloud account, one rule serving the target model, and
-// the operator's bare family aliases.
+// the operator's wildcard family aliases.
 func smokeClaudeFamilyEnv(t *testing.T, target string) (*httptest.Server, *storage.Store) {
 	t.Helper()
 	key := smokeEnv(t, "PROXYLLM_SMOKE_OLLAMA_CLOUD_KEY", "")
@@ -62,7 +62,7 @@ func smokeClaudeFamilyEnv(t *testing.T, target string) (*httptest.Server, *stora
 		Rules: []routing.Rule{
 			{MatchModel: target, Chain: []string{"smoke-ollama"}, Priority: 100, Enabled: true},
 		},
-		Aliases: map[string]string{"sonnet": target, "haiku": target},
+		Aliases: map[string]string{"claude-sonnet-*": target, "claude-haiku-*": target},
 	}, routing.WithRegistry(reg), routing.WithHealth(health),
 		routing.WithModelLookup(func(ctx context.Context, modelID string) (string, bool) {
 			row, err := st.GetModel(ctx, modelID)
@@ -83,9 +83,9 @@ func smokeClaudeFamilyEnv(t *testing.T, target string) (*httptest.Server, *stora
 	return srv, st
 }
 
-// TestSmoke_ClaudeFamilyAliasServesAuxiliaryRequests pins the family entry
+// TestSmoke_ClaudeFamilyAliasServesAuxiliaryRequests pins the wildcard entry
 // against the LIVE upstream: claude-haiku-5-5 (the auto-mode classifier's
-// pinned ID) resolves through the bare "haiku" entry and gets a real answer.
+// pinned ID) resolves through the claude-haiku-* alias and gets a real answer.
 func TestSmoke_ClaudeFamilyAliasServesAuxiliaryRequests(t *testing.T) {
 	if !smokeEnabled(t) {
 		return
@@ -140,7 +140,7 @@ func TestSmoke_ClaudeFamilyAliasServesAuxiliaryRequests(t *testing.T) {
 	if !aliased {
 		t.Errorf("no alias event from claude-haiku-5-5 in route_trace: %s", logs[0].RouteTrace)
 	}
-	t.Logf("claude-haiku-5-5 served via the family entry %q on the live upstream", target)
+	t.Logf("claude-haiku-5-5 served via the claude-haiku-* alias %q on the live upstream", target)
 }
 
 // TestSmoke_ModelNotFoundContract pins the 404 a name nothing maps answers:

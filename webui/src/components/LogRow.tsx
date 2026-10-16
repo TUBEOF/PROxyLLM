@@ -13,7 +13,7 @@
 import { memo } from 'react';
 import type { KeyboardEvent } from 'react';
 import type { ChildLog, RequestLog, RunningRequest } from '../types';
-import { childCls, childTitle } from './RouteTrace';
+import { aliasHop, childCls, childTitle } from './RouteTrace';
 
 export type LogRowShape =
   | { kind: 'done'; row: RequestLog; healed: boolean; childCount?: number }
@@ -31,11 +31,6 @@ interface UsageShape {
   cache_read_input_tokens?: number;
 }
 
-interface TraceEvent {
-  type?: string;
-  from?: string;
-}
-
 const fmtTime = (ts: number): string => {
   const d = new Date(ts * 1000);
   return d.toTimeString().slice(0, 8);
@@ -43,26 +38,6 @@ const fmtTime = (ts: number): string => {
 
 const fmtNum = (n: number | undefined): string =>
   typeof n === 'number' && Number.isFinite(n) ? n.toLocaleString('en-US') : '—';
-
-// requestedModel: the client-requested model — the first model_resolved
-// trace event's from, falling back to the stored (client-echoed) model.
-function requestedModel(l: RequestLog): string {
-  const trace = l.route_trace as { events?: TraceEvent[] } | null;
-  if (trace !== null && trace !== undefined && Array.isArray(trace.events)) {
-    for (const ev of trace.events) {
-      if (
-        ev !== null &&
-        typeof ev === 'object' &&
-        ev.type === 'model_resolved' &&
-        typeof ev.from === 'string' &&
-        ev.from !== ''
-      ) {
-        return ev.from;
-      }
-    }
-  }
-  return l.model;
-}
 
 // tokensCell parses the usage JSON into the TI/TO/CR triple (CR % =
 // cache-read over input). Shared by the request row, its steps and the step
@@ -248,7 +223,12 @@ function LogRowInner({
   // would read as "not loaded", a dash reads as "there is none".
   const provider = l.provider_kind ?? l.provider_id ?? '';
   const account = l.provider_name ?? l.provider_id ?? '';
-  const requested = requestedModel(l);
+  // Alias requests: the MODEL cell keeps the client-typed name (l.model —
+  // what the client asked for) and names the configured target inline, so
+  // the alias is legible without opening the drawer. One line stays a
+  // contract (the tree elbow measures against row height); the 280px
+  // ellipsis takes the overflow, the title carries the full hop.
+  const hop = aliasHop(l.route_trace);
   const conv = convShort(l.conversation_id);
 
   return (
@@ -263,8 +243,9 @@ function LogRowInner({
         <span className={`badge ${st.cls}`}><span className="b-dot" />{st.label}</span>
         {shape.healed && <span className="chip chip-healed">healed</span>}
       </td>
-      <td className="primary col-model" title={requested !== l.model ? `requested ${requested}` : undefined}>
+      <td className="primary col-model" title={hop !== null ? `${l.model} → ${hop.to}` : undefined}>
         {l.model}
+        {hop !== null && <span className="muted alias-hop"> alias → {hop.to}</span>}
       </td>
       <td>{provider && <span className="pill">{provider}</span>}</td>
       <td><span className="pill pill-warm">{protocolLabel(l.protocol)}</span></td>

@@ -3,13 +3,15 @@ package routing_test
 // Spec-derived tests: Claude Code fires auxiliary requests with the Claude
 // model IDs its own version pins — the WebFetch apply call and the auto-mode
 // classifier run on names like claude-sonnet-4-6, claude-haiku-5-5 or the
-// dated legacy spelling claude-3-5-sonnet-20241022. The WebUI's alias editor
-// promises the operator maps that family by its bare name ("a client's
-// sonnet/haiku family names map onto whatever model serves them here"), so a
-// request without an exact alias entry also resolves through an alias key
-// that appears as a token of the requested name. Exact entries win; the
-// match is scoped to claude-* names; without a matching entry the documented
-// no-route rejection stands — never a silent default.
+// dated legacy spelling claude-3-5-sonnet-20241022. The alias map answers
+// those names through `*` wildcard keys (a `claude-*` or `claude-sonnet-*`
+// entry covers each family without one entry per release — the mechanism
+// documented for rule patterns); an exact entry always wins, among wildcard
+// entries the pattern with the most literal characters wins, and ties go
+// lexicographically — one deterministic answer. A bare key like `sonnet` is
+// an exact alias ONLY (the retired family token match is gone); without a
+// matching entry the documented no-route rejection stands — never a silent
+// default.
 
 import (
 	"errors"
@@ -20,27 +22,27 @@ import (
 	"github.com/tubeof/proxyllm/internal/routing"
 )
 
-func TestRouter_FamilyAliasResolvesVersionedClaudeIDs(t *testing.T) {
+func TestRouter_WildcardAliasResolvesVersionedClaudeIDs(t *testing.T) {
 	reg := provider.NewLiveRegistry()
 	reg.Register(&stubProvider{id: "p1"})
 	r := routing.NewRouter(routing.Config{
 		Rules: []routing.Rule{
 			{MatchModel: "gpt-oss", Chain: []string{"p1"}, Priority: 100, Enabled: true},
 		},
-		Aliases: map[string]string{"sonnet": "gpt-oss", "haiku": "gpt-oss"},
+		Aliases: map[string]string{"claude-sonnet-*": "gpt-oss", "claude-haiku-*": "gpt-oss"},
 	}, routing.WithRegistry(reg))
 
 	for _, model := range []string{
 		"claude-sonnet-4-6",
+		"claude-sonnet-4-5",
 		"claude-haiku-5-5",
-		"claude-3-5-sonnet-20241022",
 	} {
 		entries, trace, err := r.ResolveChainFor(model, provider.Capabilities{})
 		if err != nil {
 			t.Fatalf("ResolveChainFor(%q): %v", model, err)
 		}
 		if len(entries) != 1 || entries[0].ProviderID != "p1" || entries[0].Model != "gpt-oss" {
-			t.Fatalf("ResolveChainFor(%q) = %+v, want p1/gpt-oss via the family entry", model, entries)
+			t.Fatalf("ResolveChainFor(%q) = %+v, want p1/gpt-oss via the wildcard entry", model, entries)
 		}
 		var found bool
 		for _, ev := range trace.Events() {
@@ -49,25 +51,25 @@ func TestRouter_FamilyAliasResolvesVersionedClaudeIDs(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Errorf("ResolveChainFor(%q): family resolution not traced as an alias: %+v", model, trace.Events())
+			t.Errorf("ResolveChainFor(%q): wildcard resolution not traced as an alias: %+v", model, trace.Events())
 		}
 	}
 }
 
 // An alias entry for the exact requested name is a deliberate operator
-// statement about that ID and outranks the family entry.
-func TestRouter_ExactAliasBeatsFamilyEntry(t *testing.T) {
+// statement about that ID and outranks every wildcard entry.
+func TestRouter_ExactAliasBeatsWildcardEntry(t *testing.T) {
 	reg := provider.NewLiveRegistry()
 	reg.Register(&stubProvider{id: "p1"})
 	reg.Register(&stubProvider{id: "p2"})
 	r := routing.NewRouter(routing.Config{
 		Rules: []routing.Rule{
 			{MatchModel: "exact-target", Chain: []string{"p1"}, Priority: 100, Enabled: true},
-			{MatchModel: "family-target", Chain: []string{"p2"}, Priority: 100, Enabled: true},
+			{MatchModel: "wildcard-target", Chain: []string{"p2"}, Priority: 100, Enabled: true},
 		},
 		Aliases: map[string]string{
 			"claude-sonnet-4-6": "exact-target",
-			"sonnet":            "family-target",
+			"claude-*":          "wildcard-target",
 		},
 	}, routing.WithRegistry(reg))
 
@@ -80,35 +82,44 @@ func TestRouter_ExactAliasBeatsFamilyEntry(t *testing.T) {
 	}
 }
 
-// Several keys may match one name ("claude-3-5-sonnet-…" against "3" and
-// "sonnet"): the first matching name token, left to right, wins — one
-// deterministic answer, in the trace.
-func TestRouter_FamilyAliasIsDeterministicFirstToken(t *testing.T) {
+// Several wildcard keys may match one name ("claude-*" and
+// "claude-sonnet-*" against "claude-sonnet-4-6"): the pattern with the most
+// literal characters wins — one deterministic answer, in the trace.
+func TestRouter_WildcardAliasMostLiteralWins(t *testing.T) {
 	reg := provider.NewLiveRegistry()
 	reg.Register(&stubProvider{id: "p1"})
 	reg.Register(&stubProvider{id: "p2"})
 	r := routing.NewRouter(routing.Config{
 		Rules: []routing.Rule{
-			{MatchModel: "first-target", Chain: []string{"p1"}, Priority: 100, Enabled: true},
-			{MatchModel: "second-target", Chain: []string{"p2"}, Priority: 100, Enabled: true},
+			{MatchModel: "broad-target", Chain: []string{"p1"}, Priority: 100, Enabled: true},
+			{MatchModel: "narrow-target", Chain: []string{"p2"}, Priority: 100, Enabled: true},
 		},
-		Aliases: map[string]string{"3": "first-target", "sonnet": "second-target"},
+		Aliases: map[string]string{"claude-*": "broad-target", "claude-sonnet-*": "narrow-target"},
 	}, routing.WithRegistry(reg))
 
 	for i := 0; i < 3; i++ {
-		entries, _, err := r.ResolveChainFor("claude-3-5-sonnet-20241022", provider.Capabilities{})
+		entries, trace, err := r.ResolveChainFor("claude-sonnet-4-6", provider.Capabilities{})
 		if err != nil {
 			t.Fatalf("ResolveChainFor: %v", err)
 		}
-		if len(entries) != 1 || entries[0].Model != "first-target" {
-			t.Fatalf("entries = %+v, want the first matching token's target", entries)
+		if len(entries) != 1 || entries[0].Model != "narrow-target" {
+			t.Fatalf("entries = %+v, want the most literal pattern's target", entries)
+		}
+		var found bool
+		for _, ev := range trace.Events() {
+			if ev.Type == routing.EventAlias && ev.From == "claude-sonnet-4-6" && ev.To == "narrow-target" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("run %d: wildcard resolution not traced: %+v", i, trace.Events())
 		}
 	}
 }
 
-// The family match exists for Claude Code's naming; a name without the
-// claude- prefix is never rewritten through it.
-func TestRouter_FamilyMatchOnlyOnClaudeNames(t *testing.T) {
+// A bare key like `sonnet` no longer family-matches versioned IDs: it is an
+// exact alias only. The operator writes `claude-sonnet-*` for the family.
+func TestRouter_BareKeyIsExactOnly(t *testing.T) {
 	reg := provider.NewLiveRegistry()
 	reg.Register(&stubProvider{id: "p1"})
 	r := routing.NewRouter(routing.Config{
@@ -116,8 +127,15 @@ func TestRouter_FamilyMatchOnlyOnClaudeNames(t *testing.T) {
 		Aliases: map[string]string{"sonnet": "gpt-oss"},
 	}, routing.WithRegistry(reg))
 
-	if _, _, err := r.ResolveChainFor("sonnet-4-6", provider.Capabilities{}); !errors.Is(err, routing.ErrNoRoute) {
-		t.Fatalf("err = %v, want no route for a non-Claude name", err)
+	if _, _, err := r.ResolveChainFor("claude-sonnet-4-6", provider.Capabilities{}); !errors.Is(err, routing.ErrNoRoute) {
+		t.Fatalf("err = %v, want no route: a bare key must not match claude-sonnet-4-6", err)
+	}
+	entries, _, err := r.ResolveChainFor("sonnet", provider.Capabilities{})
+	if err != nil {
+		t.Fatalf("ResolveChainFor(sonnet): %v", err)
+	}
+	if len(entries) != 1 || entries[0].Model != "gpt-oss" {
+		t.Fatalf("entries = %+v, want the exact key's target for a literal sonnet request", entries)
 	}
 }
 
@@ -143,7 +161,7 @@ func TestResolveChain_NoRouteNamesTheModel(t *testing.T) {
 	// no-route rejection; the error names the model the pipeline failed on
 	// (the rewritten target), while the trace keeps the client-facing name.
 	r2 := routing.NewRouter(routing.Config{
-		Aliases: map[string]string{"sonnet": "ghost-model"},
+		Aliases: map[string]string{"claude-*": "ghost-model"},
 	}, routing.WithRegistry(provider.NewLiveRegistry()))
 	_, trace, err := r2.ResolveChainFor("claude-sonnet-4-6", provider.Capabilities{})
 	if !errors.Is(err, routing.ErrNoRoute) {

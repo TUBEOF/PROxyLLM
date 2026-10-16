@@ -264,9 +264,11 @@ function AliasCard() {
           Model Aliases
         </legend>
         <p className="hint" style={{ marginTop: 0 }}>
-          Client-requested names rewritten to registered models before routing —
-          a client&apos;s <span className="mono">sonnet</span>/<span className="mono">haiku</span> family names map onto
-          whatever model serves them here.
+          Client-requested names rewritten to registered models before routing.
+          A key is an exact name or a <span className="mono">*</span> pattern —
+          <span className="mono"> claude-sonnet-*</span> covers every versioned ID
+          of that family. An exact key wins; among the patterns the one with the
+          most literal characters does.
         </p>
         {save.error !== null && (
           <p role="alert" className="form-note">{save.error}</p>
@@ -643,10 +645,10 @@ export default function Routing() {
                   type="text"
                   value={form.match_model}
                   onChange={(e) => setForm((f) => ({ ...f, match_model: e.target.value }))}
-                  placeholder="exact-model or prefix*"
+                  placeholder="exact-model or claude-*-4-6"
                   required
                 />
-                <span className="hint">Exact name, wildcard, or an alias from the alias map.</span>
+                <span className="hint">Exact name, wildcard (`*` matches any run of characters), or an alias from the alias map.</span>
               </div>
             </div>
             <div className="field">

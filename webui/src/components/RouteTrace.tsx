@@ -39,6 +39,28 @@ export function parseEvents(trace: unknown): TraceEvent[] | null {
   return events.filter((e): e is TraceEvent => e !== null && typeof e === 'object');
 }
 
+// aliasHop returns a trace's alias transition — the requested name and the
+// configured target — or null when the request did not go through an alias
+// entry. At most one alias resolution happens per request (targets are never
+// resolved again), so the first alias event IS the hop. Shared by the log
+// row's model cell and the detail drawer, so the two never disagree.
+export function aliasHop(trace: unknown): { from: string; to: string } | null {
+  const events = parseEvents(trace);
+  if (events === null) return null;
+  for (const ev of events) {
+    if (
+      ev.type === 'alias' &&
+      typeof ev.from === 'string' &&
+      ev.from !== '' &&
+      typeof ev.to === 'string' &&
+      ev.to !== ''
+    ) {
+      return { from: ev.from, to: ev.to };
+    }
+  }
+  return null;
+}
+
 // eventTitle renders one event's human title. names maps a raw account id to
 // its display name (absent → the raw id, so an unrecognised ref is still
 // shown rather than blanked).

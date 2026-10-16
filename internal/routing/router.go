@@ -20,8 +20,9 @@ type Rule struct {
 	// counters (per-rule, ADR-009) — empty ID rules share one counter.
 	ID string
 
-	// MatchModel is the model pattern to match: exact name or wildcard
-	// with a single trailing `*` (e.g. `claude-*`).
+	// MatchModel is the model pattern to match: an exact name, or a
+	// wildcard pattern in which `*` matches any run of characters
+	// (e.g. `claude-*`, `*sonnet`, `claude-*-4-6`).
 	MatchModel string
 
 	// Chain is the ordered fallback chain of provider IDs OR provider
@@ -92,7 +93,10 @@ type Config struct {
 	Rules []Rule
 
 	// Aliases map requested model names to configured primary models
-	// (Claude Code alias resolution).
+	// (Claude Code alias resolution). A key is an exact name or a `*`
+	// wildcard pattern; an exact entry wins, otherwise the matching
+	// pattern with the most literal characters (ties: lexicographic)
+	// resolves.
 	Aliases map[string]string
 
 	// KeyScopes maps client key ID → allowed model patterns; a key with
@@ -265,20 +269,19 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 		}
 	}
 
-	// Step 2: alias resolution. The exact entry first; then, for a claude-*
-	// name the map holds no exact entry for, a family entry: an alias key
-	// that appears as a token of the requested name. Claude Code fires
-	// auxiliary requests (the WebFetch apply call, the auto-mode classifier)
-	// with versioned Claude IDs — claude-sonnet-4-6, claude-haiku-5-5, the
-	// dated legacy spelling alike — that no operator can enumerate, so the
-	// WebUI's promise that "a client's sonnet/haiku family names map onto
-	// whatever model serves them here" is kept by this token match. Several
-	// keys matching one name resolve to the first matching token, left to
-	// right (deterministic); the resolution is traced like any alias.
+	// Step 2: alias resolution. The exact entry first; then the wildcard
+	// entries, the pattern with the most literal characters winning (ties:
+	// lexicographic — one deterministic answer). Claude Code fires auxiliary
+	// requests (the WebFetch apply call, the auto-mode classifier) with
+	// versioned Claude IDs — claude-sonnet-4-6, claude-haiku-5-5, the dated
+	// legacy spelling alike — that no operator can enumerate, so a `claude-*`
+	// or `claude-sonnet-*` pattern covers each family without an entry per
+	// release. The resolution is traced like any alias, and an alias target
+	// is never resolved again (no chains).
 	requested := model
 	target, aliased := r.cfg.Aliases[model]
 	if !aliased {
-		target, aliased = familyAlias(model, r.cfg.Aliases)
+		target, aliased = wildcardAlias(model, r.cfg.Aliases)
 	}
 	if aliased {
 		model = target
@@ -546,18 +549,35 @@ func (r *Router) lookup(pid string) (provider.Provider, bool) {
 	return r.reg.Get(pid)
 }
 
-// matchWildcard reports whether pattern (a `prefix*` glob) matches model.
+// matchWildcard reports whether pattern matches model. `*` matches any run
+// of characters — empty included — and the literal segments around it must
+// appear in order: `*` alone matches everything, `prefix*` and `*suffix`
+// keep their classic meaning, and interior patterns (`claude-*-4-6`) work
+// too. A pattern WITHOUT a `*` matches on exact equality only — a plain
+// name can never match as a substring.
 func matchWildcard(pattern, model string) bool {
-	if pattern == "*" {
-		return true
+	if !strings.Contains(pattern, "*") {
+		return pattern == model
 	}
-	if suffix, ok := strings.CutPrefix(pattern, "*"); ok {
-		return strings.HasSuffix(model, suffix)
+	segs := strings.Split(pattern, "*")
+	if head := segs[0]; head != "" {
+		if !strings.HasPrefix(model, head) {
+			return false
+		}
+		model = model[len(head):]
 	}
-	if prefix, ok := strings.CutSuffix(pattern, "*"); ok {
-		return strings.HasPrefix(model, prefix)
+	tail := segs[len(segs)-1]
+	for _, seg := range segs[1 : len(segs)-1] {
+		if seg == "" {
+			continue
+		}
+		i := strings.Index(model, seg)
+		if i < 0 {
+			return false
+		}
+		model = model[i+len(seg):]
 	}
-	return false
+	return tail == "" || strings.HasSuffix(model, tail)
 }
 
 // matchAny reports whether model matches any pattern.
@@ -570,23 +590,28 @@ func matchAny(model string, patterns []string) bool {
 	return false
 }
 
-// familyAlias resolves a requested name through the alias map's family
-// entries: a claude-* name without an exact entry maps through an alias key
-// that appears as one of its tokens ("sonnet" for claude-sonnet-4-6, and for
-// the dated legacy spelling claude-3-5-sonnet-20241022 alike). The first
-// matching token, left to right, wins — one deterministic answer. Names
-// outside the claude- family are never rewritten through it, and a missing
-// map entry keeps the caller on its documented no-route path.
-func familyAlias(model string, aliases map[string]string) (string, bool) {
-	if !strings.HasPrefix(model, "claude-") {
-		return "", false
-	}
-	for _, tok := range strings.Split(model, "-") {
-		if target, ok := aliases[tok]; ok {
-			return target, true
+// wildcardAlias resolves a requested name through the alias map's wildcard
+// entries: the pattern matching with the most literal (non-`*`) characters
+// wins, an exact tie goes to the lexicographically smaller key — one
+// deterministic answer, independent of map iteration order. Keys without a
+// `*` are ignored here: resolveWithTrace tries the exact entry first, so a
+// plain name is an exact alias only. A missing match keeps the caller on its
+// documented no-route path.
+func wildcardAlias(model string, aliases map[string]string) (string, bool) {
+	bestKey, bestTarget, bestLiteral := "", "", -1
+	for key, target := range aliases {
+		if !strings.Contains(key, "*") || !matchWildcard(key, model) {
+			continue
+		}
+		literal := len(key) - strings.Count(key, "*")
+		if literal > bestLiteral || (literal == bestLiteral && key < bestKey) {
+			bestKey, bestTarget, bestLiteral = key, target, literal
 		}
 	}
-	return "", false
+	if bestLiteral < 0 {
+		return "", false
+	}
+	return bestTarget, true
 }
 
 // missingCapabilities names the first required capability the provider
