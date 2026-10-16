@@ -183,7 +183,7 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 		return use, res, tr
 	}
 
-	// Degrade contract (CLAUDE.md): no emulator configured (no Firecrawl
+	// Degrade contract (ADR-015): no emulator configured (no Firecrawl
 	// key) → emulated tool calls get the documented "unavailable" error
 	// result, never a nil-pointer pass-through to the client.
 	emu := e.currentEmulator()
