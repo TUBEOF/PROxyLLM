@@ -89,6 +89,10 @@ func New(p Params) *API {
 	mux.HandleFunc("POST /v1/responses", a.handleResponses)
 	mux.HandleFunc("POST /v1/messages", a.handleMessages)
 	mux.HandleFunc("POST /v1/messages/count_tokens", a.handleCountTokens)
+	// Decision surfaces (decision models): the systemone (Jev) and the
+	// OpenAI Decisions shapes, both translated through the IR.
+	mux.HandleFunc("POST /v1/systemone", a.handleSystemOne)
+	mux.HandleFunc("POST /v1/decisions", a.handleDecisions)
 	mux.HandleFunc("GET /v1/models", a.handleModels)
 	return &API{Handler: mux, a: a}
 }

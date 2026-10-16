@@ -20,5 +20,8 @@ consequences.
 | [ADR-012](ADR-012-account-usage-quota-page.md) | Per-account usage snapshot (Quota page): scrape-or-local KV blob, usage-cookie token kind | Accepted |
 | [ADR-013](ADR-013-context-window-aware-fallbacks.md) | Context-window-aware fallbacks: `context_window_exceeded` class + pre-dispatch gate on the fallback walk | Accepted (gate superseded by ADR-014) |
 | [ADR-014](ADR-014-image-to-text-vision-fallback.md) | Image-to-text vision fallback: vision models describe the image, the routed model answers | Accepted |
+| [ADR-015](ADR-015-web-tool-emulation-resilience.md) | Web-tool emulation resilience: ordered account walk, bounded time, honest empty answers, per-account tracing | Accepted |
+| [ADR-016](ADR-016-scalability-and-concurrency.md) | Scalability and concurrency: SQLite pool, key-hash caching, lock splitting, emulation budgets | Accepted |
+| [ADR-017](ADR-017-decision-models.md) | Decision models: a third operation class on the IR hub (System One / Jev, the OpenAI Decisions API) | Accepted |
 
 ADR template: [TEMPLATE.md](TEMPLATE.md)

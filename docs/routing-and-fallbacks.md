@@ -91,7 +91,7 @@ cannot serve it, but "we do not know" is not one value.
 
 | Capability | Unknown means | Why |
 |---|---|---|
-| `streaming`, `tools`, `thinking`, `web_search`, `web_fetch`, `code_execution` | **permitted** — only a declared `false` excludes an entry | a target that turns out not to support the flag produces a worse answer, not a false one; the answer itself is still about the request |
+| `streaming`, `tools`, `thinking`, `web_search`, `web_fetch`, `code_execution`, `decision` | **permitted** — only a declared `false` excludes an entry | a target that turns out not to support the flag produces a worse answer, not a false one; the answer itself is still about the request |
 | `vision` | **permitted** — and the image is handled by the rescue below | the rescue exists precisely for this: a model that cannot see images answers a 400, the images are described, and the chain is retried. An unnecessarily described image costs fidelity; a wasted round trip costs time |
 
 The one thing an unknown capability must never do is make the request fail: a

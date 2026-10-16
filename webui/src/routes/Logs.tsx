@@ -546,7 +546,7 @@ function ChildDetail({
 
 function LogDetail({ selected, subOps, names, onOpenChild }: { selected: RequestLog; subOps: ChildLog[]; names: Map<string, string>; onOpenChild?: (c: ChildLog) => void }) {
   const features = (selected.features ?? {}) as Record<string, boolean | undefined>;
-  const featureKeys = ['streaming', 'tools', 'thinking', 'web_search', 'web_fetch', 'vision'] as const;
+  const featureKeys = ['streaming', 'tools', 'thinking', 'web_search', 'web_fetch', 'vision', 'decision'] as const;
   const active = featureKeys.filter((k) => features[k] === true);
   const events = parseEvents(selected.route_trace);
   const alias = aliasHop(selected.route_trace);

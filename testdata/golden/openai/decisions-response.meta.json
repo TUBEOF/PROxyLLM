@@ -1,0 +1,6 @@
+{
+  "fixture": "decisions-response.json",
+  "source": "https://developers.openai.com/api/docs/guides/decisions",
+  "accessed": "2026-10-16",
+  "notes": "OpenAI Decisions response per the documented shapes: an answers ARRAY whose entries carry type+name; predicate → probability (the guide's 0.92 example); choice → choice plus probabilities array of {value, probability} plus confidence; score → probability-weighted mean of the level indices (the guide's 0.1/0.7/0.2 → 1.1 arithmetic) with per-level {value (numeric index), label, probability} entries plus confidence. The guide documents no usage object for this API, so this fixture carries none."
+}

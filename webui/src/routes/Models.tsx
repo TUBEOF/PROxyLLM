@@ -37,7 +37,7 @@ import { IconPlus } from '../icons';
 // cause). Block layout throughout — no variable-length text in flex-wrap
 // lines above other content (the v1.0.1/v1.0.2 screenshot lesson).
 
-const CAPABILITY_FLAGS = ['streaming', 'tools', 'vision', 'thinking', 'web_search', 'web_fetch', 'code_execution'] as const;
+const CAPABILITY_FLAGS = ['streaming', 'tools', 'vision', 'thinking', 'web_search', 'web_fetch', 'code_execution', 'decision'] as const;
 
 function capsFromRaw(raw: unknown): Record<string, boolean> {
   const out: Record<string, boolean> = {};

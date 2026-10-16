@@ -1,0 +1,38 @@
+{
+  "model": "clef:cloud",
+  "answers": {
+    "label": {
+      "type": "choice",
+      "choice": "bug",
+      "probabilities": {
+        "billing": 0.0125,
+        "bug": 0.9781,
+        "account": 0.0093
+      },
+      "confidence": 0.8906
+    },
+    "urgent": {
+      "type": "noul",
+      "noul": 0.92
+    },
+    "severity": {
+      "type": "score",
+      "score": 1.1,
+      "legend": {
+        "0": "No impact",
+        "1": "Workaround available",
+        "2": "Feature broken"
+      },
+      "probabilities": {
+        "0": 0.1,
+        "1": 0.7,
+        "2": 0.2
+      },
+      "confidence": 0.55
+    }
+  },
+  "usage": {
+    "input_tokens": 174,
+    "output_tokens": 1
+  }
+}

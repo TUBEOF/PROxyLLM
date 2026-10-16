@@ -23,6 +23,22 @@ authenticate the admin API. Auth opt-out only via
 | `POST /v1/messages/count_tokens` | Native passthrough for Anthropic-shaped upstream; heuristic (marked) otherwise; **not** governed by the `anthropic_surface_non_claude` gate |
 | `GET /v1/models` | Gateway model discovery |
 
+### Decision surfaces (auth: the same client key families as above)
+
+| Endpoint | Notes |
+|---|---|
+| `POST /v1/systemone` | System One / Jev shape (`state` + typed `questions`, one non-streaming JSON response); errors as `{"error":"…"}` per the reference's codes |
+| `POST /v1/decisions` | OpenAI Decisions shape (`input` + `questions`, one non-streaming JSON response); errors in the OpenAI envelope |
+
+Both surfaces route by model with the `decision` capability required
+(a chain entry whose provider does not declare it is filtered before
+dispatch) and dispatch through the same IR — either surface reaches either
+upstream, with the documented losses in the
+[translation matrix](reference/translation-matrix.md) and
+[ADR-017](adr/ADR-017-decision-models.md). Non-streaming by contract on
+both references; request-log rows carry `protocol` `systemone` /
+`decisions` and the `decision` feature.
+
 ### Behavioral notes
 
 - **Unknown body fields / headers pass through** (open-list rule, C3):

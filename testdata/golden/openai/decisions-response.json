@@ -1,0 +1,27 @@
+{
+  "answers": [
+    { "type": "predicate", "name": "visible_damage", "probability": 0.92 },
+    {
+      "type": "choice",
+      "name": "department",
+      "choice": "bug",
+      "probabilities": [
+        { "value": "billing", "probability": 0.0125 },
+        { "value": "bug", "probability": 0.9781 },
+        { "value": "account", "probability": 0.0093 }
+      ],
+      "confidence": 0.8906
+    },
+    {
+      "type": "score",
+      "name": "severity",
+      "score": 1.1,
+      "probabilities": [
+        { "value": 0, "label": "No impact", "probability": 0.1 },
+        { "value": 1, "label": "Workaround available", "probability": 0.7 },
+        { "value": 2, "label": "Feature broken", "probability": 0.2 }
+      ],
+      "confidence": 0.55
+    }
+  ]
+}

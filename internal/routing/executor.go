@@ -155,6 +155,12 @@ const (
 // failed within its budget. It wraps the last attempt's error.
 var ErrChainExhausted = errors.New("routing: chain exhausted")
 
+// ErrNoDecisionProvider marks a resolved chain no entry of which can serve a
+// decision request — no provider.Decider implementation, or the entry is not
+// in the registry. A configuration defect (the capability flag promised what
+// the implementation does not deliver), not an upstream failure.
+var ErrNoDecisionProvider = errors.New("routing: no decision-capable provider in the chain")
+
 // exhaustedError carries the last attempt's error for callers that need
 // the upstream cause.
 //
@@ -276,6 +282,67 @@ func (e *Executor) Execute(ctx context.Context, chain []ChainEntry, req ir.Reque
 	// requests that enabled thinking.
 	resp = applyResponseThinking(req, resp, trace)
 	return resp, trace, nil
+}
+
+// ExecuteDecision walks a resolved chain for one decision operation (System
+// One / Jev, the OpenAI Decisions API). Decision calls are non-streaming
+// and single-shot: each entry is tried once — no same-provider retry — and
+// a failure fails over to the next entry. Health is reported like any other
+// attempt, and every transition is traced. Entries that cannot serve
+// decisions (no provider.Decider, not in the registry, health cooldown) are
+// skipped with a traced reason, never a panic.
+func (e *Executor) ExecuteDecision(ctx context.Context, chain []ChainEntry, req ir.DecisionRequest) (ir.DecisionResponse, *Trace, error) {
+	trace := &Trace{}
+	var lastErr error
+	attempted := 0
+	for i, entry := range chain {
+		p, ok := e.cfg.Registry.Get(entry.ProviderID)
+		if !ok {
+			trace.Skip(entry.ProviderID, "not registered")
+			continue
+		}
+		dec, ok := p.(provider.Decider)
+		if !ok {
+			trace.Skip(entry.ProviderID, "no decision support")
+			continue
+		}
+		if e.cfg.Health != nil && e.cfg.Health.Cooldown(entry.ProviderID) {
+			trace.Skip(entry.ProviderID, "health cooldown")
+			continue
+		}
+		attempted++
+		trace.Attempt(entry.ProviderID, entry.Model)
+		attempt := req
+		attempt.Model = entry.Model
+		start := time.Now()
+		resp, err := dec.Decide(ctx, attempt)
+		latency := time.Since(start).Milliseconds()
+		if err == nil {
+			e.reportSuccess(entry.ProviderID)
+			return resp, trace, nil
+		}
+		c := ClassifyError(err, PreStream)
+		status, code, _ := AsUpstreamError(err)
+		trace.Failed(entry.ProviderID, c, status, code, latency)
+		e.reportFailureFor(entry.ProviderID, c, status)
+		lastErr = err
+		// A cancelled context is the client's (or a budget of ours), never
+		// an observation about the provider: terminal, no failover — the
+		// chat path's rule, kept here.
+		if ctx.Err() != nil {
+			return ir.DecisionResponse{}, trace, err
+		}
+		if i+1 < len(chain) {
+			trace.Failover(entry.ProviderID, chain[i+1].ProviderID, "decision failover after "+string(c.Class))
+		}
+	}
+	if lastErr != nil {
+		return ir.DecisionResponse{}, trace, lastErr
+	}
+	if attempted == 0 {
+		return ir.DecisionResponse{}, trace, ErrNoDecisionProvider
+	}
+	return ir.DecisionResponse{}, trace, ErrChainOverloaded
 }
 
 // substituteKnownBlind replaces the images of a request that is certain to be
