@@ -63,6 +63,30 @@ func TestResolveChain(t *testing.T) {
 			want:  []string{"p1"},
 		},
 		{
+			name:  "interior wildcard matches the literal segments in order",
+			rules: []routing.Rule{rule("claude-*-4-6", []string{"p1"}, true)},
+			model: "claude-sonnet-4-6",
+			want:  []string{"p1"},
+		},
+		{
+			name:    "interior wildcard keeps its anchored tail",
+			rules:   []routing.Rule{rule("claude-*-4-6", []string{"p1"}, true)},
+			model:   "claude-sonnet-4-7",
+			wantErr: true,
+		},
+		{
+			name:  "suffix wildcard matches the trailing segment",
+			rules: []routing.Rule{rule("*-sonnet-*", []string{"p1"}, true)},
+			model: "claude-3-5-sonnet-20241022",
+			want:  []string{"p1"},
+		},
+		{
+			name:    "a plain pattern never matches as a substring",
+			rules:   []routing.Rule{rule("claude", []string{"p1"}, true)},
+			model:   "claude-opus-5",
+			wantErr: true,
+		},
+		{
 			name: "alias resolves to the target model's rule",
 			rules: []routing.Rule{
 				{MatchModel: "gpt-5", Chain: []string{"codex"}, Enabled: true},
@@ -389,6 +413,25 @@ func TestResolveChain_KeyScope(t *testing.T) {
 	}
 	if _, _, err := r.ResolveChainFor("gpt-5", provider.Capabilities{}, routing.WithKeyID("key-1")); err == nil {
 		t.Error("out-of-scope model must be rejected (key scope)")
+	}
+}
+
+// Key-scope patterns share the routing glob semantics: an interior `*`
+// matches segment-wise, and a pattern without `*` is exact only — so a
+// scope can never accidentally allow a name it merely contains.
+func TestResolveChain_KeyScopeGlob(t *testing.T) {
+	reg := provider.NewLiveRegistry()
+	reg.Register(&stubProvider{id: "p1"})
+	r := routing.NewRouter(routing.Config{
+		Rules:     []routing.Rule{rule("*", []string{"p1"}, true)},
+		KeyScopes: map[string][]string{"key-1": {"claude-*-4-6"}},
+	}, routing.WithRegistry(reg))
+
+	if _, _, err := r.ResolveChainFor("claude-sonnet-4-6", provider.Capabilities{}, routing.WithKeyID("key-1")); err != nil {
+		t.Fatalf("in-scope model must route: %v", err)
+	}
+	if _, _, err := r.ResolveChainFor("claude-haiku-4-5", provider.Capabilities{}, routing.WithKeyID("key-1")); !errors.Is(err, routing.ErrNoRoute) {
+		t.Fatalf("err = %v, want the key-scope rejection", err)
 	}
 }
 

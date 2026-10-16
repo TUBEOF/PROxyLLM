@@ -91,6 +91,27 @@ firing on an unmapped name (`--fallback-model` retried after the conform
 404). Pinned by `internal/smoke` smokes and unit tests on both surfaces,
 stream and non-stream.
 
+## Amendment (2026-10-16): alias patterns replace the family token rule
+
+The 2026-10-14 amendment's family rule — an alias key matching a token of
+a `claude-*` name — is removed. It was a second, implicit match mechanism
+next to the exact lookup, and the overlap confused operators; aliases now
+use one explicit language: a key is an exact name or a `*` wildcard, the
+same pattern semantics the routing rules carry (`*` matches any run of
+characters; a pattern without `*` is exact-only). An exact entry wins;
+among matching patterns the one with the most literal characters does
+(ties: lexicographic), so `claude-sonnet-*` beats `claude-*`
+deterministically.
+
+This is a breaking change for bare family entries: `sonnet` no longer
+serves `claude-sonnet-4-6` (it remains an exact alias for a request
+literally named `sonnet`); the migration is `sonnet` → `claude-sonnet-*`.
+The reference-shaped no-route 404 and the `alias` trace event from that
+amendment are unchanged, and the trace schema version does not move. The
+log row and the detail drawer now render the hop (requested name →
+configured target) from that event, so an alias is legible without
+opening the trace.
+
 ## Consequences
 
 - PROxyLLM deliberately goes beyond Anthropic's "not supported" stance,

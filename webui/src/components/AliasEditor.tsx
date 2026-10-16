@@ -71,8 +71,11 @@ export default function AliasEditor({ value, onChange, options, disabled = false
     <div className="alias-editor" role="group" aria-label="Model aliases">
       {rows.length === 0 && draftTarget === '' && draftAlias === '' && (
         <p className="hint" style={{ margin: 0 }}>
-          No aliases — client model names route as-is. An alias maps one
-          client-requested name (e.g. <span className="mono">sonnet</span>) onto a registered model.
+          No aliases — client model names route as-is. An alias maps a
+          client-requested name onto a registered model: an exact name
+          (e.g. <span className="mono">sonnet</span>) or a{' '}
+          <span className="mono">*</span> pattern (e.g.{' '}
+          <span className="mono">claude-sonnet-*</span> for the whole family).
         </p>
       )}
       {rows.map(({ alias, target }) => {
@@ -148,7 +151,7 @@ export default function AliasEditor({ value, onChange, options, disabled = false
           type="text"
           value={draftAlias}
           disabled={disabled}
-          placeholder="alias (e.g. sonnet)"
+          placeholder="alias (e.g. claude-sonnet-*)"
           spellCheck={false}
           onChange={(e) => setDraftAlias(e.target.value)}
           onKeyDown={(e) => {

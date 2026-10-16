@@ -11,6 +11,7 @@ import {
   ChainSummary,
   TraceTimeline,
   RawTrace,
+  aliasHop,
   parseEvents,
   childTitle,
   childCls,
@@ -23,9 +24,10 @@ import {
 const CAPTURE_KEY = 'request_logging_enabled';
 
 // Logs (Logs-page redesign, 2026-10-06): the dense request log — status /
-// model / requested / provider / protocol / account / api key / tokens /
-// tps / duration / time ↓ / conversation, chained rows in the gutter,
-// healing on retried conversations, in-flight rows live over SSE.
+// model (an alias request names its configured target inline) / provider /
+// protocol / account / api key / tokens / tps / duration / time ↓ /
+// conversation, chained rows in the gutter, healing on retried
+// conversations, in-flight rows live over SSE.
 // Pagination rides the API's limit/offset contract (the page fetch stays
 // the paging/backfill source). On page 1 the SSE feed maintains the
 // running pseudo-rows and prepends finished rows; any page fetch (poll or
@@ -547,6 +549,7 @@ function LogDetail({ selected, subOps, names, onOpenChild }: { selected: Request
   const featureKeys = ['streaming', 'tools', 'thinking', 'web_search', 'web_fetch', 'vision'] as const;
   const active = featureKeys.filter((k) => features[k] === true);
   const events = parseEvents(selected.route_trace);
+  const alias = aliasHop(selected.route_trace);
   const u = (selected.usage ?? {}) as { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number };
   const tps = tpsOf(u.output_tokens, selected.latency_ms);
   return (
@@ -557,7 +560,13 @@ function LogDetail({ selected, subOps, names, onOpenChild }: { selected: Request
           <dt className="muted">Time</dt>
           <dd className="mono" style={{ margin: 0 }}>{fmtTime(selected.timestamp)}</dd>
           <dt className="muted">Model</dt>
-          <dd style={{ margin: 0 }}>{selected.model}</dd>
+          <dd style={{ margin: 0 }}>
+            {selected.model}
+            {/* The alias hop: the model field names what the client asked
+                for; this line names the configured target the alias entry
+                resolved it to (the trace's alias event). */}
+            {alias !== null && <div className="muted alias-hop">alias → {alias.to}</div>}
+          </dd>
           <dt className="muted">Provider</dt>
           <dd style={{ margin: 0 }}>
             {selected.provider_kind ?? selected.provider_id}
