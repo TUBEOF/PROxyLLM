@@ -7,6 +7,7 @@ package openai_test
 // the documented shape, never this codec's output.
 
 import (
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -176,6 +177,55 @@ func TestDecisionsCodec_DecodeResponse_Refusal(t *testing.T) {
 	}
 	if !strings.Contains(string(out), `"type":"refusal"`) {
 		t.Errorf("encoded body should carry the refusal entry, got %s", out)
+	}
+}
+
+// A choice answer must not carry the fields of other types — the
+// reference's examples show choice/probabilities/confidence only (a live
+// E2E once rendered `"probability":0,"score":0` noise onto a choice).
+func TestDecisionsCodec_EncodeResponse_OmitsAbsentAnswerFields(t *testing.T) {
+	resp := ir.DecisionResponse{Answers: []ir.DecisionAnswer{{
+		Name: "department", Type: ir.DecisionChoice, Choice: "bug", Confidence: 0.9,
+		Probabilities: []ir.DecisionProbability{
+			{Value: "billing", Probability: 0.1},
+			{Value: "bug", Probability: 0.9},
+		},
+	}}}
+	out, err := openai.DecisionsCodec{}.EncodeResponse(resp)
+	if err != nil {
+		t.Fatalf("EncodeResponse: %v", err)
+	}
+	// Structural check: the answer object must own only its type's fields
+	// (the probabilities' own "probability" keys are fine — the answer's
+	// are not there).
+	var parsed struct {
+		Answers []map[string]any `json:"answers"`
+		Usage   any              `json:"usage"`
+	}
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		t.Fatalf("decode encoded body: %v", err)
+	}
+	if len(parsed.Answers) != 1 {
+		t.Fatalf("answers = %d, want 1", len(parsed.Answers))
+	}
+	ans := parsed.Answers[0]
+	for _, absent := range []string{"probability", "score"} {
+		if _, ok := ans[absent]; ok {
+			t.Errorf("choice answer must not carry %q: %s", absent, out)
+		}
+	}
+	if ans["confidence"] != 0.9 {
+		t.Errorf("choice answer must carry its confidence: %s", out)
+	}
+	if parsed.Usage != nil {
+		t.Errorf("no usage in the IR must stay absent on the wire, got %v", parsed.Usage)
+	}
+	again, err := openai.DecisionsCodec{}.DecodeResponse(out)
+	if err != nil {
+		t.Fatalf("DecodeResponse(encoded): %v", err)
+	}
+	if !reflect.DeepEqual(resp, again) {
+		t.Errorf("round trip diverged:\n want %+v\n got  %+v", resp, again)
 	}
 }
 
