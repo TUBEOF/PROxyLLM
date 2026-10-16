@@ -100,7 +100,7 @@ func TestEncodeRequest_KeepsQuestionAndCriteriaOrder(t *testing.T) {
 	billing := strings.Index(string(out), `"billing"`)
 	bug := strings.Index(string(out), `"bug"`)
 	account := strings.Index(string(out), `"account"`)
-	if billing < 0 || bug < 0 || account < 0 || !(billing < bug && bug < account) {
+	if billing < 0 || bug < 0 || account < 0 || billing >= bug || bug >= account {
 		t.Errorf("criteria order not preserved in the encoded body: %s", out)
 	}
 	// Round trip: decode(encode(req)) equals req.

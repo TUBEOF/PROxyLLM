@@ -267,22 +267,6 @@ func (DecisionsCodec) DecodeResponse(raw []byte) (ir.DecisionResponse, error) {
 	return out, nil
 }
 
-type decisionsAnswerOutWire struct {
-	Type          string                 `json:"type"`
-	Name          string                 `json:"name"`
-	Probability   *float64               `json:"probability,omitempty"`
-	Choice        string                 `json:"choice,omitempty"`
-	Probabilities []decisionsProbOutWire `json:"probabilities,omitempty"`
-	Score         *float64               `json:"score,omitempty"`
-	Confidence    *float64               `json:"confidence,omitempty"`
-}
-
-type decisionsProbOutWire struct {
-	Value       json.RawMessage `json:"value"`
-	Label       string          `json:"label,omitempty"`
-	Probability float64         `json:"probability"`
-}
-
 // EncodeResponse translates the IR decision response into a Decisions
 // response body. The usage object is emitted only when the IR carries one —
 // the reference documents none for this API, and zeros would be a claim.
