@@ -117,6 +117,14 @@ jobs:
           # "! [rejected] ... (fetch first)" — observed on the first real use of
           # this workflow). The commit is the only conflict risk, and the
           # baseline PNGs are its whole content.
+          #
+          # `git pull --rebase` refuses to run with a dirty worktree, and one
+          # file is always dirty here by design: `npm run build` overwrote the
+          # tracked `webui/dist/index.html` placeholder with the real bundle
+          # (which must never be committed — AGENTS.md). Restore the placeholder
+          # first; the first real run after the rebase landed failed exactly
+          # here with "cannot pull with rebase: You have unstaged changes".
+          git checkout -- webui/dist/index.html
           git pull --rebase origin "${BRANCH}"
           git push origin "HEAD:${BRANCH}"
           echo "pushed=true" >> "$GITHUB_OUTPUT"
