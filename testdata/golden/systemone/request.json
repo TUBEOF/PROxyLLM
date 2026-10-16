@@ -1,0 +1,24 @@
+{
+  "model": "clef:cloud",
+  "state": "Our checkout has returned 500 errors since 9am.",
+  "questions": {
+    "label": {
+      "type": "choice",
+      "instructions": "Which label fits this ticket?",
+      "criteria": {
+        "billing": "Payments and refunds",
+        "bug": "Software errors",
+        "account": "Login and account access"
+      }
+    },
+    "urgent": {
+      "type": "noul",
+      "instructions": "Is this blocking a customer right now?"
+    },
+    "severity": {
+      "type": "score",
+      "instructions": "How severe is the impact?",
+      "criteria": ["No impact", "Workaround available", "Feature broken"]
+    }
+  }
+}

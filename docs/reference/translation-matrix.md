@@ -58,6 +58,36 @@ Anthropic surface:
 | `context_window` | int | Context window for capability filtering + the count_tokens heuristic |
 | `cache_control` | `forward` / `drop` | `forward` on Anthropic→Anthropic only; `drop` logs the degradation |
 
+## Decision operations (System One / Jev ↔ OpenAI Decisions)
+
+Decision models are the third operation class (ADR-017): typed questions
+scored against shared evidence in one non-streaming pass. Both surfaces
+translate through `ir.DecisionRequest`/`ir.DecisionResponse`, so either
+client surface reaches either upstream.
+
+| IR (hub) | systemone (`POST /v1/systemone`) | OpenAI Decisions (`POST /v1/decisions`) |
+|---|---|---|
+| `Model` | `model` | `model` |
+| `State` | `state` — string; an object/array re-emits raw (the reference accepts its serialized JSON text) | `input` — string; with images, one user message of `input_text` + `input_image` parts |
+| `Images[]` | `images[]`, bare base64, request order | data URLs inside `input_image.image_url` (`data:<media>;base64,…`); the media type is sniffed from the signature bytes when the source surface carried none |
+| `Questions[].Name` / `.Type` / `.Instructions` | key of the `questions` object; `choice`/`noul`/`score`; `instructions` | `questions[]` entries with `name`/`type`; `predicate`/`choice`/`score`; `instructions` |
+| choice options, ordered | `criteria` object key → description (`null` = bare label) | `choices[]` `{value, description}` |
+| score levels, ordered (lowest first) | `criteria` string array | `levels[]` `{label, description}` |
+| `KeepAlive` | `keep_alive` (raw passthrough) | — dropped |
+| `Answers[].Choice` + `Probabilities` + `Confidence` | `answers[name]` `{type, choice, probabilities{key: 0–1}, confidence}` | `answers[]` `{type, name, choice, probabilities[{value, probability}], confidence}` |
+| `Answers[].Score` | `score` (weighted mean; `legend` maps index → level text, `probabilities` keyed by index) | `score`; per-level `{value: <number>, label, probability}` entries |
+| `Answers[].Probability` | `noul` — "a number, not a Boolean" | `predicate.probability` |
+| `Usage` | `usage{input_tokens, output_tokens}`, documented required | none documented — parsed leniently when present, otherwise nil |
+| refusal | — not representable | `answers[].type: "refusal"` |
+
+**Documented losses** (ADR-017): a Decisions `level.description` has no
+systemone slot (one string per level — the label wins); a refusal answered
+by a Decisions upstream fails the systemone surface with 502 instead of an
+invented answer; `keep_alive` is systemone-only; a response whose upstream
+reports no usage omits the systemone `usage` object rather than emitting
+zeros; an image without a recognizable signature cannot become a data URL
+and fails the encode with a clear error.
+
 ## Known degradations (v1)
 
 - **Ollama Cloud** (since 2026-09-22): rides the OpenAI-compatible

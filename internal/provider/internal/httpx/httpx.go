@@ -345,12 +345,44 @@ func (c *Client) Get(ctx context.Context, path string) ([]byte, error) {
 	return body, nil
 }
 
+// PostJSON performs one authenticated POST round trip against a path
+// relative to BaseURL with the given JSON body: Bearer auth + the
+// provider's error shape for non-2xx, the 2xx body as raw bytes — the
+// non-chat surfaces (decision operations such as /v1/systemone) reuse the
+// provider's transport and credential handling. Transport failures return
+// as-is.
+func (c *Client) PostJSON(ctx context.Context, path string, body []byte) ([]byte, error) {
+	httpReq, err := c.newRequestTo(ctx, path, false, body)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.HTTP.Do(httpReq)
+	if err != nil {
+		return nil, err // transport failure: no UpstreamError (tier 1)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, c.mapError(resp)
+	}
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("httpx: read response body: %w", err)
+	}
+	return raw, nil
+}
+
 // newRequest builds the POST request with Bearer auth. The
 // HeaderHook, when present, overlays per-request headers — used by
 // providers whose credentials rotate between dispatches (codex OAuth) and
 // for Accept negotiation on streaming requests.
 func (c *Client) newRequest(ctx context.Context, stream bool, raw []byte) (*http.Request, error) {
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+c.ChatPath, bytes.NewReader(raw))
+	return c.newRequestTo(ctx, c.ChatPath, stream, raw)
+}
+
+// newRequestTo is newRequest against an explicit path — providers whose
+// non-chat surfaces (decision operations) live on their own endpoint.
+func (c *Client) newRequestTo(ctx context.Context, path string, stream bool, raw []byte) (*http.Request, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+path, bytes.NewReader(raw))
 	if err != nil {
 		return nil, fmt.Errorf("httpx: build request: %w", err)
 	}

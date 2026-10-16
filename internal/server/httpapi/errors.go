@@ -74,6 +74,16 @@ func writeAnthropicError(w http.ResponseWriter, status int, errType, message str
 	_, _ = w.Write([]byte(body))
 }
 
+// writeSystemOneError emits the systemone error shape: {"error":".."} with
+// the documented status codes (400 invalid request, 401 auth, 402 cloud
+// plan/credits, 404 model, 413 limits, 500 scoring failure). The type field
+// has no counterpart on this wire.
+func writeSystemOneError(w http.ResponseWriter, status int, _ string, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte(`{"error":` + jsonString(message) + `}`))
+}
+
 // jsonString marshals s as a JSON string, falling back to "" on the
 // impossible marshal failure of a string.
 func jsonString(s string) string {
@@ -113,6 +123,17 @@ func anthropicErrorWriter() errorWriter {
 		write:          writeAnthropicError,
 		overloadStatus: 529, // Anthropic overload semantics, not a net/http constant
 		overloadType:   "overloaded_error",
+	}
+}
+
+// systemOneErrorWriter answers systemone-shaped error bodies. The
+// reference's retryable state is 500 ("model loading, rendering, or
+// scoring failed"), so an all-providers-in-cooldown chain maps there.
+func systemOneErrorWriter() errorWriter {
+	return errorWriter{
+		write:          writeSystemOneError,
+		overloadStatus: http.StatusInternalServerError,
+		overloadType:   "",
 	}
 }
 

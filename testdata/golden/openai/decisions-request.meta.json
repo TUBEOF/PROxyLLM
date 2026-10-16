@@ -1,0 +1,6 @@
+{
+  "fixture": "decisions-request.json",
+  "source": "https://developers.openai.com/api/docs/guides/decisions",
+  "accessed": "2026-10-16",
+  "notes": "OpenAI Decisions request per the documented schema: model (gpt-6-luna is the only model), the input field, and a questions array whose entries carry type/name/instructions plus choices ({value, description}) or levels ({label, description}, lowest to highest). The guide's own example values for input and the choice/predicate shapes are used verbatim; the score question follows the guide's documented levels shape."
+}

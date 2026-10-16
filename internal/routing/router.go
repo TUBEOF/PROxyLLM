@@ -633,6 +633,7 @@ func missingCapabilities(have, want provider.Capabilities) string {
 		{want.WebFetch, have.WebFetch, "web_fetch"},
 		{want.CodeExecution, have.CodeExecution, "code_execution"},
 		{want.Thinking, have.Thinking, "thinking"},
+		{want.Decision, have.Decision, "decision"},
 	} {
 		if p.want && !p.have {
 			return p.name

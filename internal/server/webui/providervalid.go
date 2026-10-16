@@ -82,6 +82,7 @@ var knownCapabilities = map[string]bool{
 	"web_fetch":      true,
 	"code_execution": true,
 	"thinking":       true,
+	"decision":       true,
 }
 
 // MergeProviderConfig overlays own onto shared (ADR-009 decision 1: type
@@ -195,7 +196,7 @@ func parseProviderConfig(typ string, raw []byte, guardURLs bool) (ProviderConfig
 
 	for name := range cfg.Capabilities {
 		if !knownCapabilities[name] {
-			return cfg, fmt.Errorf("unknown capability %q (streaming, tools, vision, web_search, web_fetch, code_execution, thinking)", name)
+			return cfg, fmt.Errorf("unknown capability %q (streaming, tools, vision, web_search, web_fetch, code_execution, thinking, decision)", name)
 		}
 	}
 

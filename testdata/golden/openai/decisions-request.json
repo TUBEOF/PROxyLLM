@@ -1,0 +1,31 @@
+{
+  "model": "gpt-6-luna",
+  "input": "Our checkout has returned 500 errors since 9am.",
+  "questions": [
+    {
+      "type": "predicate",
+      "name": "visible_damage",
+      "instructions": "Does the report describe visible damage?"
+    },
+    {
+      "type": "choice",
+      "name": "department",
+      "instructions": "Which department should handle this?",
+      "choices": [
+        { "value": "billing", "description": "Payments and refunds" },
+        { "value": "bug", "description": "Software errors" },
+        { "value": "account", "description": "Login and account access" }
+      ]
+    },
+    {
+      "type": "score",
+      "name": "severity",
+      "instructions": "How severe is the impact?",
+      "levels": [
+        { "label": "No impact", "description": "Nothing is degraded" },
+        { "label": "Workaround available", "description": "A workaround exists" },
+        { "label": "Feature broken", "description": "The feature does not work" }
+      ]
+    }
+  ]
+}

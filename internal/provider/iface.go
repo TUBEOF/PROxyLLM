@@ -112,6 +112,13 @@ type Capabilities struct {
 
 	// Thinking indicates extended-thinking support with signatures.
 	Thinking bool
+
+	// Decision indicates the decision surface (System One / Jev and the
+	// OpenAI Decisions API): typed questions scored against shared
+	// evidence in one non-streaming pass. Routing filters decision
+	// requests on this flag; the provider must also implement Decider
+	// for it to mean anything.
+	Decision bool
 }
 
 // Registry resolves provider IDs to implementations. Register is part of
@@ -183,6 +190,19 @@ type ModelLister interface {
 	// (transport, auth, unsupported endpoint) — the syncer skips the
 	// provider and records the reason; it never fails the whole run.
 	ListModels(ctx context.Context) ([]ModelInfo, error)
+}
+
+// Decider is the optional decision surface (decision models — System One /
+// Jev, the OpenAI Decisions API): a provider implementing it can answer IR
+// decision requests. Providers without it never serve a decision route —
+// the router's capability filter gates on Capabilities.Decision and the
+// executor's decision walk skips implementations that do not satisfy this
+// interface.
+type Decider interface {
+	// Decide performs one non-streaming decision round trip. Errors are
+	// classified like any upstream failure (UpstreamError status/body
+	// tiers); there is no streaming variant.
+	Decide(ctx context.Context, req ir.DecisionRequest) (ir.DecisionResponse, error)
 }
 
 // NewRegistry returns the default registry with no providers registered.

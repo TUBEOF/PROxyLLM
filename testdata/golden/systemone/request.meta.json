@@ -1,0 +1,6 @@
+{
+  "fixture": "request.json",
+  "source": "https://docs.ollama.com/api/systemone",
+  "accessed": "2026-10-16",
+  "notes": "System One / Jev decision request per the documented schema and example values: model, a nonempty state, and the three question types (choice with an ordered criteria object — ties follow the model's option order; noul; score with an ordered criteria array, lowest first). The documentation's own example values for state, the choice question and its criteria are used verbatim; the noul and score questions extend the same schema so one fixture covers all three types."
+}

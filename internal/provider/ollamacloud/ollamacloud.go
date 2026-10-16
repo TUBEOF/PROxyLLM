@@ -28,11 +28,19 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate"
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 	"github.com/tubeof/proxyllm/internal/translate/openai"
+	"github.com/tubeof/proxyllm/internal/translate/systemone"
 )
 
 // DefaultBaseURL is the hosted Ollama Cloud API root. The /v1
 // version prefix rides the endpoint paths (custom-openai convention).
 const DefaultBaseURL = "https://ollama.com"
+
+// SystemOnePath is the decision endpoint (System One / Jev) relative to
+// the base URL: the hosted API (https://ollama.com/v1/systemone) and a
+// local Ollama server (http://localhost:11434/v1/systemone) serve the same
+// path, so the provider reaches `clef:cloud` and a locally loaded clef
+// through one code path.
+const SystemOnePath = "/v1/systemone"
 
 // Provider is the Ollama Cloud provider: the OpenAI-compatible
 // /v1/chat/completions over HTTPS with Bearer auth, data-only SSE
@@ -98,6 +106,27 @@ func (p *Provider) Complete(ctx context.Context, req ir.Request) (ir.Response, e
 // Stream starts one streaming /api/chat round trip (NDJSON lines).
 func (p *Provider) Stream(ctx context.Context, req ir.Request) (<-chan ir.StreamEvent, func(), error) {
 	return p.client.Stream(ctx, req, p.codec.EncodeRequest, p.decoder)
+}
+
+// Decide performs one decision round trip (clef and the other System One
+// models) against {BaseURL}/v1/systemone with the account's Bearer key —
+// the same credential the chat path uses. The wire pair is the systemone
+// codec: non-streaming, one JSON response; upstream errors carry the
+// account's error shape and classify like any other upstream failure.
+func (p *Provider) Decide(ctx context.Context, req ir.DecisionRequest) (ir.DecisionResponse, error) {
+	raw, err := systemone.Codec{}.EncodeRequest(req)
+	if err != nil {
+		return ir.DecisionResponse{}, fmt.Errorf("ollamacloud: encode decision request: %w", err)
+	}
+	body, err := p.client.PostJSON(ctx, SystemOnePath, raw)
+	if err != nil {
+		return ir.DecisionResponse{}, err
+	}
+	resp, err := systemone.Codec{}.DecodeResponse(body)
+	if err != nil {
+		return ir.DecisionResponse{}, fmt.Errorf("ollamacloud: decode decision response: %w", err)
+	}
+	return resp, nil
 }
 
 // ListModels fetches the upstream model list (ADR-010 model sync) —

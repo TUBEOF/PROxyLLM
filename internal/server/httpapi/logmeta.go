@@ -29,6 +29,8 @@ const (
 	protocolAnthropic       = "anthropic"
 	protocolOpenAI          = "openai"
 	protocolOpenAIResponses = "openai-responses"
+	protocolSystemOne       = "systemone"
+	protocolDecisions       = "decisions"
 )
 
 // settingKeyCapturePayloads is the operator's switch for storing the
@@ -73,6 +75,7 @@ func marshalFeatures(c provider.Capabilities) json.RawMessage {
 		"web_search": c.WebSearch,
 		"web_fetch":  c.WebFetch,
 		"vision":     c.Vision,
+		"decision":   c.Decision,
 	})
 	if err != nil {
 		return json.RawMessage(`{}`)
@@ -118,6 +121,31 @@ func (a *api) beginRequest(r *http.Request, protocol string, raw []byte, req ir.
 	// reference is taken; encoding it is deferred to the payload write.
 	a.captureRequest(r.Context(), req)
 	return r
+}
+
+// beginDecisionRequest is beginRequest for the decision surfaces
+// (/v1/systemone, /v1/decisions): the log meta carries the `decision`
+// feature and the surface's protocol value. There is no conversation key —
+// conversation rollups are a chat concept, and a decision request carries
+// no conversation hints. Payload capture is not wired for decisions either
+// (the row, the trace and the usage still are).
+func (a *api) beginDecisionRequest(r *http.Request, protocol, model string) *http.Request {
+	meta := &logMeta{
+		Protocol: protocol,
+		Features: provider.Capabilities{Decision: true},
+	}
+	if a.stream != nil {
+		in := reqlog.Inflight{
+			ClientKeyID: auth.ClientKeyIDFromContext(r.Context()),
+			Model:       model,
+			Protocol:    protocol,
+		}
+		var runID string
+		meta.finish, runID = a.stream.Start(in)
+		meta.RunID = runID
+	}
+	ctx := routing.WithClientKeyID(r.Context(), auth.ClientKeyIDFromContext(r.Context()))
+	return r.WithContext(context.WithValue(ctx, logMetaCtxKey{}, meta))
 }
 
 // finishInflight hands the terminal row to the in-flight tracker (never

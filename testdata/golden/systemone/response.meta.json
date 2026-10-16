@@ -1,0 +1,6 @@
+{
+  "fixture": "response.json",
+  "source": "https://docs.ollama.com/api/systemone",
+  "accessed": "2026-10-16",
+  "notes": "System One / Jev decision response per the documented answer shapes: choice answer with probabilities object and confidence (0.8906 — the documentation's example), noul as a number (not a Boolean), score as the probability-weighted mean of the zero-based criteria indices with a legend and per-index probabilities (the documentation's own 0.1/0.7/0.2 → 1.1 arithmetic), and the required usage object (input_tokens 174 / output_tokens 1 — the documentation's example)."
+}
