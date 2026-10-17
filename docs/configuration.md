@@ -1,134 +1,177 @@
-# Configuration Reference
+# Configuration
 
-## Layers (later overrides earlier)
+PROxyLLM reads its settings in four layers. A later layer wins over an
+earlier one, and the layers have different scopes: the first three describe
+the process (listener, storage, logging, authentication, web-tool
+endpoint), the fourth holds the operator settings the running server reads
+while it serves.
 
-1. **Built-in defaults** — see below
-2. **Config file** — JSON, `config.json` in the working directory by
-   default; override the path with `PROXYLLM_CONFIG_FILE`
-3. **Environment variables** — `PROXYLLM_*`
-4. **Database overrides** — via WebUI settings; highest precedence;
-   exportable as a config file
+| # | Layer | Source | What it can set |
+|---|---|---|---|
+| 1 | Built-in defaults | compiled in, see [Defaults](#defaults) | every process setting |
+| 2 | Config file | `PROXYLLM_CONFIG_FILE`, else `config.json` in the working directory | the non-secret process settings |
+| 3 | Environment | `PROXYLLM_*` variables | the same process settings, plus the secrets and the SSRF-guard opt-out |
+| 4 | Database overrides | the settings key/value store, written by the console or the [admin API](api/admin.md#settings) | the runtime settings in [Database overrides](#database-overrides-layer-4) |
 
-## Config file (layer 2)
+The database layer does not restate the process settings: no key there
+changes `server.addr`, `storage.path` or the log settings, which resolve at
+startup from layers 1–3.
 
-PROxyLLM reads a JSON config file on startup. The file path resolves as:
+## Config file
 
-1. `PROXYLLM_CONFIG_FILE` ENV, if set
-2. `config.json` in the working directory, if it exists
-3. No file — defaults then ENV apply (the normal case; nothing is
-   written to disk automatically)
+The file is read once, at startup. Its path resolves as:
 
-The file carries the non-secret settings only. Unknown keys and
-trailing data are a startup failure (strict parsing — a typo in
-`config.json` must never silently change behavior). Secrets (master
-key, provider credentials) are never read from the file: the master
-key comes from ENV or the keyfile, provider credentials live in the
-encrypted store.
+1. `PROXYLLM_CONFIG_FILE`, when set to a non-empty value;
+2. `config.json` in the working directory, otherwise.
+
+A missing file is not an error — including when `PROXYLLM_CONFIG_FILE`
+named it — so a deployment without a config file is the normal case, and
+the process never writes one. A file that exists but cannot be read or
+parsed fails startup.
+
+The file carries the non-secret process settings and nothing else:
 
 ```json
 {
-  "server":  {"addr": ":8080"},
-  "storage": {"path": "data/proxyllm.db", "master_key_path": "data/master.key"},
-  "log":     {"level": "info", "format": "json"},
-  "auth":    {"disabled": false}
+  "server":    { "addr": ":8080" },
+  "storage":   { "path": "data/proxyllm.db", "master_key_path": "data/master.key" },
+  "log":       { "level": "info", "format": "json" },
+  "auth":      { "disabled": false },
+  "firecrawl": { "base_url": "https://api.firecrawl.dev" }
 }
 ```
+
+The values above are the effective defaults; every key is optional, and an
+absent key leaves the layer below it in place. Parsing is **strict**: an
+unknown key or trailing data after the object is a startup failure that
+names the offending field. A typo in `config.json` must fail loudly, never
+silently reroute traffic under a default.
+
+- `server.addr` — the HTTP listen address.
+- `storage.path` — the SQLite database file.
+- `storage.master_key_path` — the envelope key file (see [Master key](#master-key)).
+- `log.level`, `log.format` — the logger, see the [defaults](#defaults) for accepted values.
+- `auth.disabled` — `true` turns client-key authentication off, exactly as
+  `PROXYLLM_AUTH_DISABLED=1` does, and emits the same loud startup warning.
+  Authentication is on by default, and the console has no switch for it.
+- `firecrawl.base_url` — the Firecrawl API host used by the web-tool
+  emulator; empty selects the client's default, `https://api.firecrawl.dev`.
+
+Secrets never come from the file. The master key and the Firecrawl API key
+are held outside the configuration struct on purpose, so no config dump can
+leak them; both resolve from the environment or a keyfile, and provider
+credentials live encrypted in the database.
+
+In the container the working directory is `/` and `/data` is the bind
+mount, so the relative defaults resolve to `/data/proxyllm.db` and
+`/data/master.key`.
 
 ## Defaults
 
 | Setting | Default | Notes |
 |---|---|---|
 | `server.addr` | `:8080` | HTTP listen address |
-| `storage.path` | `data/proxyllm.db` | SQLite file (mounted at `/data` in Docker) |
-| `storage.master_key_path` | `data/master.key` | Envelope key file (0600) |
-| `log.level` | `info` | `debug`, `info`, `warn`, `error` |
-| `log.format` | `json` | `json` (structured) or `text` (dev) |
-| `auth.disabled` | `false` | Never default-off; opt-out via ENV only |
+| `storage.path` | `data/proxyllm.db` | SQLite file; its directory is created on first start |
+| `storage.master_key_path` | `data/master.key` | envelope key file, mode 0600 |
+| `log.level` | `info` | `debug`, `info`, `warn`, `error`; any other value fails startup |
+| `log.format` | `json` | `text` selects the human-readable handler; anything else is `json` |
+| `auth.disabled` | `false` | client-key authentication is on unless explicitly turned off |
+| `firecrawl.base_url` | *(empty)* | the Firecrawl client then uses `https://api.firecrawl.dev` |
 
 ## Environment variables
 
-| Variable | Maps to | Notes |
+| Variable | Sets | Notes |
 |---|---|---|
-| `PROXYLLM_CONFIG_FILE` | config file path | Overrides the `config.json` default |
-| `PROXYLLM_SERVER_ADDR` | `server.addr` | e.g. `:9090` |
-| `PROXYLLM_STORAGE_PATH` | `storage.path` | Docker default: `/data/proxyllm.db` |
-| `PROXYLLM_MASTER_KEY_PATH` | `storage.master_key_path` | Docker default: `/data/master.key` |
-| `PROXYLLM_MASTER_KEY` | *(direct key)* | 32-byte key, hex/base64; takes precedence over keyfile |
+| `PROXYLLM_CONFIG_FILE` | config file path | an empty value falls back to `config.json` |
+| `PROXYLLM_SERVER_ADDR` | `server.addr` | e.g. `:9090`; also the fallback probe target of `proxyllm -healthcheck` |
+| `PROXYLLM_STORAGE_PATH` | `storage.path` | |
+| `PROXYLLM_MASTER_KEY_PATH` | `storage.master_key_path` | |
 | `PROXYLLM_LOG_LEVEL` | `log.level` | |
 | `PROXYLLM_LOG_FORMAT` | `log.format` | |
-| `PROXYLLM_AUTH_DISABLED` | `auth.disabled` | `1` disables auth — loud startup warning is emitted |
+| `PROXYLLM_AUTH_DISABLED` | `auth.disabled` | boolean: `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`/empty; any other value fails startup. `1` disables client-key auth and emits a loud startup warning |
+| `PROXYLLM_FIRECRAWL_BASE_URL` | `firecrawl.base_url` | |
+| `PROXYLLM_MASTER_KEY` | *(secret)* | 32 bytes as 64 hex characters or 44 base64 characters; takes precedence over the keyfile |
+| `PROXYLLM_FIRECRAWL_API_KEY` | *(secret)* | activates the environment-wired web-tool emulator |
+| `PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS` | *(guard opt-out)* | exactly `1` allows provider endpoints that resolve to private addresses, on both the config write and the redirect guard |
+| `PROXYLLM_HEALTHCHECK_ADDR` | *(probe target)* | read only by `proxyllm -healthcheck`; falls back to `PROXYLLM_SERVER_ADDR`, then `localhost:8080` |
 
-> `PROXYLLM_AUTH_DISABLED=1` is the only way to turn authentication off.
-> There is no config-file or WebUI path to an unauthenticated proxy.
+`PROXYLLM_AUTH_DISABLED=1` is for local experiments. There is no console
+path to an unauthenticated proxy, and the proxy should never be reachable
+without authentication on a network you do not control.
+
+Test-time variables (`PROXYLLM_SMOKE*`, `PROXYLLM_PERF_BUDGETS`) are not
+runtime configuration; they are documented in
+[development](development.md#smoke-tests).
 
 ## Database overrides (layer 4)
 
-The settings KV (WebUI-editable) is the highest layer. Three keys are
-live-routing overrides — a successful write reaches the runtime without
-restart:
+The console's Settings page and the [admin API](api/admin.md#settings) write
+into a generic key/value store in the database. That store is the highest
+layer, and it is read by the running process — not only at startup:
 
-| Key | Values | Effect |
+- Settings the request path consults, such as `anthropic_surface_non_claude`
+  and `request_logging_enabled`, are read per request.
+- The model-sync configuration is re-read on every scheduler tick.
+- Aliases, caption settings, the global routing strategy and the fallback
+  lists are pushed into the live runtime when they are saved, and a provider
+  write reloads the provider set. Each of those routes is listed in the
+  [admin API](api/admin.md).
+
+A reload runs only after a successful store write, and a failed re-read
+keeps the last known-good live value, so a transient store error cannot
+de-route a running proxy. A value the runtime cannot parse degrades to the
+documented default for that key — it never fails closed and never fails
+startup. Deleting a key returns the setting to its lower layer, which for
+these keys means the default.
+
+| Key | Value | Meaning documented in |
 |---|---|---|
-| `model_aliases` | JSON object alias → model-id | Routing-side alias resolution (WebUI "Routing" → "Model Aliases", relocated from Models 2026-10-08): the target model's rule chain routes the alias request. Keys are exact names or `*` patterns (`*` matches any run of characters); an exact entry wins, otherwise the most literal matching pattern does (ties: lexicographic). An invalid blob logs and routes without aliases until it is fixed |
-| `anthropic_surface_non_claude` | `allow` (default) / `warn` / `block` | Global switch on the Anthropic surface : `warn` annotates route_trace with a compat_policy event; `block` refuses non-Claude model names with a 400 — Claude targets are always spared; a missing or invalid value is `allow` (never fails closed) |
-| `routing_strategy` | `round_robin` (default) / `fill_first` | Global default routing strategy (ADR-009): how requests spread across a chain's accounts. Rules without their own strategy inherit it; the WebUI Routing page edits it. A missing or invalid value is `round_robin` |
-| `vision_fallback` | JSON array of MODEL IDs | Capability fallback models (ADR-010, amended 2026-10-10 by ADR-014): when the routed chain failed with real upstream `capability_gap` rejections (e.g. image input), these models DESCRIBE each image — they receive the image and the instruction, never the conversation — and the descriptions replace the images before the routed chain is dispatched again. Entries are validated against the models table at save time (v1.0.2 provider-ID/type entries no longer resolve); edited on the Routing page. Empty/absent = no fallback (the request fails with the upstream error) |
-| `web_search_fallback` | JSON array of web-tool account IDs | Emulator pool order for emulated `web_search` (ADR-010): accounts are tried in order, a failing account fails over to the next. Empty = single-emulator behavior |
-| `web_fetch_fallback` | JSON array of web-tool account IDs | Same as `web_search_fallback`, for `web_fetch` |
-| `vision_caption_prompt` | string (default: a 2–3 sentence description instruction) | The base instruction a vision fallback model receives when describing an image (ADR-014) |
-| `vision_caption_task_aware` | `0` disables (default: on) | Appends the client's most recent text turn to the caption prompt, so the description targets the question that came with the image |
-| `vision_caption_timeout_ms` | integer > 0 (default 30000) | Per-image time limit for a caption call |
-| `model_sync_enabled` | `1` (default) / `0` | Automatic model import (ADR-010): when on, every provider exposing model discovery mirrors its upstream list at startup and on the configured cadence |
-| `model_sync_interval_hours` | integer ≥ 1 (default 24) | Sync cadence; effective at the next tick without restart |
-| `model_sync_state` | JSON (read-only — written by the sync) | Last-run summary: per-provider added/updated/removed counts and skip reasons; rendered on the Models page |
-| `request_logging_enabled` | `1` (default) / `0` | Capture each request's conversation and answer beside its log row, readable in the Logs drawer. On by default — reading what a request said is the point of the log. Turning it off keeps every metadata row; only the captured text stops. Written by the Logs page's "capture bodies" switch. Payloads are redacted, capped at 64 KB per side, and pruned |
-| `request_payload_retention_days` | integer ≥ 1 (default 7) | How long captured payloads are kept. A sweep prunes older ones hourly (and once at startup) alongside the model-sync scheduler; pruning never removes the request_logs row itself |
+| `model_aliases` | JSON object, alias → model ID | [Routing and fallbacks](routing-and-fallbacks.md#model-identity) |
+| `routing_strategy` | `round_robin` (default) / `fill_first` | [Routing and fallbacks](routing-and-fallbacks.md#rule-model-evaluation-order) |
+| `vision_fallback` | JSON array of model IDs | [Routing and fallbacks](routing-and-fallbacks.md#capability-fallback-lists) |
+| `vision_caption_prompt` | string | [Routing and fallbacks](routing-and-fallbacks.md#the-vision-rescue) |
+| `vision_caption_task_aware` | `0` disables it (default: on) | [Routing and fallbacks](routing-and-fallbacks.md#the-vision-rescue) |
+| `vision_caption_timeout_ms` | integer > 0 (default `30000`) | [Routing and fallbacks](routing-and-fallbacks.md#the-vision-rescue) |
+| `web_search_fallback` | JSON array of web-tool account IDs | [Routing and fallbacks](routing-and-fallbacks.md#capability-fallback-lists) |
+| `web_fetch_fallback` | JSON array of web-tool account IDs | [Routing and fallbacks](routing-and-fallbacks.md#capability-fallback-lists) |
+| `anthropic_surface_non_claude` | `allow` (default) / `warn` / `block` | [Routing and fallbacks](routing-and-fallbacks.md#non-claude-routing--compatibility) |
+| `model_sync_enabled` | `1` (default) / `0` | [Routing and fallbacks](routing-and-fallbacks.md#model-sync) |
+| `model_sync_interval_hours` | integer ≥ 1 (default `24`) | [Routing and fallbacks](routing-and-fallbacks.md#model-sync) |
+| `model_sync_state` | JSON, written by the sync (read-only) | [Operating: Models](operating.md#models) |
+| `provider_type_settings` | JSON object keyed by provider type | [Operating: providers and accounts](operating.md#providers-and-accounts) |
+| `request_logging_enabled` | `1` (default) / `0` | [Operating: logs](operating.md#logs) |
+| `request_payload_retention_days` | integer ≥ 1 (default `7`) | [Operating: logs](operating.md#logs) |
+| `account_usage:<provider-id>` | JSON, written by the usage prober (read-only) | [Operating: quota](operating.md#quota) |
 
-### Context & capability auto-detection
-For Ollama Cloud accounts, the model sync enriches each imported model
-by querying the registry's per-model facts endpoint (`POST /api/show`,
-verified live 2026-10-06). Detection populates:
-
-- **`context_window`** in the model's compat blob — from the endpoint's
-  `model_info` `<arch>.context_length` (e.g. `glm5_next.context_length:
-  1048576` for `glm-5.3-flash`; the arch prefix varies per model family).
-  The detected value is populated and shown in the Models editor; when
-  it is present, the count_tokens heuristic and capability checks can
-  read it instead of assuming a default window.
-- **Capabilities** (`tools`, `vision`, `thinking`) in the model's
-  capabilities blob, from the endpoint's `capabilities` list.
-
-The detection is per-model best-effort: a failed or unknown-model probe
-imports the model with zero detected facts and never fails the sync
-run. Operator settings always win — the merge only fills EMPTY
-capabilities blobs and compat blobs without a non-zero `context_window`
-pin, and manual-origin rows are never touched (ADR-010 operator-edit
-survival).
-
-Claude Code appends the context-window marker `[1m]`/`[1M]` to model
-names to declare its 1M-context override (`glm-5.3-flash[1M]`). The
-marker is a client-side hint, never part of the model identity: routing
-strips it and dispatches the base model — recorded in the request's
-`route_trace` as a `context_override` event (schema version 6).
-
-The provider-type settings (`provider_type_settings`, ADR-009) ride the
-same KV: one JSON object keyed by provider type holding the type's shared
-fields (e.g. the codex issuer). Account-level config fields override them;
-the WebUI provider pages edit them through forms.
-
-Every applied policy (including `warn`) is recorded in the request's
-`route_trace` — policy application is never silent.
+The per-model compatibility settings (`thinking_handling`,
+`server_tool_emulation`, `max_tokens_clamp`, `context_window`,
+`cache_control`) are stored on the model row, not in this store — see
+[model compatibility](reference/model-compat.md#the-settings).
 
 ## Master key
 
-The AES-256-GCM envelope master key (provider credentials at rest) is
-resolved in this order:
+The AES-256-GCM envelope master key seals provider credentials at rest, and
+is resolved in this order:
 
-1. `PROXYLLM_MASTER_KEY` ENV (hex- or base64-encoded 32 bytes)
-2. Keyfile at `storage.master_key_path` (0600 permissions, generated on
-   first start if absent)
+1. `PROXYLLM_MASTER_KEY`, decoded as 64 hex characters or 44 base64
+   characters (exactly 32 bytes either way);
+2. the keyfile at `storage.master_key_path` — created with mode 0600 on
+   first start if it does not exist, containing the key as hex.
 
-Rotation (v1.1): the envelope wire format reserves version + `key_id`
-fields so the format does not change, but the re-encryption task is not
-implemented in v1 — treat the master key as immutable for now and back it
-up with the database.
+The same bytes have two further uses, so they are part of the backup, not
+an implementation detail: they sign the console's session and CSRF tokens,
+and they derive the MAC under which client keys are stored. Rotating the
+master key therefore invalidates every client key, and the keys are
+display-once, so they cannot be re-hashed — they must be reissued.
+
+The envelope format reserves the version and key-id fields a rotation would
+need, but the re-encryption task is not implemented in this release: treat
+the master key as immutable and back it up together with the database. One
+without the other is not a restore.
+
+## Not on this page
+
+- Endpoints and their request/response shapes: [API reference](api/README.md).
+- Console pages and day-2 operations: [Operating PROxyLLM](operating.md).
+- Build, test and release mechanics: [Development](development.md).
+- Deployment, TLS and backup procedure: [Deployment](deployment.md).

@@ -1,253 +1,383 @@
-# Routing & Fallbacks
+# Routing & fallbacks
 
-The routing engine is deterministic and observable: every
-skip, retry, failover, compat-policy application, tool-emulation
-substitution, chain expansion, and strategy rotation lands in the request's
-`route_trace` — **fallbacks are never silent**.
+The routing engine is deterministic and observable. Every skip, retry,
+failover, capability substitution and strategy rotation is recorded in the
+request's `route_trace`, so the path a request took can be reconstructed
+after the fact — fallbacks are never silent. The event schema and its
+versioning are in [route trace](reference/route-trace.md); the console
+renders the trace on the request row and derives that request's
+sub-operations from it ([the console](operating.md#logs)).
 
 ## Model identity
-A model's routing identity is `<prefix>/<wire-name>` (e.g.
-`ollamacloud/glm-5.3`): the prefix is a per-provider-type setting
-(editable on the provider type's page, default = the type string), the
-wire name is what the upstream expects. The models table stores both
-(`ID` = routing identity, `Name` = wire name); the model sync creates
-prefixed rows, and legacy unprefixed rows keep working (wire name = ID).
-Before dispatch, the resolved chain's routing ID maps to the wire name
-(row wins; a missing row falls back to the tail after the last slash) —
-traced as `model_resolved` (route_trace v4). The client-facing response
-echoes the routing identity, never the wire name. Aliases
-(`model_aliases`) map client-facing names to routing identities and resolve
-before rule matching. A key is an exact name or a `*` wildcard pattern; an
-exact entry wins, and among the matching patterns the one with the most
-literal characters does (ties: lexicographic — one deterministic answer).
-Wildcards cover Claude Code's versioned auxiliary IDs (`claude-sonnet-4-6`,
-`claude-haiku-5-5`, the dated legacy spelling `claude-3-5-sonnet-…`), which
-change with every release: `claude-sonnet-*` serves the whole family without
-an entry per release. The resolution is an `alias` trace event like any
-other, and an alias target is never resolved again. A request nothing
-matches keeps the documented no-route 404 — its message names the model
-(`model: <id>`), because that is the shape Claude Code classifies as
-model-not-found, the precondition for its own fallback.
+
+A model's routing identity is `<prefix>/<wire-name>` (`ollamacloud/glm-5.3`).
+The prefix is a per-provider-type setting, defaulting to the type string; the
+wire name is what the upstream expects. The models table stores both — the ID
+is the routing identity, the name is the wire name — and the model sync
+creates prefixed rows. Rows without a prefix keep working, their wire name
+being their ID.
+
+Before dispatch, a resolved chain's model — a routing identity — is mapped to
+the wire name the upstream expects: a model row for that identity is
+authoritative, and without one the tail after the last slash is used. Every
+entry of a chain carries the same model, so one lookup covers the whole
+chain. The client-facing response echoes the routing identity the client
+asked for, and the wire name never appears in a response field
+([client API](api/README.md#shared-request-conventions)); the resolution is
+recorded as a `model_resolved` trace event.
+
+Aliases resolve before rule matching, so an aliased request is routed by its
+target's rules. The map is the `model_aliases` setting
+([configuration](configuration.md#database-overrides-layer-4)); a key is an
+exact name or a `*` pattern, an exact entry wins, and among matching patterns
+the one with the most literal characters wins, ties going to the
+lexicographically smaller key — exactly one deterministic answer. The
+resolution is traced like any other transition, and an alias target is never
+resolved again. Wildcard keys exist for clients that fire auxiliary requests
+under versioned model IDs pinned by their own releases; the alias setup for
+Claude Code is in [Claude Code with non-Claude
+models](claude-code.md#model-names-aliases-and-wildcards).
+
+A request that matches nothing answers the reference's model-not-found 404,
+whose message names the model ([errors](api/errors.md#model-not-found-404)).
 
 ## Rule model (evaluation order)
 
-1. **Key scope** — the client key's allowed model patterns.
-2. **Model match** — exact model id, wildcard (`*` matches any run of
-   characters), or alias (the
-   `model_aliases` setting maps Claude Code naming to your models).
-   **Implicit routes (ADR-011):** when no enabled rule matches, the
-   models table is consulted — a row for the requested model ID routes
-   to that row's provider as a one-entry chain, traced as
-   `implicit_route`. Rules always win (any matching rule suppresses the
-   implicit route); key scopes and aliases resolve first as above. A
-   dead, uncredentialed, or cooled-down provider still yields the honest
-   `chain empty …` rejection with skip events — same behavior as an
-   explicit rule. To take a model out of service without a rule, delete
-   or disable its model row (or use key scopes).
-3. **Chain resolution** — the ordered fallback chain for the matched
-   rule. An entry names a provider ID, a `provider-id/model-id` pair, or
-   a provider TYPE (ADR-009): a type entry expands to all accounts of
-   that type at request time, so a newly added account joins the
-   rotation without any rule edit. Accounts without a credential (an
-   abandoned OAuth draft) stay out of the expansion.
-4. **Strategy** (ADR-009) — how requests spread across the expanded
-   chain. Per rule, with a global default (`routing_strategy` setting,
-   default `round_robin`):
-   - **Round Robin** — each request rotates the chain by one position;
-     the rotation is a trace event.
-   - **Fill-First** — the chain order is kept: the first entry serves
-     everything until the health gate opens (breaker cooldown) or a 429
-     exhausts its retry budget, then the next entry takes over.
-5. **Capability filter** — deterministic surface/emulation capabilities
-   derived from the request content (web_search, web_fetch,
-   code_execution, streaming, context size vs. window); providers failing
-   the filter are skipped **with a logged reason**. Vision is deliberately
-   NOT gated here: static provider
-   flags cannot know which MODEL accepts images — the request goes out,
-   and a real upstream rejection fails over.
-6. **Health gate** — circuit breaker (consecutive failures), exponential
-   backoff, probe recovery; cooled-down providers are skipped or
-   deprioritized.
-7. **Capability fallbacks** (ADR-010, amended 2026-09-21) — when the whole
-   chain failed with `capability_gap` rejections (a 400 naming the input
-   modality, e.g. "image input is not supported"), the global
-   `vision_fallback` MODEL list (Routing page) gets one walk of its own in
-   the executor — every consultation is a traced `capability_fallback`
-   event. An empty list keeps the documented upstream error.
+1. **Key scope** — the client key's allowed model patterns. A key with no
+   entry is unrestricted; a request outside its key's patterns is rejected
+   ([errors](api/errors.md#status-codes)).
+2. **Alias** — the requested name maps to its configured target, which is
+   what everything below matches on.
+3. **Model match** — the model id against the enabled rules: exact matches
+   before wildcards, then priority (higher wins), then registration order. A
+   wildcard `*` matches any run of characters, including none, and a pattern
+   without `*` is exact-only — a plain name never matches as a substring.
+   **Implicit routes** are the fallback of this step: when no enabled rule
+   matches, the models table is consulted, and a row for the requested model
+   routes to that row's provider as a one-entry chain. Rules always win over
+   an implicit route. The implicit chain then runs the pipeline below
+   unchanged — expansion, credential gate, strategy, capability filter,
+   health gate — so it is skipped, filtered or cooled down exactly as an
+   explicit chain entry would be
+   ([ADR-011](adr/ADR-011-implicit-model-routes.md)).
+4. **Chain expansion** — the matched rule's ordered chain. An entry names a
+   provider account ID, a `provider-id/model-id` pair, or a provider type. An
+   exact account wins; a type entry expands at request time to every
+   credentialed account of that type in stable registry order, so a newly
+   added account joins the chain without a rule edit. Accounts without a
+   credential (an abandoned OAuth draft) are excluded from the expansion and
+   the exclusion is traced.
+5. **Strategy** — how requests spread across the expanded chain, per rule
+   with a global default (`routing_strategy`, default `round_robin`):
+   - **Round robin** rotates the chain by one position per request, using a
+     per-rule counter, before the capability and health filters — rotation
+     reorders candidates and never overrides a gate. The rotation is a trace
+     event, including the turn that rotates by zero.
+   - **Fill-first** keeps the chain order: the first entry serves everything
+     until the health gate opens or a 429 exhausts that provider's retry
+     budget, and the next entry then takes over.
+6. **Capability filter** — the capabilities the request needs, derived from
+   its content, against what the candidate declares. A candidate missing a
+   required capability is skipped with a traced reason. Vision is
+   deliberately not gated here: static provider flags cannot know which
+   *model* accepts images, so the request goes out and a real upstream
+   rejection fails over (see the rescue below). The model row's learned
+   vision fact is applied last, as a preference among the survivors.
+7. **Health gate** — a candidate whose account is in cooldown is skipped with
+   a traced reason. If *every* candidate was skipped for cooldown alone, the
+   answer is the retryable all-providers-unavailable status rather than a
+   404, because the model routed and the accounts are merely pausing
+   ([errors](api/errors.md#all-providers-unavailable-retryable)).
+8. **Capability fallbacks** — when the whole chain has been attempted and
+   every attempt failed with `capability_gap`, the configured vision models
+   get one walk of their own in the executor (see the rescue below). Every
+   consultation is traced.
 
-Config lives in the DB and is editable in the WebUI (**Routing**); rule
-writes reach the live router without restart — only a successfully read
-rule set swaps in (a failed store write keeps the last known-good rules).
-The executor's attempt cap (2–3 providers per request) still applies to
-the expanded chain — a very long account pool is not walked in one
-request.
+Config lives in the database and is edited in the console
+([Routing](operating.md#routing)); rule writes reach the live router without
+a restart, and only a successfully read rule set replaces the live one — a
+failed store read keeps the last known-good rules rather than de-routing
+everything. The executor's attempt cap (three chain entries by default) still
+applies to the expanded chain, so a very long account pool is not walked in
+one request.
 
-## When a capability is unknown
+## What the filter does with an unknown
 
-A chain entry is filtered on the capabilities the request needs, and each of
-those decisions answers the same question differently: **is a wrong answer
-worse than a missing one?** A request is never silently sent to a target that
-cannot serve it, but "we do not know" is not one value.
+A chain entry is filtered on the capabilities the request needs, and the two
+kinds of statement behind that decision treat an unknown differently. The
+question underneath is always the same: **is a wrong answer worse than a
+missing one?**
 
 | Capability | Unknown means | Why |
 |---|---|---|
-| `streaming`, `tools`, `thinking`, `web_search`, `web_fetch`, `code_execution`, `decision` | **permitted** — only a declared `false` excludes an entry | a target that turns out not to support the flag produces a worse answer, not a false one; the answer itself is still about the request |
-| `vision` | **permitted** — and the image is handled by the rescue below | the rescue exists precisely for this: a model that cannot see images answers a 400, the images are described, and the chain is retried. An unnecessarily described image costs fidelity; a wasted round trip costs time |
+| `streaming`, `tools`, `thinking`, `web_search`, `web_fetch`, `code_execution`, `decision` | not a case — a provider type's defaults, overlaid by the operator's pins, declare the set | these are properties of the account's type and its configuration, decidable before anything is dispatched; a missing flag is a fact, and the entry is skipped with a traced reason |
+| `vision` (the model row's learned fact) | **permitted** — only a learned `false` excludes an entry | a row that never formed an opinion is not evidence that the model is blind, and treating it as one would route around every model the sync has not classified |
 
-The one thing an unknown capability must never do is make the request fail: a
-chain whose every entry is filtered out is a hard no-route, so the filter only
-ever narrows a chain that still has a member.
+A candidate is dropped on a declared or learned fact, never on a guess. The
+vision gate is the one gate that must also leave a chain standing when it
+would otherwise empty it: a chain whose every candidate is known blind is
+exactly the case the rescue exists for, and emptying the chain there would
+turn a rescue into a hard no-route.
 
-Vision is the case worth watching, because a model that answers with confidence
-about an image it never received is the worst outcome in this system. If a model
-row that has no opinion about vision is ever seen doing that, the rule above is
-the one to revisit — the model table can carry the fact, and the router already
-reads it.
+Vision is the case worth watching, because a model that answers with
+confidence about an image it never received is the worst outcome in this
+system. The guard against it is the learning loop: a real rejection is
+recorded on the model row, so the same model is not sent an image twice, and
+a chain that has no sighted candidate left is rescued by describing the image
+instead (below).
 
-## Capability fallback lists (ADR-010, amended 2026-09-21)
+## Capability fallback lists
 
-The Routing page holds three global priority lists (drag-drop ordered,
-saved in one write):
+Three priority lists on the console's **Routing** page put a fallback behind
+a capability the routed chain could not serve. They are edited together and
+saved in one write, and they are the `vision_fallback`,
+`web_search_fallback` and `web_fetch_fallback` settings
+([configuration](configuration.md#database-overrides-layer-4)):
 
-| List | Entries | Semantics |
+| List | Entries | Consumed by |
 |---|---|---|
-| **Vision fallback** | MODEL IDs (routing identities, e.g. `ollamacloud/glm-5.3`) | After a chain exhausted on `capability_gap` rejections, these models DESCRIBE each image (they never receive the conversation); the descriptions replace the images and the routed chain is dispatched again (ADR-014) |
-| **Web search fallback** | Web-tool account IDs (firecrawl, ollama-cloud-web) | The emulator pool tries accounts in order on emulated `web_search`; a failing account fails over to the next |
-| **Web fetch fallback** | Web-tool account IDs | Same as above for `web_fetch` |
+| **Vision fallback** | model IDs (routing identities, e.g. `ollamacloud/glm-5.3`) | the executor's image rescue, after a chain exhausted on `capability_gap` |
+| **Web search fallback** | web-tool account IDs | the emulator pool, for emulated `web_search` |
+| **Web fetch fallback** | web-tool account IDs | the emulator pool, for emulated `web_fetch` |
 
-**Spec change 2026-09-21** (breaking for the vision list): entries are
-MODEL IDs validated against the models table at save time — provider
-IDs/types from v1.0.2 configurations no longer resolve and are skipped
-with a log line until re-saved. The fallback moved from the router's
-pre-stream gate to the executor: it fires only after the routed models
-REALLY rejected the request at the upstream (HTTP 400 naming the input
-modality — image, multimodal, unsupported content), never to rescue an
-unresolvable chain (that stays the no-route error).
+Entries are validated against the database at save time — a vision entry must
+be an existing model row, a web entry an existing account of a web-tool type
+— so a typo fails the save instead of being skipped at request time. A stored
+list is re-resolved on every live reload, and an entry that no longer
+resolves (a deleted model, a list written by an older release that named
+provider accounts in the vision list) is skipped with a log line rather than
+taking the rest of the list down with it. An empty or unresolvable web list
+keeps the accounts' own insertion order.
 
-**Image-to-text fallback (ADR-014, 2026-10-10 — replaces the whole-conversation
-resend)**: the vision list names the models that **describe** an image; they
-never receive the request. When a chain exhausts on `capability_gap`
-rejections, the executor finds every image part (descending into tool-result
-content, which may carry images too), asks the configured vision models in
-order to describe each one — a model gets the image and the instruction, no
-history, no tools — and substitutes each description for its image. The routed
-chain is then dispatched again, so the model that answers is the one the
-operator routed to. Because the describer only ever sees an image, **its
-context window is irrelevant**, which is the point: the rescue used to
-re-send the conversation and was therefore unusable precisely in the long
-session it exists for.
+## The vision rescue
+
+**What triggers it.** After the routed chain has been attempted and *every*
+attempt failed with `capability_gap` — an upstream 400 naming the input
+modality ("image input is not supported"). Nothing else triggers it: a 401 or
+a `content_filter` must not be "rescued" by another model, and a chain that
+failed for mixed reasons has no rescue to offer. Nor does it rescue a request
+that never routed at all: an unresolvable model stays the no-route error. An
+empty vision list keeps the original upstream error.
+
+**Describe, do not resend.** The vision list names models that *describe* an
+image; they never receive the request. Every image part is extracted — the
+walk descends into tool-result content, which can carry images too — and each
+one is described by the configured models in order. A describer receives the
+image and the instruction: no conversation, no history, no tools. Its context
+window is therefore irrelevant to whether it can serve, which is the point —
+re-sending the conversation made the rescue unusable in precisely the long
+session it exists for. The descriptions then replace the images and the
+*same* routed chain is dispatched again, so the model that answers is the one
+the operator routed to ([ADR-014](adr/ADR-014-image-to-text-vision-fallback.md)).
 
 Details that matter in operation:
 
-- The instruction is task-aware by default: the client's most recent text turn
-  is appended (settings `vision_caption_prompt`, `vision_caption_task_aware`,
-  `vision_caption_timeout_ms`), and visible-text transcription is called out.
-- A remote image (URL source) is downloaded and inlined first, through the
-  guarded HTTP client. Wire encoders differ, and one drops a URL-sourced image
-  outright — which would leave the describer commenting on something it never
-  received. If the fetch is refused, the image stays in place and the refusal is
-  traced.
+- The instruction is task-aware by default: the client's most recent text
+  turn is appended so the description targets the question that came with the
+  image, and transcribing visible text is called out. The prompt, the
+  task-aware switch and the per-caption timeout are settings
+  ([configuration](configuration.md#database-overrides-layer-4)).
+- A remote image is downloaded and inlined before it is described, through
+  the guarded HTTP client (private ranges and redirects refused). Wire
+  encoders differ, and one drops a URL-sourced image outright — which would
+  leave the describer commenting on something it never received. If the fetch
+  is refused, the image stays in place and the refusal is traced.
 - A description that cannot be produced for one image leaves **that image in
-  place** — no placeholder, no dropped input. If no image could be described at
-  all, the request ends with the ORIGINAL `capability_gap` error.
-- The rescue runs **once**: the re-dispatch has the fallback disabled, so a model
-  that rejects the transcript too ends the request instead of describing again.
-- Every use is traced (`image_caption`, plus `capability_fallback` for the
-  consultation and for any image left in place), and `image_caption` is its own
-  log row: the operator can see what the answering model was told the image
-  showed. Caption token spend is folded into the request's usage.
+  place** — no placeholder, no dropped input. If no image could be described
+  at all, the request ends with the original `capability_gap` error rather
+  than with a side effect of a rescue that never happened.
+- The rescue runs **once**: the re-dispatch carries the fallback disabled, so
+  a model that rejects the transcript too ends the request instead of
+  describing again.
+- Descriptions are cached by image content, so the second and every later
+  turn of a conversation carrying the same image costs nothing and the
+  substituted text stays stable from turn to turn. A cached description
+  replaced the image without an upstream call: it is traced, but it produces
+  no sub-operation row, because no operation ran.
+- The caption's token spend folds into the request's usage, on the complete
+  path and on the streamed one alike.
+- Every use is traced: an `image_caption` event per description — the log row
+  that shows what the answering model was told the image showed — plus a
+  `capability_fallback` event for the consultation and for any image left in
+  place.
 
-**Context-window rejections fail over (ADR-013, 2026-10-09)**: a 400 whose
-body code (`context_length_exceeded`) or message says the input exceeds the
-model's window is its own class, `context_window_exceeded`, and **fails
-over** — it is not a client error. The request is well-formed; only a
-larger target can serve it. Vendors word this differently ("prompt is too
-long", "maximum context length", "input length exceeds the context length",
-…), so the matcher consults the body code and the message. Before this
-class existed such a 400 was terminal, which meant a chain died on its first
-too-small model instead of reaching a larger one further down.
+**Learning.** Every `capability_gap` rejection persists the observed gap into
+the model row's capabilities (`"vision": false`), asynchronously and never on
+the request path; the row's origin is preserved. A capability the operator
+pinned in the model editor ([the console](operating.md#models)) is left alone
+— the pin is the operator's statement about that flag, and it stops learning
+for exactly that flag until it is removed
+([model compatibility](reference/model-compat.md#capabilities-and-pins)).
 
-**Wiring note**: the two web-tool lists are now CONSUMED —
-until this fix the pool was assembled in registry account order and the
-stored lists were validated but ignored. Pool assembly resolves each
-entry's account to its emulator and walks the lists in priority order;
-unknown accounts (e.g. a deleted account named in a stale list) are
-skipped with a log line, and an empty list keeps the insertion order.
+**The learned gap is read back.** Learning that nothing consumes is just a
+write: a row that had learned `vision: false` was still sent the image on
+every turn, so an image in a conversation cost one upstream rejection and one
+description per request, for the rest of the session. Two consumers close
+that loop:
 
-**Streaming emulation**: a STREAMING request whose tools
-include emulated defs rides the complete-path emulation round trip to
-finality, and the final response is synthesized into a protocol-conform
-event stream. Latency trade: such a request has no token streaming (the
-model's whole answer completes before the first byte) — the trade for
-real tool results; relaying raw tool_use (the previous behavior) was
-neither conform nor useful. The stream path's failover/capability
-discipline is unchanged for requests WITHOUT emulated defs.
+- The router prefers candidates that can see images. With more than one
+  candidate surviving the filters, an entry whose row knows it is blind is
+  skipped (traced as `capability gap: vision`) as long as at least one
+  candidate remains — so a chain with an alternative goes straight to the
+  model that can serve the request.
+- When every candidate is known blind, the rejection is not a discovery but a
+  known outcome, and the executor replaces the images before dispatch —
+  which is only done when every image already has a cached description,
+  because a partial rewrite would show the model a conversation the client
+  never sent.
 
-**Automatic capability learning**: every `capability_gap` rejection
-persists the observed gap into the model row's capabilities (e.g.
-`"vision": false`) — asynchronously, never on the request path. A pinned
-flag (the operator's manual selection in the Models editor, written as
-`"pinned": {"vision": true}`) stops the learning for exactly that
-capability; the row's sync origin is preserved. The editor composes that
-map and the server stores the blob verbatim: checking a capability pins
-it, unchecking it removes the pin, and the learning then resumes for that
-capability alone.
+Both are permissive about rows with no opinion, and neither may empty a chain.
 
-**The learned vision gap is read back** (spec change 2026-10-11). Learning
-that nothing consumes is just a write: a model row that had learned
-`vision:false` was still sent the image on every turn, so an image in a
-conversation cost one upstream rejection — and one image description — per
-request, for the rest of the session. Resolution now drops a candidate
-whose row *knows* it cannot see images when the request carries one, so a
-chain with an alternative goes straight to the model that can serve it.
-Two limits keep this honest: a row with **no opinion** is permissive (most
-rows are unclassified, and treating "unknown" as "blind" would route around
-them all), and the gate **never empties a chain** — every candidate being
-known-blind is exactly the case the description walk exists for, and that
-request still has to go out and be rejected for the rescue to fire.
+## Context-window rejections fail over
 
-The web lists refine the executor's emulator pool: with exactly one
-account the behavior is identical to the pre-ADR-010 single emulator; with
-several, a dead backend fails over (the executor's emulation loop is
-unchanged — the pool is just what it calls). Web-tool accounts are never
-LLM-chain-routable; the rule editor refuses them.
+A 400 whose body code (`context_length_exceeded`) or message says the input
+exceeds the model's window is its own failure class,
+`context_window_exceeded`, and it **fails over** — it is not a client error.
+The request is well-formed; only a larger target can serve it. Vendors word
+the rejection differently ("prompt is too long", "maximum context length",
+"input length exceeds the context length", …), so the matcher reads both the
+body code and a collected set of wordings
+([errors](api/errors.md#failure-classification)). The class is consulted
+after the modality class, so a rejection naming both stays a capability gap —
+the modality is what an operator configured a fallback for. Before the class
+existed such a 400 was terminal, so a chain died on its first too-small model
+instead of reaching a larger one further down
+([ADR-013](adr/ADR-013-context-window-aware-fallbacks.md)).
+
+## Non-Claude routing & compatibility
+
+On the Anthropic surface a non-Claude target is a first-class configuration,
+governed by one global switch and the per-model policies. The switch,
+`anthropic_surface_non_claude`
+([configuration](configuration.md#database-overrides-layer-4)), is applied
+before compatibility handling and routing, so `block` dispatches nothing: a
+model name that is not a Claude-family name is refused with a 400 under
+`block`, annotated with a traced `compat_policy` event under `warn`, and
+passed untouched under `allow` — the default, also for a missing or invalid
+value. How a request that routes is then adapted — thinking handling, server
+tool emulation, clamps, context window, cache markers — is
+[model compatibility](reference/model-compat.md). The client-side setup is
+[Claude Code with non-Claude models](claude-code.md).
+
+## Tool emulation
+
+When a request needs `web_search` or `web_fetch` and the routed model's
+policy is `server_tool_emulation: emulate-firecrawl`, the server-tool
+definitions are converted into client-shaped tools, the model's calls are
+intercepted by the executor, answered through the configured web-tool
+accounts, and synthesized back into the client's protocol as the family's
+result blocks
+([model compatibility](reference/model-compat.md#the-settings)). The stored
+setting keeps the name it was introduced under; the pool it drives is no
+longer Firecrawl-only. With no account configured, a call is answered with
+the documented `unavailable` error result, so the model can tell the client
+it could not look the request up. Vision cannot be emulated this way: a model
+that really rejects image input is handled by the rescue above.
+
+Two backend types serve those calls, both connected in the console
+(**Providers**):
+
+| Type | Serves | Endpoint |
+|---|---|---|
+| **Firecrawl** | `web_search`, `web_fetch` | `api.firecrawl.dev/v2` |
+| **Ollama Cloud (Web Tools)** | `web_search`, `web_fetch` | `ollama.com/api/web_search`, `/api/web_fetch` — a separate account type from Ollama Cloud's chat endpoint |
+
+They share one ordered walk: the web fallback lists name accounts of either
+family, so the two can be mixed and reordered freely, and the amount of
+failover is the number of accounts configured — with a single account the
+walk is that account, exactly as a lone emulator behaved before the lists
+existed. The legacy environment-configured Firecrawl key, where set, joins
+both walks as the final entry. Web-tool accounts are never routable as chat
+targets — the rule editor refuses a chain entry naming one.
+
+### How an account walk decides
+
+The pool walks its accounts in the configured priority order, and each
+attempt has one of three outcomes:
+
+| Outcome | What happens |
+|---|---|
+| **An answer with results** | The walk stops there. That is the answer, and the substitution names the account that gave it. |
+| **An empty answer** (a search with no matches, a page the service could not serve) | Remembered, and the walk CONTINUES — the next account may well have the results. An empty answer still outranks a later account's *failure*: the model is told "nothing found", never "the tool is broken". |
+| **A failure** | The walk moves on; the error is surfaced only when no account answered at all. |
+
+A search result of `data.web: []` and a page whose `metadata.statusCode` is
+not 2xx are both *empty*, not errors — a backend reports the second one
+inside an HTTP 200 body, so the transport succeeding says nothing about
+whether there is content. Three bounds keep a slow or broken account from
+holding the request:
+
+- **Per-invocation budget** — one tool call, across all accounts, gets 30 s
+  (`EmulationCallBudget`). Without it, N accounts would mean N × the client
+  timeout inline on the request path. The pool's HTTP client timeout is 20 s,
+  deliberately below it, so a stalled account gives up in time for the next
+  one to be tried inside the same budget.
+- **Per-account circuit** — three consecutive hard failures cool an account
+  down (30 s, doubling to a 5-minute ceiling); a success resets it. Cooling
+  accounts are skipped, and when *every* account is cooling the list is
+  walked anyway as a probe, so a family that had a bad minute recovers by
+  itself.
+- **Loop budget** — the whole round-trip loop for one request is bounded at
+  5 minutes (`EmulationTotalBudget`), and the round count separately at 32.
+  On expiry the request ends with what the tools answered so far, the same
+  posture the round cap takes.
+
+Every attempt is recorded as an `emulated_tool_attempt` trace event naming
+the account and its outcome, and the substitution event names the account
+that answered — so "the web tool found nothing" is answerable from the log
+instead of being a dead end
+([route trace](reference/route-trace.md#sub-operations-come-from-the-trace),
+[ADR-015](adr/ADR-015-web-tool-emulation-resilience.md)).
+
+### Backend differences
+
+Ollama's search endpoint takes no domain filters, so a search whose
+definition carries `allowed_domains` or `blocked_domains` fails on that
+account and the walk moves on to one that can honor the constraint, rather
+than returning results that silently ignore it. A fetched page is truncated
+to the definition's `max_content_tokens` when that limit is set, which bounds
+both what the model is re-sent and what the client receives.
+
+### Streaming requests with emulated tools
+
+A streaming request whose tools include emulated definitions rides the
+complete-path emulation round trip to finality, and the final response is
+synthesized into a protocol-conform event stream. The latency trade is
+explicit: such a request has no token streaming, because the model's whole
+answer completes before the first byte reaches the client. That is the price
+of real tool results, and it is paid only by requests that carry emulated
+definitions; the stream path's failover and capability discipline is
+unchanged for every other request.
 
 ## Failover semantics
 
-- **Request-level retry** (connection errors, 429, 5xx — honoring
-  `Retry-After`) only **before the first streamed byte**.
-- Once streaming, an upstream failure terminates the stream with a
-  protocol-conform error event — **no mid-stream provider swap**.
-- The terminal chain error plus the full route trace is logged; the
-  client sees the protocol error, the WebUI shows the transitions.
-
-### Fallbacks as their own log rows
-Fallback transitions are never silent, and since this release the ones an
-operator most needs to see are no longer nested only inside the parent
-request's `route_trace` — they are their own rows in the WebUI log:
-
-- a **chain failover** (the request moving to the next chain entry),
-- a **capability fallback** consultation and the fallback model it walks
-  to (the vision fallback — ADR-010),
-- an **emulated web-tool** call (`web_search`/`web_fetch` served by the
-  Firecrawl fallback, §6.2),
-- a **same-provider retry** after backoff.
-
-In the log these hang under the request that caused them (nested rows in
-the flat table, with a `↳ N ops` chip on the parent, and a provider/model
-chain summary in the request's detail drawer). They are derived from the
-trace by a single mapping, so what the log shows and what `route_trace`
-records cannot drift apart.
+- **Request-level retry** (connection errors, 429, 5xx, honoring
+  `Retry-After`) happens only **before the first streamed byte**.
+- Once streaming has started, an upstream failure terminates the stream with
+  a protocol-conform error event — **there is no mid-stream provider swap**,
+  because the client already holds partial output from that provider.
+- The terminal chain error and the full route trace are logged; the client
+  sees the protocol error, the console shows the transitions. Failover
+  transitions, capability-fallback consultations, image descriptions and
+  emulated tool calls each get their own sub-operation row, derived from the
+  trace by one mapping. Two things are deliberately not rows: a same-provider
+  retry, which is a second attempt at the same operation rather than a
+  separable one, and a description served from the caption cache, which made
+  no upstream call
+  ([route trace](reference/route-trace.md#sub-operations-come-from-the-trace)).
 
 ## Health tracking
 
-A circuit breaker per provider opens after consecutive failures, backs
-off exponentially, and probes for recovery. Cooled-down providers are
-skipped with a route_trace reason; recovery is recorded too.
+A circuit breaker per account opens after three consecutive failures, backs
+off exponentially (5 s doubling to a 5-minute ceiling) and probes for
+recovery; cooled-down accounts are skipped with a traced reason, and a
+successful request resets the state. A rate-limit open doubles its own
+cooldown, because an account that answered 429 was serving other traffic and
+will keep doing so for a while.
 
-**Not every failure is evidence about the provider**, and counting them all is
-how one bad request becomes an outage. Opening the breaker is reserved for the
-failures a provider is actually responsible for:
+**Not every failure is evidence about the provider**, and counting them all
+is how one bad request becomes an outage. Opening the breaker is reserved for
+the failures a provider is actually responsible for:
 
 | Failure | Opens the breaker | Why |
 |---|---|---|
@@ -256,114 +386,65 @@ failures a provider is actually responsible for:
 | `content_filter` | no | a property of the content, not of the service |
 | client error, other than 401/403 | no | the request or the caller is at fault |
 | client error 401/403 | yes | invalid credentials are an account fact |
-| `insufficient_quota` | no | it has its own, longer cooldown: the window the upstream announced |
+| `insufficient_quota` | no | it has its own, longer cooldown: the window the upstream announced, or an hourly re-probe |
 | client abandoned the request | no | nobody is waiting for the answer |
+| a failure that never reached the provider (dial, name lookup, TLS) | no | the network path was broken, not the service; the next chain entry reaches a different host |
 | `rate_limit` | yes | the account is under real load |
-| `server_error`, transport failure | yes | what the breaker exists to measure |
+| `server_error`, and a connection that died after the request went out | yes | what the breaker exists to measure |
 
-Three image requests against a text-only model used to open the breaker for every
-model on that account, because each one produced a capability gap. A request the
-client abandoned counted as well — and then, when the client hung up mid-stream,
-the dispatch success reported afterwards *cleared* the breaker instead.
+Three incidents shaped that table. Three image requests against a text-only
+model used to open the breaker for every model on the account — including the
+models those requests never touched — because each one produced a capability
+gap. A request the client abandoned counted as a failure too, although nobody
+was waiting for the answer. And when a client hung up mid-stream, the
+dispatch success reported moments earlier *cleared* the breaker the failure
+had just opened. The behavior follows the reasoning above: an abandoned
+request now reports neither outcome, and a stream that fails after a
+successful dispatch corrects that success into a breaker failure, because
+the provider really did fail.
 
-An account that has been failing is also reported as **degraded** before it is
-taken out of rotation: the last failure before the threshold. A single threshold
-otherwise gives a cliff — nothing to see until everything stops working.
+An account that has been failing is also reported as **degraded** before it
+is taken out of rotation: the last failure before the threshold. A single
+threshold otherwise gives a cliff — nothing to see until everything stops
+working ([the console](operating.md#quota)).
 
-## Non-Claude routing & compatibility
+## Model sync
 
-On the Anthropic surface, non-Claude models are first-class: the global
-`anthropic_surface_non_claude` switch (`allow`/`warn`/`block`) plus
-per-model compat settings (`thinking_handling`, `server_tool_emulation`,
-`max_tokens_clamp`, `context_window`, `cache_control`). See
-[Claude Code with non-Claude models](claude-code-with-non-claude-models.md)
-and the [translation matrix](reference/translation-matrix.md).
+Providers that expose model discovery mirror their upstream list into the
+models table automatically: at startup and on the `model_sync_interval_hours`
+cadence (default 24 hours; the feature has its own enable switch). Which
+accounts are read is a property of the provider type, not an operator choice:
+a custom OpenAI-compatible account is read from its `GET /models`, an Ollama
+Cloud account from `GET /v1/models` plus a per-model facts probe
+(`POST /api/show`) that supplies the detected facts, and the ChatGPT/Codex
+backend is read best-effort — its model list has no pinned contract, so an
+unexpected answer skips that account with the reason recorded rather than
+failing the run.
 
-## Tool emulation
+Policy:
 
-When a request needs `web_search`/`web_fetch` and the routed provider
-lacks native support, the emulation layer substitutes
-(protocol-conform result blocks) when the model's `server_tool_emulation`
-is `emulate-firecrawl` — the substitution is recorded in route_trace and
-the response metadata. The stored value keeps the name it was introduced
-under; the pool it drives is no longer Firecrawl-only.
+- Upstream models that are new appear as **synced** rows (badged in the
+  console).
+- Operator edits on an existing row — capabilities, compatibility, priority —
+  survive every sync; only the wire name refreshes.
+- Synced rows the upstream dropped are deleted. Rows whose origin is
+  `manual` are never touched by detection and never deleted.
+- A console save records the row as `manual`, because saving is operator
+  authorship. Detection then leaves the row's blobs alone. A manual row whose
+  identity the upstream still lists is re-adopted as `synced` on the next run,
+  keeping every operator-set field — so `manual` is a statement about who
+  last shaped the row, not a permanent exemption from the sync.
 
-Two web-tool backends are available, both connected in the WebUI
-(Providers, ADR-010):
+The sync also records what the upstream said about each model — capabilities,
+context window, and whether the model declares the decision surface — into
+the row's blobs, filling only what the operator left empty and never
+overwriting a pin. The row's capability blob — detected, pinned or learned —
+is what the vision gate reads; the decision flag documents the model and does
+not gate decision routing, which is an account capability
+([model compatibility](reference/model-compat.md#capabilities-and-pins)).
 
-| Type | Serves | Endpoints |
-|---|---|---|
-| **Firecrawl** | `web_search`, `web_fetch` | `api.firecrawl.dev/v2` |
-| **Ollama Cloud (Web Tools)** | `web_search`, `web_fetch` | `ollama.com/api` — a separate account type from Ollama Cloud's chat endpoint |
-
-They share one ordered walk: the web fallback lists name accounts of
-either family and the pool tries them in that order, so the two can be
-mixed and reordered freely. `PROXYLLM_FIRECRAWL_API_KEY` ENV
-remains the fallback when no account exists, and with neither, emulation
-returns the documented "unavailable" error results. Multiple accounts +
-the web fallback lists give the emulation real failover. Note one
-difference between the families: Ollama's search endpoint takes no domain
-filters, so a search whose definition carries `allowed_domains` /
-`blocked_domains` fails on that account and fails over — rather than
-returning results that ignore the constraint. A fetched page is truncated
-to the definition's `max_content_tokens` when that limit is set.
-
-Vision cannot be
-emulated: a model that really rejects image input at the upstream fails
-over within the chain, then to the configured vision fallback MODELS —
-see above.
-
-### How a web-tool account walk decides
-The pool walks its accounts in the configured priority order, and each
-attempt has one of three outcomes:
-
-| Outcome | What happens |
-|---|---|
-| **An answer with results** | The walk stops there. That is the answer. |
-| **An empty answer** (a search with no matches, a page the service could not serve) | Remembered, and the walk CONTINUES — the next account may well have the results. An empty answer still outranks a later account's *failure*: the model is told "nothing found", never "the tool is broken". |
-| **A failure** | The walk moves on; the error is surfaced only when no account answered at all. |
-
-A search result of `data.web: []` and a page whose `metadata.statusCode` is
-not 2xx are both *empty*, not errors — the reference reports the second one
-inside an HTTP 200 body, so the transport succeeding says nothing about
-whether there is content.
-
-Three bounds keep a slow or broken account from holding the request:
-
-- **Per-invocation budget** — one tool call (across all accounts) gets
-  `EmulationCallBudget`, default 30 s. Without it, N accounts meant N × the
-  client timeout inline on the request path. The pool's HTTP client uses a
-  20 s timeout, deliberately below it, so a stalled account gives up in time
-  for the next one to be tried inside the same budget.
-- **Per-account circuit** — three consecutive hard failures cool an account
-  down (30 s, doubling to a 5-minute ceiling); a success resets it. Cooling
-  accounts are skipped, and when EVERY account is cooling the list is walked
-  anyway as a probe, so a family that had a bad minute recovers by itself.
-- **Loop budget** — `EmulationTotalBudget`, default 5 min, bounds the whole
-  round-trip loop (the round count is capped separately at 32). On expiry the
-  request ends with what the tools answered so far, the same posture the round
-  cap takes.
-
-Every attempt is recorded in `route_trace` as an `emulated_tool_attempt`
-event (route_trace v7) naming the account and its outcome, and the
-substitution event names the account that answered — so "the web tool found
-nothing" is answerable from the log instead of being a dead end.
-
-## Model sync (ADR-010)
-
-Providers exposing model discovery (custom OpenAI-compatible `GET
-/v1/models`, Ollama Cloud `GET /api/tags`, codex backend best-effort)
-mirror their upstream list automatically: at startup and every
-`model_sync_interval_hours` (default 24). Policy:
-
-- New upstream models appear as **synced** rows (badged in the WebUI).
-- Operator edits (capabilities, compat, priority) on existing rows
-  survive every sync — only names refresh.
-- Synced rows the upstream dropped are deleted; **manual rows are never
-  touched** by the sync.
-- Sync saves from the WebUI convert a row to manual (the sync stops
-  tracking it).
-
-Per-run outcomes (added/updated/removed/skipped per provider) land in the
-`model_sync_state` setting and on the Models page; a dead upstream skips
-loudly and never fails the run.
+Per-run outcomes (added, updated, removed and skipped per account, with the
+reason) land in the `model_sync_state` setting and on the console's Models
+page. A dead upstream skips loudly and never fails the run
+([configuration](configuration.md#database-overrides-layer-4),
+[ADR-010](adr/ADR-010-model-sync-and-capability-fallbacks.md)).
