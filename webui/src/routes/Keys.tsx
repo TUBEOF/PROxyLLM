@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useMemo, useState } from 'react';
 import { apiCall } from '../api';
+import { copyText } from '../clipboard';
 import type { ClientKey, CreatedKey, KeysResponse } from '../types';
 import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useLiveData, useMutation } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
@@ -24,6 +25,7 @@ export default function Keys() {
   // The display-once secret + its row id, held only while the modal is open.
   const [created, setCreated] = useState<CreatedKey | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copyBlocked, setCopyBlocked] = useState(false);
 
   const create = useMutation();
   const revoke = useMutation();
@@ -39,6 +41,7 @@ export default function Keys() {
     setCreating(false);
     setCreated(null);
     setCopied(false);
+    setCopyBlocked(false);
     setFormError(null);
     create.clearError();
   }, [create]);
@@ -62,14 +65,11 @@ export default function Keys() {
 
   const copy = useCallback(async () => {
     if (created === null) return;
-    try {
-      await navigator.clipboard.writeText(created.key);
-      setCopied(true);
-    } catch {
-      // Clipboard access can fail (insecure context, permission); the key
-      // stays selectable for manual copy instead of surfacing an error.
-      setCopied(false);
-    }
+    // Same helper as the device sign-in: the insecure-origin fallback, and a
+    // reported failure instead of the silent no-op this used to be.
+    const outcome = await copyText(created.key);
+    setCopied(outcome === 'copied');
+    setCopyBlocked(outcome === 'failed');
   }, [created]);
 
   const doRevoke = useCallback(
@@ -240,6 +240,12 @@ export default function Keys() {
                 <span className="hint">
                   This is the only time the full key is visible — it is stored as an Argon2id hash and cannot be recovered.
                 </span>
+                {copyBlocked && (
+                  <p role="alert" className="form-note" style={{ margin: 0 }}>
+                    The browser blocked clipboard access on this origin — select the key and copy it with
+                    Ctrl/Cmd+C.
+                  </p>
+                )}
               </div>
               <p className="hint">
                 Use it as the client credential: `Authorization: Bearer …` on the OpenAI surface, `x-api-key` on the

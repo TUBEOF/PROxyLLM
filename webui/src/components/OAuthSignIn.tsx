@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiCall } from '../api';
+import { copyText } from '../clipboard';
 import type { OAuthPollResult, OAuthStartResult } from '../types';
 import { useMutation } from '../hooks';
 import { IconCheck, IconCopy, IconExternal } from '../icons';
@@ -21,6 +22,7 @@ export default function OAuthSignIn({ providerId, onApproved }: { providerId: st
   const [pollError, setPollError] = useState<string | null>(null);
   const [approvedAccount, setApprovedAccount] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copyBlocked, setCopyBlocked] = useState(false);
   // Timer across polls: ref so cancel-on-unmount clears a pending tick.
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -37,6 +39,7 @@ export default function OAuthSignIn({ providerId, onApproved }: { providerId: st
     setApprovedAccount(null);
     setPollError(null);
     setCopied(false);
+    setCopyBlocked(false);
     const result = await start.run(() =>
       apiCall<OAuthStartResult>(
         'POST',
@@ -81,14 +84,12 @@ export default function OAuthSignIn({ providerId, onApproved }: { providerId: st
 
   const copy = useCallback(async () => {
     if (code === null) return;
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-    } catch {
-      // Clipboard access can fail (insecure context, permission); the code
-      // stays selectable for manual entry instead of surfacing an error.
-      setCopied(false);
-    }
+    // copyText falls back for the insecure origin (plain-HTTP LAN console)
+    // where navigator.clipboard does not exist; a failure is REPORTED rather
+    // than swallowed, so the operator is never left guessing.
+    const outcome = await copyText(code);
+    setCopied(outcome === 'copied');
+    setCopyBlocked(outcome === 'failed');
   }, [code]);
 
   const restart = useCallback(() => {
@@ -136,9 +137,16 @@ export default function OAuthSignIn({ providerId, onApproved }: { providerId: st
   return (
     <div className="form">
       <div className="field">
-        <label>User code</label>
+        <label htmlFor="oauth-user-code">User code</label>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input className="input mono" type="text" value={code} readOnly onFocus={(e) => e.target.select()} />
+          <input
+            id="oauth-user-code"
+            className="input mono"
+            type="text"
+            value={code}
+            readOnly
+            onFocus={(e) => e.target.select()}
+          />
           <button
             type="button"
             className="btn btn-secondary btn-sm"
@@ -152,6 +160,12 @@ export default function OAuthSignIn({ providerId, onApproved }: { providerId: st
         <span className="hint">
           Open the verification page and enter this code. It stays valid for 15 minutes.
         </span>
+        {copyBlocked && (
+          <p role="alert" className="form-note" style={{ margin: 0 }}>
+            The browser blocked clipboard access on this origin — select the code and copy it with
+            Ctrl/Cmd+C.
+          </p>
+        )}
       </div>
       <div className="field">
         <label>Verification page</label>
