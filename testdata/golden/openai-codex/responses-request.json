@@ -1,0 +1,17 @@
+{
+  "model": "gpt-5.6-codex",
+  "input": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": [
+        { "type": "input_text", "text": "Add a test for the retry path." }
+      ]
+    }
+  ],
+  "tool_choice": "auto",
+  "parallel_tool_calls": true,
+  "store": false,
+  "stream": true,
+  "include": ["reasoning.encrypted_content"]
+}

@@ -3,7 +3,10 @@
 // (developers.openai.com/api/reference/resources/responses/methods/create,
 // accessed 2026-09-10) and the streaming reference
 // (developers.openai.com/api/docs/api-reference/responses-streaming,
-// accessed 2026-09-10).
+// accessed 2026-09-10). The ChatGPT/Codex backend's required request
+// envelope — `store` always present and false — is pinned by
+// testdata/golden/openai-codex/responses-request.json (codex-rs, accessed
+// 2026-10-17).
 //
 // Key wire differences from chat-completions:
 //   - `input` is a plain string or a typed item array (not `messages`).
@@ -85,6 +88,10 @@ func (ResponsesCodec) EncodeRequest(req ir.Request) ([]byte, error) {
 		TopP:            req.TopP,
 		Stream:          req.Stream,
 		ToolChoice:      responsesToolChoiceToWire(req.ToolChoice),
+		// No upstream is ever asked to retain a request — and the codex
+		// backend rejects a body that leaves the field unset (see the field
+		// comment on responsesWireRequest.Store).
+		Store: false,
 	}
 	if len(req.System) > 0 {
 		texts := make([]string, 0, len(req.System))
@@ -363,6 +370,17 @@ type responsesWireRequest struct {
 	TopP            *float64                `json:"top_p,omitempty"`
 	Reasoning       *responsesWireReasoning `json:"reasoning,omitempty"`
 	Stream          bool                    `json:"stream,omitempty"`
+	// Store is the Responses API's request-retention flag. Always false, and
+	// deliberately NOT omitempty: (i) the proxy never asks an upstream to
+	// retain a request, and (ii) the ChatGPT/Codex backend REQUIRES the field
+	// to be present and false — a body without it is answered
+	// 400 {"detail":"Store must be set to false"} (observed live 2026-10-17).
+	// codex-rs declares it without a skip attribute and sets it false on every
+	// request (codex-api/src/common.rs, core/src/client.rs); transcribed into
+	// testdata/golden/openai-codex/responses-request.json. Adding omitempty or
+	// a *bool here would silently reopen that 400 — the contract test
+	// TestResponsesEncodeRequest_StoreIsFalse pins it.
+	Store bool `json:"store"`
 }
 
 type responsesWireUsageDetails struct {

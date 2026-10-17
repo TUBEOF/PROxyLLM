@@ -2,6 +2,7 @@ package openai_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -287,6 +288,46 @@ func TestResponsesStreamDecode_ResponseFailed(t *testing.T) {
 	ue := got[1].Error
 	if ue == nil || ue.Code != "rate_limit_exceeded" || ue.Message != "You exceeded your quota." {
 		t.Errorf("error = %+v", ue)
+	}
+}
+
+// TestResponsesEncodeRequest_StoreIsFalse pins the request-retention flag the
+// ChatGPT/Codex backend requires: `store` must be PRESENT and false — a body
+// that omits it is answered 400 {"detail":"Store must be set to false"}
+// (observed live 2026-10-17). codex-rs declares the field WITHOUT a skip
+// attribute (codex-api/src/common.rs, ResponsesApiRequest) and sets it false
+// on every request (core/src/client.rs, build_responses_request); the fixture
+// testdata/golden/openai-codex/responses-request.json transcribes that shape.
+func TestResponsesEncodeRequest_StoreIsFalse(t *testing.T) {
+	raw, err := oa.ResponsesCodec{}.EncodeRequest(ir.Request{
+		Model:    "gpt-5.6-codex",
+		Messages: []ir.Message{{Role: ir.RoleUser, Parts: []ir.Part{ir.TextPart{Text: "Hi"}}}},
+	})
+	if err != nil {
+		t.Fatalf("EncodeRequest: %v", err)
+	}
+	var sent struct {
+		Store *bool `json:"store"`
+	}
+	if err := json.Unmarshal(raw, &sent); err != nil {
+		t.Fatalf("decode encoded body: %v", err)
+	}
+	if sent.Store == nil {
+		t.Fatalf("encoded body omits store — the codex backend rejects it: %s", raw)
+	}
+	if *sent.Store {
+		t.Errorf("encoded store = true, want false: %s", raw)
+	}
+
+	// The fixture the assertion derives from carries the same fact.
+	var fixture struct {
+		Store *bool `json:"store"`
+	}
+	if err := json.Unmarshal(testutil.LoadGolden(t, "openai-codex/responses-request.json"), &fixture); err != nil {
+		t.Fatalf("decode golden fixture: %v", err)
+	}
+	if fixture.Store == nil || *fixture.Store {
+		t.Errorf("golden fixture must pin store=false, got %v", fixture.Store)
 	}
 }
 
