@@ -1,4 +1,4 @@
-// Playwright visual regression configuration (Phase 2 research §7).
+// Playwright visual regression configuration.
 //
 // V-1: toHaveScreenshot with maxDiffPixelRatio 0.001, animations disabled,
 //      caret hidden, CSS-pixel scaling.

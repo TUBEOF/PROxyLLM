@@ -7,7 +7,7 @@ package webui
 // heartbeats. GET is immune to the CSRF layer (session cookie suffices —
 // native EventSource works without headers); the connect keeps the admin
 // session warm (TouchSession on the middleware path) — documented side
-// effect in docs/api-reference.
+// effect in docs/api/errors.md.
 //
 // Backpressure mirrors internal/translate/sse doctrine: a slow/dead client
 // is dropped on the first failed flush — it never becomes the proxy's

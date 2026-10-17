@@ -1,4 +1,4 @@
-// Shared helpers for the visual regression suite (research §7).
+// Shared helpers for the visual regression suite.
 //
 // V-2: dynamic content is masked or frozen — KPI values and any
 //      timestamp-derived text vary with the seeded data's relative days, so

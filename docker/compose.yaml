@@ -22,7 +22,7 @@ services:
     # container cannot be made to match every host — root sidesteps the
     # ownership question entirely and works on any host, including
     # Docker Desktop file sharing. The rest of the hardening profile
-    # stays (read-only rootfs, dropped capabilities, limits).
+    # stays (read-only rootfs, size-capped /tmp, memory limit, healthcheck).
     user: "0:0"
     ports:
       - "8080:8080"

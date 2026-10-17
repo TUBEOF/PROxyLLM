@@ -1,4 +1,4 @@
-// API client for the admin surface (plan §5.2, research §10 C-1..C-6).
+// API client for the admin surface.
 //
 // - Every call is same-origin (connect-src 'self', P-5); cookies ride the
 //   session automatically (credentials: 'same-origin').

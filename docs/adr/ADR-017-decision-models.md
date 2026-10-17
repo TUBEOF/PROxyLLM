@@ -1,6 +1,7 @@
 # ADR-017: Decision models — a third operation class on the IR hub
 
-Status: Accepted (2026-10-16)
+- **Status**: Accepted
+- **Date**: 2026-10-16
 
 ## Context
 

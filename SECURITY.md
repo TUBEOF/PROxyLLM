@@ -4,37 +4,42 @@
 
 | Version | Supported |
 |---|---|
-| 1.0.x | ✅ |
+| 1.15.x | ✅ |
+| older | ❌ |
+
+Security fixes land on the current release line. Upgrading is a tag change —
+the data directory and the master key carry over unchanged.
 
 ## Reporting a vulnerability
 
-Please report vulnerabilities via GitHub's **private vulnerability
-reporting** (Security tab → "Report a vulnerability") — do **not** open a
-public issue.
+Please report vulnerabilities through GitHub's **private vulnerability
+reporting** (repository → *Security* → *Report a vulnerability*). Do not open
+a public issue for a suspected vulnerability.
 
 Include what you can of:
 
-- affected component/endpoint and version
-- reproduction steps (a minimal request is ideal)
-- impact assessment
+- the affected component or endpoint, and the version
+- reproduction steps — a minimal request is ideal
+- your impact assessment
 
-You will receive an acknowledgment within **7 days** and a status update
-at least every 14 days until resolution. Credit in the release notes is
-default (opt out by saying so).
+You will get an acknowledgment within **7 days**, and a status update at
+least every 14 days until the report is resolved. Credit in the release
+notes is the default; say so if you would rather stay anonymous.
 
 ## Scope
 
-In scope: the PROxyLLM proxy binary and its WebUI, the client-facing API
-surfaces, the admin API, the bundled Docker setup, and the release
-artifacts themselves (binary/image integrity).
+**In scope:** the proxy binary and its embedded console, the client-facing
+API surfaces, the decision surfaces, the admin API, the bundled Docker
+setup, and the release artifacts themselves.
 
-Out of scope for v1 (documented limitation): internet-scale multi-tenant
-exposure of a single proxy deployment — see
-[docs/security.md](docs/security.md) for the at-operator's-risk hardening
-guidance. Deployment-specific misconfiguration (e.g. disabling auth via
-ENV deliberately) is out of scope.
+**Out of scope:** internet-scale multi-tenant exposure of a single
+deployment — the documented posture is one operator, one tenant, a trusted
+network or an authenticating reverse proxy (see
+[the security guide](docs/security.md)). Also out of scope: consequences of
+deliberately weakening the configuration, such as disabling authentication
+through the documented environment variable.
 
 ## Safe harbor
 
-Good-faith research within this policy is welcomed; we will not pursue
-action against you for responsibly reported issues.
+Good-faith research within this policy is welcome. We will not pursue action
+against you for issues you report responsibly.

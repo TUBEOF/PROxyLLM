@@ -1,81 +1,90 @@
 # Contributing to PROxyLLM
 
-Thank you for contributing! This project has strict quality gates — they
-exist because a proxy's correctness is protocol fidelity.
+Thanks for considering a contribution. This project keeps strict quality
+gates, for one reason: a proxy's correctness is protocol fidelity, and a
+wrong wire shape is worse than a missing feature.
 
 ## Ground rules
 
-- **English** everywhere in the repo (code, docs, commits, issues).
-- MIT license; by contributing you agree your work is licensed under it.
+- **English** everywhere — code, comments, docs, commits, issues.
+- MIT licensed; by contributing you agree your work ships under it.
+- Discuss a large change before writing it. A short proposal (what, why,
+  what it costs) in an issue saves a rewrite.
 
-## Test doctrine (binding)
+## Ways to contribute
 
-1. **Tests derive from specifications, not from code.** A test that only
-   reproduces what the implementation does is a defect. Wire-protocol shapes
-   come from `testdata/golden/` fixtures annotated with source URL + access
-   date (see testdata/golden/README.md).
-2. **RED-GREEN**: write the failing test first (from fixture/spec), then
-   make it green in code. Tests change only when demonstrably misreading the
-   spec — document that in the PR.
-3. **Streaming changes** require race-safety: `go test -race ./...` must
-   pass; cancellation and backpressure paths need explicit coverage.
+| Kind | Notes |
+|---|---|
+| Bug reports | The most useful report names what you sent, what you expected and what happened — plus the request's `route_trace` if you have it |
+| Provider requests | A new provider is a new integration: open an issue first, since dated wire facts need sources |
+| Documentation | Corrections land fastest; a doc change ships with the behaviour change it describes |
+| Code | See the gates below |
 
-## Review quality gates
+## Before you write code
 
-PRs are reviewed against this checklist — reviewers reject on:
-
-- Dead methods / unused imports
-- Logging that bypasses `internal/observability/redact` (any log call site
-  that could emit secrets)
-- Post-mutation logging (logging state after it was changed — log the old
-  state or log the transition)
-- Race regressions (removing a lock/guard without replacing its guarantee)
-- Snapshot tests of proxy output used as spec source (circular reasoning)
-
-## Verification requirements per phase
-
-- Preceding **best-practice research pass** (live, cited) for any new
-  domain.
-- Closing **independent review** — no code merged by its author alone.
-- **Visual regression tests** for WebUI changes (Playwright against the
-  console's own rendered baselines).
-- **Verification report** (tests run, findings, resolutions) archived with
-  the phase.
-
-## Development setup
+Set up with [the development guide](docs/development.md), which covers the
+toolchain, the build, the test suites and the WebUI workflow. The gates your
+change must pass:
 
 ```bash
-make build          # go build -trimpath -o proxyllm ./cmd/proxyllm
-make test           # go test $(GO_PKGS) — never ./..., see the Makefile note
-make lint-tool      # once per machine: installs the golangci-lint CI pins
-make lint           # golangci-lint
+make fmt vet lint        # formatting, vet, the pinned linter
+make test                # the suite
+make test-race           # additionally, for anything streaming-adjacent
+make check-tests         # refuses deleted, weakened or newly skipped tests
 ```
 
-The Go package list is always the Makefile's `GO_PKGS` (`./cmd/... ./internal/...
-./webui`). `./...` descends into `webui/node_modules` and breaks vet/test/lint —
-use the targets, or the explicit list.
+`make check-tests` compares against `origin/main`; it fails on a deleted
+test, a weakened one, a new skip or a tautology, and reports without failing
+the assertions that merely re-encode a production condition.
 
-### Toolchain versions
+## Test doctrine
 
-Always the current, safest release — check before pinning or keeping one, and
-check the dependents' peer ranges too, because "latest" is not "safest" when a
-plugin cannot follow.
+1. **Tests derive from specifications, not from code.** A test that only
+   reproduces what the implementation does is a defect. Wire shapes come
+   from the annotated fixtures under `testdata/golden/`, each carrying the
+   URL it was read from and the date.
+2. **RED-GREEN.** Write the failing test first, from the fixture or the
+   reference, then make it pass in code. A test changes only when it is
+   demonstrably misreading the spec — and the pull request says so.
+3. **Streaming claims need streaming evidence.** Fragmentation, interleaving,
+   pings, mid-stream failures and cancellation are covered by the harness,
+   not by a mock that cannot fail the way an upstream does.
 
-| Tool | Version | Note |
-|---|---|---|
-| Go | 1.27 (`go.mod`) | `go-version-file` in CI |
-| Node / npm | 26 / 12 | `engines: node >=26`; CI and the workflows pin 26 |
-| golangci-lint | `v2.14.0` | `GOLANGCI_VERSION` in the Makefile **and** `ci.yml` — bump together |
-| GoReleaser | `v2.18.3` | pinned in `release.yml`: a release must be reproducible |
+## Review checklist
 
-Deliberately held, with the blocking upstream condition — re-check, do not jump:
+Reviewers reject on:
 
-| Tool | Latest | Held at | Blocked by |
-|---|---|---|---|
-| ESLint | 10.12.0 | 9.39.5 | `eslint-plugin-react` 7.37.5 (the only release) declares `eslint: ^3 … ^9.7` |
-| TypeScript | 7.0.2 | 6.0.3 | `@typescript-eslint` 8.71.1 declares `typescript: >=4.8.4 <6.1.0` |
+- Dead methods or unused imports.
+- A log call site that bypasses `internal/observability/redact` and could
+  emit a credential.
+- Post-mutation logging — logging state after it changed, instead of the
+  transition.
+- A race regression: removing a lock or a guard without replacing its
+  guarantee.
+- Snapshot tests of this proxy's own output used as a source of truth.
+- A behaviour change that leaves the page describing it untouched.
 
-## Commit style
+No change is merged on its author's word alone; an independent review of
+the wire facts is the norm here, not a formality.
 
-Conventional commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`,
-`refactor:`) — subject ≤ 72 chars, imperative mood.
+WebUI changes additionally carry the console's own rules: tokens instead of
+colour literals, block layout instead of wrapping variable-length text, and
+screenshot baselines refreshed through the workflow rather than by hand
+(all in the [development guide](docs/development.md#webui-development)).
+
+## Toolchain
+
+Use the current, safest versions — check the release *and* the dependents'
+peer ranges before pinning, because "latest" is not "safest" when a plugin
+cannot follow. The pinned versions, the deliberately held ones and the
+upstream conditions that block them are in the
+[development guide](docs/development.md#toolchain).
+
+## Commits and pull requests
+
+- Conventional commits (`feat:`, `fix:`, `docs:`, `test:`, `chore:`,
+  `refactor:`), subject ≤ 72 characters, imperative mood, English.
+- One logical change per commit; a change and its documentation in the same
+  commit.
+- A pull request says what changed, why, and how it was verified —
+  including the commands you ran.

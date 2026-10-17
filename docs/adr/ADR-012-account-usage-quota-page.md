@@ -1,7 +1,8 @@
 # ADR-012: Per-account usage snapshot (Quota page)
 
-Status: Accepted (2026-10-06)
-Amends: ADR-010 (capability fallbacks), complements ADR-009 (accounts/strategies)
+- **Status**: Accepted
+- **Date**: 2026-10-06
+- **Amends**: ADR-010 (capability fallbacks); complements ADR-009 (accounts/strategies)
 
 ## Context
 

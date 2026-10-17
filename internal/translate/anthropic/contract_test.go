@@ -165,7 +165,7 @@ func TestDecodeResponse_MessageResponse(t *testing.T) {
 		t.Fatalf("content[0] = %T, want ir.ThinkingPart", resp.Content[0])
 	}
 	if th.Signature == "" {
-		t.Error("thinking block must carry signature (A12)")
+		t.Error("thinking block must carry its signature")
 	}
 	if _, ok := resp.Content[1].(ir.TextPart); !ok {
 		t.Errorf("content[1] = %T, want ir.TextPart", resp.Content[1])

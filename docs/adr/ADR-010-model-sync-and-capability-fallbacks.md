@@ -85,9 +85,10 @@ Three gaps surfaced operating the WebUI:
    type entries no longer resolve and are skipped until re-saved). The
    fallback fires EXECUTOR-side, only after the routed chain really
    failed with `capability_gap` rejections (HTTP 400 naming the input
-   modality — new FO-2 class, failover action): the fallback models get
+   modality — its own failure class with a failover action): the fallback
+   models get
    one walk of their own (complete and stream dispatch alike; pre-first-
-   byte, FO-1 conform), no recursion. Every consultation stays a traced
+   byte), no recursion. Every consultation stays a traced
    `capability_fallback` event. Rejections LEARN: `vision:false` is
    written into the model row's capabilities blob asynchronously, unless
    the operator pinned the flag (manual selection in the Models editor);

@@ -56,7 +56,7 @@ docker:
 	docker build -f docker/Dockerfile -t proxyllm:dev .
 	IMAGE=proxyllm:dev docker compose -f docker/compose.yaml up
 
-# --- WebUI (plan §9; dist is embedded via webui/embed.go) --------------
+# --- WebUI (dist is embedded via webui/embed.go) ----------------------
 
 webui-install:
 	cd webui && npm ci

@@ -1,4 +1,4 @@
-// Design-rule conformance suite (research §7 V-6, plan §9 checklist):
+// Design-rule conformance suite:
 // assertions, not screenshots. Tokens-only colors, no emoji, dark-only
 // color-scheme — the automatable subset of the DESIGN.md contract.
 

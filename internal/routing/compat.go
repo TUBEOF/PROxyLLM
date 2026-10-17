@@ -23,8 +23,9 @@ type Compat struct {
 	// native / emulate-firecrawl / off ("" = native).
 	ServerToolEmulation string
 
-	// MaxTokensClamp caps MaxTokens for targets with lower output limits
-	// (32000 for unknown model IDs). 0 = off.
+	// MaxTokensClamp caps MaxTokens for targets with lower output limits.
+	// It is operator-set only — the proxy never guesses a target's limit.
+	// 0 = off.
 	MaxTokensClamp int
 
 	// ContextWindow is the model context window (tokens) for capability
