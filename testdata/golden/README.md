@@ -20,8 +20,10 @@ testdata/golden/
    (or `.meta.json` sidecar) with `source` (URL) and `accessed` (date).
 2. **No invention**: fixtures come from official documentation or captured
    live traffic — never hand-written "probably looks like this" samples.
-3. **Re-validation**: `make fixtures-check` diffs fixtures against current
-   live docs; a drift means the spec moved, not that our code is wrong.
+3. **Re-validation**: when a reference changes, re-read it and update the
+   fixture and its `.meta.json` in the same change. A drift means the spec
+   moved, not that the code is wrong — and nothing automated can tell the
+   difference, so the re-read is the review's job.
 4. **RED-GREEN**: contract tests are written against the fixture before the
    codec exists; they start red and go green only via correct code.
 
