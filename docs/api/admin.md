@@ -131,9 +131,9 @@ naming an active cooldown reason (`quota_exhausted`, `breaker`) or empty
 when the account is healthy.
 
 `POST /accounts/usage/refresh/{id...}` — scrapes that account's usage now
-(60 s budget). Ollama Cloud only, and only with a stored usage cookie;
-answers `502 usage scrape failed: …` and persists the failure so the card
-shows the honest error state instead of a stale bar.
+(60 s budget). The ollama.com account types only, and only with a stored
+usage cookie; answers `502 usage scrape failed: …` and persists the failure
+so the card shows the honest error state instead of a stale bar.
 
 ### Logs
 
