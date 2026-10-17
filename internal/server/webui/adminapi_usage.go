@@ -19,6 +19,11 @@ type accountUsageDTO struct {
 	Type      string `json:"type"`
 	Name      string `json:"name"`
 
+	// Enabled is the account's pool switch: a disabled account serves no
+	// traffic, and the card says so rather than showing a cooldown it is not
+	// in a position to earn.
+	Enabled bool `json:"enabled"`
+
 	// Live source (scrape): nil renders the local fallback.
 	Live *liveUsageDTO `json:"live,omitempty"`
 	// Source says what Live is: "ollama" (scraped), "" (none).
@@ -69,6 +74,7 @@ func (a *AdminAPI) getAccountUsage(w http.ResponseWriter, r *http.Request) {
 			AccountID: acct.ID,
 			Type:      acct.Type,
 			Name:      acct.Name,
+			Enabled:   acct.Enabled,
 		}
 		if blob, ok, err := a.store.GetAccountUsage(r.Context(), acct.ID); err == nil && ok {
 			entry.FetchedAt = blob.FetchedAt

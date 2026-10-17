@@ -9,6 +9,9 @@ export interface Provider {
   type: string;
   name: string;
   config: unknown;
+  // The account's pool switch: a disabled account is not built into the live
+  // registry at all — no routing, no chain expansion, no health, no sync.
+  enabled: boolean;
 }
 
 // ADR-009: one account is a providers row of a type; has_credential is a
@@ -18,6 +21,10 @@ export interface Account {
   type: string;
   name: string;
   has_credential: boolean;
+  enabled: boolean;
+  // ADR-012: the ollama.com session cookie behind the Quota page's live
+  // windows — presence only, the value never leaves the encrypted store.
+  has_usage_cookie?: boolean;
 }
 
 // Provider-type catalog entry (admin GET /api/admin/provider-types): the
@@ -40,6 +47,8 @@ export interface ProviderType {
   auth: 'api_key' | 'oauth';
   settings_fields: ProviderTypeField[];
   account_fields: ProviderTypeField[];
+  // The type's accounts can hold an ollama.com session cookie (ADR-012).
+  usage_cookie: boolean;
   default_capabilities: Record<string, boolean> | null;
 }
 
@@ -319,6 +328,9 @@ export interface AccountUsage {
   account_id: string;
   type: string;
   name: string;
+  // The account's pool switch: a disabled account serves no traffic, so the
+  // card says that rather than showing a cooldown it cannot earn.
+  enabled: boolean;
   live?: LiveUsage | null;
   source?: string;
   error?: string;

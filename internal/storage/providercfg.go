@@ -17,6 +17,15 @@ type Provider struct {
 	Type   string
 	Name   string
 	Config json.RawMessage
+
+	// Enabled is the pool switch: a disabled account is not constructed into
+	// the live registry, so it serves nothing — no routing, no chain
+	// expansion, no health tracking, no model sync, no emulator pool — while
+	// its tokens and model rows stay in place for the day it comes back.
+	// Managed only by SetProviderEnabled: PutProvider (the editor's save
+	// path) never writes the column, so saving an account cannot switch it
+	// off by accident.
+	Enabled bool
 }
 
 // secretShapedConfigKeys are config keys whose values must never appear in
@@ -78,6 +87,9 @@ func (s *Store) PutProvider(ctx context.Context, p Provider) error {
 	if len(p.Config) == 0 {
 		p.Config = json.RawMessage("{}")
 	}
+	// enabled is deliberately absent from both halves: a new row takes the
+	// column default (enabled), and an update leaves whatever the switch
+	// holds — the editor's save path must never flip it.
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO providers (id, type, name, config) VALUES (?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
@@ -88,12 +100,33 @@ func (s *Store) PutProvider(ctx context.Context, p Provider) error {
 	return err
 }
 
+// SetProviderEnabled flips one account's pool switch. Missing rows are
+// ErrNotFound — the admin API maps that to its uniform 404.
+func (s *Store) SetProviderEnabled(ctx context.Context, id string, enabled bool) error {
+	v := 0
+	if enabled {
+		v = 1
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE providers SET enabled = ? WHERE id = ?`, v, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("storage: provider %s: %w", id, ErrNotFound)
+	}
+	return nil
+}
+
 // GetProvider reads one provider row. Missing rows are ErrNotFound.
 func (s *Store) GetProvider(ctx context.Context, id string) (*Provider, error) {
 	var p Provider
 	var cfg string
-	err := s.db.QueryRowContext(ctx, `SELECT id, type, name, config FROM providers WHERE id = ?`, id).
-		Scan(&p.ID, &p.Type, &p.Name, &cfg)
+	err := s.db.QueryRowContext(ctx, `SELECT id, type, name, config, enabled FROM providers WHERE id = ?`, id).
+		Scan(&p.ID, &p.Type, &p.Name, &cfg, &p.Enabled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -107,7 +140,7 @@ func (s *Store) GetProvider(ctx context.Context, id string) (*Provider, error) {
 // ListProviders returns all providers, id-ascending, so the WebUI table has
 // a stable order between requests.
 func (s *Store) ListProviders(ctx context.Context) ([]Provider, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, type, name, config FROM providers ORDER BY id ASC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, type, name, config, enabled FROM providers ORDER BY id ASC`)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +150,7 @@ func (s *Store) ListProviders(ctx context.Context) ([]Provider, error) {
 	for rows.Next() {
 		var p Provider
 		var cfg string
-		if err := rows.Scan(&p.ID, &p.Type, &p.Name, &cfg); err != nil {
+		if err := rows.Scan(&p.ID, &p.Type, &p.Name, &cfg, &p.Enabled); err != nil {
 			return nil, err
 		}
 		p.Config = json.RawMessage(cfg)
@@ -133,7 +166,7 @@ func (s *Store) ListProviders(ctx context.Context) ([]Provider, error) {
 // never an error.
 func (s *Store) ListProvidersByProviderType(ctx context.Context, providerType string) ([]Provider, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, type, name, config FROM providers WHERE type = ? ORDER BY id ASC`, providerType)
+		`SELECT id, type, name, config, enabled FROM providers WHERE type = ? ORDER BY id ASC`, providerType)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +176,7 @@ func (s *Store) ListProvidersByProviderType(ctx context.Context, providerType st
 	for rows.Next() {
 		var p Provider
 		var cfg string
-		if err := rows.Scan(&p.ID, &p.Type, &p.Name, &cfg); err != nil {
+		if err := rows.Scan(&p.ID, &p.Type, &p.Name, &cfg, &p.Enabled); err != nil {
 			return nil, err
 		}
 		p.Config = json.RawMessage(cfg)

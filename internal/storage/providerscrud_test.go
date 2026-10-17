@@ -142,3 +142,87 @@ func TestProvider_ConfigRejectsSecretShapedKeys(t *testing.T) {
 		t.Error("secret-shaped config accepted")
 	}
 }
+
+// The pool switch: an account can be switched off and back on, and the
+// editor's save path (PutProvider) never touches the column — saving an
+// account must not be able to flip it.
+func TestProvider_EnableSwitch(t *testing.T) {
+	s := openTokenStore(t)
+	ctx := context.Background()
+
+	if err := s.PutProvider(ctx, Provider{ID: "acc-1", Type: "ollama-cloud", Name: "Key 1"}); err != nil {
+		t.Fatalf("PutProvider: %v", err)
+	}
+	got, err := s.GetProvider(ctx, "acc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Enabled {
+		t.Error("a new account must start enabled (the column default)")
+	}
+
+	if err := s.SetProviderEnabled(ctx, "acc-1", false); err != nil {
+		t.Fatalf("SetProviderEnabled: %v", err)
+	}
+	if got, err = s.GetProvider(ctx, "acc-1"); err != nil {
+		t.Fatal(err)
+	}
+	if got.Enabled {
+		t.Error("the switch did not stick")
+	}
+
+	// A save through the editor path leaves the switch where it is.
+	if err := s.PutProvider(ctx, Provider{ID: "acc-1", Type: "ollama-cloud", Name: "Key 1 renamed"}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = s.GetProvider(ctx, "acc-1"); err != nil {
+		t.Fatal(err)
+	}
+	if got.Enabled {
+		t.Error("a save flipped the switch back on")
+	}
+	if got.Name != "Key 1 renamed" {
+		t.Errorf("the save did not apply: name = %q", got.Name)
+	}
+
+	// Both list surfaces carry the state (the store holds other rows from
+	// the seed — the assertion is about this one).
+	all, err := s.ListProviders(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, row := range all {
+		if row.ID == "acc-1" {
+			found = true
+			if row.Enabled {
+				t.Error("ListProviders reports the switched-off account as enabled")
+			}
+		}
+	}
+	if !found {
+		t.Error("ListProviders dropped the account")
+	}
+	byType, err := s.ListProvidersByProviderType(ctx, "ollama-cloud")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byType) != 1 || byType[0].Enabled {
+		t.Errorf("ListProvidersByProviderType = %+v, want the one disabled account", byType)
+	}
+
+	if err := s.SetProviderEnabled(ctx, "acc-1", true); err != nil {
+		t.Fatalf("re-enable: %v", err)
+	}
+	if got, err = s.GetProvider(ctx, "acc-1"); err != nil {
+		t.Fatal(err)
+	}
+	if !got.Enabled {
+		t.Error("re-enabling did not stick")
+	}
+
+	// A missing row is ErrNotFound, never a silent success.
+	if err := s.SetProviderEnabled(ctx, "ghost", true); !errors.Is(err, ErrNotFound) {
+		t.Errorf("SetProviderEnabled(ghost) = %v, want ErrNotFound", err)
+	}
+}

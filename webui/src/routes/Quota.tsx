@@ -55,6 +55,14 @@ export default function Quota() {
   const healthy = useMemo(() => accounts.filter((a) => a.health === undefined).length, [accounts]);
   const cooling = accounts.length - healthy;
 
+  // The pool switch, right where the account's numbers are: an account that
+  // is switched off serves nothing, which is exactly the reading an operator
+  // wants while looking at its quota.
+  const toggleAccount = (account: AccountUsage, enabled: boolean) =>
+    refresh.run(() =>
+      apiCall('PUT', `/api/admin/providers/${encodeURIComponent(account.account_id)}/enabled`, { enabled }),
+    ).then(() => reload());
+
   const refreshOne = (account: AccountUsage) =>
     refresh.run(() =>
       apiCall('POST', `/api/admin/accounts/usage/refresh/${encodeURIComponent(account.account_id)}`, {}),
@@ -158,7 +166,10 @@ export default function Quota() {
             </div>
             <div className="cards" style={{ display: 'grid', gap: 8 }}>
               {accounts.map((a) => {
-                const hb = healthBadge(a.health);
+                // A switched-off account is out of the pool: it earns no
+                // cooldown, so the health badge is suppressed rather than
+                // showing a state it cannot be in.
+                const hb = a.enabled ? healthBadge(a.health) : null;
                 return (
                   <div key={a.account_id} className="widget w-full" style={{ padding: '12px 14px' }}>
                     <div className="widget-head" style={{ marginBottom: 6 }}>
@@ -169,12 +180,24 @@ export default function Quota() {
                           <span className="badge info" style={{ marginLeft: 6 }}>{a.live.plan}</span>
                         )}
                         {hb && <span className={`badge ${hb.cls}`} style={{ marginLeft: 6 }}>{hb.label}</span>}
-                        {a.source === 'ollama' ? (
+                        {!a.enabled ? (
+                          <span className="badge paused" style={{ marginLeft: 6 }}>out of the pool</span>
+                        ) : a.source === 'ollama' ? (
                           <span className="badge up" style={{ marginLeft: 6 }}>live</span>
                         ) : (
                           <span className="badge paused" style={{ marginLeft: 6 }}>local</span>
                         )}
                       </h3>
+                      <label className="toggle" title={a.enabled ? 'In the pool — this account serves traffic' : 'Out of the pool — it serves nothing until switched back on'}>
+                        <input
+                          type="checkbox"
+                          checked={a.enabled}
+                          onChange={(e) => void toggleAccount(a, e.target.checked)}
+                          disabled={refresh.pending}
+                          aria-label={`${a.name} in the pool`}
+                        />
+                        <span className="tswitch" />
+                      </label>
                     </div>
                     {a.live !== null && a.live !== undefined ? (
                       <div className="bars">
@@ -186,7 +209,7 @@ export default function Quota() {
                         title="No live usage"
                         body={a.error !== undefined && a.error !== ''
                           ? `Last scrape failed: ${a.error}. Set a usage cookie on the account to enable live windows.`
-                          : 'Set a usage cookie on this account (Provider type → account form) to fetch the live windows; the local count shows meanwhile.'}
+                          : 'Set a usage cookie on this account — Providers → Ollama Cloud → the account\u2019s Edit — to fetch the live windows; the local count shows meanwhile.'}
                       />
                     )}
                     {a.local !== null && a.local !== undefined && (
