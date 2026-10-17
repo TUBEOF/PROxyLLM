@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -41,6 +42,10 @@ import (
 //     transport contract as the other HTTP providers).
 
 const providerID = "codex-1"
+
+// semverRe is MAJOR.MINOR.PATCH — the shape codex-rs announces as
+// client_version (models-manager client_version_to_whole).
+var semverRe = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
 // mustWrite/mustWriteString/drainEvents mirror the custom-provider test
 // helpers (a handler write failure is always fatal; streams must not hang).
@@ -533,5 +538,127 @@ func TestRefreshCredentials(t *testing.T) {
 	}
 	if got := store.get(codex.KindRefreshToken); got != "r3" {
 		t.Errorf("refresh_token = %q, want r3", got)
+	}
+}
+
+// Model discovery (ADR-010): the sync's codex lister refreshes the account's
+// catalog from GET {base}/codex/models?client_version=<semver> with the
+// codex header set — codex-rs's own refresh path (model-provider/src/
+// models_endpoint.rs + protocol/src/openai_models.rs, transcribed into
+// testdata/golden/openai-codex/, accessed 2026-10-17). The body is the
+// manifest shape {"models":[{"slug",…}]}: reading it as the OpenAI
+// {"data":[{"id"}]} list is what left a signed-in account importing nothing.
+func TestListModels_CodexCatalog(t *testing.T) {
+	body := testutil.LoadGolden(t, "openai-codex/models.json")
+	var got struct{ path, version, originator, auth, ua string }
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got.path = r.URL.Path
+		got.version = r.URL.Query().Get("client_version")
+		got.originator = r.Header.Get("Originator")
+		got.auth = r.Header.Get("Authorization")
+		got.ua = r.Header.Get("User-Agent")
+		w.Header().Set("Content-Type", "application/json")
+		mustWrite(t, w, body)
+	}))
+	defer srv.Close()
+
+	store := newMemStore()
+	seedTokens(t, store, "a1", farFuture())
+	auth := codex.NewAuthClient(codex.AuthConfig{Issuer: srv.URL, HTTP: srv.Client(), Store: store, ProviderID: providerID})
+	p := codex.New(codex.ProviderConfig{
+		ID: providerID, BaseURL: srv.URL,
+		Capabilities: provider.Capabilities{Streaming: true, Tools: true},
+		Auth:         auth, HTTP: srv.Client(),
+	})
+
+	models, err := p.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	var names []string
+	for _, m := range models {
+		names = append(names, m.Name)
+	}
+	want := []string{"gpt-5.6-codex", "gpt-5.5", "gpt-5.4-mini"}
+	if !reflect.DeepEqual(names, want) {
+		t.Errorf("ListModels = %v, want the catalog's slugs in order %v", names, want)
+	}
+
+	if got.path != "/codex/models" {
+		t.Errorf("discovery path = %q, want /codex/models (the codex catalog, not the web app's /models)", got.path)
+	}
+	if got.version != codex.DefaultClientVersion {
+		t.Errorf("client_version = %q, want the pin %q", got.version, codex.DefaultClientVersion)
+	}
+	if got.originator != "codex_cli_rs" {
+		t.Errorf("Originator = %q, want codex_cli_rs", got.originator)
+	}
+	if got.auth != "Bearer a1" {
+		t.Errorf("Authorization = %q, want the account's access token", got.auth)
+	}
+	if !strings.HasPrefix(got.ua, "codex_cli_rs/proxyllm/") {
+		t.Errorf("User-Agent = %q, want the codex_cli_rs/proxyllm prefix", got.ua)
+	}
+}
+
+// The announced version must stay a plain semver: the backend gates the
+// catalog on it, and codex-rs sends MAJOR.MINOR.PATCH (client_version_to_whole).
+func TestDefaultClientVersion_IsSemver(t *testing.T) {
+	if !semverRe.MatchString(codex.DefaultClientVersion) {
+		t.Errorf("DefaultClientVersion = %q, want MAJOR.MINOR.PATCH", codex.DefaultClientVersion)
+	}
+}
+
+// A deployment pinned to an older client announces its own version.
+func TestListModels_ClientVersionOverride(t *testing.T) {
+	var version string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		version = r.URL.Query().Get("client_version")
+		mustWriteString(t, w, `{"models":[{"slug":"gpt-5.4-mini"}]}`)
+	}))
+	defer srv.Close()
+
+	store := newMemStore()
+	seedTokens(t, store, "a1", farFuture())
+	p := codex.New(codex.ProviderConfig{
+		ID: providerID, BaseURL: srv.URL, ClientVersion: "0.100.0",
+		Auth: codex.NewAuthClient(codex.AuthConfig{Issuer: srv.URL, HTTP: srv.Client(), Store: store, ProviderID: providerID}),
+		HTTP: srv.Client(),
+	})
+	models, err := p.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if version != "0.100.0" {
+		t.Errorf("client_version = %q, want the configured override 0.100.0", version)
+	}
+	if len(models) != 1 || models[0].Name != "gpt-5.4-mini" {
+		t.Errorf("ListModels = %+v, want the single catalog entry", models)
+	}
+}
+
+// An EMPTY catalog is a skip, never an empty model list: the backend answers
+// a stale client_version with no models, and taking that at face value is
+// what would let one sync run delete every synced codex row (the sync deletes
+// rows the upstream no longer lists).
+func TestListModels_EmptyCatalogIsAnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mustWriteString(t, w, `{"models":[]}`)
+	}))
+	defer srv.Close()
+
+	store := newMemStore()
+	seedTokens(t, store, "a1", farFuture())
+	p := codex.New(codex.ProviderConfig{
+		ID: providerID, BaseURL: srv.URL,
+		Auth: codex.NewAuthClient(codex.AuthConfig{Issuer: srv.URL, HTTP: srv.Client(), Store: store, ProviderID: providerID}),
+		HTTP: srv.Client(),
+	})
+	_, err := p.ListModels(context.Background())
+	if err == nil {
+		t.Fatal("an empty catalog must surface as an error, not as zero models")
+	}
+	if !strings.Contains(err.Error(), "client_version") {
+		t.Errorf("error %q should name the client_version gate so the operator can act on it", err)
 	}
 }

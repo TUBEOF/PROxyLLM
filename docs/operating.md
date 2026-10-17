@@ -36,7 +36,8 @@ several Codex sign-ins are several accounts, and routing rules can name
 either a single account or the whole type.
 
 Shared settings that belong to the type (an issuer, a base URL, a model
-prefix, aliases) live on the type card; an account's own configuration
+prefix, aliases, and — for ChatGPT/Codex — the codex CLI version that model
+discovery announces) live on the type card; an account's own configuration
 overrides them key by key. The model prefix decides the model identity the
 type contributes (`ollamacloud/glm-5.3`), so changing it renames the models
 that type imports.

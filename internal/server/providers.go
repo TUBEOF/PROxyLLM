@@ -151,6 +151,9 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 			BaseURL:      codexBaseURL,
 			Capabilities: capsFromConfig(cfg, row.Type),
 			Auth:         authc,
+			// Model discovery announces the type's codex CLI version; empty
+			// selects the provider's built-in pin.
+			ClientVersion: cfg.ClientVersion,
 			// Streaming transport with guarded redirects — the OAuth access
 			// token rides the Bearer header on every dispatch.
 			HTTP: httpguard.NewStreamingClient(),
