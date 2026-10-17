@@ -418,7 +418,7 @@
     },
     "overlay": {
       "modal": ".modal-backdrop (fixed, 60% black + blur 4px, z 200) with .modal centred on it (z 210, max-width 480px)",
-      "drawer": "right panel, min(420px, 90vw), z 160",
+      "drawer": "right panel, min(420px, 90vw), z 160; the .drawer-panel variant is a popup centred like the modal at min(80vw, 1680px) x min(80vh, 1040px) wearing the modal's shadow, full-viewport with no radius below 768px",
       "user_menu": "fixed under the avatar, min-width 210px, z 170",
       "toast": "status-coloured icon circle, max-width 380px",
       "tooltip": "above the trigger, z 60"

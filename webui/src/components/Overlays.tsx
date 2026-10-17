@@ -27,17 +27,27 @@ export function Drawer({
   onClose,
   children,
   footer,
+  size = 'rail',
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  // 'rail' is the 420px right-hand panel a form rides in. 'panel' is the
+  // near-viewport popup a payload needs: a log's route trace and captured
+  // bodies are JSON an operator reads, and 420px cuts it to slivers.
+  size?: 'rail' | 'panel';
 }) {
   useOverlayA11y(onClose, true);
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} aria-hidden="true" />
-      <aside className="drawer" role="dialog" aria-modal="true" aria-label={title}>
+      <aside
+        className={size === 'panel' ? 'drawer drawer-panel' : 'drawer'}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
         <div className="drawer-head">
           <h3>{title}</h3>
           <button type="button" className="btn btn-icon btn-ghost" onClick={onClose} aria-label="Close">
