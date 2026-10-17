@@ -36,9 +36,11 @@ type LogConfig struct {
 }
 
 // AuthConfig holds authentication settings. Authentication is default-ON;
-// it can only be disabled via the explicit ENV opt-out.
+// it can only be disabled via the explicit ENV opt-out (PROXYLLM_AUTH_DISABLED)
+// — the config-file layer refuses an `auth` group outright, so no file and no
+// console switch can turn it off. Never default true.
 type AuthConfig struct {
-	// Disabled reflects PROXYLLM_AUTH_DISABLED=1. Never default true.
+	// Disabled reflects PROXYLLM_AUTH_DISABLED=1.
 	Disabled bool
 }
 
