@@ -14,13 +14,18 @@ import (
 
 // detectedCaps blobs for a model with the detected capabilities. The
 // server-tool families stream through provider capability fallbacks, not
-// per-model rows, and default to false for a detected row.
+// per-model rows, and default to false for a detected row. Decision is a
+// per-model registry fact (Ollama's /api/show lists "decision" for the
+// System One / Jev class, e.g. clef:cloud) and is recorded as such;
+// routing still gates decision requests on the ACCOUNT's capability
+// (ADR-017), so the flag documents the model rather than opening a route.
 func detectedCaps(info provider.ModelInfo) json.RawMessage {
 	blob, err := json.Marshal(map[string]any{
 		"streaming":      true,
 		"tools":          info.Tools,
 		"vision":         info.Vision,
 		"thinking":       info.Thinking,
+		"decision":       info.Decision,
 		"web_search":     false,
 		"web_fetch":      false,
 		"code_execution": false,
@@ -64,16 +69,58 @@ func mergeDetectedNewRow(row storage.Model, info provider.ModelInfo) storage.Mod
 	return row
 }
 
+// backfillDecision writes the one capability key that postdates the
+// detection vocabulary into the rows the sync itself imported before it
+// existed. Every blob detectedCaps has ever written carries "streaming",
+// so a blob that carries that fact but says nothing about "decision" is a
+// pre-decision-vocabulary sync blob: it gets the detected value, and the
+// write is idempotent (the key's presence ends it).
+//
+// The rule is deliberately narrow in both directions. A blob WITHOUT
+// "streaming" was not written by the sync's detection — the WebUI editor
+// writes all eight keys, learning adds single facts — so it is operator
+// authorship and stays untouched (ADR-010). And no other capability is
+// backfilled: writing an absent "vision" would flip the router's
+// modelCapabilityFlag from unknown to a known false and switch its vision
+// gate on for rows that were never classified, which is exactly what the
+// empty-blob-only rule exists to prevent.
+func backfillDecision(raw json.RawMessage, detected bool) (json.RawMessage, bool) {
+	var blob map[string]any
+	if err := json.Unmarshal(raw, &blob); err != nil {
+		return raw, false // malformed: store noise, never a rewrite target
+	}
+	if _, ok := blob["streaming"]; !ok {
+		return raw, false
+	}
+	if _, stated := blob["decision"]; stated {
+		return raw, false
+	}
+	// A pin without a value is still a statement (the operator reserved
+	// the flag for themselves); learning and detection both honor it.
+	if pinned, ok := blob["pinned"].(map[string]any); ok && pinned["decision"] == true {
+		return raw, false
+	}
+	blob["decision"] = detected
+	merged, err := json.Marshal(blob)
+	if err != nil {
+		return raw, false
+	}
+	return merged, true
+}
+
 // mergeDetected merges detected facts into an EXISTING synced row:
-// capabilities only when the row's blob is empty, context_window only
-// when the compat blob is empty or carries no non-zero pin — operator
-// edits always win (ADR-010). Returns the merged row and whether
-// anything changed.
+// capabilities only when the row's blob is empty — plus the one decision
+// backfill below — context_window only when the compat blob is empty or
+// carries no non-zero pin. Operator edits always win (ADR-010). Returns
+// the merged row and whether anything changed.
 func mergeDetected(row storage.Model, info provider.ModelInfo) (storage.Model, bool) {
 	emptyCaps := blobIsEmpty(row.Capabilities)
 	changed := false
 	if emptyCaps {
 		row.Capabilities = detectedCaps(info)
+		changed = true
+	} else if merged, wrote := backfillDecision(row.Capabilities, info.Decision); wrote {
+		row.Capabilities = merged
 		changed = true
 	}
 	pinned := storage.ContextWindowFromCompat(row.Compat) > 0

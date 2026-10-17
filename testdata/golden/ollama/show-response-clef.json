@@ -1,0 +1,1 @@
+{"capabilities":["decision","vision"],"details":{"parent_model":"clef:cloud","format":"","family":"qwen35","families":null,"parameter_size":"27356728560","quantization_level":"BF16"},"model_info":{"general.architecture":"qwen35","general.parameter_count":27356728560,"qwen35.context_length":65536,"qwen35.embedding_length":5120},"modified_at":"2026-10-04T09:00:00-07:00"}

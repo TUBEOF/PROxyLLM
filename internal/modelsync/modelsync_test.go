@@ -266,6 +266,19 @@ func detectGLM() provider.ModelInfo {
 	}
 }
 
+// detectClef is the decision-model counterpart, pinning the live /api/show
+// facts of clef:cloud (testdata/golden/ollama/show-response-clef.json,
+// accessed 2026-10-16): capabilities ["decision","vision"] and a 65k
+// window — no completion, no tools, no thinking.
+func detectClef() provider.ModelInfo {
+	return provider.ModelInfo{
+		Name:          "clef:cloud",
+		ContextLength: 65536,
+		Vision:        true,
+		Decision:      true,
+	}
+}
+
 // assertBlob compares a JSON blob against a map via deep equality; the
 // want map round-trips through JSON so numbers compare as the decoder
 // sees them (float64), not as literal int values.
@@ -287,10 +300,10 @@ func assertBlob(t *testing.T, label, raw string, want map[string]any) {
 
 // New models import with the detected capabilities and context window
 // (capabilities
-// {"streaming":true,"tools":det,"vision":det,"thinking":det} + server
-// tools false; compat carries ONLY the detected context_window — the
-// thinking policy derives from the capability blob server-side, never a
-// hardcoded "strip" that would pin every synced row).
+// {"streaming":true,"tools":det,"vision":det,"thinking":det,"decision":det}
+// + server tools false; compat carries ONLY the detected context_window —
+// the thinking policy derives from the capability blob server-side, never
+// a hardcoded "strip" that would pin every synced row).
 func TestSync_NewRowCarriesDetectedFacts(t *testing.T) {
 	s := openStore(t, "acc-a")
 	reg := &fakeRegistry{}
@@ -302,7 +315,7 @@ func TestSync_NewRowCarriesDetectedFacts(t *testing.T) {
 	m := mustGet(t, s, "custom-openai/glm-5.3-flash")
 	assertBlob(t, "capabilities", string(m.Capabilities), map[string]any{
 		"streaming": true, "tools": true, "vision": true, "thinking": true,
-		"web_search": false, "web_fetch": false, "code_execution": false,
+		"decision": false, "web_search": false, "web_fetch": false, "code_execution": false,
 	})
 	assertBlob(t, "compat", string(m.Compat), map[string]any{
 		"context_window": 1048576,
@@ -328,11 +341,108 @@ func TestSync_PreFeatureSyncedRowReceivesDetection(t *testing.T) {
 	m := mustGet(t, s, "custom-openai/glm-5.3-flash")
 	assertBlob(t, "capabilities", string(m.Capabilities), map[string]any{
 		"streaming": true, "tools": true, "vision": true, "thinking": true,
-		"web_search": false, "web_fetch": false, "code_execution": false,
+		"decision": false, "web_search": false, "web_fetch": false, "code_execution": false,
 	})
 	assertBlob(t, "compat", string(m.Compat), map[string]any{
 		"context_window": 1048576,
 	})
+}
+
+// The decision capability is a per-model registry fact (Ollama's /api/show
+// lists "decision" for clef:cloud, live 2026-10-16) and lands on the
+// imported row: true for the decision model, false for its chat siblings.
+func TestSync_NewRowRecordsDetectedDecision(t *testing.T) {
+	s := openStore(t, "acc-a")
+	reg := &fakeRegistry{}
+	reg.Register((&stubProvider{id: "acc-a", list: []provider.ModelInfo{
+		detectClef(), detectGLM(),
+	}}).asLister())
+
+	if _, err := New(s, reg, testLogger()).Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	clef := mustGet(t, s, "custom-openai/clef:cloud")
+	assertBlob(t, "capabilities", string(clef.Capabilities), map[string]any{
+		"streaming": true, "tools": false, "vision": true, "thinking": false,
+		"decision": true, "web_search": false, "web_fetch": false, "code_execution": false,
+	})
+	glm := mustGet(t, s, "custom-openai/glm-5.3-flash")
+	assertBlob(t, "capabilities", string(glm.Capabilities), map[string]any{
+		"streaming": true, "tools": true, "vision": true, "thinking": true,
+		"decision": false, "web_search": false, "web_fetch": false, "code_execution": false,
+	})
+}
+
+// A row an earlier sync run imported (the seven-key vocabulary, no
+// decision slot) receives the detected fact on the next run, and only
+// once: the key's presence ends the backfill.
+func TestSync_BackfillsDecisionIntoPreFixRow(t *testing.T) {
+	s := openStore(t, "acc-a")
+	if err := s.PutModel(context.Background(), storage.Model{
+		ID: "custom-openai/clef:cloud", ProviderID: "acc-a", Name: "clef:cloud",
+		Capabilities: []byte(`{"code_execution":false,"streaming":true,"thinking":false,` +
+			`"tools":false,"vision":true,"web_fetch":false,"web_search":false}`),
+		Compat: []byte(`{"context_window":65536}`),
+		Origin: storage.ModelSyncedOrigin,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reg := &fakeRegistry{}
+	reg.Register((&stubProvider{id: "acc-a", list: []provider.ModelInfo{detectClef()}}).asLister())
+	syncer := New(s, reg, testLogger())
+
+	state, err := syncer.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if state.Providers[0].Updated != 1 {
+		t.Errorf("backfill did not count as an update: %+v", state.Providers[0])
+	}
+	m := mustGet(t, s, "custom-openai/clef:cloud")
+	assertBlob(t, "capabilities", string(m.Capabilities), map[string]any{
+		"streaming": true, "tools": false, "vision": true, "thinking": false,
+		"decision": true, "web_search": false, "web_fetch": false, "code_execution": false,
+	})
+
+	state, err = syncer.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	if state.Providers[0].Updated != 0 {
+		t.Errorf("the backfill is not idempotent: Updated=%d", state.Providers[0].Updated)
+	}
+}
+
+// Operator statements about the decision flag survive: a WebUI save (all
+// eight keys plus the pin map) and a hand-written partial blob (no
+// "streaming" — not the sync's authorship) are both left alone.
+func TestSync_OperatorDecisionStaysUntouched(t *testing.T) {
+	s := openStore(t, "acc-a")
+	saved := `{"code_execution":false,"decision":false,"pinned":{"decision":false},` +
+		`"streaming":true,"thinking":false,"tools":false,"vision":true,"web_fetch":false,"web_search":false}`
+	handWritten := `{"vision":true}`
+	for id, blob := range map[string]string{"saved": saved, "hand": handWritten} {
+		if err := s.PutModel(context.Background(), storage.Model{
+			ID: "custom-openai/" + id, ProviderID: "acc-a", Name: id,
+			Capabilities: []byte(blob), Origin: storage.ModelSyncedOrigin,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reg := &fakeRegistry{}
+	reg.Register((&stubProvider{id: "acc-a", list: []provider.ModelInfo{
+		{Name: "saved", Decision: true}, {Name: "hand", Decision: true},
+	}}).asLister())
+
+	if _, err := New(s, reg, testLogger()).Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if m := mustGet(t, s, "custom-openai/saved"); string(m.Capabilities) != saved {
+		t.Errorf("operator-saved blob was rewritten:\n got %s\nwant %s", m.Capabilities, saved)
+	}
+	if m := mustGet(t, s, "custom-openai/hand"); string(m.Capabilities) != handWritten {
+		t.Errorf("hand-written blob was rewritten: %s", m.Capabilities)
+	}
 }
 
 // Review Focus 3: an operator-edited context_window (non-zero in the

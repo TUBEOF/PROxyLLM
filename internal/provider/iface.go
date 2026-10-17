@@ -174,11 +174,17 @@ type ModelInfo struct {
 	// /api/show model_info context_length is the source consulted).
 	ContextLength int
 
-	// Thinking / Tools / Vision are the model's detected capabilities;
-	// false = undetected or absent.
+	// Thinking / Tools / Vision / Decision are the model's detected
+	// capabilities; false = undetected or absent.
 	Thinking bool
 	Tools    bool
 	Vision   bool
+
+	// Decision is the model's decision-surface capability (System One /
+	// Jev, the OpenAI Decisions API): the registry declares it per model,
+	// so a model row can carry the fact even though routing gates decision
+	// requests on the ACCOUNT's capability (ADR-017).
+	Decision bool
 }
 
 // ModelLister is the optional model-discovery surface a provider exposes
