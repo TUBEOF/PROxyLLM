@@ -310,19 +310,15 @@ export interface ModelTestFailureDetail {
   message?: string;
 }
 
-// ADR-012 Quota page: per-account usage snapshot (one card per account).
+// ADR-012 Quota page: per-account limit snapshot (one card per account).
+// The card carries the account's OWN limits (the scrape) and nothing the
+// proxy measured itself — the local month aggregate was retired 2026-10-17
+// (ADR-012 amendment).
 export interface LiveUsage {
   session_pct?: number | null;
   session_reset?: number;
   weekly_pct?: number | null;
   weekly_reset?: number;
-  plan?: string;
-}
-export interface LocalUsage {
-  requests: number;
-  failures: number;
-  input_tokens: number;
-  output_tokens: number;
 }
 export interface AccountUsage {
   account_id: string;
@@ -332,10 +328,8 @@ export interface AccountUsage {
   // card says that rather than showing a cooldown it cannot earn.
   enabled: boolean;
   live?: LiveUsage | null;
-  source?: string;
   error?: string;
   health?: string;
-  local?: LocalUsage | null;
   fetched_at?: number;
 }
 export interface AccountUsageResponse {

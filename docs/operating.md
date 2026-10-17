@@ -146,15 +146,18 @@ admin session warm.
 
 ## Quota
 
-One card per chat account. For Ollama Cloud accounts with a stored session
-cookie the card shows the live usage and limit figures from the account's
-own settings page, refreshed on demand; without one it shows the local
-count for the current month, labeled as such. Percentages that are unknown
-render as `—`, never as zero. A cooldown — the account is out of quota, or
-its breaker is open — is named on the card, which is the fastest way to
-explain a wave of failures. Each card carries the account's **in the pool**
-switch, and a card whose account is switched off says so instead of showing
-a cooldown it cannot earn.
+One card per chat account, carrying the account's **own** limits — nothing
+the proxy measured itself (local usage lives on the Overview page). For
+Ollama Cloud accounts with a stored session cookie the card shows the live
+usage and limit figures from the account's own settings page, refreshed on
+demand, with a reset countdown per window; hovering (or focusing) the
+countdown shows the exact reset instant in the reader's own timezone.
+Without a cookie the card shows the empty state that says how to set one.
+Percentages that are unknown render as `—`, never as zero. A cooldown — the
+account is out of quota, or its breaker is open — is named on the card,
+which is the fastest way to explain a wave of failures. Each card carries
+the account's **in the pool** switch, and a card whose account is switched
+off says so instead of showing a cooldown it cannot earn.
 
 ### The session cookie
 

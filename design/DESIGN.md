@@ -253,7 +253,9 @@ login card, and overrides nothing.
   keyboard and assistive technology see a normal control.
 - **Tabs and breadcrumb** — `.tabs`/`.tab`, `.breadcrumb`.
 - **Overlays** — `.modal-backdrop` + `.modal` (centred, `--z-modal`), `.drawer`,
-  `.user-menu`, `.toast`, `.tooltip`. The drawer has two sizes. The **rail**
+  `.user-menu`, `.toast`, `.tooltip`. The tooltip shows on hover **and on
+  keyboard focus** (`.tooltip:focus-within`) — its content is the exact value,
+  so pointer and keyboard must reach it alike. The drawer has two sizes. The **rail**
   (`.drawer`, `min(420px, 90vw)`) is the right-hand strip a form rides in. The
   **panel** (`.drawer` + `.drawer-panel`) is the same shell centred like the
   modal at `min(80vw, 1680px)` × `min(80vh, 1040px)` with the modal's shadow,

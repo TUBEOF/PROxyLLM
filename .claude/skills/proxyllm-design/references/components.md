@@ -72,7 +72,7 @@ Working markup: `design/examples/components.html`.
 | `.modal-backdrop`, `.modal`, `.modal-head`, `.modal-body`, `.modal-foot` | the modal: fixed backdrop (60% black + 4px blur, z 200) with the centred dialog on top (max-width 480px, z 210). The SPA renders the pair as siblings |
 | `.drawer-backdrop`, `.drawer`, `.drawer-head`, `.drawer-body`, `.drawer-foot` | the detail overlay, two sizes: the right-hand rail `min(420px, 90vw)` for a form, and — as `.drawer` + `.drawer-panel` — a popup centred at `min(80vw, 1680px)` × `min(80vh, 1040px)` for a payload. z 160, backdrop z 150; full-viewport below 768px |
 | `.toast-wrap`, `.toast`, `.t-ic`, `.t-title`, `.t-msg`, `.t-close` | status-coloured notifications |
-| `.tooltip`, `.tooltip .tt` | a hover label above its trigger |
+| `.tooltip`, `.tooltip .tt` | a label above its trigger, on hover and keyboard focus |
 | `.overlay-host` | the positioning context for an inline overlay |
 
 ## The request log

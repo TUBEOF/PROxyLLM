@@ -124,11 +124,13 @@ reads per poll.
 `GET /overview` — the dashboard's single poll: `generated_at`, the last 14
 UTC days of `usage` rows, and today's totals.
 
-`GET /accounts/usage` — one card per non-web-tool account: the cached
-usage/limit snapshot (`live`, with `null` percentages rendered as "—" and
-never as zero), the local current-month aggregate, and a `health` string
-naming an active cooldown reason (`quota_exhausted`, `breaker`) or empty
-when the account is healthy.
+`GET /accounts/usage` — one card per non-web-tool account: the account's own
+limit snapshot (`live`, present only when the last scrape produced a window —
+an error-only blob answers with `error` instead, and `null` percentages render
+as "—", never as zero), and a `health` string naming an active cooldown reason
+(`quota_exhausted`, `breaker`) or empty when the account is healthy. The card
+carries nothing the proxy measured itself (ADR-012 amendment; local usage
+belongs to `/overview`).
 
 `POST /accounts/usage/refresh/{id...}` — scrapes that account's usage now
 (60 s budget). The ollama.com account types only, and only with a stored

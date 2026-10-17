@@ -1,6 +1,7 @@
-// Admin usage endpoints (ADR-012): the Quota page's backend — cached
-// account usage state, local usage windows, and on-demand refresh
-// against the ollama.com settings page.
+// Admin usage endpoints (ADR-012, amendment 2026-10-17): the Quota page's
+// backend — cached account usage state and on-demand refresh against the
+// ollama.com settings page. The card shows the account's own limits only;
+// the local usage_daily aggregate no longer feeds it.
 package webui
 
 import (
@@ -24,18 +25,14 @@ type accountUsageDTO struct {
 	// in a position to earn.
 	Enabled bool `json:"enabled"`
 
-	// Live source (scrape): nil renders the local fallback.
-	Live *liveUsageDTO `json:"live,omitempty"`
-	// Source says what Live is: "ollama" (scraped), "" (none).
-	Source string `json:"source,omitempty"`
-	Error  string `json:"error,omitempty"`
+	// Live is the account's own limit state when the last scrape produced a
+	// window — nil renders the card's empty state (with Error when the scrape
+	// failed). A blob with no window is not a "live" reading.
+	Live  *liveUsageDTO `json:"live,omitempty"`
+	Error string        `json:"error,omitempty"`
 
 	// Health snapshot (breaker/quota cooldown). Empty = healthy.
 	Health string `json:"health,omitempty"`
-
-	// Local usage windows (UTC month) when no live source exists —
-	// and as an extra sanity signal when it does.
-	Local *localUsageDTO `json:"local,omitempty"`
 
 	FetchedAt int64 `json:"fetched_at,omitempty"`
 }
@@ -46,15 +43,6 @@ type liveUsageDTO struct {
 	SessionReset int64    `json:"session_reset,omitempty"`
 	WeeklyPct    *float64 `json:"weekly_pct,omitempty"`
 	WeeklyReset  int64    `json:"weekly_reset,omitempty"`
-	Plan         string   `json:"plan,omitempty"`
-}
-
-type localUsageDTO struct {
-	// Tokens + requests for the CURRENT UTC month.
-	Requests  int64 `json:"requests"`
-	Failures  int64 `json:"failures"`
-	InputTok  int64 `json:"input_tokens"`
-	OutputTok int64 `json:"output_tokens"`
 }
 
 // getAccountUsage serves GET /api/admin/accounts/usage — one entry per
@@ -78,49 +66,27 @@ func (a *AdminAPI) getAccountUsage(w http.ResponseWriter, r *http.Request) {
 		}
 		if blob, ok, err := a.store.GetAccountUsage(r.Context(), acct.ID); err == nil && ok {
 			entry.FetchedAt = blob.FetchedAt
-			entry.Source = blob.Source
 			entry.Error = blob.Error
-			entry.Live = &liveUsageDTO{
-				SessionPct:   blob.SessionPct,
-				SessionReset: blob.SessionReset,
-				WeeklyPct:    blob.WeeklyPct,
-				WeeklyReset:  blob.WeeklyReset,
-				Plan:         blob.Plan,
+			// Only a blob that carries a window is a live reading: an
+			// error-only blob must render the empty state (with its error),
+			// never a pair of empty bars.
+			if blob.HasWindows() {
+				entry.Live = &liveUsageDTO{
+					SessionPct:   blob.SessionPct,
+					SessionReset: blob.SessionReset,
+					WeeklyPct:    blob.WeeklyPct,
+					WeeklyReset:  blob.WeeklyReset,
+				}
 			}
 		}
 		if a.healthSnapshot != nil {
 			entry.Health = a.healthSnapshot(acct.ID)
 		}
-		entry.Local = a.localUsage(r.Context(), acct.ID)
 		out = append(out, entry)
 	}
 	// Stable order: by account id.
 	sort.Slice(out, func(i, j int) bool { return out[i].AccountID < out[j].AccountID })
 	writeJSON(w, http.StatusOK, map[string]any{"accounts": out})
-}
-
-// localUsage aggregates the account's usage_daily over the UTC month
-// (ADR-012 local fallback).
-func (a *AdminAPI) localUsage(ctx context.Context, accountID string) *localUsageDTO {
-	now := a.now()
-	if a.now == nil { // defensive: newAdminEnv always injects Now
-		now = time.Now().Unix()
-	}
-	today := time.Unix(now, 0).UTC()
-	monthStart := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC)
-	rows, err := a.store.QueryUsageDailyByProvider(ctx, accountID,
-		monthStart.Format("2006-01-02"), today.Format("2006-01-02"))
-	if err != nil {
-		return nil // store noise: the card renders live-only
-	}
-	dto := &localUsageDTO{}
-	for _, row := range rows {
-		dto.Requests += row.Requests
-		dto.Failures += row.Failures
-		dto.InputTok += row.InputTokens
-		dto.OutputTok += row.OutputTokens
-	}
-	return dto
 }
 
 // UsageCookieTokenKind is the encrypted token-store kind holding an

@@ -3,9 +3,9 @@ package storage
 // ADR-012 — per-account usage snapshot (the Quota page's cached backend).
 // The latest scrape result per account rides the config-KV under the
 // `account_usage:<providerID>` namespace: one JSON blob, written by the
-// usage prober after a live scrape (or the local fallback counter) and
-// read by the admin API + WebUI. No new migration — the config table is
-// the typed-free top layer; the typed shape lives here.
+// usage prober after a live scrape and read by the admin API + WebUI. No new
+// migration — the config table is the typed-free top layer; the typed shape
+// lives here.
 
 import (
 	"context"
@@ -17,8 +17,6 @@ import (
 // values are 0–100 (used); reset times are unix seconds (0 = unknown).
 type AccountUsageBlob struct {
 	FetchedAt int64  // unix seconds; 0 = never fetched
-	Source    string // "ollama" (live scrape) | "local" (usage_daily) | "" (unknown)
-	Plan      string // plan tier as the provider states it, "" unknown
 	Error     string // last scrape error ("" = none)
 
 	// Ollama-cloud live windows (percent used + reset, both from the
@@ -28,10 +26,14 @@ type AccountUsageBlob struct {
 	SessionReset int64    `json:"session_reset,omitempty"`
 	WeeklyPct    *float64 `json:"weekly_pct,omitempty"`
 	WeeklyReset  int64    `json:"weekly_reset,omitempty"`
-	// MonthlyPct is the locally computed month window (no live source
-	// today); MonthlyReset is the first day of the next month (unix).
-	MonthlyPct   *float64 `json:"monthly_pct,omitempty"`
-	MonthlyReset int64    `json:"monthly_reset,omitempty"`
+}
+
+// HasWindows reports whether the blob carries at least one live window —
+// the honest "is there anything to draw" test. An error-only blob (a failed
+// scrape persists Error and nothing else) has none, and the card renders
+// that error instead of a pair of empty bars.
+func (b AccountUsageBlob) HasWindows() bool {
+	return b.SessionPct != nil || b.WeeklyPct != nil || b.SessionReset > 0 || b.WeeklyReset > 0
 }
 
 // accountUsageKey is the config-KV key for one account's usage blob.

@@ -66,7 +66,7 @@ func newUsageProber(baseURL string, client *http.Client) *usageProber {
 // Probe scrapes the settings page with the given RAW session cookie
 // value and returns the parsed windows. A signed-out page (no
 // data-usage-track) is an error — the caller stores it into the blob's
-// Error field and degrades to local counting.
+// Error field and the card renders that error.
 func (p *usageProber) Probe(ctx context.Context, sessionCookie string) (*storage.AccountUsageBlob, error) {
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
@@ -98,7 +98,6 @@ func (p *usageProber) Probe(ctx context.Context, sessionCookie string) (*storage
 	if usage == nil {
 		return nil, errors.New("usage prober: settings page carries no usage data (signed out?)")
 	}
-	usage.Source = "ollama"
 	usage.FetchedAt = time.Now().Unix()
 	return usage, nil
 }
@@ -214,7 +213,7 @@ func (s *Server) prodUsageProber() func(ctx context.Context, accountID string, s
 		tok, err := store.GetProviderToken(ctx, accountID, webui.UsageCookieTokenKind)
 		if errors.Is(err, storage.ErrNotFound) {
 			return webui.RefreshOutcome{Status: statusMissingCookie,
-				Text: "account has no usage cookie — set it to enable live usage (the card shows local counting otherwise)"}
+				Text: "account has no usage cookie — set it to enable live usage"}
 		}
 		if err != nil {
 			return webui.RefreshOutcome{Status: http.StatusInternalServerError, Text: "token store failure"}
