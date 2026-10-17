@@ -1,0 +1,583 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "PROxyLLM client API",
+    "version": "1.15.1",
+    "summary": "OpenAI-compatible, Anthropic-compatible and decision surfaces of one proxy.",
+    "description": "PROxyLLM exposes three client-facing surfaces from one endpoint and translates between them, so any client shape can reach any configured upstream. Every /v1/* route authenticates with a client key (pk_<prefix>_<secret>). The operator-facing admin API (/api/admin/*) is session-authenticated and deliberately not described here; see docs/api/admin.md.",
+    "license": { "name": "MIT", "identifier": "MIT" }
+  },
+  "servers": [
+    { "url": "http://localhost:8080", "description": "Default listen address (PROXYLLM_SERVER_ADDR)" }
+  ],
+  "security": [{ "clientKey": [] }, { "apiKeyHeader": [] }],
+  "tags": [
+    { "name": "OpenAI-compatible", "description": "Chat Completions and Responses shapes." },
+    { "name": "Anthropic-compatible", "description": "Messages shape, what Claude Code speaks." },
+    { "name": "Decision", "description": "Typed questions scored against shared evidence; non-streaming by contract." }
+  ],
+  "paths": {
+    "/v1/chat/completions": {
+      "post": {
+        "tags": ["OpenAI-compatible"],
+        "summary": "Chat completion (streaming or not)",
+        "operationId": "createChatCompletion",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ChatCompletionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A completion, or an SSE stream of chunks when stream is true.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ChatCompletion" } },
+              "text/event-stream": { "schema": { "type": "string" } }
+            }
+          },
+          "default": { "$ref": "#/components/responses/OpenAIError" }
+        }
+      }
+    },
+    "/v1/responses": {
+      "post": {
+        "tags": ["OpenAI-compatible"],
+        "summary": "Responses API call (semantic event stream when streaming)",
+        "operationId": "createResponse",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["model", "input"],
+                "properties": {
+                  "model": { "type": "string", "description": "Model row ID or an alias." },
+                  "input": { "description": "A string, or the Responses input item array." },
+                  "instructions": { "type": "string" },
+                  "stream": { "type": "boolean", "default": false },
+                  "max_output_tokens": { "type": "integer" },
+                  "temperature": { "type": "number" },
+                  "tools": { "type": "array", "items": { "type": "object" } }
+                },
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A response object, or a stream of response.* events when stream is true.",
+            "content": {
+              "application/json": { "schema": { "type": "object" } },
+              "text/event-stream": { "schema": { "type": "string" } }
+            }
+          },
+          "default": { "$ref": "#/components/responses/OpenAIError" }
+        }
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "tags": ["OpenAI-compatible", "Anthropic-compatible"],
+        "summary": "List model rows (two shapes, selected by the anthropic-version header)",
+        "description": "Without an `anthropic-version` header the response is the OpenAI list shape. With it, the Anthropic discovery shape (data with type/display_name plus first_id/last_id/has_more, ordered by id ascending).",
+        "operationId": "listModels",
+        "parameters": [
+          { "name": "anthropic-version", "in": "header", "required": false, "schema": { "type": "string" }, "description": "Present selects the Anthropic discovery shape." }
+        ],
+        "responses": {
+          "200": {
+            "description": "Model list.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/OpenAIModelList" },
+                    { "$ref": "#/components/schemas/AnthropicModelList" }
+                  ]
+                }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/OpenAIError" }
+        }
+      }
+    },
+    "/v1/messages": {
+      "post": {
+        "tags": ["Anthropic-compatible"],
+        "summary": "Messages call (streaming or not)",
+        "operationId": "createMessage",
+        "parameters": [
+          { "name": "beta", "in": "query", "required": false, "schema": { "type": "boolean" }, "description": "Accepted and ignored for matching; the query string rides through." },
+          { "name": "anthropic-version", "in": "header", "required": false, "schema": { "type": "string" }, "description": "Forwarded to the upstream verbatim." },
+          { "name": "anthropic-beta", "in": "header", "required": false, "schema": { "type": "string" }, "description": "Forwarded to the upstream verbatim." }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AnthropicMessageRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A message, or the Anthropic SSE event stream when stream is true.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/AnthropicMessage" } },
+              "text/event-stream": { "schema": { "type": "string" } }
+            }
+          },
+          "default": { "$ref": "#/components/responses/AnthropicError" }
+        }
+      }
+    },
+    "/v1/messages/count_tokens": {
+      "post": {
+        "tags": ["Anthropic-compatible"],
+        "summary": "Estimate the input token count (local heuristic, never an upstream call)",
+        "operationId": "countMessageTokens",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AnthropicMessageRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Estimate, always marked as heuristic.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["input_tokens", "estimation"],
+                  "properties": {
+                    "input_tokens": { "type": "integer" },
+                    "estimation": { "type": "string", "const": "heuristic" }
+                  }
+                }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/AnthropicError" }
+        }
+      }
+    },
+    "/v1/systemone": {
+      "post": {
+        "tags": ["Decision"],
+        "summary": "System One / Jev decision call",
+        "description": "Non-streaming by contract. The chain entry must declare the `decision` capability.",
+        "operationId": "createSystemOneDecision",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SystemOneRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Answers keyed by question name.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/SystemOneResponse" } }
+            }
+          },
+          "default": { "$ref": "#/components/responses/SystemOneError" }
+        }
+      }
+    },
+    "/v1/decisions": {
+      "post": {
+        "tags": ["Decision"],
+        "summary": "OpenAI Decisions call",
+        "description": "Non-streaming by contract. The chain entry must declare the `decision` capability.",
+        "operationId": "createDecision",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DecisionsRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An answer per question.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/DecisionsResponse" } }
+            }
+          },
+          "default": { "$ref": "#/components/responses/OpenAIError" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "clientKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Authorization: Bearer pk_<prefix>_<secret>"
+      },
+      "apiKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "pk_<prefix>_<secret>; accepted on the Anthropic surface. Bearer wins when both are present."
+      }
+    },
+    "responses": {
+      "OpenAIError": {
+        "description": "Error in the OpenAI envelope.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/OpenAIErrorBody" } }
+        }
+      },
+      "AnthropicError": {
+        "description": "Error in the Anthropic envelope.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/AnthropicErrorBody" } }
+        }
+      },
+      "SystemOneError": {
+        "description": "Error in the System One envelope.",
+        "content": {
+          "application/json": { "schema": { "$ref": "#/components/schemas/SystemOneErrorBody" } }
+        }
+      }
+    },
+    "schemas": {
+      "OpenAIMessage": {
+        "type": "object",
+        "required": ["role"],
+        "properties": {
+          "role": { "type": "string", "enum": ["system", "developer", "user", "assistant", "tool"] },
+          "content": { "description": "A string, or an array of typed parts (text, image_url). An assistant turn with only tool calls is encoded as an empty string, never null.", "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "object" } }] },
+          "name": { "type": "string" },
+          "tool_calls": { "type": "array", "items": { "$ref": "#/components/schemas/OpenAIToolCall" } },
+          "tool_call_id": { "type": "string" },
+          "reasoning_content": { "type": "string", "description": "Accepted on input; upstreams disagree between this, delta.reasoning and delta.reasoning_content." }
+        }
+      },
+      "OpenAIToolCall": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string", "const": "function" },
+          "function": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "arguments": { "type": "string" }
+            }
+          }
+        }
+      },
+      "OpenAITool": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": { "type": "string", "const": "function" },
+          "function": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "parameters": { "type": "object" }
+            }
+          }
+        }
+      },
+      "ChatCompletionRequest": {
+        "type": "object",
+        "required": ["model", "messages"],
+        "properties": {
+          "model": { "type": "string", "description": "A model row ID or an alias." },
+          "messages": { "type": "array", "items": { "$ref": "#/components/schemas/OpenAIMessage" } },
+          "tools": { "type": "array", "items": { "$ref": "#/components/schemas/OpenAITool" } },
+          "tool_choice": { "oneOf": [{ "type": "string" }, { "type": "object" }] },
+          "max_tokens": { "type": "integer" },
+          "max_completion_tokens": { "type": "integer" },
+          "temperature": { "type": "number" },
+          "top_p": { "type": "number" },
+          "stop": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+          "stream": { "type": "boolean", "default": false }
+        },
+        "additionalProperties": true
+      },
+      "ChatCompletion": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "object": { "type": "string", "const": "chat.completion" },
+          "created": { "type": "integer" },
+          "model": { "type": "string", "description": "Echoes the model the client asked for, not the upstream's wire name." },
+          "choices": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": { "type": "integer" },
+                "message": { "$ref": "#/components/schemas/OpenAIMessage" },
+                "finish_reason": { "type": ["string", "null"] }
+              }
+            }
+          },
+          "usage": { "$ref": "#/components/schemas/OpenAIUsage" }
+        }
+      },
+      "OpenAIUsage": {
+        "type": "object",
+        "properties": {
+          "prompt_tokens": { "type": "integer" },
+          "completion_tokens": { "type": "integer" },
+          "total_tokens": { "type": "integer" },
+          "prompt_tokens_details": { "type": "object", "properties": { "cached_tokens": { "type": "integer" } } }
+        }
+      },
+      "OpenAIModelList": {
+        "type": "object",
+        "properties": {
+          "object": { "type": "string", "const": "list" },
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "object": { "type": "string", "const": "model" },
+                "owned_by": { "type": "string", "description": "The provider account that owns the row." }
+              }
+            }
+          }
+        }
+      },
+      "AnthropicModelList": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string" },
+                "type": { "type": "string", "const": "model" },
+                "display_name": { "type": "string" }
+              }
+            }
+          },
+          "first_id": { "type": "string" },
+          "last_id": { "type": "string" },
+          "has_more": { "type": "boolean" }
+        }
+      },
+      "AnthropicMessageRequest": {
+        "type": "object",
+        "required": ["model", "max_tokens", "messages"],
+        "properties": {
+          "model": { "type": "string", "description": "A model row ID or an alias; a trailing [1m] marker is stripped at routing." },
+          "max_tokens": { "type": "integer" },
+          "system": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "object" } }] },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["role", "content"],
+              "properties": {
+                "role": { "type": "string", "enum": ["user", "assistant"] },
+                "content": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "object" } }] }
+              }
+            }
+          },
+          "tools": { "type": "array", "items": { "type": "object" }, "description": "Client tools and dated server-tool definitions (web_search_*, web_fetch_*); server tools may be emulated through a web-tool account." },
+          "tool_choice": { "type": "object" },
+          "thinking": { "type": "object", "properties": { "type": { "type": "string", "enum": ["enabled", "adaptive"] }, "budget_tokens": { "type": "integer" } } },
+          "stream": { "type": "boolean", "default": false },
+          "temperature": { "type": "number" },
+          "top_p": { "type": "number" },
+          "stop_sequences": { "type": "array", "items": { "type": "string" } }
+        },
+        "additionalProperties": true
+      },
+      "AnthropicMessage": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string", "const": "message" },
+          "role": { "type": "string", "const": "assistant" },
+          "model": { "type": "string", "description": "Echoes the model the client asked for." },
+          "content": { "type": "array", "items": { "type": "object" }, "description": "text, thinking, tool_use, server_tool_use and *_tool_result blocks." },
+          "stop_reason": { "type": ["string", "null"] },
+          "stop_sequence": { "type": ["string", "null"] },
+          "usage": { "$ref": "#/components/schemas/AnthropicUsage" }
+        }
+      },
+      "AnthropicUsage": {
+        "type": "object",
+        "properties": {
+          "input_tokens": { "type": "integer" },
+          "output_tokens": { "type": "integer" },
+          "cache_creation_input_tokens": { "type": "integer" },
+          "cache_read_input_tokens": { "type": "integer" },
+          "server_tool_use": {
+            "type": "object",
+            "properties": {
+              "web_search_requests": { "type": "integer" },
+              "web_fetch_requests": { "type": "integer" }
+            }
+          }
+        }
+      },
+      "SystemOneRequest": {
+        "type": "object",
+        "required": ["model", "state", "questions"],
+        "properties": {
+          "model": { "type": "string" },
+          "state": { "description": "The shared evidence: a nonempty string, or an object/array serialized as JSON text." },
+          "images": { "type": "array", "items": { "type": "string" }, "description": "Bare base64, no data-URL prefix; attaches to every question." },
+          "questions": {
+            "type": "object",
+            "description": "Keyed by question name; the key is the answer's name.",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["type", "instructions"],
+              "properties": {
+                "type": { "type": "string", "enum": ["choice", "noul", "score"] },
+                "instructions": { "type": "string" },
+                "criteria": { "description": "choice: an object of option → description; score: an ascending array of level labels." }
+              }
+            }
+          },
+          "keep_alive": { "description": "Duration string or seconds; systemone only." }
+        }
+      },
+      "SystemOneResponse": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string" },
+          "answers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string" },
+                "choice": { "type": "string" },
+                "noul": { "type": "number" },
+                "score": { "type": "number" },
+                "legend": { "type": "object" },
+                "probabilities": { "type": "object" },
+                "confidence": { "type": "number" }
+              }
+            }
+          },
+          "usage": { "$ref": "#/components/schemas/DecisionUsage" }
+        }
+      },
+      "DecisionsRequest": {
+        "type": "object",
+        "required": ["model", "input", "questions"],
+        "properties": {
+          "model": { "type": "string" },
+          "input": { "description": "The shared evidence." },
+          "images": { "type": "array", "items": { "type": "string" }, "description": "Data URLs." },
+          "questions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["type", "name", "instructions"],
+              "properties": {
+                "type": { "type": "string", "enum": ["predicate", "choice", "score"] },
+                "name": { "type": "string" },
+                "instructions": { "type": "string" },
+                "choices": {
+                  "type": "array",
+                  "items": { "type": "object", "required": ["value"], "properties": { "value": { "type": "string" }, "description": { "type": "string" } } }
+                },
+                "levels": {
+                  "type": "array",
+                  "items": { "type": "object", "required": ["label"], "properties": { "label": { "type": "string" }, "description": { "type": "string" } } }
+                }
+              }
+            }
+          }
+        }
+      },
+      "DecisionsResponse": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string" },
+          "answers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": { "type": "string" },
+                "name": { "type": "string" },
+                "choice": { "type": "string" },
+                "score": { "type": "number" },
+                "probabilities": {
+                  "type": "array",
+                  "items": { "type": "object", "properties": { "value": { "type": "string" }, "probability": { "type": "number" } } }
+                },
+                "confidence": { "type": "number" }
+              }
+            }
+          },
+          "usage": { "$ref": "#/components/schemas/DecisionUsage" }
+        }
+      },
+      "DecisionUsage": {
+        "type": "object",
+        "description": "Omitted when the upstream reports none — never fabricated zeros.",
+        "properties": {
+          "input_tokens": { "type": "integer" },
+          "output_tokens": { "type": "integer" }
+        }
+      },
+      "OpenAIErrorBody": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["message", "type", "code"],
+            "properties": {
+              "message": { "type": "string" },
+              "type": { "type": "string" },
+              "code": { "type": "string" }
+            }
+          }
+        }
+      },
+      "AnthropicErrorBody": {
+        "type": "object",
+        "required": ["type", "error"],
+        "properties": {
+          "type": { "type": "string", "const": "error" },
+          "error": {
+            "type": "object",
+            "required": ["type", "message"],
+            "properties": {
+              "type": { "type": "string" },
+              "message": { "type": "string" }
+            }
+          }
+        }
+      },
+      "SystemOneErrorBody": {
+        "type": "object",
+        "required": ["error"],
+        "properties": { "error": { "type": "string" } }
+      }
+    }
+  }
+}

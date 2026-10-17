@@ -101,7 +101,7 @@ type errorWriter struct {
 	// overloadStatus is the surface's retryable-unavailability mapping
 	// for routing.ErrChainOverloaded (every chain provider in health
 	// cooldown): 529/overloaded_error on the Anthropic surface,
-	// 503 on the OpenAI surfaces (docs/api-reference.md error model —
+	// 503 on the OpenAI surfaces (docs/api/errors.md (error model) —
 	// "upstream overload maps to 529 semantics (overloaded_error)").
 	// Zero means the surface has no overload mapping (unused).
 	overloadStatus int

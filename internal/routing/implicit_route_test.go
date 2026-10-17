@@ -241,7 +241,7 @@ func TestImplicitRoute_HealthGate(t *testing.T) {
 	if err == nil {
 		t.Fatalf("chain = %v, want the chain-empty rejection (cooldown)", got)
 	}
-	// Spec: docs/api-reference.md error model — a temporarily unavailable
+	// Spec: docs/api/errors.md (error model) — a temporarily unavailable
 	// chain (health cooldown) is a distinct terminal error from a missing
 	// route, so the surfaces can answer 529/503 (retryable) instead of
 	// the non-retryable 404.
@@ -275,7 +275,7 @@ func TestImplicitRoute_HealthGate(t *testing.T) {
 
 // TestImplicitRoute_CapabilitySkipStaysNoRoute: a chain emptied by the
 // capability filter alone is a configuration gap (404 semantics per
-// docs/api-reference.md "Unknown model (404)") — never the retryable
+// docs/api/errors.md "Model not found (404)") — never the retryable
 // overload error, which is reserved for health cooldown.
 func TestImplicitRoute_CapabilitySkipStaysNoRoute(t *testing.T) {
 	reg := provider.NewRegistry()

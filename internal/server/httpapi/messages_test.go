@@ -532,7 +532,7 @@ func TestMessages_AuthDisabledNoKeyPath(t *testing.T) {
 // Health-cooldown terminal mapping: a chain whose every provider is in
 // circuit-breaker cooldown answers with the RETRYABLE overload signal,
 // not the non-retryable 404 "model may not exist" that makes Claude
-// Code demand a /model switch. Spec: docs/api-reference.md error model —
+// Code demand a /model switch. Spec: docs/api/errors.md (error model) —
 // "upstream overload maps to 529 semantics (overloaded_error)" on the
 // Anthropic surface, 503 on the OpenAI surfaces; the golden
 // anthropic/stream-error fixture correlates overloaded_error with 529.
