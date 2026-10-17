@@ -35,8 +35,8 @@ Two independent defects then compounded:
    (`models.compat.context_window`, written by the model sync from Ollama
    `/api/show`) and *was* already loaded per request into
    `routing.Compat.ContextWindow` — where no code read it. `missingCapabilities`
-   never checked it either, so the `max_context` capability this project's
-   CLAUDE.md and ADR-005 §3 documented **did not exist in code**.
+   never checked it either, so the `max_context` capability ADR-005
+   documents as a capability **did not exist in code**.
 
 2. **A context-window rejection was terminal.** A 400 saying "prompt is too
    long" matched no error class and fell through to `classifyByStatus(400)`
@@ -71,7 +71,7 @@ structural.
 
 ## Criteria
 
-- **P0 — never silently degrade** (project doctrine): every skip, gate, and
+- **P0 — never silently degrade**: every skip, gate, and
   classification is recorded in `route_trace`.
 - **P0 — no data loss**: the proxy must not truncate, summarise, or rewrite
   the conversation on its own.
@@ -103,7 +103,8 @@ Concretely:
    code (`context_length_exceeded`) or message names an input longer than the
    model's window → `ActionFailOver`. Consulted *after* the modality tier, so
    a rejection naming both stays a `capability_gap` — the modality is what the
-   operator configured a fallback for. Mid-stream stays terminal (FO-1).
+   operator configured a fallback for. Mid-stream stays terminal: once
+   bytes are relayed, the request is not retried.
 2. **`ChainEntry.MaxContext`**: the model row's declared window, resolved by
    the wiring layer from the same compat blob the sync writes. Zero means
    undeclared and is never a reason to skip — the estimate is a lower bound

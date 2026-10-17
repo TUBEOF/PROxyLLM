@@ -61,7 +61,7 @@ mode).** React Router 7's "framework mode" bundles its own build pipeline
 mode of the stable v6 line is the smallest, best-understood surface — RR7
 framework mode would fight the embed model exactly like Next.js would
 (ADR decision above). History routing, not hash routing: the Go-side SPA
-fallback (research §5, option 2) serves `index.html` for browser
+fallback serves `index.html` for browser
 navigations that match no file, so deep links survive hard refreshes and
 the CSP needs no `unsafe-inline`.
 
@@ -70,7 +70,7 @@ props are applied through the CSSOM (`element.style.setProperty`), not by
 emitting a `<style>` element or a `style:` attribute string — the
 `style-src` directive governs `<style>` elements and `style` attributes,
 so `'self'`-only is correct for the SPA. Verified against MDN's CSP
-documentation and the CSP spec's matching algorithm
-research (§4 P-4). An `<img src="data:">` would still need `img-src data:`;
+documentation and the CSP spec's matching algorithm.
+An `<img src="data:">` would still need `img-src data:`;
 the routes use inline SVG components instead, so the shipped CSP keeps
 `data:` in `img-src` only as documented headroom.

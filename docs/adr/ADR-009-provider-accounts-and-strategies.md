@@ -69,9 +69,12 @@ so "100% used" can never be observed directly.
    capability and health filtering, distributing first-position load.
    Fill-first keeps today's semantics, named: sticky to the first entry
    until the health gate opens (breaker cooldown) or a 429 exhausts the
-   same-provider retry budget and fails over (ADR-005 FO-2/FO-3). The
+   same-provider retry budget and fails over (ADR-005: pre-first-byte
+   failover, bounded attempt budget). The
    executor is untouched: it receives the expanded, optionally rotated
-   chain and its FO-1/FO-5 invariants hold by construction.
+   chain and the ADR-005 invariants (failover only before the first
+   streamed byte, chain-exhaustion is a hard no-route) hold by
+   construction.
 
 4. **OAuth draft accounts are excluded from expansion; keyless API-key
    accounts are not.** An abandoned codex draft (no token row) would route
@@ -110,7 +113,7 @@ so "100% used" can never be observed directly.
   backward compatibility, documented.
 - The executor's `MaxProviders` cap (default 3) still bounds attempts;
   long expanded chains are not fully walked. This keeps the ADR-005
-  FO-3 research bounds; documented in routing-and-fallbacks.md.
+  the emulation budgets (ADR-015); documented in routing-and-fallbacks.md.
 - Type expansion happens on every resolve against the live registry, so
   account adds/deletes take effect at request time with no rule edits —
   and the trace shows the expansion, so the operator can see why a

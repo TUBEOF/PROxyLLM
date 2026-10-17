@@ -50,7 +50,6 @@ must own header passthrough and SSE framing.
 - CGO-free pure-Go build keeps the single static binary + distroless
   container story intact.
 - We own more wire-protocol code than an SDK would give us — accepted in
-  exchange for full control over passthrough semantics (gateway protocol
-  requirements C3/C4).
-- Some protocol churn maintenance (e.g., dated server-tool strings A8) is
+  exchange for full control over passthrough semantics.
+- Some protocol churn maintenance (e.g., dated server-tool strings) is
   unavoidable in any stack; mitigated by config-driven mapping tables.

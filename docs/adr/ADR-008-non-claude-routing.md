@@ -6,7 +6,7 @@
 ## Context
 
 Anthropic's own gateway documentation does not support routing Claude Code
-to non-Claude models (fact C8, verified live 2026-09-10). Market practice
+to non-Claude models (verified live 2026-09-10). Market practice
 differs: gateways that translate the Anthropic `/v1/messages` surface to
 OpenAI-compatible, Gemini and Bedrock upstreams document the combination as
 a supported setup, and the community-proxy ecosystem treats it as the core

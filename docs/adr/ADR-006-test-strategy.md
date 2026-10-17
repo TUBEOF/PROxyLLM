@@ -7,9 +7,10 @@
 
 PROxyLLM's correctness lives in wire-protocol fidelity: two client
 surfaces, multiple upstream protocols, streaming state machines, fallback
-routing. The test doctrine (binding): "Tests, Verifikation ist
-ein sehr wichtiger Punkt" — verification is the top priority, including
-independent deep code reviews and visual verification of the WebUI.
+routing. The binding test doctrine, in the maintainer's words: "Tests,
+Verifikation ist ein sehr wichtiger Punkt" — verification is the top
+priority, including independent deep code reviews and visual verification
+of the WebUI.
 
 ## Decision
 
@@ -34,21 +35,22 @@ only reproduces code behavior is a defect.
 6. **Review quality gates** (CONTRIBUTING): no dead methods, no unused
    imports, no post-mutation logging, no removed-lock race regressions.
 
-**Verification & review doctrine (binding for all phases)**:
+**Verification & review doctrine (binding)**:
 
-- **Best-practice research BEFORE building** — every phase and non-trivial
-  module starts with a live, cited research pass.
+- **Research BEFORE building** — a non-trivial module starts with a live,
+  cited research pass; the wire facts it establishes become golden fixtures
+  with their source URL and access date.
 - **Independent deep code reviews** — no code merged by its author alone;
   reviewer did not write the code. Charter: correctness vs spec, race/
   backpressure analysis on streaming paths, the security concept,
   test-quality audit, docs consistency. Blocking findings fixed and
-  re-reviewed before the phase gate.
+  re-reviewed before merge.
 - **Visual regression for the WebUI (mandatory)** — Playwright screenshot
   tests against the console's own rendered baselines, multi-viewport,
   empty/hover/focus states, design-rule assertions (tokens-only colors, no
   emoji, dark-only).
-- **Verification report per phase** — tests run + results, review findings
-  + resolutions, visual diffs, budget numbers.
+- **A verification report per change** — tests run + results, review
+  findings + resolutions, visual diffs, budget numbers.
 
 ## Consequences
 
