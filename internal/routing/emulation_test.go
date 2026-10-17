@@ -1,6 +1,7 @@
 package routing_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/tubeof/proxyllm/internal/routing"
@@ -157,5 +158,117 @@ func TestApplyCompat_EmulationDefaultIsNative(t *testing.T) {
 	}
 	if len(got.Tools) != 2 || got.Tools[0].Type != "web_search_20250305" {
 		t.Fatalf("default (unset) policy must behave native: %+v", got.Tools)
+	}
+}
+
+// Client-tool claim (Claude Code's shape). The CLI ships WebFetch/WebSearch as
+// ORDINARY client tools and fetches in the CLI itself, so a proxy that only
+// understood the dated server-tool definitions would never see a web-tool
+// request from it: no account walk, no log row. The claim rewrites such a
+// definition into the emulated family def — same name the executor's loop
+// matches, same input schema, no dated type — so the model's call is answered
+// by the proxy instead of the client.
+func clientWebToolReq() ir.Request {
+	return ir.Request{
+		Model:     "m",
+		MaxTokens: 256,
+		Messages: []ir.Message{
+			{Role: ir.RoleUser, Parts: []ir.Part{ir.TextPart{Text: "fetch https://example.com"}}},
+		},
+		Tools: []ir.Tool{
+			{Name: "WebFetch", Description: "Fetches content from a specified URL",
+				InputSchema: []byte(`{"type":"object","properties":{"url":{"type":"string"},"prompt":{"type":"string"}}}`)},
+			{Name: "get_weather", InputSchema: []byte(`{"type":"object"}`)},
+		},
+	}
+}
+
+func TestApplyCompat_ClaimsClientWebTools(t *testing.T) {
+	req := clientWebToolReq()
+	compat := routing.Compat{
+		ServerToolEmulation: routing.EmulationEmulateFirecrawl,
+		ClientWebTools:      map[string]string{"WebFetch": "web_fetch"},
+	}
+	got, trace, err := routing.ApplyCompat(compat, req)
+	if err != nil {
+		t.Fatalf("ApplyCompat: %v", err)
+	}
+	if len(got.Tools) != 2 {
+		t.Fatalf("tools = %d, want 2 (claimed in place)", len(got.Tools))
+	}
+	claimed := got.Tools[0]
+	if claimed.Name != "web_fetch" || !claimed.Emulated {
+		t.Fatalf("the client tool was not claimed: %+v", claimed)
+	}
+	if claimed.Type != "" {
+		t.Errorf("a claimed tool must not carry a server-tool type: %q", claimed.Type)
+	}
+	if string(claimed.InputSchema) == "" || !strings.Contains(string(claimed.InputSchema), `"url"`) {
+		t.Errorf("the family input schema is missing: %s", claimed.InputSchema)
+	}
+	if strings.Contains(string(claimed.InputSchema), `"prompt"`) {
+		t.Errorf("the client's own schema must be replaced by the family's: %s", claimed.InputSchema)
+	}
+	if claimed.ServerTool == nil {
+		t.Error("a claimed tool needs a knob struct for the executor's enforcement")
+	}
+	if got.Tools[1].Name != "get_weather" || got.Tools[1].Emulated {
+		t.Errorf("an unclaimed client tool must ride untouched: %+v", got.Tools[1])
+	}
+	var traced bool
+	for _, ev := range trace.Events() {
+		if ev.Type == "compat_policy" && ev.From == "server_tool_emulation" && strings.Contains(ev.Reason, "client web-tool def") {
+			traced = true
+		}
+	}
+	if !traced {
+		t.Errorf("the claim is not traced: %+v", trace.Events())
+	}
+}
+
+func TestApplyCompat_ClientWebToolClaimNeedsTheMapping(t *testing.T) {
+	// The mapping is the surface's statement that this wire can carry the
+	// family's result blocks; with no mapping (the OpenAI-shaped surfaces, and
+	// the zero Compat) a client tool rides untouched.
+	for name, compat := range map[string]routing.Compat{
+		"no mapping":    {ServerToolEmulation: routing.EmulationEmulateFirecrawl},
+		"native policy": {ServerToolEmulation: routing.EmulationNative, ClientWebTools: map[string]string{"WebFetch": "web_fetch"}},
+		"emulation off": {ServerToolEmulation: routing.EmulationOff, ClientWebTools: map[string]string{"WebFetch": "web_fetch"}},
+	} {
+		got, _, err := routing.ApplyCompat(compat, clientWebToolReq())
+		if err != nil {
+			t.Fatalf("%s: ApplyCompat: %v", name, err)
+		}
+		if got.Tools[0].Name != "WebFetch" || got.Tools[0].Emulated {
+			t.Errorf("%s: the client tool must ride untouched: %+v", name, got.Tools[0])
+		}
+	}
+}
+
+func TestApplyCompat_ClientWebToolClaimSkipsAPresentFamily(t *testing.T) {
+	// A request that already declares the family as a dated server-tool def
+	// must not end up with the family twice (the loop keys definitions by
+	// name): the server-tool def converts, the client tool rides untouched.
+	req := emulationReq()
+	req.Tools = append(req.Tools, ir.Tool{Name: "WebSearch", InputSchema: []byte(`{"type":"object"}`)})
+	compat := routing.Compat{
+		ServerToolEmulation: routing.EmulationEmulateFirecrawl,
+		ClientWebTools:      map[string]string{"WebSearch": "web_search"},
+	}
+	got, _, err := routing.ApplyCompat(compat, req)
+	if err != nil {
+		t.Fatalf("ApplyCompat: %v", err)
+	}
+	families := 0
+	for _, tool := range got.Tools {
+		if tool.Name == "web_search" {
+			families++
+		}
+	}
+	if families != 1 {
+		t.Fatalf("web_search defs = %d, want exactly 1: %+v", families, got.Tools)
+	}
+	if got.Tools[len(got.Tools)-1].Name != "WebSearch" || got.Tools[len(got.Tools)-1].Emulated {
+		t.Errorf("the client tool must ride untouched when the family is already present: %+v", got.Tools)
 	}
 }

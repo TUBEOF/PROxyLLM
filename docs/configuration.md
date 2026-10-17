@@ -127,6 +127,7 @@ these keys means the default.
 | Key | Value | Meaning documented in |
 |---|---|---|
 | `model_aliases` | JSON object, alias → model ID | [Routing and fallbacks](routing-and-fallbacks.md#model-identity) |
+| `client_web_tools` | JSON object, client tool name → web-tool family (default: Claude Code's `WebFetch`/`WebSearch`; `{}` turns the claim off) | [Claude Code](claude-code.md#web-tools-webfetch-and-websearch) |
 | `routing_strategy` | `round_robin` (default) / `fill_first` | [Routing and fallbacks](routing-and-fallbacks.md#rule-model-evaluation-order) |
 | `vision_fallback` | JSON array of model IDs | [Routing and fallbacks](routing-and-fallbacks.md#capability-fallback-lists) |
 | `vision_caption_prompt` | string | [Routing and fallbacks](routing-and-fallbacks.md#the-vision-rescue) |

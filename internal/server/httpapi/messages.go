@@ -53,6 +53,10 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	compat := a.compatFor(ctx, req.Model)
+	// The Anthropic surface claims the client's own web tools (Claude Code
+	// sends WebFetch/WebSearch as plain client tools and fetches in the CLI):
+	// only this surface can carry the family's result blocks back.
+	compat.ClientWebTools = a.liveClientWebTools()
 	req, applyTrace, err := routing.ApplyCompat(compat, req)
 	if err != nil {
 		// ErrThinkingBlocked → 400 error envelope + log row.

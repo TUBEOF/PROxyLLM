@@ -13,6 +13,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/observability"
@@ -40,6 +41,12 @@ type Params struct {
 	// Executor dispatches requests through the chain with failover.
 	Executor *routing.Executor
 
+	// ClientWebTools is the client-tool → emulated-family mapping the
+	// Anthropic surface claims (settings KV `client_web_tools`; missing key =
+	// DefaultClientWebTools). The server refreshes it on settings reloads via
+	// SetClientWebTools.
+	ClientWebTools map[string]string
+
 	// Stream is the admin log stream hub (in-flight registry + finished-row
 	// broadcast). nil keeps it disabled — every existing test constructs
 	// api without it and stays green.
@@ -52,6 +59,10 @@ type api struct {
 	router   *routing.Router
 	executor *routing.Executor
 	stream   *reqlog.Stream // nil = live log stream disabled
+
+	// clientWebTools is the live client-tool → family mapping (immutable
+	// snapshot, swapped by SetClientWebTools on settings writes).
+	clientWebTools atomic.Value // map[string]string
 }
 
 // API is the assembled client-facing handler (New's return): the mux itself,
@@ -61,9 +72,39 @@ type API struct {
 	a *api
 }
 
+// SetClientWebTools swaps the client-tool mapping (the settings reload calls
+// it). Atomic — the next request picks up the operator's write.
+func (p *API) SetClientWebTools(m map[string]string) {
+	p.a.clientWebTools.Store(normalizeClientWebTools(m))
+}
+
+// DefaultClientWebTools is the shipped mapping: Claude Code sends its web
+// tools as ordinary CLIENT tools (WebFetch, WebSearch) and fetches in the CLI
+// itself, so a proxy that only understood the dated server-tool definitions
+// would never see a web-tool request from it. The names are the client's wire
+// fact — the `client_web_tools` settings KV overrides them (an empty object
+// turns the claim off).
+func DefaultClientWebTools() map[string]string {
+	return map[string]string{"WebFetch": "web_fetch", "WebSearch": "web_search"}
+}
+
+// normalizeClientWebTools copies the mapping and drops entries that name
+// nothing; nil reads as "claim nothing".
+func normalizeClientWebTools(m map[string]string) map[string]string {
+	out := make(map[string]string, len(m))
+	for name, family := range m {
+		if strings.TrimSpace(name) == "" || strings.TrimSpace(family) == "" {
+			continue
+		}
+		out[name] = family
+	}
+	return out
+}
+
 // New assembles the client-facing HTTP handler.
 func New(p Params) *API {
 	a := &api{store: p.Store, router: p.Router, executor: p.Executor, stream: p.Stream}
+	a.clientWebTools.Store(normalizeClientWebTools(p.ClientWebTools))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/chat/completions", a.handleChat)
@@ -89,6 +130,14 @@ type wireCompat struct {
 	MaxTokensClamp      int    `json:"max_tokens_clamp"`
 	ContextWindow       int    `json:"context_window"`
 	CacheControl        string `json:"cache_control"`
+}
+
+// liveClientWebTools returns the live client-tool → family mapping.
+func (a *api) liveClientWebTools() map[string]string {
+	if v, ok := a.clientWebTools.Load().(map[string]string); ok {
+		return v
+	}
+	return nil
 }
 
 // compatFor loads the compat policy of the model the request will LAND on.

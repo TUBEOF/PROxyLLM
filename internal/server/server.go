@@ -211,6 +211,10 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 		Router:   router,
 		Executor: exec,
 		Stream:   liveLogs,
+		// Client-tool claim (see loadClientWebTools): Claude Code's WebFetch /
+		// WebSearch ride as client tools, so only this claim makes the proxy
+		// serve them. The settings reload refreshes it live.
+		ClientWebTools: loadClientWebTools(context.Background(), store, logger),
 	})
 	// The proxy API mounts at /v1/ (every httpapi route lives there), so the
 	// SPA can own the root: a browser hitting / gets the WebUI without a
@@ -276,6 +280,7 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 				// only a successfully read alias map swaps in (SetAliases,
 				// same last-known-good contract as SetRules above).
 				router.SetAliases(loadModelAliases(context.Background(), store, logger))
+				handler.SetClientWebTools(loadClientWebTools(context.Background(), store, logger))
 				// The image-caption settings ride the same hook (ADR-014):
 				// a prompt or timeout write applies to the next rescued
 				// request, with the built-in defaults for anything unreadable.
@@ -420,6 +425,29 @@ func loadAndReplaceProviders(ctx context.Context, store *storage.Store, logger *
 	}
 	reg.ReplaceDynamics(fresh)
 	return emus, nil
+}
+
+// loadClientWebTools reads the `client_web_tools` settings blob: the
+// client-tool → emulated-family mapping the Anthropic surface claims. A
+// missing key keeps the shipped default (Claude Code's WebFetch/WebSearch —
+// the client names are a wire fact of the client, so the operator can override
+// them without a release); an unreadable blob degrades to the default with a
+// loud log, never a startup death. An explicit empty object disables the claim.
+func loadClientWebTools(ctx context.Context, store *storage.Store, logger *slog.Logger) map[string]string {
+	raw, ok, err := store.GetConfigValue(ctx, "client_web_tools")
+	if err != nil {
+		logger.Error("client_web_tools unreadable; claiming the default client web tools", "error", err)
+		return httpapi.DefaultClientWebTools()
+	}
+	if !ok || strings.TrimSpace(raw) == "" {
+		return httpapi.DefaultClientWebTools()
+	}
+	var m map[string]string
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		logger.Error("client_web_tools is not a JSON object; claiming the default client web tools", "error", err)
+		return httpapi.DefaultClientWebTools()
+	}
+	return m // possibly empty: the operator turned the claim off
 }
 
 // loadModelAliases reads the SPA's `model_aliases` settings blob (JSON

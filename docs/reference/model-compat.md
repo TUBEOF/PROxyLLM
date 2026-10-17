@@ -39,7 +39,7 @@ an explicit `false` is a statement that the model cannot see images.
 | Setting | Values | Effect |
 |---|---|---|
 | `thinking_handling` | `strip` (default off-Anthropic), `map-to-reasoning-effort`, `block` | How the `thinking` parameter and thinking blocks in history are handled, and (see below) what happens to thinking an upstream volunteers |
-| `server_tool_emulation` | `emulate-firecrawl` (default for every target), `native`, `off` | Whether dated server-tool definitions (`web_search_*`, `web_fetch_*`) are converted into emulated client tools served by a web-tool account, ride to the upstream, or are removed. `off` is the only reachable pin: the derived default is emulation, and a stored legacy `native` reads as emulation (no provider type in this proxy speaks the server-tool wire) |
+| `server_tool_emulation` | `emulate-firecrawl` (default for every target), `native`, `off` | Whether the request's web tools — dated server-tool definitions (`web_search_*`, `web_fetch_*`) and the client's own tools the `client_web_tools` mapping claims (Claude Code's `WebFetch`/`WebSearch`) — are converted into emulated tools served by a web-tool account, ride to the upstream, or are removed. `off` is the only reachable pin: the derived default is emulation, and a stored legacy `native` reads as emulation (no provider type in this proxy speaks the server-tool wire) |
 | `max_tokens_clamp` | integer, `0` = off | Caps `max_tokens` for a target with a lower output limit. Operator-set only — the proxy never guesses a target's limit |
 | `context_window` | integer tokens, `0` = unknown | Feeds the capability filter and the token estimate. Detected from upstream metadata, overridable by the operator |
 | `cache_control` | `forward` (Anthropic→Anthropic only), anything else = drop | Whether `cache_control` markers survive translation |
@@ -63,6 +63,14 @@ executor, answered through the configured web-tool accounts, and the result is
 synthesized back into the client's protocol. The model rows themselves always
 record `web_search`/`web_fetch`/`code_execution` as `false`: those families are
 served by accounts and fallback lists, not by individual models.
+
+A client's own web tool is claimed the same way when the surface maps its name
+to a family (`client_web_tools`, Anthropic surface only — the one wire that can
+carry the family's result blocks): Claude Code sends `WebFetch`/`WebSearch` as
+plain client tools and would otherwise fetch in the CLI itself, so the proxy
+would see no web-tool request at all. Claiming one rewrites the definition into
+the family def; the client stops doing the work, the proxy serves it, and the
+call appears in the log like any other emulated call.
 
 Emulation is therefore the default for **every** target, not a property a
 web-tool account has to be present for. Two things go wrong when a definition
