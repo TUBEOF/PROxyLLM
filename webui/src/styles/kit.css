@@ -565,7 +565,8 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
    wrapped onto two lines — the row height the elbow alignment depends on.
    280px is the width that rule held, so the column keeps its size and only an
    extreme id ellipsizes, with the full value in the cell's title. An alias
-   request appends its hop inline (`.alias-hop`, muted) — still one line. */
+   request appends its hop inline (`model → target`, `.alias-hop`, muted) —
+   still one line. */
 .logs-table .col-model{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Tokens cell: the TI/TO/CR triple stays on ONE line — a wrapped triple
    turns one row into a column of numbers and destroys the table's density. */

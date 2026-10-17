@@ -117,10 +117,11 @@ test('a model cell is a single line on both the request and the sub-row', async 
 });
 
 // An alias request keeps the client-typed name in the model cell and names
-// the configured target inline — the alias must be legible without opening
-// the drawer, and it must not cost the cell its single line (the row height
-// the tree elbow measures against). The seeded row's trace carries the hop
-// (`claude-sonnet-4-6` → `claude-sonnet-5`); the full hop rides the title.
+// the configured target inline as "model → target" — the hop must be legible
+// without opening the drawer, and it must not cost the cell its single line
+// (the row height the tree elbow measures against). The seeded row's trace
+// carries the hop (`claude-sonnet-4-6` → `claude-sonnet-5`); the full hop
+// rides the title.
 test('an alias request shows its configured target inline, on one line', async ({ page }) => {
   await page.goto('/logs');
   await readyForCapture(page);
@@ -128,7 +129,7 @@ test('an alias request shows its configured target inline, on one line', async (
   const row = page.locator('tr.log-row', { hasText: 'claude-sonnet-4-6' }).first();
   const cell = row.locator('td.col-model');
   await expect(cell).toContainText('claude-sonnet-4-6');
-  await expect(cell.locator('.alias-hop')).toHaveText('alias → claude-sonnet-5');
+  await expect(cell.locator('.alias-hop')).toHaveText('→ claude-sonnet-5');
   await expect(cell).toHaveAttribute('title', 'claude-sonnet-4-6 → claude-sonnet-5');
 
   // Every client rect of the cell's contents must share one top: the inline
