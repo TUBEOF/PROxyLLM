@@ -178,6 +178,13 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error)
 	return out, nil
 }
 
+// PreviewRequest encodes the request exactly as Complete/Stream would send
+// it (provider.RequestPreviewer): the Models page's test popup shows the
+// operator what went out, not a paraphrase.
+func (p *Provider) PreviewRequest(req ir.Request) ([]byte, error) {
+	return p.codec.EncodeRequest(req)
+}
+
 // showModel POSTs /api/show {"model": id} — the Ollama Cloud registry's
 // per-model facts endpoint (verified live 2026-10-06; unauthenticated
 // calls work, but the Bearer rides anyway for hosts that gate it).

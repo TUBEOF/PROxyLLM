@@ -15,7 +15,6 @@ same binary as the API, on the same port, at `/`.
 | **Keys** | Client keys: create (shown once), scope, revoke |
 | **Logs** | The request log: rows, the trace timeline, sub-operations, captured bodies, live tail |
 | **Quota** | Per-account usage and limits, with the account's cooldown state |
-| **Settings** | The key/value store the runtime reads live |
 
 ## First run
 
@@ -70,14 +69,23 @@ and an upstream removal would delete it. To keep a row permanently out of
 the sync, give it an ID the upstream never reports (for example a routing
 alias such as `glm`).
 
-The **model sync** card runs at startup and on a configurable interval,
-and **Sync now** runs a pass immediately. Its summary names, per account,
-how many models were added, updated and removed — or why the account was
-skipped (a dead upstream, a bad credential).
+The **model sync** card owns the whole cadence: a switch, the interval
+(hourly to weekly), and **Sync now** for a pass right away. Its last-run
+block names, per account, how many models were added, updated and removed —
+or why the account was skipped (a dead upstream, a bad credential, an empty
+codex catalog).
 
 Detected facts never overwrite an operator decision: a value you saved, and
 anything you pinned, survives every run. What a capability flag *does* is
 documented in [model compatibility](reference/model-compat.md).
+
+**Test** runs one minimal round trip per model against the account that
+serves it, and its outcome stays on the card: a check when the model
+answered, a cross when it did not. The cross opens the diagnosis — the wire
+request that went out, the upstream status and error object, and the account
+the round trip used. The surface policy for non-Claude targets is *not*
+edited here: it is the `anthropic_surface_non_claude` settings key
+([configuration](configuration.md#database-overrides-layer-4)).
 
 ## Routing
 

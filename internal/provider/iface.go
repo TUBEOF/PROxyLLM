@@ -198,6 +198,18 @@ type ModelLister interface {
 	ListModels(ctx context.Context) ([]ModelInfo, error)
 }
 
+// RequestPreviewer is the optional surface a provider exposes so a
+// diagnostic can show the EXACT wire request a call would send: the Models
+// page's test popup shows what went out, not a paraphrase of it, and the
+// wire shape differs per provider (chat-completions body, Responses body).
+//
+// The encoding is pure — no I/O, no credential material: auth rides
+// headers, which are never part of a body. Providers without this surface
+// fall back to the model-level summary the caller renders.
+type RequestPreviewer interface {
+	PreviewRequest(req ir.Request) ([]byte, error)
+}
+
 // Decider is the optional decision surface (decision models — System One /
 // Jev, the OpenAI Decisions API): a provider implementing it can answer IR
 // decision requests. Providers without it never serve a decision route —

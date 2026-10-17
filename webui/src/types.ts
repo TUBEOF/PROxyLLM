@@ -282,12 +282,23 @@ export interface ModelSyncRunResponse {
 }
 // Model test round trip (POST /api/admin/models/test/{id}): one minimal
 // "Sag OK" completion against the model's provider — the Models page's
-// test button.
+// test button. `request` is the exact wire body that went out (redacted,
+// bounded; absent when the provider cannot encode a preview), `detail` is
+// the upstream's own account of a failure.
 export interface ModelTestResponse {
   ok: boolean;
   latency_ms: number;
   reply?: string;
   error?: string;
+  request?: string;
+  detail?: ModelTestFailureDetail;
+}
+
+export interface ModelTestFailureDetail {
+  http_status?: number;
+  type?: string;
+  code?: string;
+  message?: string;
 }
 
 // ADR-012 Quota page: per-account usage snapshot (one card per account).

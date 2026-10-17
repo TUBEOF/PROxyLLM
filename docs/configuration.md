@@ -105,9 +105,11 @@ runtime configuration; they are documented in
 
 ## Database overrides (layer 4)
 
-The console's Settings page and the [admin API](api/admin.md#settings) write
-into a generic key/value store in the database. That store is the highest
-layer, and it is read by the running process — not only at startup:
+The [admin API](api/admin.md#settings) writes into a generic key/value store
+in the database. That store is the highest layer, and it is read by the
+running process — not only at startup. A few keys have their own control in
+the console (the capture switch on Logs, the alias map on Routing, the sync
+cadence on Models); the rest are set through the API.
 
 - Settings the request path consults, such as `anthropic_surface_non_claude`
   and `request_logging_enabled`, are read per request.
