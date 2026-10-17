@@ -14,7 +14,8 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
-// Emulator executes emulated web tools (the Firecrawl fallback). It is
+// Emulator executes emulated web tools (the configured web-tool accounts:
+// Firecrawl or Ollama Cloud Web Tools, walked in fallback-list order). It is
 // declared here, not in the Firecrawl client package, so the routing
 // engine stays decoupled from the tool backend (dependency inversion):
 // tests drive it with fakes, production wires the Firecrawl adapter.

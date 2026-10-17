@@ -429,7 +429,7 @@ func applyEmulation(c Compat, req ir.Request, trace *Trace) ir.Request {
 				strconv.Itoa(claimed)+" claimed, "+strconv.Itoa(converted)+" server-tool def(s) converted")
 	default:
 		trace.CompatPolicy("server_tool_emulation", EmulationEmulateFirecrawl,
-			"server-tool def(s) converted to emulated client tool(s) (Firecrawl fallback)")
+			"server-tool def(s) converted to emulated client tool(s) (web-tool accounts)")
 	}
 	return req
 }

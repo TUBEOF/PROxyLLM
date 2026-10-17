@@ -31,7 +31,7 @@ const (
 	OpCapabilityFallback OpKind = "capability_fallback"
 
 	// OpEmulatedTool: a server tool was served by the emulation layer
-	// (the model's tool call answered via the Firecrawl fallback). To carries
+	// (the model's tool call answered via a web-tool account). To carries
 	// the tool name, Detail the invocation summary (query/url, outcome).
 	OpEmulatedTool OpKind = "emulated_tool"
 
