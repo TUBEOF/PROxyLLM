@@ -8,6 +8,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -84,5 +85,31 @@ func TestLoad_FileTrailingDataErrors(t *testing.T) {
 	writeCfg(t, `{"server":{"addr":":9090"}} {"sneaky":true}`)
 	if _, err := Load(); err == nil {
 		t.Error("trailing data must error, not silently parse the first value")
+	}
+}
+
+// Disabling authentication is an environment-only decision: a config file
+// that tries must fail loudly, and the error names the variable that can.
+func TestLoad_FileAuthGroupIsRefused(t *testing.T) {
+	p := writeCfg(t, `{"auth":{"disabled":true}}`)
+	_, err := Load()
+	if err == nil {
+		t.Fatal("a config file disabling auth must be refused")
+	}
+	if !strings.Contains(err.Error(), "PROXYLLM_AUTH_DISABLED") || !strings.Contains(err.Error(), p) {
+		t.Errorf("error = %v, want it to name the file and the environment variable", err)
+	}
+}
+
+// An explicit null is the absence of a statement, not a refusal: the file
+// says nothing about auth, so it loads.
+func TestLoad_FileAuthNullIsANoOp(t *testing.T) {
+	writeCfg(t, `{"auth":null}`)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("an explicit null auth group must load: %v", err)
+	}
+	if cfg.Auth.Disabled {
+		t.Error("a null auth group must not disable authentication")
 	}
 }

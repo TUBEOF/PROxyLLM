@@ -36,7 +36,6 @@ The file carries the non-secret process settings and nothing else:
   "server":    { "addr": ":8080" },
   "storage":   { "path": "data/proxyllm.db", "master_key_path": "data/master.key" },
   "log":       { "level": "info", "format": "json" },
-  "auth":      { "disabled": false },
   "firecrawl": { "base_url": "https://api.firecrawl.dev" }
 }
 ```
@@ -51,9 +50,11 @@ silently reroute traffic under a default.
 - `storage.path` — the SQLite database file.
 - `storage.master_key_path` — the envelope key file (see [Master key](#master-key)).
 - `log.level`, `log.format` — the logger, see the [defaults](#defaults) for accepted values.
-- `auth.disabled` — `true` turns client-key authentication off, exactly as
-  `PROXYLLM_AUTH_DISABLED=1` does, and emits the same loud startup warning.
-  Authentication is on by default, and the console has no switch for it.
+- Authentication is **not** configurable here. An `auth` group in the file
+  is a startup failure naming `PROXYLLM_AUTH_DISABLED`, the environment
+  variable that can turn authentication off — a security switch belongs to
+  the deployment environment, not to a file that can be edited and copied
+  around.
 - `firecrawl.base_url` — the Firecrawl API host used by the web-tool
   emulator; empty selects the client's default, `https://api.firecrawl.dev`.
 
@@ -75,7 +76,6 @@ mount, so the relative defaults resolve to `/data/proxyllm.db` and
 | `storage.master_key_path` | `data/master.key` | envelope key file, mode 0600 |
 | `log.level` | `info` | `debug`, `info`, `warn`, `error`; any other value fails startup |
 | `log.format` | `json` | `text` selects the human-readable handler; anything else is `json` |
-| `auth.disabled` | `false` | client-key authentication is on unless explicitly turned off |
 | `firecrawl.base_url` | *(empty)* | the Firecrawl client then uses `https://api.firecrawl.dev` |
 
 ## Environment variables
@@ -88,7 +88,7 @@ mount, so the relative defaults resolve to `/data/proxyllm.db` and
 | `PROXYLLM_MASTER_KEY_PATH` | `storage.master_key_path` | |
 | `PROXYLLM_LOG_LEVEL` | `log.level` | |
 | `PROXYLLM_LOG_FORMAT` | `log.format` | |
-| `PROXYLLM_AUTH_DISABLED` | `auth.disabled` | boolean: `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`/empty; any other value fails startup. `1` disables client-key auth and emits a loud startup warning |
+| `PROXYLLM_AUTH_DISABLED` | *(no file key)* | boolean: `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`/empty; any other value fails startup. `1` disables client-key auth and emits a loud startup warning |
 | `PROXYLLM_FIRECRAWL_BASE_URL` | `firecrawl.base_url` | |
 | `PROXYLLM_MASTER_KEY` | *(secret)* | 32 bytes as 64 hex characters or 44 base64 characters; takes precedence over the keyfile |
 | `PROXYLLM_FIRECRAWL_API_KEY` | *(secret)* | activates the environment-wired web-tool emulator |

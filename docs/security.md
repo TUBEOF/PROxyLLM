@@ -41,9 +41,10 @@ untrusted network without that layer is outside the design.
   constant time. When `Origin` is present it must match the request's own
   scheme and host, and a `Content-Type` other than `application/json` is
   refused. The session and CSRF cookies are `SameSite=Strict` as well.
-- **Default ON.** Authentication can be turned off only by explicit
-  configuration — `PROXYLLM_AUTH_DISABLED=1` or the equivalent config-file
-  key, never a console switch — and startup logs a loud warning when it is.
+- **Default ON.** Authentication can be turned off only by the environment
+  variable `PROXYLLM_AUTH_DISABLED=1` — never from the config file (an
+  `auth` group there is a startup failure) and never from the console — and
+  startup logs a loud warning when it is.
   See [configuration](configuration.md#environment-variables).
 - **No admin API without a master key.** The console's admin routes are
   mounted only when a master key is wired. Without one, an unauthenticated

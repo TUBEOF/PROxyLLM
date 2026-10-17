@@ -51,9 +51,11 @@ type fileWire struct {
 		Level  string `json:"level"`
 		Format string `json:"format"`
 	} `json:"log"`
-	Auth struct {
-		Disabled bool `json:"disabled"`
-	} `json:"auth"`
+	// Auth is decoded only so the refusal below can be explicit: disabling
+	// authentication is an environment-only decision (PROXYLLM_AUTH_DISABLED),
+	// and a file that tries to do it fails with a message that says so
+	// instead of a generic unknown-field error.
+	Auth      json.RawMessage `json:"auth"`
 	Firecrawl struct {
 		BaseURL string `json:"base_url"`
 	} `json:"firecrawl"`
@@ -97,8 +99,9 @@ func applyFile(cfg *Config) (*Config, error) {
 	if w.Log.Format != "" {
 		cfg.Log.Format = w.Log.Format
 	}
-	if w.Auth.Disabled {
-		cfg.Auth.Disabled = true
+	if len(w.Auth) > 0 && string(w.Auth) != "null" {
+		return cfg, fmt.Errorf("config: %s: auth cannot be configured in the file — "+
+			"disabling authentication is environment-only (PROXYLLM_AUTH_DISABLED=1)", path)
 	}
 	if w.Firecrawl.BaseURL != "" {
 		cfg.Firecrawl.BaseURL = w.Firecrawl.BaseURL
