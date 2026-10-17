@@ -98,7 +98,7 @@ var providerTypes = []providerTypeDesc{
 				Hint: "Model identity prefix for this type, e.g. \"ollamacloud\" → \"ollamacloud/glm-5.3\". Empty = the type string (\"ollama-cloud\")."},
 		},
 		AccountFields:       nil,
-		DefaultCapabilities: map[string]bool{"streaming": true, "tools": true},
+		DefaultCapabilities: map[string]bool{"streaming": true, "tools": true, "decision": true},
 	},
 	{
 		Type:        ProviderTypeCodexOAuth,

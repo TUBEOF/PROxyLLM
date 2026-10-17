@@ -168,6 +168,7 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error)
 			info.Thinking = shown.hasCapability("thinking")
 			info.Tools = shown.hasCapability("tools")
 			info.Vision = shown.hasCapability("vision")
+			info.Decision = shown.hasCapability("decision")
 		} else if p.logger != nil {
 			p.logger.Debug("model sync: /api/show detection probe failed — importing with zero facts",
 				"provider_id", p.id, "model", m.ID, "error", err)
@@ -218,8 +219,10 @@ func (p *Provider) showModel(ctx context.Context, model string) (showResponse, e
 // key's arch prefix varies per model family ("kimi-k2.context_length",
 // "glm5_next.context_length", …) — it is parsed from ANY model_info key
 // with that suffix. Capability name strings ("completion", "thinking",
-// "tools", "vision") are Ollama's registry wire facts, mapped below like
-// other vendor-specific mappings.
+// "tools", "vision", "decision") are Ollama's registry wire facts, mapped
+// below like other vendor-specific mappings: "decision" is the per-model
+// declaration of the decision surface (clef:cloud, the System One / Jev
+// class), verified live 2026-10-16.
 type showResponse struct {
 	ModelInfo    map[string]json.RawMessage `json:"model_info"`
 	Capabilities []string                   `json:"capabilities"`

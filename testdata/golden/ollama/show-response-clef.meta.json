@@ -1,0 +1,6 @@
+{
+  "fixture": "show-response-clef.json",
+  "source": "https://ollama.com/api/show (POST {\"model\":\"clef:cloud\"})",
+  "accessed": "2026-10-16",
+  "notes": "Verbatim live /api/show body of clef:cloud — Cloudflare's decision model served through POST /v1/systemone. capabilities[] reports \"decision\" (and \"vision\"), the registry's per-model declaration that this model serves the decision surface: the fact the model sync records as the row's decision flag. Note the vocabulary difference from chat models: no \"completion\", no \"thinking\"."
+}

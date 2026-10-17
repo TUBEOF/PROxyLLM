@@ -33,7 +33,7 @@ lint:
 	golangci-lint run
 
 fmt:
-	gofmt -w $(GO_PKGS)
+	go fmt $(GO_PKGS)
 
 vet:
 	go vet $(GO_PKGS)

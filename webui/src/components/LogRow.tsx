@@ -224,10 +224,11 @@ function LogRowInner({
   const provider = l.provider_kind ?? l.provider_id ?? '';
   const account = l.provider_name ?? l.provider_id ?? '';
   // Alias requests: the MODEL cell keeps the client-typed name (l.model —
-  // what the client asked for) and names the configured target inline, so
-  // the alias is legible without opening the drawer. One line stays a
-  // contract (the tree elbow measures against row height); the 280px
-  // ellipsis takes the overflow, the title carries the full hop.
+  // what the client asked for) and names the configured target inline as
+  // "model → target", so the hop is legible without opening the drawer (the
+  // word "alias" is deliberately not rendered). One line stays a contract
+  // (the tree elbow measures against row height); the 280px ellipsis takes
+  // the overflow, the title carries the full hop.
   const hop = aliasHop(l.route_trace);
   const conv = convShort(l.conversation_id);
 
@@ -245,7 +246,7 @@ function LogRowInner({
       </td>
       <td className="primary col-model" title={hop !== null ? `${l.model} → ${hop.to}` : undefined}>
         {l.model}
-        {hop !== null && <span className="muted alias-hop"> alias → {hop.to}</span>}
+        {hop !== null && <span className="muted alias-hop"> → {hop.to}</span>}
       </td>
       <td>{provider && <span className="pill">{provider}</span>}</td>
       <td><span className="pill pill-warm">{protocolLabel(l.protocol)}</span></td>

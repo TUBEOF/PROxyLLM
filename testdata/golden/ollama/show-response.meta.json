@@ -1,0 +1,6 @@
+{
+  "fixture": "show-response.json",
+  "source": "https://ollama.com/api/show (POST {\"model\":\"glm-5.3-flash\"})",
+  "accessed": "2026-10-16",
+  "notes": "Verbatim live /api/show body of glm-5.3-flash: the model-sync capability/context detection source. capabilities[] is the registry's wire vocabulary (\"completion\" is the chat baseline, unmapped); model_info carries heterogeneous values (string general.architecture, numeric parameter counts) and the architecture-prefixed context_length key. No \"decision\" in the list — the model is not a decision model."
+}
