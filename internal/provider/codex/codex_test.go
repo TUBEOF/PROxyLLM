@@ -259,6 +259,9 @@ func TestComplete_RoundTrip(t *testing.T) {
 		if stream, ok := body["stream"]; ok && stream != false {
 			t.Errorf("request stream = %v, want false/absent for Complete", body["stream"])
 		}
+		if store, ok := body["store"]; !ok || store != false {
+			t.Errorf("request store = %v (present=%v), want false — the backend rejects a body without it", store, ok)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		mustWrite(t, w, testutil.LoadGolden(t, "openai/responses-response.json"))
 	})
@@ -383,6 +386,9 @@ func TestStream_Events(t *testing.T) {
 		body := decodeSentBody(t, r)
 		if body["stream"] != true {
 			t.Errorf("request stream = %v, want true for stream requests", body["stream"])
+		}
+		if store, ok := body["store"]; !ok || store != false {
+			t.Errorf("request store = %v (present=%v), want false — the backend rejects a body without it", store, ok)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		mustWrite(t, w, testutil.LoadGolden(t, "openai/responses-stream.sse"))
