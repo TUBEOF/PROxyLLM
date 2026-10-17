@@ -134,9 +134,19 @@ func (p *Provider) headers(ctx context.Context, stream bool) (http.Header, error
 	return h, nil
 }
 
-// Complete performs one non-streaming round trip.
+// Complete performs one round trip. The ChatGPT backend has no
+// non-streaming mode — a body without stream:true is answered 400
+// {"detail":"Stream must be set to true"} (observed live 2026-10-17; the
+// codex CLI always sends it, fixture openai-codex/responses-request.json) —
+// so the round trip is dispatched streamed and assembled into the single
+// response the non-streaming contract promises.
 func (p *Provider) Complete(ctx context.Context, req ir.Request) (ir.Response, error) {
-	return p.client.Complete(ctx, req, p.encode, decodeResponse)
+	events, cancel, err := p.Stream(ctx, req)
+	if err != nil {
+		return ir.Response{}, err
+	}
+	defer cancel()
+	return assembleResponse(ctx, events)
 }
 
 // Stream performs one streaming round trip; the routing layer owns dispatch
@@ -147,15 +157,12 @@ func (p *Provider) Stream(ctx context.Context, req ir.Request) (<-chan ir.Stream
 	})
 }
 
-// encode translates IR into the Responses wire request.
+// encode translates IR into the Responses wire request. stream is forced
+// here: the backend rejects a non-streaming body, and this provider has no
+// non-streaming dispatch (Complete assembles the stream instead).
 func (p *Provider) encode(req ir.Request) ([]byte, error) {
+	req.Stream = true
 	return p.responses.EncodeRequest(req)
-}
-
-// decodeResponse translates a Responses wire body back into IR.
-func decodeResponse(raw []byte) (ir.Response, error) {
-	var codec openai.ResponsesCodec
-	return codec.DecodeResponse(raw)
 }
 
 // RefreshCredentials rotates the OAuth pair on demand (routing health hook
@@ -216,7 +223,8 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error)
 
 // PreviewRequest encodes the request exactly as Complete/Stream would send
 // it (provider.RequestPreviewer): the Models page's test popup shows the
-// operator what went out — for this backend the Responses wire body.
+// operator what went out — for this backend the Responses wire body, always
+// carrying stream:true.
 func (p *Provider) PreviewRequest(req ir.Request) ([]byte, error) {
-	return p.responses.EncodeRequest(req)
+	return p.encode(req)
 }
