@@ -39,7 +39,7 @@ an explicit `false` is a statement that the model cannot see images.
 | Setting | Values | Effect |
 |---|---|---|
 | `thinking_handling` | `strip` (default off-Anthropic), `map-to-reasoning-effort`, `block` | How the `thinking` parameter and thinking blocks in history are handled, and (see below) what happens to thinking an upstream volunteers |
-| `server_tool_emulation` | `native` (default without a web-tool account), `emulate-firecrawl`, `off` | Whether dated server-tool definitions (`web_search_*`, `web_fetch_*`) ride to the upstream, are converted into emulated client tools served by a web-tool account, or are removed |
+| `server_tool_emulation` | `emulate-firecrawl` (default for every target), `native`, `off` | Whether dated server-tool definitions (`web_search_*`, `web_fetch_*`) are converted into emulated client tools served by a web-tool account, ride to the upstream, or are removed. `off` is the only reachable pin: the derived default is emulation, and a stored legacy `native` reads as emulation (no provider type in this proxy speaks the server-tool wire) |
 | `max_tokens_clamp` | integer, `0` = off | Caps `max_tokens` for a target with a lower output limit. Operator-set only — the proxy never guesses a target's limit |
 | `context_window` | integer tokens, `0` = unknown | Feeds the capability filter and the token estimate. Detected from upstream metadata, overridable by the operator |
 | `cache_control` | `forward` (Anthropic→Anthropic only), anything else = drop | Whether `cache_control` markers survive translation |
@@ -56,14 +56,25 @@ otherwise see an empty reply. The trace records this as a `compat_policy`
 event with `thinking_handling=strip-output`.
 
 **Emulation is about the target, not the request.** A dated server tool
-cannot ride to a provider that has never heard of it, so when the policy is
-`emulate-firecrawl` the definition is converted into a client-shaped tool
-with the family's own input schema (`query` for search, `url` for fetch),
-the model's call is intercepted by the executor, answered through the
-configured web-tool accounts, and the result is synthesized back into the
-client's protocol. The model rows themselves always record
-`web_search`/`web_fetch`/`code_execution` as `false`: those families are
+cannot ride to a provider that has never heard of it, so the definition is
+converted into a client-shaped tool with the family's own input schema
+(`query` for search, `url` for fetch), the model's call is intercepted by the
+executor, answered through the configured web-tool accounts, and the result is
+synthesized back into the client's protocol. The model rows themselves always
+record `web_search`/`web_fetch`/`code_execution` as `false`: those families are
 served by accounts and fallback lists, not by individual models.
+
+Emulation is therefore the default for **every** target, not a property a
+web-tool account has to be present for. Two things go wrong when a definition
+rides native instead: the router's capability filter skips every account that
+does not declare native support (no chat account type does), which turns the
+request into a no-route 404 before any fallback can run; and a model that calls
+the definition produces a tool call the client cannot answer. What varies with
+the account set is only the ANSWER: with web-tool accounts configured the walk
+serves real results (search then fetch over the ordered fallback list), and with
+none configured every call gets the documented `unavailable` error result, so
+the request still routes and the model can tell the client it could not look the
+request up.
 
 ## Defaults per origin
 
@@ -71,6 +82,11 @@ served by accounts and fallback lists, not by individual models.
 |---|---|---|
 | `synced` | Detected facts from the upstream, plus explicit `false` for what it did not report | Detected context window; everything else derived |
 | `manual` | Whatever the operator saved | Whatever the operator saved |
+
+A request whose model has no row of its own — every alias target the alias map
+names, and any hand-typed name the sync has not imported — takes the derived
+defaults above. The operator's policy belongs on the row the request lands on,
+which is why the lookup follows the alias hop (next section) before it reads.
 
 A save in the console turns a synced row into a `manual` one. That keeps
 the sync's hands off it only while its ID is not one the upstream reports:
@@ -88,8 +104,13 @@ compat blob at all, so there is nothing to drift.
 
 ## Where the policy is applied
 
-- **Request path**: the surface handler resolves the model's policy once
-  (`compatFor`) and hands it to the router.
+- **Request path**: the surface handler resolves the policy of the model the
+  request will actually route as (`compatFor`): the Claude Code context marker is
+  stripped and the alias map is followed one hop first, so a client-typed ID such
+  as `claude-haiku-5-5` picks up its alias target's row instead of silently
+  dropping to the defaults. That resolution is the same one the router performs,
+  shared through `Router.AliasTarget` — the policy and the routed model can never
+  name different models.
 - **Routing**: `max_tokens_clamp` and `context_window` participate in the
   capability filter; `server_tool_emulation` decides whether the emulation
   loop runs at all.

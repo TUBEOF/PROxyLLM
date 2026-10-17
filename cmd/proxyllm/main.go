@@ -146,13 +146,15 @@ func run() error {
 	store.SetKeyHasher(storage.NewKeyHasher(masterKey))
 
 	// Web-tool emulation state (ADR-010) is loud in both
-	// directions: the ENV key is the legacy configuration path (no
-	// web-tool account in the DB wins), degraded (documented "unavailable"
-	// error results) without either. The server decides which source
-	// activates; this warning only covers the ENV-absent case — a DB
-	// account (of ANY web-tool family, not just Firecrawl) needs no ENV.
+	// directions: emulation itself is always on (a server-tool definition is
+	// converted and served by the proxy — that is what keeps such a request
+	// routable), but WITHOUT a backend every call degrades to the documented
+	// "unavailable" error result. The ENV key is the legacy configuration path
+	// (a web-tool account in the DB wins); this warning covers the ENV-absent
+	// case only — a DB account (of ANY web-tool family, not just Firecrawl)
+	// needs no ENV.
 	if _, ok := config.FirecrawlAPIKeyFromEnv(); !ok {
-		logger.Warn("PROxyLLM: web-tool emulation stays inactive unless a web-tool account exists in the WebUI (Providers → Firecrawl or Ollama Cloud (Web Tools)); with none and no PROXYLLM_FIRECRAWL_API_KEY, emulated web_search/web_fetch requests receive the documented \"unavailable\" error results")
+		logger.Warn("PROxyLLM: no web-tool backend is configured in this process (WebUI Providers → Firecrawl or Ollama Cloud (Web Tools), or PROXYLLM_FIRECRAWL_API_KEY); web_search/web_fetch definitions are still emulated, but every call is answered with the documented \"unavailable\" error result")
 	}
 
 	srv, err := server.New(cfg, store, logger, append(serverOptions(cfg, masterKey), server.WithModelSync())...)

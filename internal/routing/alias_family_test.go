@@ -180,3 +180,75 @@ func TestResolveChain_NoRouteNamesTheModel(t *testing.T) {
 		t.Errorf("alias transition not traced: %+v", trace.Events())
 	}
 }
+
+// AliasTarget is the exported half of resolveWithTrace step 2: callers that
+// must resolve something PER LANDED MODEL (the per-model compatibility policy)
+// reach the same answer the router routes on. The semantics are step 2's —
+// exact entry first, then the most literal wildcard, ties lexicographic, ONE
+// hop, no marker handling (the caller strips the marker first) — so the two can
+// never drift apart.
+func TestRouter_AliasTargetResolvesLikeRouting(t *testing.T) {
+	r := routing.NewRouter(routing.Config{Aliases: map[string]string{
+		"claude-haiku-5-5": "exact-target",
+		"claude-*":         "family-target",
+		"claude-haiku-*":   "haiku-target",
+		"a*":               "short",
+		"ab*":              "longer",
+		"ab*cd":            "tie-b",
+		"ab*ce":            "tie-a", // same literal count as ab*cd: lexicographic winner
+	}})
+
+	for _, tc := range []struct {
+		model, want string
+		ok          bool
+	}{
+		{"claude-haiku-5-5", "exact-target", true}, // exact outranks every wildcard
+		{"claude-haiku-9-9", "haiku-target", true}, // most literal characters wins
+		{"claude-sonnet-4-6", "family-target", true},
+		{"abXYZce", "tie-a", true}, // literal tie resolved lexicographically
+		{"gpt-oss:120b", "", false},
+		{"claude", "", false}, // a bare key is an exact alias only
+	} {
+		got, ok := r.AliasTarget(tc.model)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("AliasTarget(%q) = (%q, %v), want (%q, %v)", tc.model, got, ok, tc.want, tc.ok)
+		}
+	}
+
+	// The live-swap contract: a settings write reaches the lookup without
+	// restart (same contract as the routing it mirrors).
+	r.SetAliases(map[string]string{"claude-haiku-5-5": "rewritten"})
+	if got, ok := r.AliasTarget("claude-haiku-5-5"); got != "rewritten" || !ok {
+		t.Fatalf("after SetAliases: (%q, %v), want (rewritten, true)", got, ok)
+	}
+
+	// Nil receiver: the fixture/test shape must not panic.
+	var nilRouter *routing.Router
+	if got, ok := nilRouter.AliasTarget("claude-haiku-5-5"); got != "" || ok {
+		t.Fatalf("nil router: (%q, %v), want the no-match answer", got, ok)
+	}
+}
+
+// The alias hop is shared with routing, so a request that routes by alias and
+// the policy resolved for it name the same model — pinned here because a
+// second, drifting implementation of alias resolution is silent by definition.
+func TestRouter_AliasTargetAgreesWithTheResolvedChain(t *testing.T) {
+	reg := provider.NewLiveRegistry()
+	reg.Register(&stubProvider{id: "p1"})
+	r := routing.NewRouter(routing.Config{
+		Rules:   []routing.Rule{{MatchModel: "ollama-cloud/m", Chain: []string{"p1"}, Priority: 100, Enabled: true}},
+		Aliases: map[string]string{"claude-*": "ollama-cloud/m"},
+	}, routing.WithRegistry(reg))
+
+	target, ok := r.AliasTarget("claude-haiku-5-5")
+	if !ok || target != "ollama-cloud/m" {
+		t.Fatalf("AliasTarget = (%q, %v), want (ollama-cloud/m, true)", target, ok)
+	}
+	entries, _, err := r.ResolveChainFor("claude-haiku-5-5", provider.Capabilities{})
+	if err != nil {
+		t.Fatalf("ResolveChainFor: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Model != target {
+		t.Fatalf("the routed model %+v does not match the alias target %q", entries, target)
+	}
+}

@@ -142,3 +142,27 @@ instead of silently returning unfiltered results. And its per-result `content`
 snippet is dropped, because neither `ir.WebSearchResultItem` nor the Anthropic
 `web_search_result` block has a plain-text field to carry it; adding one is a
 wire change, not a backend concern.
+
+## Addendum 2026-10-17: emulation is the default for every target
+
+The resilience decisions above assumed the emulation policy would be reached.
+It was not, in two shapes found in production logs: the policy was resolved
+from the client-typed model name, so a Claude Code auxiliary ID resolved through
+a `claude-*` alias (and any model without a row of its own) fell back to the
+zero policy — emulation off — and the stored default itself was `native`
+whenever no web-tool account existed. Either way the dated server-tool definition
+rode to an upstream that has never heard of it, the capability filter skipped
+every account that does not declare native web search, and the request died as a
+non-retryable 404 **before** any of this ADR's machinery — the account walk, the
+circuit, the `unavailable` degrade — could run. A request that needs a web tool
+must never be unroutable because of one.
+
+Two decisions follow. **Emulation is the policy for every target**: `emulate-firecrawl`
+unless the row explicitly pinned `off`, and a stored legacy `native` reads as
+emulation — no provider type in this proxy speaks the server-tool wire, so
+`native` could only ever produce the broken shapes above. The account set decides
+the ANSWER, not the policy: with accounts the walk serves results, without any
+the call gets the documented `unavailable` error result. And **the policy is
+resolved for the model the request lands on** — the same one-hop alias
+resolution the router routes with, shared through `Router.AliasTarget`, so the
+policy and the routed model cannot name different models.
