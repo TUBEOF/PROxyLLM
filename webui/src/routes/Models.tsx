@@ -82,6 +82,21 @@ export default function Models() {
   const models = useMemo(() => data?.models ?? [], [data]);
   const providers = useMemo(() => providersData?.providers ?? [], [providersData]);
   const types = useMemo(() => typesData?.types ?? [], [typesData]);
+  // Web-tool backends (Firecrawl, Ollama Cloud Web Tools) are emulator
+  // endpoints for web_search/web_fetch, not chat providers: they own no
+  // models, so they are neither a group on this page nor a choice in the
+  // provider picker. The server refuses a model row on one for the same
+  // reason (models on a web-tool backend could never route).
+  const webToolTypes = useMemo(
+    () => new Set(types.filter((t) => t.kind === 'web_tool').map((t) => t.type)),
+    [types],
+  );
+  // Types the catalog does not know stay in (the UI never hides data it was
+  // given) — only a catalog-declared web_tool kind is filtered.
+  const llmProviders = useMemo(
+    () => providers.filter((p) => !webToolTypes.has(p.type)),
+    [providers, webToolTypes],
+  );
   // providerNames: the sync summary names the accounts it touched; a
   // provider that has since been deleted falls back to its id.
   const providerNames = useMemo(
@@ -106,7 +121,7 @@ export default function Models() {
   const openCreate = useCallback(() => {
     setForm({
       id: '',
-      provider_id: providers[0]?.id ?? '',
+      provider_id: llmProviders[0]?.id ?? '',
       name: '',
       priority: '0',
       capabilities: capsFromRaw(null),
@@ -114,7 +129,7 @@ export default function Models() {
     setCreating(true);
     setEditing(null);
     setFormError(null);
-  }, [providers]);
+  }, [llmProviders]);
 
   const openEdit = useCallback((m: Model) => {
     setForm({
@@ -292,7 +307,11 @@ export default function Models() {
     const dangling: Model[] = [];
     for (const m of models) {
       const typ = typeOf.get(m.provider_id);
-      if (typ === undefined) {
+      // A model row whose provider is gone, or one sitting on a web-tool
+      // backend (the API refuses to create those; a row seeded by hand is
+      // surfaced here rather than hidden — the UI never drops data it was
+      // given, and the operator needs to see it to delete it).
+      if (typ === undefined || webToolTypes.has(typ)) {
         dangling.push(m);
         continue;
       }
@@ -302,6 +321,7 @@ export default function Models() {
     }
     const accountCount = new Map<string, number>();
     for (const p of providers) {
+      if (webToolTypes.has(p.type)) continue;
       accountCount.set(p.type, (accountCount.get(p.type) ?? 0) + 1);
     }
     const out: { type: string; label: string; accounts: number; models: Model[] }[] = [];
@@ -311,6 +331,7 @@ export default function Models() {
       out.push({ type: typ, label, accounts: accountCount.get(typ) ?? 0, models: byType.get(typ) ?? [] });
     };
     for (const t of types) {
+      if (t.kind === 'web_tool') continue; // emulator backends, never chat models
       if (accountCount.has(t.type)) add(t.type, t.label);
     }
     // A type an account carries but the catalog does not know (renamed or
@@ -325,7 +346,7 @@ export default function Models() {
       out.push({ type: '', label: 'unknown provider', accounts: 0, models: dangling });
     }
     return out;
-  }, [models, providers, types]);
+  }, [models, providers, types, webToolTypes]);
 
   const drawerError = formError ?? save.error ?? del.error;
   const drawerPending = save.pending || del.pending;
@@ -351,8 +372,8 @@ export default function Models() {
               type="button"
               className="btn btn-primary"
               onClick={openCreate}
-              disabled={providers.length === 0}
-              title={providers.length === 0 ? 'Add a provider first — models belong to one.' : undefined}
+              disabled={llmProviders.length === 0}
+              title={llmProviders.length === 0 ? 'Add a chat provider first — models belong to one.' : undefined}
             >
               <IconPlus width="16" height="16" />
               Add model
@@ -442,7 +463,7 @@ export default function Models() {
               title="No models registered"
               body="Register a model (or run the model sync) so clients can request it — models without a matching routing rule route implicitly to their provider. Every model carries its capability flags and compatibility policy here — including thinking handling for non-Claude targets."
               action={
-                providers.length === 0 ? undefined : (
+                llmProviders.length === 0 ? undefined : (
                   <button type="button" className="btn btn-primary btn-sm" onClick={openCreate}>
                     <IconPlus width="14" height="14" />
                     Register the first model
@@ -612,11 +633,18 @@ export default function Models() {
                   onChange={(e) => setForm((f) => ({ ...f, provider_id: e.target.value }))}
                   required
                 >
-                  {providers.map((p) => (
+                  {llmProviders.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
                     </option>
                   ))}
+                  {/* A legacy row on a now-filtered provider (web-tool, or a
+                      deleted account): the picker keeps offering what the row
+                      actually has, so opening and saving a row never silently
+                      moves it to another account. */}
+                  {!llmProviders.some((p) => p.id === form.provider_id) && form.provider_id !== '' && (
+                    <option value={form.provider_id}>{providerNames.get(form.provider_id) ?? form.provider_id}</option>
+                  )}
                 </select>
               </div>
             </div>

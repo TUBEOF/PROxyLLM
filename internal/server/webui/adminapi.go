@@ -1060,12 +1060,23 @@ func (a *AdminAPI) putModel(w http.ResponseWriter, r *http.Request) {
 	}
 	// FK guarantee surfaced as a deterministic 400 — never a SQLite error
 	// string match (models.provider_id FK).
-	if _, err := a.store.GetProvider(r.Context(), req.ProviderID); err != nil {
+	prov, err := a.store.GetProvider(r.Context(), req.ProviderID)
+	if err != nil {
 		if errors.Is(err, storage.ErrNotFound) {
 			writeError(w, http.StatusBadRequest, "unknown provider")
 			return
 		}
 		writeStoreError(w, err)
+		return
+	}
+	// ADR-010: a web_tool account is an emulator backend (web_search /
+	// web_fetch), never a chat model's provider — a row on one could not
+	// route, exactly like the chain validator's web-tool refusal. The Models
+	// page is the chat-model surface, so the write is refused here rather
+	// than persisted as a listed model nothing can serve.
+	if desc, isType := providerTypeByID(prov.Type); isType && desc.Kind == KindWebTool {
+		writeError(w, http.StatusBadRequest,
+			"provider "+req.ProviderID+" is a web-tool backend, not a chat provider — models belong to chat providers")
 		return
 	}
 	if err := a.store.PutModel(r.Context(), storage.Model{

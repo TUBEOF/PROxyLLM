@@ -378,6 +378,34 @@ func TestModels_CRUDAndCompatRoundTrip(t *testing.T) {
 	assertStatus(t, w, http.StatusNotFound, "delete missing model")
 }
 
+// ADR-010: a web_tool account is an emulator backend, not a chat provider —
+// a model row on one could never route, so the write is refused at the
+// boundary instead of persisting a listed model nothing can serve.
+func TestModels_WebToolProviderRefused(t *testing.T) {
+	env := newAdminEnv(t)
+	s := env.bootstrap(t, "operator")
+	w := env.authedCall(t, http.MethodPut, "/api/admin/providers/web-1",
+		`{"type":"firecrawl","name":"Crawler","config":{}}`, s)
+	assertStatus(t, w, http.StatusOK, "put firecrawl provider")
+
+	w = env.authedCall(t, http.MethodPut, "/api/admin/models/crawl-model",
+		`{"provider_id":"web-1","name":"crawl-model"}`, s)
+	assertStatus(t, w, http.StatusBadRequest, "model on a web-tool provider")
+
+	// The refusal must not have persisted a row.
+	w = env.authedCall(t, http.MethodGet, "/api/admin/models", "", s)
+	assertStatus(t, w, http.StatusOK, "list models")
+	var list struct {
+		Models []struct {
+			ID string `json:"id"`
+		} `json:"models"`
+	}
+	decodeJSON(t, w, &list)
+	if len(list.Models) != 0 {
+		t.Errorf("refused model was persisted: %+v", list.Models)
+	}
+}
+
 // WebUI rule edits must reach the live router without a
 // restart — every successful routing-rule write triggers the reload hook; a
 // rejected write must not. Rules list priority-DESC.

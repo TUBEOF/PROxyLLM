@@ -50,7 +50,10 @@ a request into a guaranteed auth failure helps nobody.
 
 Every model row has an **identity** (what clients and rules name), the
 **provider account** that serves it, a **capability set**, and a
-**priority**. Two provenances exist, shown as a badge:
+**priority**. The page lists **chat** providers only: the web-tool backends
+(Firecrawl, Ollama Cloud Web Tools) emulate `web_search` / `web_fetch` and
+own no models, so they are neither a group here nor a choice when you add a
+model. Two provenances exist, shown as a badge:
 
 - **synced** — imported and maintained by the model sync. Upstream
   additions appear, upstream removals disappear, and detected facts
