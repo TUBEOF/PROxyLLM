@@ -58,16 +58,34 @@ func (s *Server) testModel(reg provider.Registry) func(context.Context, string) 
 			Messages:  []ir.Message{{Role: ir.RoleUser, Parts: []ir.Part{ir.TextPart{Text: "Sag OK"}}}},
 		}
 
+		// The exact wire body, when the provider can encode one: the popup
+		// shows what went out, and the wire shape differs per provider
+		// (chat-completions vs Responses). A provider without the surface,
+		// or a failed encode, simply leaves the field empty — a missing
+		// diagnostic must never fail the test itself.
+		preview := ""
+		if prev, ok := p.(provider.RequestPreviewer); ok {
+			if raw, err := prev.PreviewRequest(req); err == nil {
+				preview = redactor.Redact(truncateTestPreview(string(raw)))
+			}
+		}
+
 		started := time.Now()
 		resp, err := p.Complete(ctx, req)
 		latency := time.Since(started).Milliseconds()
 		if err != nil {
-			return webui.TestModelResult{OK: false, LatencyMS: latency, Error: plainUpstreamCause(err)}, nil
+			return webui.TestModelResult{
+				OK: false, LatencyMS: latency, Error: plainUpstreamCause(err),
+				Request: preview, Detail: failureDetail(err),
+			}, nil
 		}
 		// The reply travels to the browser too — the full redactor applies
 		// (a misbehaving upstream could echo secret-shaped text in even a
 		// 16-token reply).
-		return webui.TestModelResult{OK: true, LatencyMS: latency, Reply: redactor.Redact(firstText(resp))}, nil
+		return webui.TestModelResult{
+			OK: true, LatencyMS: latency, Request: preview,
+			Reply: redactor.Redact(firstText(resp)),
+		}, nil
 	}
 }
 
@@ -102,4 +120,42 @@ func plainUpstreamCause(err error) string {
 		return "upstream rejected the test request" + status + ": " + redactor.Redact(up.Message)
 	}
 	return "request failed before the upstream answered: " + redactor.Redact(err.Error())
+}
+
+// failureDetail renders the structured half of a failed round trip for the
+// popup: the upstream's status and decoded error object, redacted like
+// everything else that leaves this endpoint. A failure that never reached a
+// response (transport, timeout, cancellation) keeps HTTPStatus 0 — the
+// honest "no answer arrived" rather than a fabricated one.
+func failureDetail(err error) *webui.TestFailureDetail {
+	var up *provider.UpstreamError
+	if !errors.As(err, &up) {
+		return &webui.TestFailureDetail{Message: redactor.Redact(err.Error())}
+	}
+	message := up.Message
+	if message == "" {
+		// The body carried no decodable error object: Error() renders the
+		// generic wording, which is all there is to say.
+		message = up.Error()
+	}
+	return &webui.TestFailureDetail{
+		HTTPStatus: up.HTTPStatus,
+		Type:       up.Type,
+		Code:       up.Code,
+		Message:    redactor.Redact(message),
+	}
+}
+
+// testPreviewMaxBytes bounds the request preview that travels to the
+// browser. The test request is a 16-token ask, so this is a ceiling on
+// pathological encoders, not a working limit.
+const testPreviewMaxBytes = 8 << 10
+
+// truncateTestPreview bounds the preview and marks the cut, so a shortened
+// body is never read as the whole request.
+func truncateTestPreview(s string) string {
+	if len(s) <= testPreviewMaxBytes {
+		return s
+	}
+	return s[:testPreviewMaxBytes] + "\n… (truncated)"
 }

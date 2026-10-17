@@ -415,6 +415,13 @@ func TestServer_ModelTestEndpoint(t *testing.T) {
 		LatencyMS int64  `json:"latency_ms"`
 		Reply     string `json:"reply"`
 		Error     string `json:"error"`
+		Request   string `json:"request"`
+		Detail    *struct {
+			HTTPStatus int    `json:"http_status"`
+			Type       string `json:"type"`
+			Code       string `json:"code"`
+			Message    string `json:"message"`
+		} `json:"detail"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -422,6 +429,21 @@ func TestServer_ModelTestEndpoint(t *testing.T) {
 	_ = resp.Body.Close()
 	if !result.OK || result.Reply != "OK" {
 		t.Errorf("result = %+v, want ok + reply OK", result)
+	}
+	// The popup's request half: the EXACT wire body the round trip sent —
+	// not a paraphrase — decoded from the provider's own encoder.
+	if result.Request == "" {
+		t.Fatal("success must carry the wire request preview")
+	}
+	var preview struct {
+		Model  string `json:"model"`
+		Stream bool   `json:"stream"`
+	}
+	if err := json.Unmarshal([]byte(result.Request), &preview); err != nil {
+		t.Fatalf("request preview is not the wire body: %v (%q)", err, result.Request)
+	}
+	if preview.Model != "chat" || preview.Stream {
+		t.Errorf("preview = %+v, want the wire model name and no stream", preview)
 	}
 
 	// The upstream request carried the row's WIRE name and the minimal ask.
@@ -461,6 +483,20 @@ func TestServer_ModelTestEndpoint(t *testing.T) {
 	_ = resp.Body.Close()
 	if result.OK || result.Error == "" {
 		t.Errorf("failed result = %+v, want ok:false + cause", result)
+	}
+	// The popup's detail half: the upstream's own status and error object —
+	// what the operator needs to recognize the failure, redacted.
+	if result.Detail == nil {
+		t.Fatal("a failed round trip must carry the upstream detail")
+	}
+	if result.Detail.HTTPStatus != http.StatusBadRequest {
+		t.Errorf("detail status = %d, want 400", result.Detail.HTTPStatus)
+	}
+	if !strings.Contains(result.Detail.Message, "model overloaded") {
+		t.Errorf("detail message = %q, want the upstream's own words", result.Detail.Message)
+	}
+	if result.Request == "" {
+		t.Error("a failed round trip still carries what it sent")
 	}
 
 	// Unknown model: ok:false with a clear cause (not a 500).

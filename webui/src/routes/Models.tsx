@@ -8,34 +8,28 @@ import type {
   ModelTestResponse,
   ProvidersResponse,
   ProviderTypesResponse,
-  SettingsResponse,
 } from '../types';
 import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
-
-// The relocated Settings-editor key: model-surface policy,
-// not compat knobs. (The alias-map key moved to Routing, 2026-10-08.)
-const NON_CLAUDE_KEY = 'anthropic_surface_non_claude';
-const NON_CLAUDE_VALUES = ['allow', 'warn', 'block'] as const;
 import { Drawer } from '../components/Overlays';
-import { IconPlus } from '../icons';
+import { IconCheck, IconClose, IconPlus, IconRefresh } from '../icons';
 
 // "Models" (plan §9) — the central per-model editor: identity, provider
 // link, capabilities, priority. The compat knobs are NOT editable anymore
-//: the per-model
-// policy derives from the row's capabilities server-side (thinking
-// handling, cache markers, server-tool emulation, clamps — every
+// : the per-model policy derives from the row's capabilities server-side
+// (thinking handling, cache markers, server-tool emulation, clamps — every
 // application still recorded in route_trace, never silent). Legacy compat
 // blobs on existing rows keep working as read-only overrides.
 //
-// Layout: provider-TYPE-grouped collapsible sections with model CARDS (not
-// a flat table) — the per-model test button needs a card-level footer, and
-// the grouping matches how operators think (a provider type like "Ollama
-// Cloud", not the individual account; the account rides each model card).
-// Each card carries a Test button: one minimal "Sag OK" round trip against
-// the model's provider, minimal output (status + reply or plain-language
-// cause). Block layout throughout — no variable-length text in flex-wrap
-// lines above other content (the v1.0.1/v1.0.2 screenshot lesson).
+// Layout: provider-TYPE-grouped collapsible sections with model CARDS in the
+// console's widget shape (no table — the card carries the test control and
+// the capabilities read as a column of chips). Capabilities are FACTS, not
+// state: only the flags the model actually has are rendered, as neutral
+// chips — a row of eight tick/cross marks says mostly "not this one".
+// The account is deliberately absent: models are available per provider
+// TYPE, the account serving them is routing's business, and it changes
+// nothing about the model. Block layout throughout — no variable-length
+// text in a wrapping line above other content (the v1.0.1/v1.0.2 lesson).
 
 const CAPABILITY_FLAGS = ['streaming', 'tools', 'vision', 'thinking', 'web_search', 'web_fetch', 'code_execution', 'decision'] as const;
 
@@ -63,6 +57,25 @@ function parsePositiveInt(s: string): number | null {
   if (!Number.isInteger(n) || n < 0) return null;
   return n;
 }
+
+// Sync cadence presets, in the order the select offers them. A stored value
+// outside the list is appended rather than silently rounded — the control
+// shows what is configured.
+const INTERVAL_PRESETS = [1, 3, 6, 12, 24, 48, 168] as const;
+
+function intervalLabel(hours: number): string {
+  if (hours === 1) return 'hourly';
+  if (hours === 24) return 'daily';
+  if (hours === 168) return 'weekly';
+  return `every ${hours} h`;
+}
+
+// TestState is one model card's test slot: a round trip in flight, or its
+// lasting outcome. The outcome STAYS once it lands — the point of testing
+// several models is to see afterwards which ones answered.
+type TestState =
+  | { status: 'running' }
+  | { status: 'ok' | 'failed'; result: ModelTestResponse };
 
 export default function Models() {
   const { data, loading, error, reload, updatedAt } = useLiveData<ModelsResponse>(
@@ -97,8 +110,9 @@ export default function Models() {
     () => providers.filter((p) => !webToolTypes.has(p.type)),
     [providers, webToolTypes],
   );
-  // providerNames: the sync summary names the accounts it touched; a
-  // provider that has since been deleted falls back to its id.
+  // providerNames: the test popup names the account a round trip went to,
+  // and the sync summary names the accounts it touched; a provider that has
+  // since been deleted falls back to its id.
   const providerNames = useMemo(
     () => new Map(providers.map((p) => [p.id, p.name])),
     [providers],
@@ -206,9 +220,9 @@ export default function Models() {
     [del, reload],
   );
 
-  // ADR-010 model sync: config load + manual run. The sync status card
-  // sits above the table; "Sync now" runs a pass synchronously and
-  // refreshes the list (the run summary lands in the card).
+  // ADR-010 model sync: config load + manual run. The sync card sits above
+  // the groups and owns every control (toggle, cadence, run) plus the last
+  // run's per-account summary.
   const { data: syncData, reload: reloadSync } = useAdminData<ModelSyncConfig>(
     (signal) => apiCall<ModelSyncConfig>('GET', '/api/admin/model-sync', undefined, signal),
   );
@@ -224,82 +238,63 @@ export default function Models() {
     }
   }, [syncRun, reloadSync, reload]);
 
-  const toggleSync = useCallback(
-    async (enabled: boolean) => {
-      const ok = await syncRun.run(() => apiCall('PUT', '/api/admin/model-sync', { enabled }));
+  const putSyncConfig = useCallback(
+    async (body: { enabled?: boolean; interval_hours?: number }) => {
+      const ok = await syncRun.run(() => apiCall('PUT', '/api/admin/model-sync', body));
       if (ok !== null) reloadSync();
     },
     [syncRun, reloadSync],
   );
+
+  const syncEnabled = syncData?.enabled ?? true;
+  const intervalHours = syncData?.interval_hours ?? 24;
+  const intervalOptions = useMemo(() => {
+    const opts = INTERVAL_PRESETS.map((h) => ({ hours: h as number, label: intervalLabel(h) }));
+    if (!INTERVAL_PRESETS.includes(intervalHours as (typeof INTERVAL_PRESETS)[number])) {
+      opts.push({ hours: intervalHours, label: intervalLabel(intervalHours) });
+      opts.sort((a, b) => a.hours - b.hours);
+    }
+    return opts;
+  }, [intervalHours]);
 
   const lastRun = syncData?.last_run ?? null;
   const lastRunText = lastRun === null || lastRun.ran_at === 0
     ? 'never run'
     : new Date(lastRun.ran_at * 1000).toLocaleString();
 
-  // Surface policy (relocated from the removed Settings page, 2026-10-06):
-  // the non-Claude gate — model-surface policy, not compat knobs. The
-  // model alias map moved to Routing: it rewrites the
-  // client-requested name BEFORE any rule matches, which is routing
-  // configuration, not model policy.
-  const { data: settingsData, reload: reloadSettings } = useAdminData<SettingsResponse>(
-    (signal) => apiCall<SettingsResponse>('GET', '/api/admin/settings', undefined, signal),
-  );
-  const entries = useMemo(() => settingsData?.entries ?? [], [settingsData]);
-  const saveSwitch = useMutation();
+  // Model test: one minimal round trip per model card. State is per model:
+  // running, or the outcome that stays for as long as the page is open.
+  const [tests, setTests] = useState<Record<string, TestState>>({});
+  // The opened failure popup: what was sent and what came back.
+  const [testDetail, setTestDetail] = useState<{ model: Model; result: ModelTestResponse } | null>(null);
 
-  const valueOf = useCallback(
-    (key: string): string => entries.find((e) => e.key === key)?.value ?? '',
-    [entries],
-  );
-  const nonClaudeValue = useMemo(() => {
-    const raw = valueOf(NON_CLAUDE_KEY);
-    return (NON_CLAUDE_VALUES as readonly string[]).includes(raw) ? raw : '';
-  }, [valueOf]);
-  const isDefault = nonClaudeValue === '';
-
-  const setNonClaude = useCallback(
-    async (value: string) => {
-      const ok = await saveSwitch.run(() => apiCall('PUT', '/api/admin/settings', { key: NON_CLAUDE_KEY, value }));
-      if (ok !== null) reloadSettings();
-    },
-    [saveSwitch, reloadSettings],
-  );
-
-  // Model test: one minimal round trip per model card. State
-  // is per-model: pending + the last result. Latency is NOT rendered in
-  // the result badge (wall-clock noise in screenshots); the status text
-  // alone carries the outcome.
-  const [testing, setTesting] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<Record<string, ModelTestResponse>>({});
-
-  const runTest = useCallback(
-    async (m: Model) => {
-      setTesting(m.id);
-      try {
-        const res = await apiCall<ModelTestResponse>(
-          'POST',
-          `/api/admin/models/test/${encodeURIComponent(m.id)}`,
-          {},
-        );
-        setTestResults((prev) => ({ ...prev, [m.id]: res }));
-      } catch (err) {
-        // Thrown errors are the truth (useMutation().error is stale by one
-        // run — the v1.0.2 lesson).
-        setTestResults((prev) => ({
-          ...prev,
-          [m.id]: { ok: false, latency_ms: 0, error: err instanceof Error ? err.message : 'Request failed' },
-        }));
-      }
-      setTesting(null);
-    },
-    [],
-  );
+  const runTest = useCallback(async (m: Model) => {
+    setTests((prev) => ({ ...prev, [m.id]: { status: 'running' } }));
+    try {
+      const res = await apiCall<ModelTestResponse>(
+        'POST',
+        `/api/admin/models/test/${encodeURIComponent(m.id)}`,
+        {},
+      );
+      setTests((prev) => ({ ...prev, [m.id]: { status: res.ok ? 'ok' : 'failed', result: res } }));
+    } catch (err) {
+      // Thrown errors are the truth (useMutation().error is stale by one
+      // run — the v1.0.2 lesson). A request that never reached the endpoint
+      // is a failure with no upstream detail.
+      setTests((prev) => ({
+        ...prev,
+        [m.id]: {
+          status: 'failed',
+          result: { ok: false, latency_ms: 0, error: err instanceof Error ? err.message : 'Request failed' },
+        },
+      }));
+    }
+  }, []);
 
   // Grouping: models bucket by their provider's TYPE — the operator's unit
   // ("Ollama Cloud"), not the individual account — in the catalog's type
   // order. Types with accounts but no models appear with an empty hint so
-  // the grouping never hides an account; models of deleted providers keep
+  // the grouping never hides a provider; models of deleted providers keep
   // their own group.
   const groups = useMemo(() => {
     const typeOf = new Map(providers.map((p) => [p.id, p.type]));
@@ -319,31 +314,30 @@ export default function Models() {
       list.push(m);
       byType.set(typ, list);
     }
-    const accountCount = new Map<string, number>();
+    const hasAccount = new Set<string>();
     for (const p of providers) {
       if (webToolTypes.has(p.type)) continue;
-      accountCount.set(p.type, (accountCount.get(p.type) ?? 0) + 1);
+      hasAccount.add(p.type);
     }
-    const out: { type: string; label: string; accounts: number; models: Model[] }[] = [];
+    const out: { type: string; label: string; models: Model[] }[] = [];
     const seen = new Set<string>();
     const add = (typ: string, label: string) => {
       seen.add(typ);
-      out.push({ type: typ, label, accounts: accountCount.get(typ) ?? 0, models: byType.get(typ) ?? [] });
+      out.push({ type: typ, label, models: byType.get(typ) ?? [] });
     };
     for (const t of types) {
       if (t.kind === 'web_tool') continue; // emulator backends, never chat models
-      if (accountCount.has(t.type)) add(t.type, t.label);
+      if (hasAccount.has(t.type)) add(t.type, t.label);
     }
     // A type an account carries but the catalog does not know (renamed or
     // removed type — the UI never hides data it was given).
-    for (const typ of accountCount.keys()) {
+    for (const typ of hasAccount) {
       if (!seen.has(typ)) add(typ, typ);
     }
     // Models of deleted providers (dangling rows should not exist — the FK
-    // guarantees it — but the UI never hides data it was given). The card's
-    // account line names each row's provider id.
+    // guarantees it — but the UI never hides data it was given).
     if (dangling.length > 0) {
-      out.push({ type: '', label: 'unknown provider', accounts: 0, models: dangling });
+      out.push({ type: '', label: 'unknown provider', models: dangling });
     }
     return out;
   }, [models, providers, types, webToolTypes]);
@@ -354,20 +348,11 @@ export default function Models() {
   return (
     <>
       <PageHead
-        title="Models & Compatibility"
-        sub="Every model's routing identity, capabilities and compatibility policy — the single place non-Claude routing on the Anthropic surface is configured."
+        title="Models"
+        sub="Every model's routing identity, its capabilities and its priority — what clients request, and what routing resolves it to."
         actions={
           <>
             <LiveBadge updatedAt={updatedAt} intervalMs={CONFIG_LIVE_MS} />
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => void runSync()}
-              disabled={syncRun.pending}
-              title="Import the model lists of every provider that offers discovery (ADR-010)"
-            >
-              {syncRun.pending ? 'Syncing…' : 'Sync now'}
-            </button>
             <button
               type="button"
               className="btn btn-primary"
@@ -382,70 +367,107 @@ export default function Models() {
         }
       />
       <div className="canvas">
-        {/* ADR-010 model-sync status card. Block layout (the v1.0.1/v1.0.2
-            lesson: variable-length text never rides a flex-wrap line above
-            other content — the run list renders on its own lines). */}
+        {/* ADR-010 model-sync card: state, cadence, a manual run and the last
+            run's summary. Block layout (the v1.0.1/v1.0.2 lesson:
+            variable-length text never rides a wrapping line above other
+            content — every account gets its own lines). */}
         <div className="widget w-full" style={{ marginBottom: 8 }}>
           <div className="widget-head">
-            <h4 style={{ margin: 0 }}>Auto-sync</h4>
-            <label className="toggle" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <h3 className="title">
+              <span className="ic"><IconRefresh width="14" height="14" /></span>
+              Auto-sync
+            </h3>
+            <label className="toggle" title="Import every account's model list on the cadence below">
               <input
                 type="checkbox"
-                checked={syncData?.enabled ?? true}
-                onChange={(e) => void toggleSync(e.target.checked)}
+                checked={syncEnabled}
+                onChange={(e) => void putSyncConfig({ enabled: e.target.checked })}
                 disabled={syncRun.pending}
               />
               <span className="tswitch" />
-              enabled
+              <span className="muted">{syncEnabled ? 'on' : 'off'}</span>
             </label>
-          </div>
-          <div className="widget-body" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span className="hint" style={{ margin: 0 }}>
-              every {syncData?.interval_hours ?? 24}h · last run {lastRunText}
+            <span className={`badge ${syncEnabled ? 'up' : 'paused'}`}>
+              <span className="b-dot" />
+              {syncEnabled ? 'enabled' : 'paused'}
             </span>
-            {lastRun !== null && lastRun.providers !== undefined && (
-              <span className="hint" style={{ margin: 0 }}>
-                {lastRun.providers
-                  .map((p) => `${providerNames.get(p.provider_id) ?? p.provider_id.slice(0, 12)}: +${p.added} ~${p.updated} −${p.removed}`)
-                  .join(' · ')}
-              </span>
-            )}
-            {syncRun.error !== null && (
-              <span role="alert" className="form-note">
-                {syncRun.error}
-              </span>
-            )}
           </div>
-        </div>
-
-        {/* Surface policy: the non-Claude gate for the whole Anthropic
-            surface. The alias map lives on the Routing page. */}
-        <div className="widget w-full" style={{ marginBottom: 8 }}>
-          <div className="widget-head">
-            <h3 className="title">Non-Claude routing on the Anthropic surface</h3>
-          </div>
-          <div className="widget-body">
-            <div className="rpills" role="radiogroup" aria-label="Non-Claude routing mode">
-              {NON_CLAUDE_VALUES.map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  className={`rpill${(!isDefault && nonClaudeValue === mode) || (isDefault && mode === 'allow') ? ' active' : ''}`}
-                  role="radio"
-                  aria-checked={(!isDefault && nonClaudeValue === mode) || (isDefault && mode === 'allow')}
-                  onClick={() => void setNonClaude(mode)}
-                  disabled={saveSwitch.pending}
+          <div className="widget-body" style={{ gap: 12 }}>
+            <span className="hint" style={{ margin: 0 }}>
+              Mirrors each account&apos;s model list into the table below, {intervalLabel(intervalHours)}.
+              Detected facts fill empty rows; your own edits and pins survive every run.
+            </span>
+            {/* Controls: fixed-width items only, so no wrap point can drift. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span className="select">
+                <select
+                  aria-label="Sync interval"
+                  value={String(intervalHours)}
+                  onChange={(e) => void putSyncConfig({ interval_hours: Number(e.target.value) })}
+                  disabled={syncRun.pending}
                 >
-                  {mode}
-                </button>
-              ))}
+                  {intervalOptions.map((o) => (
+                    <option key={o.hours} value={o.hours}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </span>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => void runSync()}
+                disabled={syncRun.pending}
+                title="Import the model lists of every provider that offers discovery (ADR-010)"
+              >
+                {syncRun.pending ? (
+                  <svg className="loading-spinner" style={{ width: 14, height: 14 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9" opacity="0.25" />
+                    <path d="M21 12a9 9 0 0 0-9-9" />
+                  </svg>
+                ) : (
+                  <IconRefresh width="14" height="14" />
+                )}
+                {syncRun.pending ? 'Syncing…' : 'Sync now'}
+              </button>
             </div>
-            <p className="hint" style={{ marginBottom: 0 }}>
-              {isDefault
-                ? 'No override set — the default is allow.'
-                : `Override: ${nonClaudeValue}. allow passes requests through; warn annotates the route trace; block rejects with a clear error.`}
-            </p>
-            {saveSwitch.error !== null && <ErrorNote message={saveSwitch.error} />}
+            {syncRun.error !== null && (
+              <p role="alert" className="form-note" style={{ margin: 0 }}>
+                {syncRun.error}
+              </p>
+            )}
+            {/* Last run: one block per account, so a long name or a long skip
+                reason wraps inside its own lines and moves nothing else. */}
+            <div className="fieldset" style={{ margin: 0 }}>
+              <legend>Last run — {lastRunText}</legend>
+              {lastRun === null || lastRun.providers === undefined || lastRun.providers.length === 0 ? (
+                <p className="hint" style={{ margin: 0 }}>
+                  {lastRun === null || lastRun.ran_at === 0
+                    ? 'No run recorded yet. Run the sync once to import the model lists.'
+                    : 'The last run touched no account that offers model discovery.'}
+                </p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {lastRun.providers.map((p) => (
+                    <div key={p.provider_id}>
+                      <div className="primary" style={{ overflowWrap: 'anywhere' }}>
+                        {providerNames.get(p.provider_id) ?? p.provider_id}
+                      </div>
+                      {p.skipped > 0 ? (
+                        <p className="form-note" style={{ margin: 0, overflowWrap: 'anywhere' }}>
+                          skipped — {p.skipped_reason ?? 'no reason recorded'}
+                        </p>
+                      ) : (
+                        <span className="hint" style={{ margin: 0 }}>
+                          <span className="num">+{p.added}</span> added · <span className="num">~{p.updated}</span> updated ·{' '}
+                          <span className="num">−{p.removed}</span> removed
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
@@ -475,100 +497,115 @@ export default function Models() {
         ) : (
           <div className="w-full">
             {/* Provider-type-grouped collapsible sections: each TYPE is one
-                <details> (native, no JS state — the
-                v1.0.x screenshot lesson favors structural primitives),
-                its models render as cards in a grid. Block layout only. */}
+                <details> (native, no JS state — the v1.0.x screenshot lesson
+                favors structural primitives), its models render as widget
+                cards in a grid. Block layout only. */}
             {groups.map((g) => (
               <details key={g.type || '__unknown__'} className="fieldset" style={{ marginBottom: 8 }} open={groups.length === 1}>
                 <summary style={{ cursor: 'pointer', fontWeight: 600, padding: '4px 0' }}>
-                  {g.label}
-                  {' ('}
-                  {g.accounts > 0 && `${g.accounts} ${g.accounts === 1 ? 'account' : 'accounts'} · `}
-                  {g.models.length} {g.models.length === 1 ? 'model' : 'models'})
+                  {g.label} ({g.models.length} {g.models.length === 1 ? 'model' : 'models'})
                 </summary>
-                <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', marginTop: 8 }}>
+                <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', marginTop: 8 }}>
                   {g.models.length === 0 && (
                     <p className="hint" style={{ margin: 0 }}>
                       No models yet — run a sync or add one.
                     </p>
                   )}
                   {g.models.map((m) => {
-                    const caps = capsFromRaw(m.capabilities);
-                    const result = testResults[m.id];
+                    const capMap = capsFromRaw(m.capabilities);
+                    const caps = CAPABILITY_FLAGS.filter((flag) => capMap[flag] === true);
+                    const state = tests[m.id];
                     return (
-                      <div key={m.id} className="fieldset" style={{ display: 'flex', flexDirection: 'column', gap: 6, margin: 0, padding: '10px 12px' }}>
-                        <div>
-                          <span className="primary">{m.name}</span>
-                        </div>
-                        <div>
-                          <span className="mono" style={{ fontSize: 'var(--fs-sm)' }}>{m.id}</span>
-                        </div>
-                        {/* The account the model belongs to: the section header
-                            names the type, so the card owns the account. */}
-                        <div className="muted" style={{ fontSize: 'var(--fs-sm)' }}>
-                          account: {providerNames.get(m.provider_id) ?? m.provider_id}
-                        </div>
-                        <div>
+                      <div key={m.id} className="widget">
+                        <div className="widget-head">
+                          {/* A model name is variable-length text in a
+                              non-wrapping row: it ellipsizes rather than
+                              wrapping, so the card's height never depends on
+                              where a name happens to break. */}
+                          <h3 className="title" style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m.name}>
+                            {m.name}
+                          </h3>
                           <span className={m.origin === 'synced' ? 'badge info' : 'badge paused'}>
                             <span className="b-dot" />
                             {m.origin === 'synced' ? 'synced' : 'manual'}
                           </span>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                          {CAPABILITY_FLAGS.map((flag) => (
-                            <span key={flag} className="hint" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
-                              {caps[flag] === true ? (
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" aria-hidden="true">
-                                  <path d="m5 13 4 4 10-10" />
+                        <div className="widget-body" style={{ gap: 10 }}>
+                          <span className="mono hint" style={{ margin: 0, overflowWrap: 'anywhere' }}>
+                            {m.id}
+                          </span>
+                          {/* Only the capabilities this model HAS: a column of
+                              chips (facts, not state — hence the neutral
+                              badge), never a wall of crosses. */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                            {caps.length === 0 ? (
+                              <span className="hint" style={{ margin: 0 }}>
+                                No capabilities detected yet — run a sync or check them in Edit.
+                              </span>
+                            ) : (
+                              caps.map((flag) => (
+                                <span key={flag} className="badge paused">
+                                  {flag}
+                                </span>
+                              ))
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, marginTop: 'auto' }}>
+                            {state?.status === 'running' ? (
+                              <button type="button" className="btn btn-secondary btn-sm" disabled aria-label={`Testing ${m.name}`}>
+                                <svg className="loading-spinner" style={{ width: 14, height: 14 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true">
+                                  <circle cx="12" cy="12" r="9" opacity="0.25" />
+                                  <path d="M21 12a9 9 0 0 0-9-9" />
                                 </svg>
-                              ) : (
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden="true" style={{ opacity: 0.4 }}>
-                                  <path d="M6 12h12" />
-                                </svg>
-                              )}
-                              {flag}
-                            </span>
-                          ))}
-                        </div>
-                        {/* Test result badge: status-only (kit .form-note
-                            carries the color; no wall-clock numbers in
-                            screenshots). Block layout. */}
-                        {result !== undefined && (
-                          <p
-                            role="status"
-                            className={`form-note${result.ok ? '' : ''}`}
-                            style={{
-                              margin: 0,
-                              color: result.ok ? 'var(--status-up)' : undefined,
-                              overflowWrap: 'anywhere',
-                            }}
-                          >
-                            {result.ok
-                              ? `OK${result.reply !== undefined && result.reply !== '' ? ` — ${result.reply}` : ''}`
-                              : result.error ?? 'Test failed'}
-                          </p>
-                        )}
-                        <div style={{ display: 'flex', gap: 6, marginTop: 'auto' }}>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => void runTest(m)}
-                            disabled={testing !== null}
-                            title="One minimal 'Sag OK' round trip against this model's provider"
-                          >
-                            {testing === m.id ? 'Testing…' : 'Test'}
-                          </button>
-                          <button type="button" className="btn btn-primary btn-sm" onClick={() => openEdit(m)}>
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-danger btn-sm"
-                            onClick={() => void remove(m)}
-                            disabled={drawerPending}
-                          >
-                            Delete
-                          </button>
+                                Testing…
+                              </button>
+                            ) : state?.status === 'ok' ? (
+                              // The outcome stays: testing several models is
+                              // meant to leave a visible record of which ones
+                              // answered. A click runs the test again.
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                style={{ color: 'var(--status-up)' }}
+                                onClick={() => void runTest(m)}
+                                title={`Answered in ${state.result.latency_ms} ms — click to test again`}
+                              >
+                                <IconCheck width="14" height="14" />
+                                OK
+                              </button>
+                            ) : state?.status === 'failed' ? (
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                style={{ color: 'var(--status-down)' }}
+                                onClick={() => setTestDetail({ model: m, result: state.result })}
+                                title="Failed — click for the request and the error"
+                              >
+                                <IconClose width="14" height="14" />
+                                Failed
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => void runTest(m)}
+                                title="One minimal 'Sag OK' round trip against this model's provider"
+                              >
+                                Test
+                              </button>
+                            )}
+                            <button type="button" className="btn btn-primary btn-sm" onClick={() => openEdit(m)}>
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              onClick={() => void remove(m)}
+                              disabled={drawerPending}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
                       </div>
                     );
@@ -579,6 +616,103 @@ export default function Models() {
           </div>
         )}
       </div>
+
+      {/* Test failure detail: the panel-sized overlay (the same one the Logs
+          payloads use) — a wire body and an upstream error are JSON an
+          operator reads, and the 420px rail cuts them to slivers. */}
+      {testDetail !== null && (
+        <Drawer
+          title={`Test failed — ${testDetail.model.name}`}
+          onClose={() => setTestDetail(null)}
+          size="panel"
+          footer={
+            <>
+              <button type="button" className="btn btn-secondary" onClick={() => setTestDetail(null)}>
+                Close
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  const m = testDetail.model;
+                  setTestDetail(null);
+                  void runTest(m);
+                }}
+              >
+                Test again
+              </button>
+            </>
+          }
+        >
+          <div className="form">
+            <div className="fieldset">
+              <legend>Failure</legend>
+              <p className="form-note" style={{ marginTop: 0 }}>
+                {testDetail.result.error ?? 'Test failed'}
+              </p>
+              <dl style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 16px', margin: 0, fontSize: 'var(--fs-sm)' }}>
+                <dt className="muted">Account</dt>
+                <dd style={{ margin: 0, overflowWrap: 'anywhere' }}>
+                  {providerNames.get(testDetail.model.provider_id) ?? testDetail.model.provider_id}
+                </dd>
+                <dt className="muted">Model</dt>
+                <dd className="mono" style={{ margin: 0, overflowWrap: 'anywhere' }}>
+                  {testDetail.model.id}
+                </dd>
+                <dt className="muted">Wire name</dt>
+                <dd className="mono" style={{ margin: 0, overflowWrap: 'anywhere' }}>
+                  {testDetail.model.name}
+                </dd>
+                <dt className="muted">Latency</dt>
+                <dd className="num" style={{ margin: 0 }}>
+                  {testDetail.result.latency_ms} ms
+                </dd>
+                {testDetail.result.detail?.http_status !== undefined && (
+                  <>
+                    <dt className="muted">Upstream status</dt>
+                    <dd className="num" style={{ margin: 0 }}>
+                      HTTP {testDetail.result.detail.http_status}
+                    </dd>
+                  </>
+                )}
+                {(testDetail.result.detail?.type !== undefined || testDetail.result.detail?.code !== undefined) && (
+                  <>
+                    <dt className="muted">Error</dt>
+                    <dd className="mono" style={{ margin: 0, overflowWrap: 'anywhere' }}>
+                      {[testDetail.result.detail?.type, testDetail.result.detail?.code].filter(Boolean).join(' · ')}
+                    </dd>
+                  </>
+                )}
+              </dl>
+              {testDetail.result.detail?.message !== undefined && testDetail.result.detail.message !== '' && (
+                <pre
+                  className="mono"
+                  style={{ margin: '10px 0 0', whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, maxHeight: 220, overflow: 'auto' }}
+                >
+                  {testDetail.result.detail.message}
+                </pre>
+              )}
+              {testDetail.result.detail === undefined && (
+                <p className="hint" style={{ marginBottom: 0 }}>
+                  No upstream response was reached — the request did not leave the proxy.
+                </p>
+              )}
+            </div>
+            <div className="fieldset">
+              <legend>Sent request</legend>
+              <p className="hint" style={{ marginTop: 0 }}>
+                The wire body of the round trip: 16-token budget, no stream, one message.
+                {testDetail.result.request === undefined || testDetail.result.request === ''
+                  ? ' This provider cannot render a preview, so the body could not be captured.'
+                  : ''}
+              </p>
+              {testDetail.result.request !== undefined && testDetail.result.request !== '' && (
+                <SentRequest body={testDetail.result.request} />
+              )}
+            </div>
+          </div>
+        </Drawer>
+      )}
 
       {(editing !== null || creating) && (
         <Drawer
@@ -705,5 +839,27 @@ export default function Models() {
         </Drawer>
       )}
     </>
+  );
+}
+
+// SentRequest renders the captured wire body as indented JSON — the same
+// viewer the Logs payloads use, for the same reason: what the provider's
+// encoder produced is JSON, and reflowing it into prose would misrepresent
+// it.
+function SentRequest({ body }: { body: string }) {
+  let pretty = body;
+  try {
+    pretty = JSON.stringify(JSON.parse(body), null, 2);
+  } catch {
+    // Not JSON (a truncation marker, or a provider that encodes otherwise):
+    // show what was recorded.
+  }
+  return (
+    <pre
+      className="mono"
+      style={{ margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 12, maxHeight: 420, overflow: 'auto' }}
+    >
+      {pretty}
+    </pre>
   );
 }

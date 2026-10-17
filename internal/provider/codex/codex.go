@@ -213,3 +213,10 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error)
 	}
 	return out, nil
 }
+
+// PreviewRequest encodes the request exactly as Complete/Stream would send
+// it (provider.RequestPreviewer): the Models page's test popup shows the
+// operator what went out — for this backend the Responses wire body.
+func (p *Provider) PreviewRequest(req ir.Request) ([]byte, error) {
+	return p.responses.EncodeRequest(req)
+}
