@@ -63,21 +63,22 @@ test.describe('signed in', () => {
 
   // 2026-09-22: the per-model Test button against the scripted prv-test
   // account — a deterministic "OK" answer (fixtureTestProvider), no live
-  // upstream. Latency is not rendered, so the badge is stable across runs.
-  // The page groups by provider TYPE (2026-10-16), and two fixture accounts
-  // share the custom-openai type, so the section no longer names the
-  // account: the CARD does. The group starts collapsed (multiple fixture
-  // groups), so open it first.
+  // upstream.
+  //
+  // 2026-10-17: the card is addressed by its MODEL ID. The page groups by
+  // provider TYPE, two fixture accounts share the custom-openai type, and the
+  // account no longer rides the card at all (a model is a property of the
+  // type; which account serves it is routing's business). The group starts
+  // collapsed (several fixture groups), so open it first.
   test('models test button', async ({ page }) => {
     await page.goto('/models');
     await readyForCapture(page);
-    const group = page.locator('details', { hasText: 'account: Test target' });
+    const group = page.locator('details', { hasText: 'Custom OpenAI-compatible' });
     await group.locator('summary').first().click();
-    const card = group.locator('div.fieldset', { hasText: 'account: Test target' });
-    await card.locator('button', { hasText: 'Test' }).first().click();
-    await expect(
-      page.locator('p[role="status"]', { hasText: 'OK' }),
-    ).toBeVisible();
+    const card = group.locator('.widget', { hasText: 'mdl-test' });
+    await card.getByRole('button', { name: 'Test', exact: true }).click();
+    // The outcome stays on the card: a check, not a transient note.
+    await expect(card.getByRole('button', { name: 'OK' })).toBeVisible();
     await expect(page).toHaveScreenshot('models-test.png');
   });
 
