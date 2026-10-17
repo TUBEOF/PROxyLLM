@@ -73,12 +73,12 @@ jobs:
         run: go build -o webui/e2e/fixturesrv-bin ./webui/e2e/fixturesrv
 
       # Phase 1 — BLOCKING. Assertions only: computed styles and behaviour, no
-      # baseline PNGs, so a rendering-environment change cannot fail it. Both
-      # files are listed explicitly; the screenshot-comparing specs are excluded
+      # baseline PNGs, so a rendering-environment change cannot fail it. Every
+      # file is listed explicitly; the screenshot-comparing specs are excluded
       # by construction, not by a filter.
-      - name: assertions (design rules + log behaviour)
+      - name: assertions (design rules + log behaviour + models surface)
         working-directory: webui
-        run: npx playwright test -c playwright.config.ts e2e/design-rules.spec.ts e2e/log-childops.spec.ts e2e/provider-type-form.spec.ts
+        run: npx playwright test -c playwright.config.ts e2e/design-rules.spec.ts e2e/log-childops.spec.ts e2e/provider-type-form.spec.ts e2e/models-page.spec.ts
 
       # Phase 2 — REPORTING ONLY. Exit codes are captured and OR'd, the step
       # always succeeds, and the outcome travels in a step output. Not
