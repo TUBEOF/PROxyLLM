@@ -150,7 +150,10 @@ test('the device sign-in code copies without the clipboard API', async ({ page }
 // present the code lands in the system clipboard, not in the fallback.
 test('the device sign-in code copies through the clipboard API', async ({ page }) => {
   await login(page);
-  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  // Only clipboard-read is granted: CI's Chromium rejects 'clipboard-write'
+  // as an unknown permission, and writeText succeeds without it on a focused
+  // document anyway (the helper's fallback covers a denial).
+  await page.context().grantPermissions(['clipboard-read']);
   await page.route('**/api/admin/providers/*/oauth/start', (route) =>
     route.fulfill({
       json: { user_code: 'WXYZ-1234', verification_url: 'https://example.test/device', interval_seconds: 30 },
