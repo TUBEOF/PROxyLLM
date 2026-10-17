@@ -109,6 +109,8 @@ var providerTypes = []providerTypeDesc{
 		SettingsFields: []fieldDesc{
 			{Key: "issuer", Label: "OAuth issuer", Kind: fieldKindURL, Required: true,
 				Hint: "e.g. https://auth.openai.com — the issuer all accounts of this type sign in against"},
+			{Key: "client_version", Label: "Codex CLI client version", Kind: fieldKindText, Required: false,
+				Hint: "The version model discovery announces (e.g. 0.163.0). The backend gates the model catalog on it — a stale value is answered with an empty list. Empty = the built-in pin."},
 			{Key: "model_prefix", Label: "Model prefix", Kind: fieldKindText, Required: false,
 				Hint: "Model identity prefix for this type. Empty = the type string (\"codex-oauth\")."},
 		},

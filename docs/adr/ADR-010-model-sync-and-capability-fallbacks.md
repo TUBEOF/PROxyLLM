@@ -46,15 +46,19 @@ Three gaps surfaced operating the WebUI:
 
 1. **Model sync (ADR-010 policy: delete + preserve).** Every model row
    records its provenance (`models.origin`: `manual` | `synced`, migration
-   v4). A new `ModelLister` provider surface (OpenAI `GET /v1/models`,
-   Ollama `GET /api/tags`, codex backend `GET /models` best-effort) feeds
-   the syncer: upstream-added models land as `synced` rows, existing rows
-   keep operator edits (capabilities/compat/priority) and only refresh
-   names, synced rows absent from the upstream list are deleted, manual
-   rows are never touched (storage refuses any other origin in bulk
-   deletes). A scheduler runs the sync at startup and on the configured
-   cadence (config-KV `model_sync_enabled`, `model_sync_interval_hours`,
-   state in `model_sync_state`); the WebUI offers toggle + "Sync now".
+   v4). A new `ModelLister` provider surface feeds the syncer: the OpenAI
+   list shape (`GET /v1/models`) for custom endpoints and Ollama Cloud —
+   the latter enriched per model by the registry's `/api/show` facts — and
+   the ChatGPT backend's own catalog (`GET /codex/models?client_version=…`,
+   which the backend gates on the announced CLI version) for codex
+   accounts. Upstream-added models
+   land as `synced` rows, existing rows keep operator edits
+   (capabilities/compat/priority) and only refresh names, synced rows
+   absent from the upstream list are deleted, manual rows are never
+   touched (storage refuses any other origin in bulk deletes). A scheduler
+   runs the sync at startup and on the configured cadence (config-KV
+   `model_sync_enabled`, `model_sync_interval_hours`, state in
+   `model_sync_state`); the WebUI offers toggle + "Sync now".
 2. **Firecrawl is a provider type of kind `web_tool`.** The ADR-009
    catalog gains a `kind` field (`llm` | `web_tool`). Firecrawl accounts
    use the standard api_key flow with an optional `base_url` type setting;
@@ -113,9 +117,13 @@ Three gaps surfaced operating the WebUI:
   with a traced log).
 - One dead emulator no longer kills emulated web tools when a second
   account is configured; operators gain real failover by adding accounts.
-- Model-sync runs against a codex backend without a list endpoint are
-  skipped loudly (typed error → per-provider `skipped` state), never
-  failing the whole run.
+- A codex catalog that comes back EMPTY is a skip, not an empty model list:
+  the ChatGPT backend answers an absent or stale `client_version` with a
+  400 / an empty catalog rather than an error, and reading that as "the
+  upstream dropped every model" would let one run delete every synced
+  codex row. The announced version is a type setting (`client_version`)
+  with a built-in pin, so a deployment trailing the CLI can stay current
+  without a release here.
 - Per-rule capability fallbacks remain a possible future extension; the
   KV schema stores plain lists and would move into rule rows unchanged in
   shape if that need materializes.

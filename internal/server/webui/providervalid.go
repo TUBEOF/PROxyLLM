@@ -57,6 +57,12 @@ type ProviderConfig struct {
 	// Required for codex-oauth (an issuer-less codex provider cannot ever
 	// sign in).
 	Issuer string `json:"issuer"`
+	// codex-oauth only: the codex CLI version the ChatGPT backend's model
+	// discovery announces (client_version). Optional — empty selects the
+	// provider's built-in pin. The backend gates the catalog on it, so a
+	// malformed value is refused here rather than answered with an empty
+	// list at sync time.
+	ClientVersion string `json:"client_version"`
 	// Per-provider capability pins. Optional; only the seven known keys
 	// are accepted.
 	Capabilities map[string]bool `json:"capabilities"`
@@ -176,6 +182,9 @@ func parseProviderConfig(typ string, raw []byte, guardURLs bool) (ProviderConfig
 		if cfg.BaseURL != "" {
 			return cfg, fmt.Errorf("issuer is the only URL field for codex-oauth (the backend URL is pinned by the provider)")
 		}
+		if err := checkClientVersion(cfg.ClientVersion); err != nil {
+			return cfg, err
+		}
 	case ProviderTypeFirecrawl, ProviderTypeOllamaCloudWeb:
 		// base_url is optional: empty selects the client's documented
 		// default (https://api.firecrawl.dev / https://ollama.com) —
@@ -198,6 +207,13 @@ func parseProviderConfig(typ string, raw []byte, guardURLs bool) (ProviderConfig
 		if !knownCapabilities[name] {
 			return cfg, fmt.Errorf("unknown capability %q (streaming, tools, vision, web_search, web_fetch, code_execution, thinking, decision)", name)
 		}
+	}
+
+	// client_version is a codex-oauth field: it names the codex CLI version
+	// that backend's model catalog is gated on. Anywhere else it would be a
+	// setting nothing reads — refused rather than silently stored.
+	if cfg.ClientVersion != "" && typ != ProviderTypeCodexOAuth {
+		return cfg, fmt.Errorf("client_version belongs to codex-oauth (the model catalog of the ChatGPT backend is gated on it)")
 	}
 
 	// Model prefix (llm kinds only): lowercase letters, digits, hyphens —
@@ -230,6 +246,33 @@ func parseProviderConfig(typ string, raw []byte, guardURLs bool) (ProviderConfig
 // validPrefixRune reports whether r is allowed in a model prefix.
 func validPrefixRune(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-'
+}
+
+// checkClientVersion validates the codex-oauth client_version: empty selects
+// the provider's built-in pin, otherwise it must be a three-component
+// numeric semver — the shape codex-rs itself sends (client_version_to_whole
+// renders CARGO_PKG_VERSION_MAJOR.MINOR.PATCH). Anything else is refused at
+// the write boundary: the backend answers an unknown version with an EMPTY
+// catalog, which would look like "the upstream dropped every model".
+func checkClientVersion(v string) error {
+	if v == "" {
+		return nil
+	}
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return fmt.Errorf("client_version must be a version like 0.163.0 (got %q)", v)
+	}
+	for _, part := range parts {
+		if part == "" {
+			return fmt.Errorf("client_version must be a version like 0.163.0 (got %q)", v)
+		}
+		for _, r := range part {
+			if r < '0' || r > '9' {
+				return fmt.Errorf("client_version must be a version like 0.163.0 (got %q)", v)
+			}
+		}
+	}
+	return nil
 }
 
 // checkURL validates an operator-supplied URL field. Shape checks (absolute

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/tubeof/proxyllm/internal/httpguard"
 	"github.com/tubeof/proxyllm/internal/provider"
@@ -23,6 +24,15 @@ import (
 // version string to mirror.
 const Version = "0.1.0"
 
+// DefaultClientVersion is the codex CLI release the model discovery
+// announces. The ChatGPT backend gates the catalog on it: absent is a 400,
+// and a stale or unknown value makes it answer with an empty list rather
+// than an error — so the pin has to follow the CLI's own releases (npm
+// @openai/codex; 0.163.0 at the fixture's access date) and is overridable
+// per provider type (the client_version setting) for a deployment pinned to
+// an older client.
+const DefaultClientVersion = "0.163.0"
+
 // Provider serves one Codex backend account over the Responses wire shape.
 type Provider struct {
 	id        string
@@ -30,6 +40,9 @@ type Provider struct {
 	auth      Auth
 	client    *httpx.Client
 	responses openai.ResponsesCodec
+
+	// clientVersion rides the discovery request's client_version query.
+	clientVersion string
 }
 
 // ProviderConfig wires the provider at construction time.
@@ -39,6 +52,9 @@ type ProviderConfig struct {
 	Capabilities provider.Capabilities
 	Auth         Auth
 	HTTP         *http.Client
+
+	// ClientVersion overrides DefaultClientVersion; empty selects the pin.
+	ClientVersion string
 }
 
 // New builds the provider. The transport talks {BaseURL}/codex/responses
@@ -58,12 +74,17 @@ func New(cfg ProviderConfig) *Provider {
 		ErrorShape: httpx.ErrorOpenAI,
 		HTTP:       httpc,
 	}
+	clientVersion := cfg.ClientVersion
+	if clientVersion == "" {
+		clientVersion = DefaultClientVersion
+	}
 	p := &Provider{
-		id:        cfg.ID,
-		caps:      cfg.Capabilities,
-		auth:      cfg.Auth,
-		client:    client,
-		responses: openai.ResponsesCodec{},
+		id:            cfg.ID,
+		caps:          cfg.Capabilities,
+		auth:          cfg.Auth,
+		client:        client,
+		responses:     openai.ResponsesCodec{},
+		clientVersion: clientVersion,
 	}
 	client.HeaderHook = p.headers
 	return p
@@ -147,37 +168,48 @@ func (p *Provider) RefreshCredentials(ctx context.Context) error {
 	return p.auth.Refresh(ctx)
 }
 
-// ListModels fetches the backend model list (ADR-010 model sync) —
-// GET {BaseURL}/models with the codex header set. There is no pinned wire
-// contract for this backend endpoint (unlike the transport endpoints above):
-// the lister accepts the OpenAI list shape {data:[{id}]} when the backend
-// serves it and surfaces every other outcome (404, auth failure, unexpected
-// body) as a typed error — the syncer skips the account and records the
-// reason; it never fails the whole run.
+// ListModels fetches the backend model catalog (ADR-010 model sync):
+// GET {BaseURL}/codex/models?client_version=<codex-cli-semver> with the
+// codex header set — the endpoint codex-rs itself refreshes its picker from
+// (codex-rs model-provider/src/models_endpoint.rs and
+// protocol/src/openai_models.rs, transcribed into
+// testdata/golden/openai-codex/). The body is the manifest shape
+// {"models":[{"slug",…}]}, NOT the OpenAI {"data":[{"id"}]} list: reading it
+// as the latter is why this used to import nothing while the account was
+// signed in.
+//
+// An empty catalog is an ERROR, not an empty model list: the backend
+// filters by client_version and answers a stale one with no models, and
+// "the upstream dropped every model" is exactly the reading that would let
+// the sync delete the operator's whole codex row set. The syncer records
+// the skip reason instead.
 func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error) {
-	raw, err := p.client.Get(ctx, "/models")
+	raw, err := p.client.Get(ctx, "/codex/models?client_version="+url.QueryEscape(p.clientVersion))
 	if err != nil {
 		return nil, err
 	}
-	var list struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
+	var manifest struct {
+		Models []struct {
+			Slug string `json:"slug"`
+		} `json:"models"`
 	}
-	if err := json.Unmarshal(raw, &list); err != nil {
-		return nil, fmt.Errorf("codex: backend /models body is not a model list: %w", err)
+	if err := json.Unmarshal(raw, &manifest); err != nil {
+		return nil, fmt.Errorf("codex: backend /codex/models body is not a model catalog: %w", err)
 	}
-	out := make([]provider.ModelInfo, 0, len(list.Data))
-	seen := make(map[string]struct{}, len(list.Data))
-	for _, m := range list.Data {
-		if m.ID == "" {
+	if len(manifest.Models) == 0 {
+		return nil, fmt.Errorf("codex: backend returned an empty model catalog for client_version %s (a stale version is served as an empty list — is the pin current?)", p.clientVersion)
+	}
+	out := make([]provider.ModelInfo, 0, len(manifest.Models))
+	seen := make(map[string]struct{}, len(manifest.Models))
+	for _, m := range manifest.Models {
+		if m.Slug == "" {
 			continue
 		}
-		if _, dup := seen[m.ID]; dup {
+		if _, dup := seen[m.Slug]; dup {
 			continue
 		}
-		seen[m.ID] = struct{}{}
-		out = append(out, provider.ModelInfo{Name: m.ID})
+		seen[m.Slug] = struct{}{}
+		out = append(out, provider.ModelInfo{Name: m.Slug})
 	}
 	return out, nil
 }
