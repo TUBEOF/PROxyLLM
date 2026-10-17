@@ -81,7 +81,7 @@ const (
 	EventRotation EventType = "rotation"
 
 	// EventEmulatedTool: a server tool was served by the emulation layer
-	// (model tool call answered via the Firecrawl fallback) —
+	// (model tool call answered via a web-tool account) —
 	// substitutions are never silent.
 	EventEmulatedTool EventType = "emulated_tool"
 

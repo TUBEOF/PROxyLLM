@@ -223,7 +223,7 @@ type Tool struct {
 	// (or converted from a native server-tool def under the
 	// emulate-firecrawl compat policy). The executor's tool-call
 	// round-trip loop recognizes model tool calls against it and answers
-	// them via the Firecrawl fallback instead of surfacing them to the
+	// them via the configured web-tool accounts instead of surfacing them to the
 	// client. False on everything decoded from a wire request — an
 	// emulator-injected tool never rides back out to a client.
 	Emulated bool

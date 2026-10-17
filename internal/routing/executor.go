@@ -72,7 +72,7 @@ type ExecutorConfig struct {
 	// waiting (deterministic tests).
 	RetrySleeper func(time.Duration)
 
-	// Emulator executes emulated web tools (the Firecrawl fallback) for
+	// Emulator executes emulated web tools (the web-tool accounts) for
 	// the tool-call round-trip loop in Execute. Nil disables actual
 	// emulation but keeps the loop: model tool calls against emulated
 	// tools are answered with a protocol-conform "unavailable" error
