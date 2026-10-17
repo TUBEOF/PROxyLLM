@@ -245,6 +245,49 @@ func TestResponsesStreamDecode_FunctionCallArguments(t *testing.T) {
 	}
 }
 
+// A truncated answer terminates with response.incomplete instead of
+// response.completed — codex-rs handles both event names in one arm
+// (codex-api/src/sse/responses.rs, accessed 2026-10-17), and a stream that
+// falls through to the unknown-event branch would end under the consumer
+// without its terminal marker. The snapshot's incomplete status reads as a
+// max-tokens stop, the same way the non-streaming decode maps it.
+func TestResponsesStreamDecode_IncompleteIsTerminal(t *testing.T) {
+	wire := strings.Join([]string{
+		`event: response.created`,
+		`data: {"type":"response.created","response":{"id":"resp_1","model":"gpt-5","status":"in_progress"}}`,
+		``,
+		`event: response.output_item.added`,
+		`data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant"}}`,
+		``,
+		`event: response.output_text.delta`,
+		`data: {"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"partial answer"}`,
+		``,
+		`event: response.output_item.done`,
+		`data: {"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant"}}`,
+		``,
+		`event: response.incomplete`,
+		`data: {"type":"response.incomplete","response":{"id":"resp_1","model":"gpt-5","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":9,"output_tokens":16,"total_tokens":25}}}`,
+		``,
+		``,
+	}, "\n")
+
+	got := testutil.DrainStreamDecoder(t, oa.NewResponsesStreamDecoder(strings.NewReader(wire)))
+	kinds := make([]string, 0, len(got))
+	for _, ev := range got {
+		kinds = append(kinds, string(ev.Type))
+	}
+	if strings.Join(kinds, ",") != "start,block_start,delta,block_stop,message_delta,done" {
+		t.Fatalf("event types = %v, want the response.incomplete event to terminate the stream", kinds)
+	}
+	md := got[4].MessageDelta
+	if md == nil || md.StopReason != ir.StopMaxTokens {
+		t.Errorf("message_delta stop reason = %+v, want max_tokens (incomplete status)", md)
+	}
+	if md.Usage.InputTokens != 9 || md.Usage.OutputTokens != 16 {
+		t.Errorf("message_delta usage = %+v, want 9/16", md.Usage)
+	}
+}
+
 // The flat error event: {code, message, param, sequence_number, type}
 // maps onto the terminal canonical error.
 func TestResponsesStreamDecode_ErrorEvent(t *testing.T) {

@@ -32,8 +32,11 @@ import (
 //     response.function_call_arguments.done → skip (content already
 //     delivered via deltas)
 //   - response.output_item.done → BlockStop
-//   - response.completed → MessageDelta(stop reason from the final output,
-//     usage from the snapshot) + Done
+//   - response.completed / response.incomplete → MessageDelta(stop reason
+//     from the final output or the incomplete status, usage from the
+//     snapshot) + Done (codex-rs handles both names in one arm — the
+//     ChatGPT/Codex backend terminates a truncated answer with
+//     response.incomplete)
 //   - error (FLAT {code, message, param}) → terminal ir.Error
 //   - response.failed → terminal ir.Error from the snapshot's error object
 //   - unknown event types → Comment (pass through unlogged
@@ -193,7 +196,7 @@ func (d *responsesStreamDecoder) mapEvent(w *responsesWireStreamEvent) {
 			d.queue = append(d.queue, ir.StreamEvent{Type: ir.BlockStop, Index: d.blockCnt - 1})
 			d.openItem = -1
 		}
-	case "response.completed":
+	case "response.completed", "response.incomplete":
 		if !d.started && w.Response != nil {
 			d.started = true
 			d.queue = append(d.queue, ir.StreamEvent{Type: ir.Start, Response: &ir.Response{
