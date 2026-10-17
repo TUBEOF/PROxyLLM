@@ -343,8 +343,11 @@ var emulatedToolSchema = map[string]string{
 
 // applyEmulation enforces the server_tool_emulation policy.
 //
-//   - native (default): server-tool defs ride untouched — the routed
-//     provider has native support.
+//   - native: server-tool defs ride untouched — only correct for an
+//     upstream that speaks the dated server-tool wire itself. No policy
+//     resolution produces it (the derived default is emulate-firecrawl, a
+//     stored legacy `native` reads as emulate), so it is reachable by a
+//     direct ApplyCompat caller only.
 //   - emulate-firecrawl: each server-tool def becomes an emulated CLIENT
 //     tool (Emulated marker, family name, family input schema, knobs
 //     preserved for executor enforcement); the dated type string and any
