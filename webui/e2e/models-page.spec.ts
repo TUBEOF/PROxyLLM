@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { login } from './helpers';
+import { freezeTime, login } from './helpers';
 
 // The Models page is the CHAT-model surface. A web-tool backend (Firecrawl,
 // Ollama Cloud Web Tools) is an emulator for web_search/web_fetch, owns no
@@ -120,6 +120,9 @@ test('a failed test opens its request and the upstream error', async ({ page }) 
 });
 
 test('the sync card owns the cadence of the model sync', async ({ page }) => {
+  // The fixture's clock is frozen at FROZEN_DATE; the browser must read the
+  // same instant or the seeded ran_at (2h before it) renders as weeks.
+  await freezeTime(page);
   await login(page);
   await page.goto('/models');
   const sync = page.locator('.widget').filter({ hasText: 'Auto-sync' });
@@ -128,4 +131,48 @@ test('the sync card owns the cadence of the model sync', async ({ page }) => {
   await expect(sync.getByRole('button', { name: 'Sync now' })).toBeVisible();
   // The last run reports what it did, per account.
   await expect(sync).toContainText('Last run');
+
+  // The summary tiles above the card, derived from the seeded last run
+  // (fixturesrv: 2h before the frozen clock — prv-ollama +2 ~1, prv-codex
+  // skipped). The tiles are addressed by their heading — "Last run" also
+  // appears in the card's legend, a heading it is not.
+  const tile = (name: string) =>
+    page.locator('.widget').filter({ has: page.getByRole('heading', { name, exact: true }) });
+  const lastRunTile = tile('Last run');
+  await expect(lastRunTile).toContainText('2h ago'); // the age, derived from ran_at
+  await expect(lastRunTile).toContainText(/\d{1,2}:\d{2}/); // the wall-clock time
+  const accountsTile = tile('Accounts');
+  await expect(accountsTile).toContainText('1 synced · 1 skipped');
+  const changesTile = tile('Changes');
+  await expect(changesTile).toContainText('+2');
+  await expect(changesTile).toContainText('~1');
+  await expect(changesTile).toContainText('−0');
+  await expect(changesTile).toContainText('across 1 account');
+});
+
+// The honest-empty contract: no run yet is an em dash, never a 0 that reads
+// as "a run that changed nothing".
+test('the auto-sync tiles say no run yet instead of inventing zeros', async ({ page }) => {
+  await login(page);
+  await page.route('**/api/admin/model-sync', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ enabled: true, interval_hours: 24, last_run: { ran_at: 0 } }),
+    });
+  });
+  await page.goto('/models');
+
+  const tile = (name: string) =>
+    page.locator('.widget').filter({ has: page.getByRole('heading', { name, exact: true }) });
+  await expect(tile('Last run')).toContainText('never run');
+  const accounts = tile('Accounts');
+  await expect(accounts).toContainText('no run yet');
+  await expect(accounts).toContainText('—');
+  const changes = tile('Changes');
+  await expect(changes).toContainText('no run yet');
+  await expect(changes).toContainText('—');
+  // The per-account legend says the same, in its own words.
+  await expect(page.locator('.widget').filter({ hasText: 'Auto-sync' })).toContainText('never run');
 });

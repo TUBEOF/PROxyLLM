@@ -286,6 +286,21 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 		return fmt.Errorf("seed ollama usage blob: %w", err)
 	}
 
+	// ADR-010 model-sync state: a deterministic last run, two hours before the
+	// frozen clock, so the Models page's summary tiles render derived values —
+	// one account that synced, one skipped with a reason (which also covers
+	// the long-skip-reason block layout). The sync scheduler is not wired in
+	// the fixturesrv, so nothing overwrites this seed.
+	if err := store.PutModelSyncState(ctx, storage.ModelSyncState{
+		RanAt: now.Add(-2 * time.Hour).Unix(),
+		Providers: []storage.ModelSyncProviderState{
+			{ProviderID: "prv-ollama", Added: 2, Updated: 1},
+			{ProviderID: "prv-codex", Skipped: 1, SkippedReason: "the account answered no model catalog (unsupported endpoint)"},
+		},
+	}); err != nil {
+		return fmt.Errorf("seed model sync state: %w", err)
+	}
+
 	// Request logs — deterministic content, relative timestamps. Four rows
 	// (Logs-page redesign): a conversation chain (two rows sharing
 	// conv_a1b2c3d4 → one gutter line), and a 429→200 healing pair sharing

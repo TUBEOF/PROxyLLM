@@ -9,10 +9,11 @@ import type {
   ProvidersResponse,
   ProviderTypesResponse,
 } from '../types';
-import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation } from '../hooks';
+import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation, useNow } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
 import { Drawer } from '../components/Overlays';
-import { IconCheck, IconClose, IconPlus, IconRefresh } from '../icons';
+import { relativeAge } from '../time';
+import { IconCheck, IconClock, IconClose, IconDelta, IconPlus, IconRefresh } from '../icons';
 
 // "Models" (plan §9) — the central per-model editor: identity, provider
 // link, capabilities, priority. The compat knobs are NOT editable anymore
@@ -262,6 +263,33 @@ export default function Models() {
     ? 'never run'
     : new Date(lastRun.ran_at * 1000).toLocaleString();
 
+  // The auto-sync tiles derive from the stored last-run summary alone — no new
+  // backend field. `ran_at == 0` means "no run yet", and then every tile says
+  // so with an em dash: a fabricated zero would read as a run that changed
+  // nothing. The clock ticks so the age stays honest between the config poll
+  // (useAdminData is one-shot) and the page's own model poll.
+  const now = useNow(30_000);
+  const ran = lastRun !== null && lastRun.ran_at > 0;
+  const runEntries = lastRun?.providers ?? [];
+  const skippedAccounts = runEntries.filter((p) => p.skipped > 0).length;
+  const syncedAccounts = runEntries.length - skippedAccounts;
+  const changes = runEntries.reduce(
+    (acc, p) => ({
+      added: acc.added + p.added,
+      updated: acc.updated + p.updated,
+      removed: acc.removed + p.removed,
+    }),
+    { added: 0, updated: 0, removed: 0 },
+  );
+  const changedAccounts = runEntries.filter((p) => p.added + p.updated + p.removed > 0).length;
+  const totalChanges = changes.added + changes.updated + changes.removed;
+  // The tile headline is the concrete fact (the wall-clock time of the run in
+  // the READER's timezone); the interpretation ("2h ago") rides the foot.
+  const lastRunClock = ran && lastRun !== null
+    ? new Date(lastRun.ran_at * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+    : '—';
+  const lastRunAge = ran && lastRun !== null ? relativeAge(lastRun.ran_at, now) : 'never run';
+
   // Model test: one minimal round trip per model card. State is per model:
   // running, or the outcome that stays for as long as the page is open.
   const [tests, setTests] = useState<Record<string, TestState>>({});
@@ -367,6 +395,77 @@ export default function Models() {
         }
       />
       <div className="canvas">
+        {/* What the last run did, at a glance (kit .kpi tiles on the canvas,
+            above the cadence controls). Every value derives from the stored
+            last-run summary — no new backend field — and without a run each
+            tile reads "—", never a fabricated 0. The per-account detail stays
+            in the card below, one block per account. */}
+        <div className="widget w-1">
+          <div className="widget-head">
+            <h3 className="title">
+              <span className="ic"><IconClock width="16" height="16" /></span>
+              Last run
+            </h3>
+          </div>
+          <div className="widget-body">
+            <div className="kpi">
+              <div className="kpi-value">{lastRunClock}</div>
+              <div className="kpi-foot">{lastRunAge}</div>
+            </div>
+          </div>
+        </div>
+        <div className="widget w-1">
+          <div className="widget-head">
+            <h3 className="title">
+              <span className="ic"><IconRefresh width="16" height="16" /></span>
+              Accounts
+            </h3>
+          </div>
+          <div className="widget-body">
+            <div className="kpi">
+              <div className="kpi-value">{ran ? runEntries.length : '—'}</div>
+              <div className="kpi-foot">
+                {ran
+                  ? runEntries.length === 0
+                    ? 'none reported'
+                    : skippedAccounts > 0
+                      ? `${syncedAccounts} synced · ${skippedAccounts} skipped`
+                      : `${syncedAccounts} synced`
+                  : 'no run yet'}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="widget w-1">
+          <div className="widget-head">
+            <h3 className="title">
+              <span className="ic"><IconDelta width="16" height="16" /></span>
+              Changes
+            </h3>
+          </div>
+          <div className="widget-body">
+            <div className="kpi">
+              <div className="kpi-value">{ran ? totalChanges : '—'}</div>
+              <div className="kpi-foot">
+                {ran ? (
+                  <>
+                    <span className="num">+{changes.added}</span> · <span className="num">~{changes.updated}</span> ·{' '}
+                    <span className="num">−{changes.removed}</span>
+                  </>
+                ) : (
+                  'no run yet'
+                )}
+              </div>
+              {ran && (
+                <div className="kpi-foot">
+                  {changedAccounts > 0
+                    ? <span className="delta neu">across {changedAccounts} account{changedAccounts === 1 ? '' : 's'}</span>
+                    : <span className="muted">nothing changed</span>}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
         {/* ADR-010 model-sync card: state, cadence, a manual run and the last
             run's summary. Block layout (the v1.0.1/v1.0.2 lesson:
             variable-length text never rides a wrapping line above other

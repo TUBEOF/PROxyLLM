@@ -79,10 +79,12 @@ the sync, give it an ID the upstream never reports (for example a routing
 alias such as `glm`).
 
 The **model sync** card owns the whole cadence: a switch, the interval
-(hourly to weekly), and **Sync now** for a pass right away. Its last-run
-block names, per account, how many models were added, updated and removed —
-or why the account was skipped (a dead upstream, a bad credential, an empty
-codex catalog).
+(hourly to weekly), and **Sync now** for a pass right away. Above it, the
+last run at a glance — when it ran, how many accounts it reached (synced vs
+skipped) and what changed — with an em dash while no run has happened. Its
+last-run block names, per account, how many models were added, updated and
+removed — or why the account was skipped (a dead upstream, a bad credential,
+an empty codex catalog).
 
 Detected facts never overwrite an operator decision: a value you saved, and
 anything you pinned, survives every run. What a capability flag *does* is
