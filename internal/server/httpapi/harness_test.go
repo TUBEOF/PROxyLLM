@@ -43,8 +43,11 @@ type env struct {
 	exec   *routing.Executor
 	health *routing.HealthTracker
 	srv    *httptest.Server
-	keyID  string
-	key    string // display-once client key (Bearer / x-api-key)
+	// handler is the assembled API (the live-swap setters the server's reload
+	// hooks call hang off it).
+	handler *API
+	keyID   string
+	key     string // display-once client key (Bearer / x-api-key)
 }
 
 // newEnv assembles the default environment: one mock upstream provider
@@ -152,7 +155,7 @@ func newEnvWithAuthOpts(t *testing.T, authOpts []auth.Option, rules ...routing.R
 	return &env{
 		t: t, store: st, mock: mock, reg: reg,
 		router: router, exec: exec, health: health,
-		srv: srv, keyID: keyID, key: key,
+		srv: srv, handler: h, keyID: keyID, key: key,
 	}
 }
 

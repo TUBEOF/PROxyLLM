@@ -80,7 +80,10 @@ func newAliasWebToolEnv(t *testing.T, rules ...routing.Rule) *env {
 		RetrySleeper: func(time.Duration) {},
 	})
 
-	h := New(Params{Store: st, Router: router, Executor: exec})
+	// Production parity: server.New hands in the loaded `client_web_tools`
+	// mapping (default: the CLI's own web tools).
+	h := New(Params{Store: st, Router: router, Executor: exec,
+		ClientWebTools: DefaultClientWebTools()})
 	st.SetKeyHasher(storage.NewKeyHasher([]byte(testMasterKey)))
 	keyID, key, err := auth.CreateClientKey(ctx, st, "alias-webtool-test")
 	if err != nil {
@@ -91,7 +94,7 @@ func newAliasWebToolEnv(t *testing.T, rules ...routing.Rule) *env {
 	t.Cleanup(func() { WaitForPendingCaptures(5 * time.Second) })
 
 	return &env{t: t, store: st, mock: mock, reg: reg, router: router, exec: exec,
-		health: health, srv: srv, keyID: keyID, key: key}
+		health: health, srv: srv, handler: h, keyID: keyID, key: key}
 }
 
 // webFetchRequest is the Anthropic wire shape a client sends when it offers the

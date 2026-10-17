@@ -166,3 +166,31 @@ the call gets the documented `unavailable` error result. And **the policy is
 resolved for the model the request lands on** — the same one-hop alias
 resolution the router routes with, shared through `Router.AliasTarget`, so the
 policy and the routed model cannot name different models.
+
+## Addendum 2026-10-17 (later): the client's own web tools are claimed too
+
+The addendum above made emulation the default policy and asked it to serve
+`web_search_*`/`web_fetch_*`. A raw capture of Claude Code's requests shows
+what that misses: the CLI ships `WebFetch` and `WebSearch` as ORDINARY client
+tools — around sixty function definitions, no dated server-tool `type` — and
+its WebFetch fetches the page in the CLI itself, in the client, then sends the
+result along. A proxy that only understood the server-tool definitions
+therefore never saw a web-tool request from the CLI at all: no account walk, no
+`emulated_tool` row, and the operator reading the log could only conclude the
+web tools were broken. (The CLI's tool *shape* varies by session — the same
+CLI sometimes declares `web_search_20250305` as a server tool — so both shapes
+have to be understood.)
+
+The decision: **the request's web tools are claimed by name**. A client tool
+whose name maps to a family (`client_web_tools`, defaulting to Claude Code's
+`WebFetch` → `web_fetch` and `WebSearch` → `web_search`) is rewritten into the
+emulated family definition before dispatch, exactly like a server-tool def —
+family name, family input schema, the client's description — and the executor's
+loop answers the model's call through the web-tool accounts instead of handing
+it back to the client. The mapping lives in configuration because the tool
+names are the client's wire fact and change with its releases; an empty object
+turns the claim off and leaves the client's tools to the client.
+
+The claim is scoped to the surface whose wire can carry the family's result
+blocks — the Anthropic surface. `off` and `native` never claim: they leave the
+client's own tool alone, because there the client is the one that runs it.

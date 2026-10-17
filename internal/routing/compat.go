@@ -36,6 +36,18 @@ type Compat struct {
 	// = forward). Forward applies on Anthropic→Anthropic only; drop
 	// removes the markers and logs the degradation.
 	CacheControl string
+
+	// ClientWebTools maps a CLIENT tool name to the emulated family the proxy
+	// serves in its place (e.g. Claude Code's WebFetch → web_fetch). Set by the
+	// surface — never stored on a model row — because it is the answer to "can
+	// this wire express the family's result blocks": the Anthropic surface can
+	// (server_tool_use / web_fetch_tool_result), which is where clients whose
+	// web tools run in the CLIENT send them. A CLI that fetches for itself
+	// never asks the proxy, so without this the proxy sees no web-tool request
+	// at all — no web-tool account walk and no log row. Nil (the default) keeps
+	// client tools untouched, which is what the OpenAI-shaped surfaces need:
+	// they cannot encode server-tool blocks.
+	ClientWebTools map[string]string
 }
 
 // ThinkingHandling values.
@@ -363,15 +375,29 @@ func applyEmulation(c Compat, req ir.Request, trace *Trace) ir.Request {
 		return req
 	}
 
-	if !hasServerToolDef(req.Tools) {
-		return req
-	}
-
 	kept := make([]ir.Tool, 0, len(req.Tools))
-	removed, converted := 0, 0
+	removed, converted, claimed := 0, 0, 0
+	// Families the request already speaks natively or emulated: a client tool
+	// is never claimed for a family that is already present, so one request
+	// can never carry the same family twice (the loop would see duplicates).
+	present := presentFamilies(req.Tools)
 	for _, tool := range req.Tools {
 		family := tool.ServerToolName()
 		if family == "" {
+			// A CLIENT tool the mapping claims for a family — the shape
+			// Claude Code ships (WebFetch/WebSearch as ordinary functions,
+			// fetched by the CLI itself, so the proxy would never see a web
+			// tool at all). Claiming it routes the model's call into the same
+			// emulation loop the server-tool path uses; the client stops
+			// doing the work and the proxy serves it through the web-tool
+			// accounts. Only under emulate-firecrawl: `off` and `native` leave
+			// the client's own tool alone — it is the client's to run.
+			f := c.ClientWebTools[tool.Name]
+			if f != "" && !tool.Emulated && !present[f] && c.ServerToolEmulation == EmulationEmulateFirecrawl {
+				kept = append(kept, emulatedToolDef(f, tool.Description, &ir.ServerToolConfig{}))
+				claimed++
+				continue
+			}
 			kept = append(kept, tool)
 			continue
 		}
@@ -384,40 +410,59 @@ func applyEmulation(c Compat, req ir.Request, trace *Trace) ir.Request {
 		if st == nil {
 			st = &ir.ServerToolConfig{}
 		}
-		convertedTool := ir.Tool{
-			Name:        family,
-			Description: emulatedToolDescription(family, tool.Description),
-			InputSchema: json.RawMessage(emulatedToolSchema[family]),
-			ServerTool:  st, // knobs preserved for executor enforcement
-			Emulated:    true,
-		}
-		kept = append(kept, convertedTool)
+		kept = append(kept, emulatedToolDef(family, tool.Description, st))
 		converted++
 	}
 
-	if removed == 0 && converted == 0 {
-		return req // hasServerToolDef guarded, but be explicit anyway
+	if removed == 0 && converted == 0 && claimed == 0 {
+		return req
 	}
 
 	req.Tools = kept
-	if c.ServerToolEmulation == EmulationOff {
+	switch {
+	case c.ServerToolEmulation == EmulationOff:
 		trace.CompatPolicy("server_tool_emulation", EmulationOff,
 			strconv.Itoa(removed)+" server-tool def(s) removed (emulation off)")
-	} else {
+	case claimed > 0:
+		trace.CompatPolicy("server_tool_emulation", EmulationEmulateFirecrawl,
+			"client web-tool def(s) served by the proxy (emulation): "+
+				strconv.Itoa(claimed)+" claimed, "+strconv.Itoa(converted)+" server-tool def(s) converted")
+	default:
 		trace.CompatPolicy("server_tool_emulation", EmulationEmulateFirecrawl,
 			"server-tool def(s) converted to emulated client tool(s) (Firecrawl fallback)")
 	}
 	return req
 }
 
-// hasServerToolDef reports whether tools contain any server-tool family.
-func hasServerToolDef(tools []ir.Tool) bool {
+// presentFamilies names the web-tool families the request already declares,
+// natively (a dated server-tool definition) or emulated (a definition an
+// earlier compat step converted).
+func presentFamilies(tools []ir.Tool) map[string]bool {
+	out := map[string]bool{}
 	for _, tool := range tools {
-		if tool.ServerToolName() != "" {
-			return true
+		if family := tool.ServerToolName(); family != "" {
+			out[family] = true
+			continue
+		}
+		if tool.Emulated && tool.Name != "" {
+			out[tool.Name] = true
 		}
 	}
-	return false
+	return out
+}
+
+// emulatedToolDef builds the definition the model sees for an emulated family:
+// the family name (what the executor's loop matches and what the client-facing
+// result blocks are named after), the family's documented input schema, and the
+// client's own description when it supplied one.
+func emulatedToolDef(family, clientDesc string, st *ir.ServerToolConfig) ir.Tool {
+	return ir.Tool{
+		Name:        family,
+		Description: emulatedToolDescription(family, clientDesc),
+		InputSchema: json.RawMessage(emulatedToolSchema[family]),
+		ServerTool:  st,
+		Emulated:    true,
+	}
 }
 
 // emulatedToolDescription builds the tool description the model sees: the

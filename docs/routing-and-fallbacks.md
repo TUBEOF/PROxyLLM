@@ -264,8 +264,11 @@ tool emulation, clamps, context window, cache markers — is
 
 ## Tool emulation
 
-When a request carries `web_search` or `web_fetch` server-tool definitions,
-they are converted into client-shaped tools, the model's calls are intercepted
+When a request carries web tools — `web_search`/`web_fetch` server-tool
+definitions, or the client's own tools that the `client_web_tools` mapping
+claims (Claude Code ships its WebFetch/WebSearch as plain client tools and
+would otherwise fetch in the CLI, so the proxy would never see a web-tool
+request) — they are converted into client-shaped tools, the model's calls are intercepted
 by the executor, answered through the configured web-tool accounts, and
 synthesized back into the client's protocol as the family's result blocks
 ([model compatibility](reference/model-compat.md#the-settings)). The stored

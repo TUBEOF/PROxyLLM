@@ -97,17 +97,35 @@ when the target is not Claude:
 
 ## Web tools (WebFetch and WebSearch)
 
-Claude Code performs its own fetch and search **client-side**: the model
-asks for `WebFetch`, Claude Code retrieves the page itself and sends the
-result in a follow-up request. The proxy sees only that follow-up — it never
-sees the fetch, which is why a Claude Code WebFetch produces no
-web-tool request in the console or in the log.
+Claude Code ships its web tools as **ordinary client tools**: a raw capture of
+its requests shows `WebFetch` and `WebSearch` among the function definitions,
+with no dated server-tool `type` — and the CLI's own WebFetch would fetch the
+page itself, so a proxy that only understood `web_fetch_*`/`web_search_*`
+definitions would never see a web-tool request from it (no account walk, no
+row in the log).
 
-PROxyLLM's web-tool emulation serves a different thing: the **Anthropic
-server-tool definitions** (`web_search_*`, `web_fetch_*`) that API clients
-send. Those are intercepted, answered through the configured web-tool
-accounts and returned as protocol-conform tool results, each one a
-sub-operation row in the log.
+PROxyLLM therefore **claims those client tools** and serves them through the
+web-tool accounts, exactly like a server-tool definition: the definition is
+rewritten into the emulated family def (`web_fetch` / `web_search`, family
+input schema, the client's own description), the model's call is intercepted
+by the executor, answered by the web-tool accounts and returned as the
+family's protocol-conform result blocks — each call a sub-operation row in the
+log, named after the account that answered. The model never sees a difference:
+it asks to fetch, the proxy fetches.
+
+The mapping from the client's tool names to the families ships with the proxy
+(`WebFetch` → `web_fetch`, `WebSearch` → `web_search`) and is overridable in
+the `client_web_tools` settings KV — the names are the client's wire fact and
+change with its releases. An empty object turns the claim off: the client then
+runs its own tools as before, and the proxy neither fetches nor logs a row.
+
+Two limits stay honest. The claim applies on the Anthropic surface, the only
+one whose wire can carry the family's result blocks. And the emulation's own
+rules apply to the intercepted call: a `web_fetch` URL must have appeared in
+the conversation (or in earlier search results), a definition's
+`max_uses`/domain filters are enforced, and with no web-tool account configured
+the call comes back as the documented `unavailable` error result instead of
+silently doing nothing.
 
 ## What a degraded run looks like
 
@@ -127,5 +145,5 @@ with the [translation matrix](reference/translation-matrix.md).
 | Empty answers, or a bare "API error" | The log row's requested model: an unmapped auxiliary ID 404s. Add a family pattern to the alias map |
 | Claude Code falls back to another model on its own | Expected: an unmapped name produced the model-not-found shape it recovers from |
 | A run stops when the session grows | The target's context window versus the conversation; check the row's window and the trace's failure class |
-| WebFetch returns nothing in the console's log | Working as designed — the fetch happens in Claude Code, see [above](#web-tools-webfetch-and-websearch) |
+| WebFetch returns nothing in the console's log | The claim is off — an empty `client_web_tools` mapping in the settings KV leaves the CLI's own tool to the CLI, see [above](#web-tools-webfetch-and-websearch) |
 | Everything for one account fails at once | A cooldown: the Quota page names it, the trace's `skipped` events carry the reason |
