@@ -397,8 +397,8 @@ export default function Models() {
           </div>
         </div>
 
-        {/* Surface policy (relocated from the removed Settings page): the
-            non-Claude gate is the §6.4 safety net; the alias map is C6. */}
+        {/* Surface policy: the non-Claude gate for the whole Anthropic
+            surface. The alias map lives on the Routing page. */}
         <div className="widget w-full" style={{ marginBottom: 8 }}>
           <div className="widget-head">
             <h3 className="title">Non-Claude routing on the Anthropic surface</h3>

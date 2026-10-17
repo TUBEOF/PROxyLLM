@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// PROxyLLM WebUI build config (plan §9, research §10 P-2/B-2/B-3).
+// PROxyLLM WebUI build configuration.
 //
 // - base '/': the SPA is served from the Go binary's root (embedded dist),
 //   same origin as /api/admin — connect-src 'self' (P-5).

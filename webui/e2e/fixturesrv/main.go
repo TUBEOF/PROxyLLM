@@ -306,7 +306,7 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 			Usage: json.RawMessage(`{"input_tokens":1204,"output_tokens":318,"cache_read_input_tokens":512}`),
 			// The emulated_tool detail carries a token-shaped value on
 			// purpose: the child row must render it masked, so the e2e
-			// suite proves the redaction end-to-end (review C1/I2).
+			// suite proves the redaction end-to-end.
 			RouteTrace:     json.RawMessage(`{"version":8,"events":[{"type":"alias","from":"claude-sonnet-4-6","to":"claude-sonnet-5"},{"type":"model_resolved","from":"claude-sonnet-5","to":"claude-sonnet-5","provider_id":"prv-openai"},{"type":"attempt","provider_id":"prv-openai","model":"claude-sonnet-5"},{"type":"emulated_tool_attempt","provider_id":"prv-firecrawl","to":"web_search","reason":"failed"},{"type":"emulated_tool","provider_id":"prv-firecrawl","to":"web_search","latency_ms":640,"reason":"error emulator_unavailable: emulator search failed: firecrawl: HTTP 401: unauthorized key sk-live-e2efixture1234"}]}`),
 			ConversationID: "conv_a1b2c3d4", ConvKey: "sess:11223344-5566-7788-99aa-bbccddeeff00",
 			Protocol: "anthropic", Features: json.RawMessage(`{"streaming":true,"tools":true,"thinking":false,"web_search":false,"web_fetch":false,"vision":false}`),

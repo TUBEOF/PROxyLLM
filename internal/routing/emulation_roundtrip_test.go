@@ -583,7 +583,7 @@ func itoa(n int) string {
 	return strconv.Itoa(n)
 }
 
-// TestExecute_EmulatorNilAnswersUnavailable: the CLAUDE.md degrade
+// TestExecute_EmulatorNilAnswersUnavailable: the documented degrade
 // contract: "no Firecrawl key → web-tool emulation returns documented
 // 'unavailable' errors". With the emulate policy applied (tool def carries
 // the Emulated marker) but no emulator configured, a model tool call against

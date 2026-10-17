@@ -31,7 +31,7 @@ func TestDecodeRequest_WebSearchToolDef(t *testing.T) {
 		t.Errorf("ServerToolName() = %q, want web_search (family identity, not the dated string %q)", tool.ServerToolName(), tool.Type)
 	}
 	if tool.Type != "web_search_20250305" {
-		t.Errorf("type = %q, want verbatim web_search_20250305 (C3 open-list ride-along)", tool.Type)
+		t.Errorf("type = %q, want verbatim web_search_20250305 (the open-list ride-along: an unrecognized type survives re-encode)", tool.Type)
 	}
 	if tool.Name != "web_search" {
 		t.Errorf("name = %q, want web_search", tool.Name)

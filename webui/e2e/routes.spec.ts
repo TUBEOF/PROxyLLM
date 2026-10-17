@@ -1,5 +1,5 @@
-// Route screenshots: every §9 route against the seeded fixture server
-// (research §7 V-1/V-2/V-3/V-7). One test per route so a diff names its
+// Route screenshots: one per route, against the seeded fixture server.
+// One test per route so a diff names its
 // route precisely; the login page is captured signed-out, everything else
 // signed-in through the real form.
 
