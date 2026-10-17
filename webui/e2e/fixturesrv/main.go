@@ -271,15 +271,13 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 	}
 
 	// ADR-012 Quota-page cards: one LIVE blob (the ollama settings shape,
-	// frozen reset times near the clock) and one local-only account. The
-	// blobs are seeded straight into the KV — the fixturesrv never scrapes
-	// (the no-live-upstream-calls doctrine).
+	// frozen reset times near the clock) and one account without any blob
+	// (the no-live empty state). The blobs are seeded straight into the KV —
+	// the fixturesrv never scrapes (the no-live-upstream-calls doctrine).
 	sessionPct := 28.8
 	weeklyPct := 71.2
 	if err := store.PutAccountUsage(ctx, "prv-ollama", storage.AccountUsageBlob{
 		FetchedAt:    now.Unix(),
-		Source:       "ollama",
-		Plan:         "Pro",
 		SessionPct:   &sessionPct,
 		SessionReset: now.Add(4 * time.Hour).Add(59 * time.Minute).Unix(),
 		WeeklyPct:    &weeklyPct,

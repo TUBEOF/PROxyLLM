@@ -1,9 +1,9 @@
 package webui
 
-// Admin usage endpoints (ADR-012) — contract tests via the standard
-// adminenv harness. The Quota page's GET lists every non-web_tool
-// account with its cached usage blob, health snapshot, and local month
-// usage; the refresh endpoint scrapes ONE account on demand (prober
+// Admin usage endpoints (ADR-012, amendment 2026-10-17) — contract tests via
+// the standard adminenv harness. The Quota page's GET lists every non-web_tool
+// account with its own limit state (the cached scrape blob) and the health
+// snapshot; the refresh endpoint scrapes ONE account on demand (prober
 // stubbed; production wires the fixed ollama.com client).
 
 import (
@@ -25,7 +25,7 @@ func newUsageEnv(t *testing.T) (*adminEnv, *[]string) {
 		*p = append(*p, accountID)
 		pct := 12.5
 		if err := store.PutAccountUsage(ctx, accountID, storage.AccountUsageBlob{
-			FetchedAt: 1_790_000_000, Source: "ollama", Plan: "Pro", SessionPct: &pct,
+			FetchedAt: 1_790_000_000, SessionPct: &pct,
 		}); err != nil {
 			return RefreshOutcome{Status: http.StatusInternalServerError, Text: "persist failed"}
 		}
@@ -39,8 +39,7 @@ func TestAccountUsage_ListsAccountsAndWindows(t *testing.T) {
 
 	// Seed usage against the test clock BEFORE the admin session exists
 	// (the env's Now closure reads e.now live: changing it after
-	// bootstrap would expire the session's idle window). The "current
-	// month" for localUsage is October 2026 at this clock.
+	// bootstrap would expire the session's idle window).
 	e.now = time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC).Unix()
 
 	s := e.bootstrap(t, "admin")
@@ -48,16 +47,10 @@ func TestAccountUsage_ListsAccountsAndWindows(t *testing.T) {
 	if err := e.api.store.EnsureProvider(ctx, "acc1", "ollama-cloud", "Acc 1"); err != nil {
 		t.Fatalf("ensure: %v", err)
 	}
-	if err := e.api.store.IncrUsageDaily(ctx, storage.UsageDaily{
-		Day: "2026-10-01", ProviderID: "acc1", Model: "glm",
-		Requests: 7, Failures: 2, InputTokens: 111, OutputTokens: 22,
-	}); err != nil {
-		t.Fatalf("usage: %v", err)
-	}
 	// A live blob (cached scrape).
 	pct := 33.3
 	if err := e.api.store.PutAccountUsage(ctx, "acc1", storage.AccountUsageBlob{
-		FetchedAt: 1_790_000_001, Source: "ollama", Plan: "Pro",
+		FetchedAt:  1_790_000_001,
 		SessionPct: &pct, SessionReset: 1_790_010_000,
 	}); err != nil {
 		t.Fatalf("blob: %v", err)
@@ -76,16 +69,60 @@ func TestAccountUsage_ListsAccountsAndWindows(t *testing.T) {
 	if a.AccountID != "acc1" || a.Type != "ollama-cloud" || a.Name != "Acc 1" {
 		t.Fatalf("account = %+v", a)
 	}
-	if a.Live == nil || a.Live.Plan != "Pro" || a.Live.SessionPct == nil || *a.Live.SessionPct != 33.3 {
+	if a.Live == nil || a.Live.SessionPct == nil || *a.Live.SessionPct != 33.3 {
 		t.Fatalf("live = %+v", a.Live)
 	}
 	if a.FetchedAt != 1_790_000_001 {
 		t.Fatalf("fetched_at = %d", a.FetchedAt)
 	}
-	// Local month window aggregates the seeded day rows.
-	if a.Local == nil || a.Local.Requests != 7 || a.Local.Failures != 2 ||
-		a.Local.InputTok != 111 || a.Local.OutputTok != 22 {
-		t.Fatalf("local = %+v", a.Local)
+}
+
+// TestAccountUsage_ErrorBlobRendersNoLiveWindows pins the honest-empty path
+// (ADR-012 amendment): a failed scrape persists an error-only blob, and the
+// card must render that error — never "live": {} under two empty bars, which
+// is what the old unconditional Live assignment produced. Seeded local usage
+// rows exist on purpose: they must not surface anywhere on the card, which is
+// exactly what "only the account's limit" means.
+func TestAccountUsage_ErrorBlobRendersNoLiveWindows(t *testing.T) {
+	e, _ := newUsageEnv(t)
+	s := e.bootstrap(t, "admin")
+	ctx := context.Background()
+	if err := e.api.store.EnsureProvider(ctx, "acc1", "ollama-cloud", "Acc 1"); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	if err := e.api.store.IncrUsageDaily(ctx, storage.UsageDaily{
+		Day: "2026-10-01", ProviderID: "acc1", Model: "glm",
+		Requests: 7, Failures: 2, InputTokens: 111, OutputTokens: 22,
+	}); err != nil {
+		t.Fatalf("usage: %v", err)
+	}
+	if err := e.api.store.PutAccountUsage(ctx, "acc1", storage.AccountUsageBlob{
+		FetchedAt: 1_790_000_002, Error: "HTTP 403 from the settings page",
+	}); err != nil {
+		t.Fatalf("blob: %v", err)
+	}
+
+	w := e.authedCall(t, http.MethodGet, "/api/admin/accounts/usage", "", s)
+	assertStatus(t, w, http.StatusOK, "accounts usage")
+	var raw struct {
+		Accounts []map[string]any `json:"accounts"`
+	}
+	decodeJSON(t, w, &raw)
+	if len(raw.Accounts) != 1 {
+		t.Fatalf("accounts = %d, want 1", len(raw.Accounts))
+	}
+	card := raw.Accounts[0]
+	if live, ok := card["live"]; ok {
+		t.Errorf("an error-only blob must not render a live reading, got %v", live)
+	}
+	if card["error"] == nil || card["error"] == "" {
+		t.Errorf("the scrape error must ride the card: %v", card)
+	}
+	if local, ok := card["local"]; ok {
+		t.Errorf("the local month aggregate is retired; the card still carries it: %v", local)
+	}
+	if source, ok := card["source"]; ok {
+		t.Errorf("the source field is retired; the card still carries it: %v", source)
 	}
 }
 

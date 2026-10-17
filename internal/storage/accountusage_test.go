@@ -23,7 +23,7 @@ func TestAccountUsageBlob_RoundTrip(t *testing.T) {
 
 	pct := 42.5
 	want := AccountUsageBlob{
-		FetchedAt: 1_790_000_000, Source: "ollama", Plan: "Pro",
+		FetchedAt:  1_790_000_000,
 		SessionPct: &pct, SessionReset: 1_790_010_000,
 		WeeklyPct: &pct, WeeklyReset: 1_790_020_000,
 	}
@@ -34,10 +34,23 @@ func TestAccountUsageBlob_RoundTrip(t *testing.T) {
 	if err != nil || !ok {
 		t.Fatalf("get: ok=%v err=%v", ok, err)
 	}
-	if got.FetchedAt != want.FetchedAt || got.Source != want.Source || got.Plan != want.Plan ||
+	if got.FetchedAt != want.FetchedAt ||
 		got.SessionPct == nil || *got.SessionPct != pct || got.SessionReset != want.SessionReset ||
 		got.WeeklyPct == nil || got.WeeklyReset != want.WeeklyReset {
 		t.Fatalf("round trip mismatch: %+v", got)
+	}
+
+	// HasWindows is the "is there anything to draw" test: a blob with a
+	// window draws, an error-only blob (the failed-scrape shape) does not —
+	// the card renders the error instead of a pair of empty bars.
+	if !got.HasWindows() {
+		t.Error("a blob with session+weekly windows must report HasWindows")
+	}
+	if (AccountUsageBlob{Error: "HTTP 403"}).HasWindows() {
+		t.Error("an error-only blob must not report HasWindows")
+	}
+	if (AccountUsageBlob{}).HasWindows() {
+		t.Error("a zero blob must not report HasWindows")
 	}
 
 	// Corrupted blob degrades to ok=false (never an error).

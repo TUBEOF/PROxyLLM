@@ -138,6 +138,20 @@ export function fmtDay(ts: number): string {
   return new Date(ts * 1000).toISOString().slice(0, 10);
 }
 
+// useNow is the sanctioned way for a component to read the wall clock:
+// Date.now() during render is impure (react-hooks/purity) and a value that
+// only changes when a poll answers would freeze with the poll. The state
+// carries the clock; the interval advances it. Minute-precision consumers
+// pass 30_000; a 1 Hz tick is only for staleness thresholds (LiveBadge).
+export function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), intervalMs);
+    return () => clearInterval(t);
+  }, [intervalMs]);
+  return now;
+}
+
 // CONFIG_LIVE_MS is the config pages' shared light-refresh interval — they
 // change rarely, so a slow poll keeps their LIVE badge honest without
 // churn (one constant, not one per page: a window tune must not drift the

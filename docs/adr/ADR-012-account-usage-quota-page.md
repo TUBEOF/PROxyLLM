@@ -47,3 +47,33 @@ weekly %, reset timestamps, plan tier). Chat-usage accounting already exists
   tests stub them (the adminEnv pattern).
 - The Quota page renders % bars only when a blob exists; accounts never
   scraped render the local window with a "local" badge instead of guessing.
+## Amendment (2026-10-17): the local fallback is retired
+
+Decision 1's `source` value and decision 5 (local fallback windows) are
+superseded: **the Quota card carries the account's own limits and nothing the
+proxy measured itself.** The operator's reading — "nur das Limit von dem
+Account" — is also the honest one: a locally counted request total answers a
+question the account's own page never asked, and next to a scraped window it
+reads as if it were part of the same limit.
+
+What changed:
+
+- `AccountUsageBlob` carries the scrape result only (`FetchedAt`, `Error`, the
+  two windows). The never-written `Plan` and the never-written
+  `MonthlyPct/MonthlyReset` go with it, as does the `"local"` source value no
+  code path ever persisted.
+- The account-usage DTO loses `source`, `local` and `plan`; the "live" badge
+  is derived from the blob itself — `AccountUsageBlob.HasWindows()`. That
+  derivation also fixes a defect the two-source design hid: an error-only
+  blob (a failed scrape) used to be wrapped into `"live": {}` unconditionally,
+  so the card drew two empty bars under a false "local" badge and the "Last
+  scrape failed" empty state was unreachable. It is reachable now.
+- `usage_daily`, `QueryUsageDailyByProvider` and `GET /overview` stay: local
+  counting still exists, it just lives on the Overview page, where it belongs.
+- The card's reset line becomes a countdown ("resets in 3h 12m") whose
+  hover/focus tooltip names the exact instant **in the reader's browser
+  timezone** — a presentation choice, not a data source: the timestamp was
+  always the account's own.
+- Superseded consequence: an account that was never scraped no longer renders
+  a "local" window; it renders the empty state that says how to set the usage
+  cookie.

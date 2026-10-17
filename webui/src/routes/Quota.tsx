@@ -1,18 +1,44 @@
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { apiCall } from '../api';
+import { formatCountdown, formatResetInstant } from '../time';
 import type { AccountUsage, AccountUsageResponse } from '../types';
-import { EmptyState, ErrorNote, PageHead, useLiveData, useMutation } from '../hooks';
+import { EmptyState, ErrorNote, PageHead, useLiveData, useMutation, useNow } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
 import { IconBoxes, IconPlug, IconRefresh } from '../icons';
 
-// Quota (ADR-012): per-account usage/limit cards.
-// Live source (the ollama.com settings scrape) renders the session/
-// weekly bars with reset timers + plan tier; accounts without a scrape
-// render the LOCAL month window (labeled) — never fabricated metrics.
-// Live updates: the card list polls itself (POLL_MS).
+// Quota (ADR-012, amendment 2026-10-17): per-account LIMIT cards. The card
+// shows what the account itself reports — the scraped session/weekly windows
+// with a reset countdown — and nothing the proxy measured on its own (the
+// local month aggregate was retired; the Overview page owns local usage).
+// Live updates: the card list polls itself (POLL_MS); the countdown rides its
+// own 30 s tick, so a failing poll cannot freeze it.
 // Health badge: breaker/quota cooldown from the routing HealthTracker.
 
 const POLL_MS = 5000;
+
+// ResetCountdown renders a window's reset as a live countdown; the exact
+// instant — in the READER's timezone, via the browser locale — is on the
+// hover/focus tooltip. No timestamp (0/absent) → the caller renders nothing:
+// an unknown reset is never guessed at.
+function ResetCountdown({ reset, windowName }: { reset: number; windowName: string }) {
+  const id = useId();
+  // A 30 s tick keeps the minute reading honest without a per-second timer.
+  const now = useNow(30_000);
+  const secs = reset - Math.floor(now / 1000);
+  return (
+    <span
+      className="tooltip hint"
+      style={{ margin: 0, fontSize: 'var(--fs-xs)' }}
+      tabIndex={0}
+      aria-describedby={id}
+    >
+      {secs <= 0 ? 'resetting…' : `resets in ${formatCountdown(secs)}`}
+      <span className="tt" role="tooltip" id={id}>
+        {`${windowName} window resets ${formatResetInstant(reset)}`}
+      </span>
+    </span>
+  );
+}
 
 // UsageBar renders one percent bar (the kit .bar-* classes; the value
 // rides .bar-val — masked for visual e2e determinism).
@@ -27,11 +53,7 @@ function UsageBar({ label, pct, reset }: { label: string; pct: number | null; re
           style={{ width: `${Math.min(Math.max(pct ?? 0, 0), 100)}%` }}
         />
       </div>
-      {reset !== undefined && reset > 0 && (
-        <span className="hint" style={{ margin: 0, fontSize: 'var(--fs-xs)' }}>
-          {`resets ${new Date(reset * 1000).toISOString().slice(0, 16).replace('T', ' ')} UTC`}
-        </span>
-      )}
+      {reset !== undefined && reset > 0 && <ResetCountdown reset={reset} windowName={label} />}
     </div>
   );
 }
@@ -90,7 +112,7 @@ export default function Quota() {
     <>
       <PageHead
         title="Quota"
-        sub="Per-account usage and limits — live windows when the provider offers them, local counting otherwise."
+        sub="Per-account limits — the windows the provider reports, when the account has a usage cookie."
         actions={
           <>
             <LiveBadge updatedAt={updatedAt} intervalMs={POLL_MS} />
@@ -176,17 +198,12 @@ export default function Quota() {
                       <h3 className="title">
                         <span className="ic"><IconPlug width="14" height="14" /></span>
                         {a.name}
-                        {a.live?.plan && (
-                          <span className="badge info" style={{ marginLeft: 6 }}>{a.live.plan}</span>
-                        )}
                         {hb && <span className={`badge ${hb.cls}`} style={{ marginLeft: 6 }}>{hb.label}</span>}
                         {!a.enabled ? (
                           <span className="badge paused" style={{ marginLeft: 6 }}>out of the pool</span>
-                        ) : a.source === 'ollama' ? (
+                        ) : a.live ? (
                           <span className="badge up" style={{ marginLeft: 6 }}>live</span>
-                        ) : (
-                          <span className="badge paused" style={{ marginLeft: 6 }}>local</span>
-                        )}
+                        ) : null}
                       </h3>
                       <label className="toggle" title={a.enabled ? 'In the pool — this account serves traffic' : 'Out of the pool — it serves nothing until switched back on'}>
                         <input
@@ -209,13 +226,8 @@ export default function Quota() {
                         title="No live usage"
                         body={a.error !== undefined && a.error !== ''
                           ? `Last scrape failed: ${a.error}. Set a usage cookie on the account to enable live windows.`
-                          : 'Set a usage cookie on this account — Providers → Ollama Cloud → the account\u2019s Edit — to fetch the live windows; the local count shows meanwhile.'}
+                          : 'Set a usage cookie on this account — Providers → Ollama Cloud → the account’s Edit — to fetch the live windows.'}
                       />
-                    )}
-                    {a.local !== null && a.local !== undefined && (
-                      <div className="hint" style={{ marginTop: 4, fontSize: 'var(--fs-xs)' }}>
-                        {`local month: ${a.local.requests} requests (${a.local.failures} failed), ${a.local.input_tokens} in / ${a.local.output_tokens} out`}
-                      </div>
                     )}
                     <div style={{ textAlign: 'right' }}>
                       {a.type === 'ollama-cloud' && (
