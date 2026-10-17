@@ -34,3 +34,76 @@ test('the provider-type settings form shows the saved settings', async ({ page }
   await expect(issuer).toBeVisible();
   await expect(issuer).toHaveValue('https://auth.openai.com');
 });
+
+// The account controls (Accounts table): the pool switch and the ollama.com
+// session cookie. Both are stored state, so the assertions read them back
+// after a reload — a control that only changed its own checkbox would pass a
+// weaker test and fail the operator.
+
+test('an account can be switched out of the pool and back', async ({ page }) => {
+  await login(page);
+  await page.goto('/providers/ollama-cloud');
+
+  // The kit toggle hides its input and shows a .tswitch, so the STATE is read
+  // from the input and the CLICK goes to the label that wraps it — what an
+  // operator actually hits.
+  const sw = page.getByLabel('Ollama key 1 in the pool');
+  const control = page.locator('label.toggle').filter({ has: sw });
+  await expect(control).toBeVisible();
+  await expect(sw).toBeChecked();
+
+  await control.click();
+  await expect(sw).not.toBeChecked();
+  await page.reload();
+  await expect(page.getByLabel('Ollama key 1 in the pool')).not.toBeChecked();
+
+  // Back on, so the fixture is left as it was found.
+  await page.locator('label.toggle').filter({ has: page.getByLabel('Ollama key 1 in the pool') }).click();
+  await expect(page.getByLabel('Ollama key 1 in the pool')).toBeChecked();
+});
+
+test('the session cookie is set and cleared on the account', async ({ page }) => {
+  await login(page);
+  await page.goto('/providers/ollama-cloud');
+  await expect(page.getByRole('columnheader', { name: 'Session cookie' })).toBeVisible();
+
+  const row = () => page.locator('tr', { hasText: 'prv-ollama-2' }).first();
+  await expect(row().getByLabel('No session cookie')).toBeVisible();
+
+  await row().getByRole('button', { name: 'Edit' }).click();
+  await page.getByLabel('Set or replace it').fill('fixture-session-cookie');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(row().getByLabel('Session cookie set')).toBeVisible();
+
+  // Clearing it removes the stored value: the presence flag is the truth.
+  await row().getByRole('button', { name: 'Edit' }).click();
+  // Same kit control: the checkbox is hidden, its label is the target.
+  await page.locator('label.check').filter({ has: page.getByLabel('Remove the stored cookie') }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(row().getByLabel('No session cookie')).toBeVisible();
+
+  // The add-account form offers the same field for this type.
+  await page.getByRole('button', { name: 'Add account' }).click();
+  await expect(page.getByLabel('Session cookie (optional)')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'How to get it' })).toHaveAttribute('href', /docs\/operating\.md/);
+});
+
+// The Quota page is where an operator watches an account; switching it out of
+// the pool belongs there too, and the card must say what the switch did.
+test('the quota card carries the same pool switch', async ({ page }) => {
+  await login(page);
+  await page.goto('/quota');
+
+  const card = page.locator('.widget').filter({ hasText: 'Ollama key 1' }).first();
+  const sw = card.getByLabel('Ollama key 1 in the pool');
+  await expect(sw).toBeChecked();
+
+  await card.locator('label.toggle').click();
+  await expect(sw).not.toBeChecked();
+  // A switched-off account serves nothing, so the card says so rather than
+  // showing a health state it cannot be in.
+  await expect(card).toContainText('out of the pool');
+
+  await card.locator('label.toggle').click();
+  await expect(sw).toBeChecked();
+});

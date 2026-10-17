@@ -10,7 +10,12 @@ import type {
 import { EmptyState, ErrorNote, PageHead, useAdminData, useMutation } from '../hooks';
 import { Drawer } from '../components/Overlays';
 import OAuthSignIn from '../components/OAuthSignIn';
-import { IconPlus } from '../icons';
+import { IconCheck, IconClose, IconPlus } from '../icons';
+
+// The how-to for an ollama.com session cookie lives in the repository's
+// operations guide — the console carries the short version and the link, so
+// there is one place where the procedure is explained.
+const COOKIE_DOCS_URL = 'https://github.com/TUBEOF/PROxyLLM/blob/main/docs/operating.md#the-session-cookie';
 
 // Per-type provider settings (ADR-009): shared connection settings form
 // (rendered from the catalog — no JSON editing), the account list of the
@@ -141,6 +146,7 @@ export default function ProviderTypePage() {
   const [adding, setAdding] = useState(false);
   const [accountName, setAccountName] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [usageCookie, setUsageCookie] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
   const [oauthDraftId, setOauthDraftId] = useState<string | null>(null);
   const addAccount = useMutation();
@@ -149,10 +155,80 @@ export default function ProviderTypePage() {
     setAdding(false);
     setAccountName('');
     setApiKey('');
+    setUsageCookie('');
     setAddError(null);
     setOauthDraftId(null);
     addAccount.clearError();
   }, [addAccount]);
+
+  // Edit-account flow (name, credential, session cookie) and the pool
+  // switch. The switch is its own row control: it is the one edit an
+  // operator makes repeatedly, while the rest of the account is set once.
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editKey, setEditKey] = useState('');
+  // The cookie field's three states: '' with clear=false keeps the stored
+  // one, a value replaces it, clear=true removes it — what the API expects
+  // (absent / set / "").
+  const [editCookie, setEditCookie] = useState('');
+  const [clearCookie, setClearCookie] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const saveAccount = useMutation();
+
+  const openEditAccount = useCallback((a: Account) => {
+    setEditingAccount(a);
+    setEditName(a.name);
+    setEditKey('');
+    setEditCookie('');
+    setClearCookie(false);
+    setEditError(null);
+  }, []);
+
+  const closeEditAccount = useCallback(() => {
+    setEditingAccount(null);
+    setEditError(null);
+    saveAccount.clearError();
+  }, [saveAccount]);
+
+  const submitEditAccount = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      if (editingAccount === null) return;
+      if (editName.trim() === '') {
+        setEditError('Name is required');
+        return;
+      }
+      setEditError(null);
+      const body: Record<string, unknown> = {
+        type: editingAccount.type,
+        name: editName.trim(),
+        config: {},
+      };
+      if (editKey !== '') body.api_key = editKey;
+      if (meta?.usage_cookie === true) {
+        if (clearCookie) body.usage_cookie = '';
+        else if (editCookie !== '') body.usage_cookie = editCookie;
+      }
+      const ok = await saveAccount.run(() =>
+        apiCall('PUT', `/api/admin/providers/${encodeURIComponent(editingAccount.id)}`, body),
+      );
+      if (ok !== null) {
+        closeEditAccount();
+        detail.reload();
+      }
+    },
+    [editingAccount, editName, editKey, editCookie, clearCookie, meta, saveAccount, closeEditAccount, detail],
+  );
+
+  const toggleAccount = useCallback(
+    async (a: Account, enabled: boolean) => {
+      const ok = await addAccount.run(() =>
+        apiCall('PUT', `/api/admin/providers/${encodeURIComponent(a.id)}/enabled`, { enabled }),
+      );
+      if (ok !== null) detail.reload();
+    },
+    [addAccount, detail],
+  );
 
   const submitAdd = useCallback(
     async (e: FormEvent) => {
@@ -162,8 +238,9 @@ export default function ProviderTypePage() {
         return;
       }
       setAddError(null);
-      const body: { name: string; api_key?: string } = { name: accountName.trim() };
+      const body: { name: string; api_key?: string; usage_cookie?: string } = { name: accountName.trim() };
       if (meta?.auth === 'api_key' && apiKey !== '') body.api_key = apiKey;
+      if (meta?.usage_cookie === true && usageCookie !== '') body.usage_cookie = usageCookie;
       const created = await addAccount.run(() =>
         apiCall<{ account: Account }>('POST', `/api/admin/provider-types/${encodeURIComponent(type)}/accounts`, body),
       );
@@ -177,7 +254,7 @@ export default function ProviderTypePage() {
       closeAdd();
       detail.reload();
     },
-    [accountName, apiKey, meta, addAccount, type, closeAdd, detail],
+    [accountName, apiKey, usageCookie, meta, addAccount, type, closeAdd, detail],
   );
 
   const removeAccount = useCallback(
@@ -326,7 +403,7 @@ export default function ProviderTypePage() {
               </button>
             </div>
             <p className="hint" style={{ margin: '0 0 12px', overflowWrap: 'anywhere' }}>
-              Chain entries naming “{meta.type}” spread requests over all accounts.
+              Chain entries naming “{meta.type}” spread requests over all accounts that are in the pool.
             </p>
             {detail.error !== null ? (
               <ErrorNote message={detail.error} />
@@ -348,6 +425,8 @@ export default function ProviderTypePage() {
                         <th>Name</th>
                         <th>ID</th>
                         <th>Status</th>
+                        {meta.usage_cookie && <th>Session cookie</th>}
+                        <th>In the pool</th>
                         <th />
                       </tr>
                     </thead>
@@ -369,8 +448,44 @@ export default function ProviderTypePage() {
                               </span>
                             )}
                           </td>
+                          {meta.usage_cookie && (
+                            <td>
+                              {/* Presence only — the cookie itself never
+                                  comes back to the browser. */}
+                              {a.has_usage_cookie === true ? (
+                                <span className="badge up" aria-label="Session cookie set">
+                                  <IconCheck width="12" height="12" />
+                                  set
+                                </span>
+                              ) : (
+                                <span className="badge paused" aria-label="No session cookie">
+                                  <IconClose width="12" height="12" />
+                                  not set
+                                </span>
+                              )}
+                            </td>
+                          )}
+                          <td>
+                            <label className="toggle" title={a.enabled ? 'In the pool — this account serves traffic' : 'Out of the pool — it serves nothing until switched back on'}>
+                              <input
+                                type="checkbox"
+                                checked={a.enabled}
+                                onChange={(e) => void toggleAccount(a, e.target.checked)}
+                                disabled={addAccount.pending}
+                                aria-label={`${a.name} in the pool`}
+                              />
+                              <span className="tswitch" />
+                            </label>
+                          </td>
                           <td>
                             <span className="row-actions">
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => openEditAccount(a)}
+                              >
+                                Edit
+                              </button>
                               <button
                                 type="button"
                                 className="btn btn-danger btn-sm"
@@ -398,6 +513,118 @@ export default function ProviderTypePage() {
           </div>
         </div>
       </div>
+
+      {editingAccount !== null && (
+        <Drawer
+          title={`Edit ${editingAccount.name}`}
+          onClose={closeEditAccount}
+          footer={
+            <>
+              <button type="button" className="btn btn-secondary" onClick={closeEditAccount} disabled={saveAccount.pending}>
+                Cancel
+              </button>
+              <button type="submit" className="btn btn-primary" form="account-edit-form" disabled={saveAccount.pending}>
+                Save
+              </button>
+            </>
+          }
+        >
+          <form className="form" id="account-edit-form" onSubmit={submitEditAccount}>
+            {(editError ?? saveAccount.error) !== null && (
+              <p role="alert" className="form-note">
+                {editError ?? saveAccount.error}
+              </p>
+            )}
+            <div className="field">
+              <label htmlFor="ae-name">Account name</label>
+              <input
+                id="ae-name"
+                className="input"
+                type="text"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                required
+              />
+              <span className="hint">A label to recognize this account by.</span>
+            </div>
+            {meta.auth === 'api_key' && (
+              <div className="field">
+                <label htmlFor="ae-key">API key</label>
+                <input
+                  id="ae-key"
+                  className="input mono"
+                  type="password"
+                  value={editKey}
+                  onChange={(e) => setEditKey(e.target.value)}
+                  autoComplete="off"
+                  placeholder="Leave empty to keep the stored key"
+                />
+                <span className="hint">
+                  A value replaces the stored key (write-only — it never comes back to the browser).
+                </span>
+              </div>
+            )}
+            {meta.usage_cookie && (
+              <fieldset className="fieldset">
+                <legend>Session cookie</legend>
+                <p className="hint" style={{ marginTop: 0 }}>
+                  {editingAccount.has_usage_cookie === true
+                    ? 'A cookie is stored. It feeds this account’s usage windows on the Quota page.'
+                    : 'No cookie stored yet — the Quota card counts locally until one is.'}
+                </p>
+                <div className="field">
+                  <label htmlFor="ae-cookie">Set or replace it</label>
+                  <input
+                    id="ae-cookie"
+                    className="input mono"
+                    type="password"
+                    value={editCookie}
+                    onChange={(e) => {
+                      setEditCookie(e.target.value);
+                      if (e.target.value !== '') setClearCookie(false);
+                    }}
+                    autoComplete="off"
+                    disabled={clearCookie}
+                    placeholder={editingAccount.has_usage_cookie === true ? 'Leave empty to keep the stored cookie' : '__Secure-session value'}
+                  />
+                  <span className="hint">Stored encrypted; it never comes back to the browser.</span>
+                </div>
+                {editingAccount.has_usage_cookie === true && (
+                  <label className="check" style={{ display: 'flex', marginBottom: 8 }}>
+                    <input
+                      type="checkbox"
+                      checked={clearCookie}
+                      onChange={(e) => {
+                        setClearCookie(e.target.checked);
+                        if (e.target.checked) setEditCookie('');
+                      }}
+                    />
+                    <span className="cbox">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.5" aria-hidden="true">
+                        <path d="m5 13 4 4 10-10" />
+                      </svg>
+                    </span>
+                    Remove the stored cookie
+                  </label>
+                )}
+                <ol className="hint" style={{ margin: 0, paddingLeft: 18 }}>
+                  <li>Sign in at ollama.com in your browser.</li>
+                  <li>
+                    Open the developer tools &rarr; Application &rarr; Cookies &rarr; https://ollama.com and
+                    copy the value of <span className="mono">__Secure-session</span>.
+                  </li>
+                  <li>Paste it above and save.</li>
+                </ol>
+                <p className="hint" style={{ marginBottom: 0 }}>
+                  <a href={COOKIE_DOCS_URL} target="_blank" rel="noreferrer">
+                    Full instructions in the documentation
+                  </a>
+                </p>
+              </fieldset>
+            )}
+          </form>
+        </Drawer>
+      )}
 
       {adding && (
         <Drawer
@@ -453,6 +680,27 @@ export default function ProviderTypePage() {
                   />
                   <span className="hint">
                     Stored encrypted on the server (write-only — it never comes back to the browser).
+                  </span>
+                </div>
+              )}
+              {meta.usage_cookie && (
+                <div className="field">
+                  <label htmlFor="acc-cookie">Session cookie (optional)</label>
+                  <input
+                    id="acc-cookie"
+                    className="input mono"
+                    type="password"
+                    value={usageCookie}
+                    onChange={(e) => setUsageCookie(e.target.value)}
+                    autoComplete="off"
+                  />
+                  <span className="hint">
+                    The ollama.com session cookie that feeds this account&apos;s usage windows on the
+                    Quota page. Stored encrypted, never shown again — and you can leave it out now
+                    and set it later on the account row.{' '}
+                    <a href={COOKIE_DOCS_URL} target="_blank" rel="noreferrer">
+                      How to get it
+                    </a>
                   </span>
                 </div>
               )}

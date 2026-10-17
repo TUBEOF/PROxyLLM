@@ -69,6 +69,15 @@ func loadProviders(ctx context.Context, store *storage.Store, logger *slog.Logge
 	out := make([]provider.Provider, 0, len(rows))
 	var emus []NamedEmulator
 	for _, row := range rows {
+		if !row.Enabled {
+			// A disabled account is not constructed at all: it leaves the
+			// registry, and with it the type's chain expansion, the health
+			// picture, the model sync and the web-tool emulator pool. Its
+			// tokens and model rows stay in the store, so switching it back
+			// on restores it whole (`server.SetProviderEnabled` reloads this
+			// set through the admin API).
+			continue
+		}
 		p, emu, err := buildProvider(ctx, store, row, typeSettings, logger)
 		if err != nil {
 			logger.Error("provider row not constructable — skipping (fix it in the WebUI)",

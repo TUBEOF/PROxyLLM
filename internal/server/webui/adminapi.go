@@ -162,6 +162,10 @@ func (a *AdminAPI) Handler() http.Handler {
 	// endpoint (that is the point: it works through Docker's isolation),
 	// and the browser flow's loopback listener belongs to the codex
 	// package's LoginFromBrowser, not the admin API.
+	// The account's pool switch: flip it and the live provider set is
+	// reloaded, so the account leaves (or re-enters) routing without a
+	// restart.
+	mux.Handle("PUT /api/admin/providers/{id}/enabled", a.sessions.RequireAdmin(http.HandlerFunc(a.setProviderEnabled)))
 	mux.Handle("POST /api/admin/providers/{id}/oauth/start", a.sessions.RequireAdmin(http.HandlerFunc(a.oauthStart)))
 	mux.Handle("POST /api/admin/providers/{id}/oauth/poll", a.sessions.RequireAdmin(http.HandlerFunc(a.oauthPoll)))
 
@@ -418,10 +422,11 @@ func (a *AdminAPI) listProviders(w http.ResponseWriter, r *http.Request) {
 	out := make([]providerDTO, 0, len(providers))
 	for _, p := range providers {
 		out = append(out, providerDTO{
-			ID:     p.ID,
-			Type:   p.Type,
-			Name:   p.Name,
-			Config: json.RawMessage(p.Config),
+			ID:      p.ID,
+			Type:    p.Type,
+			Name:    p.Name,
+			Config:  json.RawMessage(p.Config),
+			Enabled: p.Enabled,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"providers": out})
@@ -439,6 +444,11 @@ func (a *AdminAPI) putProvider(w http.ResponseWriter, r *http.Request) {
 		// API routes it into the encrypted token store instead (kind
 		// "access_token", the same row the device flow persists).
 		APIKey string `json:"api_key"`
+		// UsageCookie is the optional ADR-012 scrape credential of an
+		// ollama.com account (kind usage_cookie). Presence is the signal:
+		// absent leaves the stored cookie alone, "" clears it, a value sets
+		// or rotates it — the account edit form's three states.
+		UsageCookie *string `json:"usage_cookie"`
 	}
 	// Strict decode: unknown top-level fields reject the save — a typo'd
 	// "apiKey" must fail loudly, not silently drop the credential (same
@@ -461,6 +471,12 @@ func (a *AdminAPI) putProvider(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// A usage cookie on a type that never reads it would be a credential
+	// stored for nothing: only the ollama.com account types carry one.
+	if req.UsageCookie != nil && *req.UsageCookie != "" && !allowsUsageCookie(req.Type) {
+		writeError(w, http.StatusBadRequest, usageCookieRefusal)
+		return
+	}
 	if err := a.store.PutProvider(r.Context(), storage.Provider{
 		ID:     id,
 		Type:   req.Type,
@@ -479,6 +495,24 @@ func (a *AdminAPI) putProvider(w http.ResponseWriter, r *http.Request) {
 			ProviderID: id,
 			Kind:       "access_token",
 			Secret:     []byte(req.APIKey),
+		}); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal error")
+			return
+		}
+	}
+	// ADR-012 scrape credential: set, rotate or clear with the account edit.
+	// Absent keeps it — an API-key rotation must not silently drop the
+	// session that feeds the Quota card.
+	if req.UsageCookie != nil {
+		if *req.UsageCookie == "" {
+			if err := a.store.DeleteProviderToken(r.Context(), id, UsageCookieTokenKind); err != nil && !errors.Is(err, storage.ErrNotFound) {
+				writeError(w, http.StatusInternalServerError, "internal error")
+				return
+			}
+		} else if err := a.store.PutProviderTokens(r.Context(), storage.ProviderToken{
+			ProviderID: id,
+			Kind:       UsageCookieTokenKind,
+			Secret:     []byte(*req.UsageCookie),
 		}); err != nil {
 			writeError(w, http.StatusInternalServerError, "internal error")
 			return
@@ -683,10 +717,13 @@ func (a *AdminAPI) getProviderType(w http.ResponseWriter, r *http.Request) {
 			Type:          p.Type,
 			Name:          p.Name,
 			HasCredential: a.hasCredential(r, p.ID),
+			Enabled:       p.Enabled,
 		}
-		// ADR-012: ollama-cloud accounts report the usage-cookie presence
-		// (the cookie itself never leaves the store).
-		if p.Type == ProviderTypeOllamaCloud {
+		// ADR-012: the ollama.com-backed types report the usage-cookie
+		// presence (the cookie itself never leaves the store). Both the chat
+		// endpoint and the web-tool API authenticate against ollama.com, so
+		// both can carry the account's session.
+		if p.Type == ProviderTypeOllamaCloud || p.Type == ProviderTypeOllamaCloudWeb {
 			dto.HasUsageCookie = a.hasUsageCookie(r, p.ID)
 		}
 		out = append(out, dto)
@@ -869,7 +906,11 @@ func (a *AdminAPI) postProviderTypeAccount(w http.ResponseWriter, r *http.Reques
 	}
 	// ADR-012: the usage cookie rides the same encrypted store (separate
 	// kind — rotating the API key must not touch the scrape credential).
-	if req.UsageCookie != "" && desc.Auth != "oauth" {
+	if req.UsageCookie != "" && !allowsUsageCookie(typ) {
+		writeError(w, http.StatusBadRequest, usageCookieRefusal)
+		return
+	}
+	if req.UsageCookie != "" {
 		if err := a.store.PutProviderTokens(r.Context(), storage.ProviderToken{
 			ProviderID: id,
 			Kind:       UsageCookieTokenKind,
@@ -924,6 +965,43 @@ func (a *AdminAPI) hasCredential(r *http.Request, providerID string) bool {
 func (a *AdminAPI) hasUsageCookie(r *http.Request, providerID string) bool {
 	_, err := a.store.GetProviderToken(r.Context(), providerID, UsageCookieTokenKind)
 	return err == nil
+}
+
+// setProviderEnabled flips one account's pool switch. The write is one
+// column; the provider set is reloaded after it, which is what actually
+// takes the account out of — or puts it back into — the live registry. The
+// same reload contract every other provider write follows.
+func (a *AdminAPI) setProviderEnabled(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		Enabled *bool `json:"enabled"`
+	}
+	if err := decodeBody(w, r, &req); err != nil || req.Enabled == nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if err := a.store.SetProviderEnabled(r.Context(), id, *req.Enabled); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	if a.reloadProviders != nil {
+		a.reloadProviders()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// usageCookieRefusal is the uniform answer to a usage cookie on a type that
+// never reads one.
+const usageCookieRefusal = "usage_cookie belongs to the ollama.com account types (ollama-cloud, ollama-cloud-web)"
+
+// allowsUsageCookie reports whether an account type authenticates against
+// ollama.com with a browser session — the types whose Quota data the scrape
+// credential feeds. The catalog is the single source: the console renders
+// the field from the same flag, so the form and the write boundary cannot
+// disagree about which types carry a cookie.
+func allowsUsageCookie(typ string) bool {
+	desc, ok := providerTypeByID(typ)
+	return ok && desc.UsageCookie
 }
 
 // newAccountID mints an unguessable account row id (newAdminID pattern).
@@ -1633,6 +1711,8 @@ type providerDTO struct {
 	Type   string          `json:"type"`
 	Name   string          `json:"name"`
 	Config json.RawMessage `json:"config"`
+	// Enabled is the account's pool switch (see accountDTO.Enabled).
+	Enabled bool `json:"enabled"`
 }
 
 // oauthStartDTO is the operator pair the SPA renders during sign-in:
@@ -1684,6 +1764,10 @@ type accountDTO struct {
 	Type          string `json:"type"`
 	Name          string `json:"name"`
 	HasCredential bool   `json:"has_credential"`
+	// Enabled is the account's pool switch: a disabled account is not built
+	// into the live registry at all, so it serves no traffic and no chain
+	// expansion reaches it.
+	Enabled bool `json:"enabled"`
 	// HasUsageCookie: the OPTIONAL ADR-012 scrape credential is present
 	// (ollama-cloud accounts only; the cookie itself never leaves the
 	// encrypted token store). omitempty keeps the pre-ADR-012 wire shape

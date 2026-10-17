@@ -46,6 +46,15 @@ URL, enter the code. The account shows "sign-in required" until the token
 exists — and an unsigned account is excluded from routing, because sending
 a request into a guaranteed auth failure helps nobody.
 
+**In the pool** is the account's switch. Switched off, the account is not
+built at all: it serves no traffic, no chain entry of its type reaches it,
+it earns no cooldown, the model sync skips it and a web-tool account leaves
+the emulation pool. Its key, its session cookie and its model rows stay in
+place, so switching it back on restores it whole. **Edit** changes the
+account's name, replaces its API key (a value is written; an empty field
+keeps the stored one) and manages the session cookie described under
+[Quota](#the-session-cookie).
+
 ## Models
 
 Every model row has an **identity** (what clients and rules name), the
@@ -143,7 +152,35 @@ own settings page, refreshed on demand; without one it shows the local
 count for the current month, labeled as such. Percentages that are unknown
 render as `—`, never as zero. A cooldown — the account is out of quota, or
 its breaker is open — is named on the card, which is the fastest way to
-explain a wave of failures.
+explain a wave of failures. Each card carries the account's **in the pool**
+switch, and a card whose account is switched off says so instead of showing
+a cooldown it cannot earn.
+
+### The session cookie
+
+The live windows come from the account's own ollama.com page, which serves
+them to a signed-in browser. Give the account that browser's session and it
+can read them too:
+
+1. Sign in at `ollama.com` in your browser.
+2. Open the developer tools (F12) → **Application** → **Cookies** →
+   `https://ollama.com`.
+3. Copy the value of the cookie named `__Secure-session` — the full value,
+   no name, no quotes.
+4. Paste it into the account: **Providers** → **Ollama Cloud** → the
+   account's **Edit** → **Session cookie** → Save. The account's row shows
+   whether one is stored, and the field also takes a replacement or the
+   "remove the stored cookie" option.
+
+The cookie is a credential: it is sealed into the encrypted token store (its
+own row, so replacing the account's API key never touches it), never
+returned to the browser, and masked in logs. It expires when the browser
+session does — the card's error will say the scrape came back empty, and
+the fix is to copy a fresh value.
+
+The same field exists for **Ollama Cloud (Web Tools)** accounts, which sign
+in to ollama.com the same way. The Quota page lists chat accounts only, so
+that account has no card of its own yet.
 
 ## Troubleshooting
 

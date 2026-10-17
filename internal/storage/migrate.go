@@ -178,6 +178,16 @@ var migrations = []string{
 	// nothing) so the WebUI renders the same input/output/cache triple from it.
 	`ALTER TABLE request_child_logs ADD COLUMN latency_ms INTEGER NOT NULL DEFAULT 0;`,
 	`ALTER TABLE request_child_logs ADD COLUMN usage TEXT NOT NULL DEFAULT '{}';`,
+
+	// v9: accounts can be switched off. A disabled account is not
+	// constructed into the live registry at all — out of routing, out of the
+	// type's chain expansion, out of the health picture, out of the model
+	// sync and out of the web-tool emulator pool, with its tokens and model
+	// rows left in place so switching it back on restores it whole. Existing
+	// rows read as enabled: an installation that never touched the switch
+	// behaves exactly as before. Append-only: earlier statements are never
+	// edited.
+	`ALTER TABLE providers ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;`,
 }
 
 func (s *Store) migrate() error {

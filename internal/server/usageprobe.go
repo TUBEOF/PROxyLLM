@@ -207,9 +207,9 @@ func (s *Server) prodUsageProber() func(ctx context.Context, accountID string, s
 		if err != nil {
 			return webui.RefreshOutcome{Status: statusUnknownAccount, Text: "unknown account"}
 		}
-		if acct.Type != "ollama-cloud" {
+		if acct.Type != "ollama-cloud" && acct.Type != "ollama-cloud-web" {
 			return webui.RefreshOutcome{Status: statusUnsupportedType,
-				Text: "usage scraping is implemented for ollama-cloud accounts"}
+				Text: "usage scraping is implemented for the ollama.com account types (ollama-cloud, ollama-cloud-web)"}
 		}
 		tok, err := store.GetProviderToken(ctx, accountID, webui.UsageCookieTokenKind)
 		if errors.Is(err, storage.ErrNotFound) {

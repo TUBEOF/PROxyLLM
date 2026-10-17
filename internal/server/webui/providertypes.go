@@ -52,6 +52,12 @@ type providerTypeDesc struct {
 	// AccountFields are the per-account config inputs (rendered from each
 	// account's own config blob; type settings fill the same keys first).
 	AccountFields []fieldDesc `json:"account_fields"`
+	// UsageCookie marks the types whose accounts can hold an ollama.com
+	// session cookie (ADR-012): the scrape credential behind the Quota
+	// page's live windows. The console renders the field for exactly these
+	// types, and the write boundary refuses the cookie everywhere else —
+	// one vocabulary, no second list.
+	UsageCookie bool `json:"usage_cookie"`
 	// DefaultCapabilities are the type's baseline pins (server/providers.go
 	// defaultCaps) so the settings form can pre-check the boxes. nil for
 	// non-LLM kinds.
@@ -91,6 +97,7 @@ var providerTypes = []providerTypeDesc{
 		Description: "The hosted Ollama API at ollama.com via its OpenAI-compatible /v1 endpoint. Multiple API keys = multiple accounts.",
 		Kind:        KindLLM,
 		Auth:        "api_key",
+		UsageCookie: true,
 		SettingsFields: []fieldDesc{
 			{Key: "base_url", Label: "Base URL", Kind: fieldKindURL, Required: false,
 				Hint: "Optional override; defaults to https://ollama.com (the /v1 version prefix rides the endpoint paths)"},
@@ -136,6 +143,7 @@ var providerTypes = []providerTypeDesc{
 		Description: "Ollama's hosted web-tool API at ollama.com/api powering emulated web_search / web_fetch. Not a chat model provider — a separate account type from Ollama Cloud's chat endpoint.",
 		Kind:        KindWebTool,
 		Auth:        "api_key",
+		UsageCookie: true,
 		SettingsFields: []fieldDesc{
 			{Key: "base_url", Label: "Base URL", Kind: fieldKindURL, Required: false,
 				Hint: "Optional override; defaults to https://ollama.com (the endpoint paths /api/web_search and /api/web_fetch ride the root)"},

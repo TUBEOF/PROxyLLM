@@ -1339,3 +1339,123 @@ func TestMe_GoneAdminRowIsUniform401(t *testing.T) {
 		`{"current_password":"whatever-1","new_password":"whatever-2"}`, s)
 	assertStatus(t, w, http.StatusUnauthorized, "password with vanished admin row")
 }
+
+// The account controls: the pool switch (enabled) and the ADR-012 usage
+// cookie, both edited on the account itself.
+//
+//   - PUT /api/admin/providers/{id}/enabled {"enabled":…} — one column, then
+//     the provider set is reloaded; unknown ids are 404.
+//   - PUT /api/admin/providers/{id} {"usage_cookie":…} — set, rotate or clear
+//     ("" clears, absent keeps), refused on a type that never reads one.
+func TestAccounts_EnableSwitchAndUsageCookie(t *testing.T) {
+	env := newAdminEnv(t)
+	s := env.bootstrap(t, "operator")
+
+	// An ollama.com chat account, created without a cookie (legal: the quota
+	// card falls back to local counting).
+	w := env.authedCall(t, http.MethodPut, "/api/admin/providers/acc-1",
+		`{"type":"ollama-cloud","name":"Key 1","config":{}}`, s)
+	assertStatus(t, w, http.StatusOK, "put account")
+
+	type account struct {
+		ID             string `json:"id"`
+		Enabled        bool   `json:"enabled"`
+		HasUsageCookie bool   `json:"has_usage_cookie"`
+	}
+	type detail struct {
+		Accounts []account `json:"accounts"`
+	}
+	readAccount := func(id string) account {
+		t.Helper()
+		r := env.authedCall(t, http.MethodGet, "/api/admin/provider-types/ollama-cloud", "", s)
+		assertStatus(t, r, http.StatusOK, "provider type detail")
+		var d detail
+		decodeJSON(t, r, &d)
+		for _, a := range d.Accounts {
+			if a.ID == id {
+				return a
+			}
+		}
+		t.Fatalf("account %s missing from the detail", id)
+		return account{}
+	}
+
+	if a := readAccount("acc-1"); !a.Enabled || a.HasUsageCookie {
+		t.Errorf("fresh account = %+v, want enabled and no cookie", a)
+	}
+
+	// The cookie: set…
+	w = env.authedCall(t, http.MethodPut, "/api/admin/providers/acc-1",
+		`{"type":"ollama-cloud","name":"Key 1","config":{},"usage_cookie":"sess-1"}`, s)
+	assertStatus(t, w, http.StatusOK, "set usage cookie")
+	if a := readAccount("acc-1"); !a.HasUsageCookie {
+		t.Error("the set cookie is not reported")
+	}
+
+	// …kept across an unrelated save (an API-key rotation must not drop it)…
+	w = env.authedCall(t, http.MethodPut, "/api/admin/providers/acc-1",
+		`{"type":"ollama-cloud","name":"Key 1","config":{},"api_key":"new-key"}`, s)
+	assertStatus(t, w, http.StatusOK, "rotate the api key")
+	if a := readAccount("acc-1"); !a.HasUsageCookie {
+		t.Error("an api-key save dropped the usage cookie")
+	}
+
+	// …and cleared with the explicit empty string.
+	w = env.authedCall(t, http.MethodPut, "/api/admin/providers/acc-1",
+		`{"type":"ollama-cloud","name":"Key 1","config":{},"usage_cookie":""}`, s)
+	assertStatus(t, w, http.StatusOK, "clear usage cookie")
+	if a := readAccount("acc-1"); a.HasUsageCookie {
+		t.Error("the cleared cookie is still reported")
+	}
+
+	// A type that never reads a cookie refuses one — storing it would be a
+	// credential kept for nothing.
+	w = env.authedCall(t, http.MethodPut, "/api/admin/providers/acc-fc",
+		`{"type":"firecrawl","name":"Crawler","config":{},"usage_cookie":"sess-2"}`, s)
+	assertStatus(t, w, http.StatusBadRequest, "cookie on a type that never reads one")
+	// The refusal must not have created the row.
+	w = env.authedCall(t, http.MethodPut, "/api/admin/providers/acc-fc",
+		`{"type":"firecrawl","name":"Crawler","config":{}}`, s)
+	assertStatus(t, w, http.StatusOK, "plain firecrawl account")
+
+	// The web-tool ollama account DOES read one: its Quota windows come from
+	// the same ollama.com session.
+	w = env.authedCall(t, http.MethodPut, "/api/admin/providers/acc-web",
+		`{"type":"ollama-cloud-web","name":"Web tools","config":{},"usage_cookie":"sess-3"}`, s)
+	assertStatus(t, w, http.StatusOK, "cookie on the web-tool ollama type")
+
+	// The pool switch.
+	w = env.authedCall(t, http.MethodPut, "/api/admin/providers/acc-1/enabled", `{"enabled":false}`, s)
+	assertStatus(t, w, http.StatusOK, "disable account")
+	if a := readAccount("acc-1"); a.Enabled {
+		t.Error("the switch did not stick")
+	}
+	// The account list carries it too (the Quota cards read this shape).
+	w = env.authedCall(t, http.MethodGet, "/api/admin/providers", "", s)
+	assertStatus(t, w, http.StatusOK, "list providers")
+	var list struct {
+		Providers []account `json:"providers"`
+	}
+	decodeJSON(t, w, &list)
+	seen := false
+	for _, p := range list.Providers {
+		if p.ID == "acc-1" {
+			seen = true
+			if p.Enabled {
+				t.Error("the provider list reports the switched-off account as enabled")
+			}
+		}
+	}
+	if !seen {
+		t.Error("the provider list dropped the account")
+	}
+
+	// Back on, and the missing-id path is a 404 rather than a silent no-op.
+	w = env.authedCall(t, http.MethodPut, "/api/admin/providers/acc-1/enabled", `{"enabled":true}`, s)
+	assertStatus(t, w, http.StatusOK, "re-enable account")
+	if a := readAccount("acc-1"); !a.Enabled {
+		t.Error("re-enabling did not stick")
+	}
+	w = env.authedCall(t, http.MethodPut, "/api/admin/providers/ghost/enabled", `{"enabled":false}`, s)
+	assertStatus(t, w, http.StatusNotFound, "switch an unknown account")
+}
