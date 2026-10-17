@@ -1,6 +1,7 @@
 package codex_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -20,7 +21,6 @@ import (
 	"github.com/tubeof/proxyllm/internal/provider/codex"
 	"github.com/tubeof/proxyllm/internal/storage"
 	"github.com/tubeof/proxyllm/internal/translate/ir"
-	"github.com/tubeof/proxyllm/internal/translate/openai"
 	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
 
@@ -81,6 +81,15 @@ func drainEvents(t *testing.T, events <-chan ir.StreamEvent) []ir.StreamEvent {
 
 func decodeSentBody(t *testing.T, r *http.Request) map[string]any {
 	t.Helper()
+	_, body := captureSentBody(t, r)
+	return body
+}
+
+// captureSentBody reads the request body ONCE and returns it both raw and
+// decoded: the round-trip test asserts on the exact bytes (the preview must
+// equal what went out) and on the decoded fields.
+func captureSentBody(t *testing.T, r *http.Request) ([]byte, map[string]any) {
+	t.Helper()
 	raw, err := io.ReadAll(r.Body)
 	if err != nil {
 		t.Fatalf("read request body: %v", err)
@@ -89,7 +98,7 @@ func decodeSentBody(t *testing.T, r *http.Request) map[string]any {
 	if err := json.Unmarshal(raw, &body); err != nil {
 		t.Fatalf("request body is not JSON: %v\n%s", err, raw)
 	}
-	return body
+	return raw, body
 }
 
 // makeJWT builds a structurally valid (unsigned) JWT whose payload carries
@@ -220,12 +229,67 @@ func TestProviderImplementsInterface(t *testing.T) {
 	var _ provider.Provider = (*codex.Provider)(nil)
 }
 
-// TestComplete_RoundTrip: the request rides {base}/codex/responses
-// in the Responses wire shape; the response decodes via the golden fixture.
-// Headers: originator, own-version User-Agent, account id from
+// foldEvents assembles a canonical event sequence the way a non-streaming
+// caller reads it: text/thinking deltas and tool-input fragments concatenate
+// onto their open block, stop reason and usage ride the terminal
+// MessageDelta. Written independently of the provider's assembler so the two
+// must agree.
+func foldEvents(t *testing.T, events []ir.StreamEvent) ir.Response {
+	t.Helper()
+	var (
+		resp  ir.Response
+		parts []ir.Part
+		args  []string
+	)
+	for _, ev := range events {
+		switch ev.Type {
+		case ir.Start:
+			resp.ID, resp.Model = ev.Response.ID, ev.Response.Model
+		case ir.BlockStart:
+			parts = append(parts, ev.Part)
+			args = append(args, "")
+		case ir.Delta:
+			if ev.Index < 0 || ev.Index >= len(parts) {
+				t.Fatalf("delta for unopened block index %d", ev.Index)
+			}
+			switch ev.Delta.Kind {
+			case ir.DeltaText:
+				p := parts[ev.Index].(ir.TextPart)
+				p.Text += ev.Delta.Text
+				parts[ev.Index] = p
+			case ir.DeltaThinking:
+				p := parts[ev.Index].(ir.ThinkingPart)
+				p.Thinking += ev.Delta.Text
+				parts[ev.Index] = p
+			case ir.DeltaToolInput:
+				args[ev.Index] += ev.Delta.PartialJSON
+			}
+		case ir.MessageDelta:
+			resp.StopReason = ev.MessageDelta.StopReason
+			resp.Usage = ev.MessageDelta.Usage
+		}
+	}
+	for i, part := range parts {
+		if tc, ok := part.(ir.ToolCallPart); ok && args[i] != "" {
+			tc.Input = json.RawMessage(args[i])
+			parts[i] = tc
+		}
+	}
+	resp.Content = parts
+	return resp
+}
+
+// TestComplete_RoundTrip: the ChatGPT backend has no non-streaming mode — the
+// codex CLI's ResponsesApiRequest always sets stream:true, and a body without
+// it is answered 400 {"detail":"Stream must be set to true"} (observed live
+// 2026-10-17; fixture openai-codex/responses-request.json). Complete
+// therefore dispatches the streamed round trip — Accept: text/event-stream,
+// stream:true, store:false — and assembles the canonical events into one
+// response. Headers: originator, own-version User-Agent, account id from
 // the id_token claim + Bearer, and NO OAI-Product-Sku.
 func TestComplete_RoundTrip(t *testing.T) {
 	var refreshHits int32
+	var sentBody []byte
 	p, _, _ := newBackend(t, noopRefresh(t, &refreshHits), func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
@@ -249,21 +313,22 @@ func TestComplete_RoundTrip(t *testing.T) {
 		if got := r.Header.Get("OAI-Product-Sku"); got != "" {
 			t.Errorf("OAI-Product-Sku = %q, want ABSENT", got)
 		}
-		if got := r.Header.Get("Accept"); got != "application/json" {
-			t.Errorf("Accept = %q, want application/json for non-streaming", got)
+		if got := r.Header.Get("Accept"); got != "text/event-stream" {
+			t.Errorf("Accept = %q, want text/event-stream — the backend only answers a streamed request", got)
 		}
-		body := decodeSentBody(t, r)
+		var body map[string]any
+		sentBody, body = captureSentBody(t, r)
 		if body["model"] != "gpt-5" {
 			t.Errorf("request model = %v, want gpt-5", body["model"])
 		}
-		if stream, ok := body["stream"]; ok && stream != false {
-			t.Errorf("request stream = %v, want false/absent for Complete", body["stream"])
+		if stream, ok := body["stream"]; !ok || stream != true {
+			t.Errorf("request stream = %v (present=%v), want true — the backend rejects a body without it", stream, ok)
 		}
 		if store, ok := body["store"]; !ok || store != false {
 			t.Errorf("request store = %v (present=%v), want false — the backend rejects a body without it", store, ok)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		mustWrite(t, w, testutil.LoadGolden(t, "openai/responses-response.json"))
+		w.Header().Set("Content-Type", "text/event-stream")
+		mustWrite(t, w, testutil.LoadGolden(t, "openai/responses-stream.sse"))
 	})
 
 	resp, err := p.Complete(context.Background(), responsesRequest())
@@ -271,15 +336,53 @@ func TestComplete_RoundTrip(t *testing.T) {
 		t.Fatalf("Complete: %v", err)
 	}
 
-	want, err := openai.ResponsesCodec{}.DecodeResponse(testutil.LoadGolden(t, "openai/responses-response.json"))
-	if err != nil {
-		t.Fatalf("decode golden response: %v", err)
-	}
+	want := foldEvents(t, testutil.LoadExpectedEvents(t, "openai/responses-stream.expected.json"))
 	if !reflect.DeepEqual(resp, want) {
-		t.Errorf("Complete response = %+v, want golden decode %+v", resp, want)
+		t.Errorf("Complete response = %+v, want the fixture events folded to %+v", resp, want)
+	}
+	// The fixture's own values, spelled out: the fold above must not be able
+	// to agree with the assembler by accident.
+	if resp.ID != "resp_67c9fdcecf488190bdd9a0409de3a1ec07b8b0ad4e5eb654" || resp.Model != "gpt-6-astra" {
+		t.Errorf("id/model = %q/%q, want the fixture's resp_67c9…/gpt-6-astra", resp.ID, resp.Model)
+	}
+	if len(resp.Content) != 1 {
+		t.Fatalf("content = %+v, want one text part", resp.Content)
+	}
+	if tp, ok := resp.Content[0].(ir.TextPart); !ok || tp.Text != "Hi there! How can I assist you today?" {
+		t.Errorf("content[0] = %+v, want the fixture's text part", resp.Content[0])
+	}
+	if resp.StopReason != ir.StopEndTurn {
+		t.Errorf("stop reason = %q, want end_turn", resp.StopReason)
+	}
+	if resp.Usage.InputTokens != 37 || resp.Usage.OutputTokens != 11 {
+		t.Errorf("usage = %+v, want the fixture's 37/11", resp.Usage)
+	}
+
+	// The preview must be the body that actually went out — including the
+	// stream flag Complete forces.
+	prev, err := p.PreviewRequest(responsesRequest())
+	if err != nil {
+		t.Fatalf("PreviewRequest: %v", err)
+	}
+	if !bytes.Equal(prev, sentBody) {
+		t.Errorf("PreviewRequest = %s, want the sent body %s", prev, sentBody)
 	}
 	if refreshHits != 0 {
 		t.Errorf("fresh token must not trigger a refresh, got %d /oauth/token hits", refreshHits)
+	}
+}
+
+// The request fixture pins the backend's mandatory stream flag, so the
+// round-trip assertion derives from the fixture, not from the encoder.
+func TestCodexRequestFixture_StreamIsTrue(t *testing.T) {
+	var fixture struct {
+		Stream *bool `json:"stream"`
+	}
+	if err := json.Unmarshal(testutil.LoadGolden(t, "openai-codex/responses-request.json"), &fixture); err != nil {
+		t.Fatalf("decode golden fixture: %v", err)
+	}
+	if fixture.Stream == nil || !*fixture.Stream {
+		t.Errorf("golden fixture must pin stream=true, got %v", fixture.Stream)
 	}
 }
 
@@ -303,8 +406,11 @@ func TestComplete_LazyRefresh(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer a2" {
 			t.Errorf("Authorization = %q, want Bearer a2 (refreshed before dispatch)", got)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		mustWrite(t, w, testutil.LoadGolden(t, "openai/responses-response.json"))
+		if got := r.Header.Get("Accept"); got != "text/event-stream" {
+			t.Errorf("Accept = %q, want text/event-stream (every backend request is streamed)", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		mustWrite(t, w, testutil.LoadGolden(t, "openai/responses-stream.sse"))
 	})
 	// Expire the seeded access token.
 	seedTokens(t, store, "a1", pastExpiry())
@@ -372,6 +478,140 @@ func TestComplete_TransportError(t *testing.T) {
 	var up *provider.UpstreamError
 	if errors.As(err, &up) {
 		t.Errorf("transport error must not be an UpstreamError, got %+v", up)
+	}
+}
+
+// A stream that breaks before its terminal event fails Complete: the
+// non-streaming caller holds nothing yet, so the break is reported as an
+// error — with status 0, since no HTTP answer described it.
+func TestComplete_MidStreamFailure(t *testing.T) {
+	var refreshHits int32
+	p, _, _ := newBackend(t, noopRefresh(t, &refreshHits), func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		mustWriteString(t, w, "event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_x\",\"model\":\"gpt-5\",\"status\":\"in_progress\"}}\n\n")
+		flusher.Flush()
+		mustWriteString(t, w, "data: {\"type\":\"resp") // truncated frame, then abrupt close
+		hj := w.(http.Hijacker)
+		conn, _, err := hj.Hijack()
+		if err != nil {
+			t.Fatalf("hijack: %v", err)
+		}
+		_ = conn.Close()
+	})
+
+	_, err := p.Complete(context.Background(), responsesRequest())
+	if err == nil {
+		t.Fatal("Complete must fail when the stream breaks before its terminal event")
+	}
+	var up *provider.UpstreamError
+	if !errors.As(err, &up) {
+		t.Fatalf("Complete error = %v (%T), want *provider.UpstreamError", err, err)
+	}
+	if up.HTTPStatus != 0 {
+		t.Errorf("HTTPStatus = %d, want 0 — mid-stream failures carry no HTTP answer", up.HTTPStatus)
+	}
+	if up.Message == "" {
+		t.Error("the failure must carry the upstream's own message")
+	}
+}
+
+// The caller's cancel is not an observation about the account: Complete
+// reports the context error itself, which routing classifies as a client
+// abort — never as a reason to cool the codex account down.
+func TestComplete_Cancel(t *testing.T) {
+	var refreshHits int32
+	streaming := make(chan struct{})
+	p, _, _ := newBackend(t, noopRefresh(t, &refreshHits), func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		// Open a message item so the consumer sees the stream start before
+		// the cancel lands.
+		mustWriteString(t, w, "event: response.output_item.added\ndata: {\"type\":\"response.output_item.added\",\"output_index\":0,\"item\":{\"type\":\"message\",\"id\":\"m\",\"role\":\"assistant\"}}\n\n")
+		flusher.Flush()
+		close(streaming)
+		<-r.Context().Done()
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		<-streaming
+		cancel()
+	}()
+
+	_, err := p.Complete(ctx, responsesRequest())
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Complete error = %v, want context.Canceled (the caller walked away)", err)
+	}
+}
+
+// Streamed tool calls and reasoning assemble into one non-streaming response:
+// the function_call item's {call_id, name} open the tool block, the argument
+// fragments concatenate into its complete JSON input, and the reasoning
+// summary text becomes a thinking part. The wire shapes are the ones the
+// decoder contract tests pin (streaming reference, O7).
+func TestComplete_ToolCallAndReasoning(t *testing.T) {
+	var refreshHits int32
+	p, _, _ := newBackend(t, noopRefresh(t, &refreshHits), func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		mustWriteString(t, w, strings.Join([]string{
+			`event: response.created`,
+			`data: {"type":"response.created","response":{"id":"resp_tool","model":"gpt-5","status":"in_progress"}}`,
+			``,
+			`event: response.output_item.added`,
+			`data: {"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1"}}`,
+			``,
+			`event: response.reasoning_summary_text.delta`,
+			`data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_1","output_index":0,"delta":"Checking the weather."}`,
+			``,
+			`event: response.output_item.done`,
+			`data: {"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"rs_1"}}`,
+			``,
+			`event: response.output_item.added`,
+			`data: {"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","call_id":"call_1","name":"get_weather"}}`,
+			``,
+			`event: response.function_call_arguments.delta`,
+			`data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":1,"sequence_number":5,"delta":"{\"location\":"}`,
+			``,
+			`event: response.function_call_arguments.delta`,
+			`data: {"type":"response.function_call_arguments.delta","item_id":"fc_1","output_index":1,"sequence_number":6,"delta":"\"SF\"}"}`,
+			``,
+			`event: response.function_call_arguments.done`,
+			`data: {"type":"response.function_call_arguments.done","item_id":"fc_1","output_index":1,"arguments":"{\"location\":\"SF\"}"}`,
+			``,
+			`event: response.output_item.done`,
+			`data: {"type":"response.output_item.done","output_index":1,"item":{"type":"function_call","call_id":"call_1","name":"get_weather","arguments":"{\"location\":\"SF\"}"}}`,
+			``,
+			`event: response.completed`,
+			`data: {"type":"response.completed","response":{"id":"resp_tool","model":"gpt-5","status":"completed","usage":{"input_tokens":21,"output_tokens":8,"total_tokens":29,"output_tokens_details":{"reasoning_tokens":3}}}}`,
+			``,
+			``,
+		}, "\n"))
+	})
+
+	resp, err := p.Complete(context.Background(), responsesRequest())
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if resp.ID != "resp_tool" || resp.StopReason != ir.StopToolUse {
+		t.Errorf("id/stop = %q/%q, want resp_tool/tool_use", resp.ID, resp.StopReason)
+	}
+	if len(resp.Content) != 2 {
+		t.Fatalf("content = %+v, want a thinking part and a tool call", resp.Content)
+	}
+	if tp, ok := resp.Content[0].(ir.ThinkingPart); !ok || tp.Thinking != "Checking the weather." {
+		t.Errorf("content[0] = %+v, want the reasoning summary as a thinking part", resp.Content[0])
+	}
+	tc, ok := resp.Content[1].(ir.ToolCallPart)
+	if !ok {
+		t.Fatalf("content[1] = %T, want ir.ToolCallPart", resp.Content[1])
+	}
+	if tc.ID != "call_1" || tc.Name != "get_weather" || string(tc.Input) != `{"location":"SF"}` {
+		t.Errorf("tool call = %+v, want call_1/get_weather with the assembled arguments", tc)
+	}
+	if resp.Usage.InputTokens != 21 || resp.Usage.OutputTokens != 8 || resp.Usage.ReasoningTokens != 3 {
+		t.Errorf("usage = %+v, want 21/8 with 3 reasoning tokens", resp.Usage)
 	}
 }
 

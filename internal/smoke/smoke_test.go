@@ -178,9 +178,11 @@ func TestSmoke_CodexRefreshGrant(t *testing.T) {
 }
 
 // TestSmoke_CodexBackendShape verifies the backend request shape: a
-// rotated access token performs a minimal request against the LIVE ChatGPT
-// backend and gets a protocol answer (never a transport failure or silent
-// hang) — pinning that the backend accepts the mirror headers
+// rotated access token performs a minimal STREAMED request against the LIVE
+// ChatGPT backend (the backend rejects a non-streaming body —
+// {"detail":"Stream must be set to true"} — and Complete assembles the
+// streamed round trip) and gets a protocol answer (never a transport failure
+// or silent hang) — pinning that the backend accepts the mirror headers
 // (Originator/User-Agent/Chatgpt-Account-Id).
 func TestSmoke_CodexBackendShape(t *testing.T) {
 	if !smokeEnabled(t) {

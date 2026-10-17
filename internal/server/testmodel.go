@@ -53,7 +53,10 @@ func (s *Server) testModel(reg provider.Registry) func(context.Context, string) 
 		req := ir.Request{
 			Model: row.Name,
 			// The German minimal prompt is the user's chosen test phrase:
-			// a fixed, tiny ask — no thinking, no tools, no stream.
+			// a fixed, tiny ask — no thinking, no tools, and no stream
+			// requested by the CLIENT. A streaming-only backend
+			// (ChatGPT/Codex) is served by an internally streamed round
+			// trip the provider assembles into one response.
 			MaxTokens: testModelMaxTokens,
 			Messages:  []ir.Message{{Role: ir.RoleUser, Parts: []ir.Part{ir.TextPart{Text: "Sag OK"}}}},
 		}
