@@ -78,7 +78,7 @@ Every release publishes a multi-arch manifest list (amd64 and arm64) to
 GHCR:
 
 ```bash
-docker run -d -p 8080:8080 -v ./data:/data ghcr.io/tubeof/proxyllm:v1.15.3
+docker run -d -p 8080:8080 -v ./data:/data ghcr.io/tubeof/proxyllm:v1.15.4
 ```
 
 `:latest` tracks the newest release; a version tag is the reproducible

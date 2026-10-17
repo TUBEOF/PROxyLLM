@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "PROxyLLM client API",
-    "version": "1.15.3",
+    "version": "1.15.4",
     "summary": "OpenAI-compatible, Anthropic-compatible and decision surfaces of one proxy.",
     "description": "PROxyLLM exposes three client-facing surfaces from one endpoint and translates between them, so any client shape can reach any configured upstream. Every /v1/* route authenticates with a client key (pk_<prefix>_<secret>). The operator-facing admin API (/api/admin/*) is session-authenticated and deliberately not described here; see docs/api/admin.md.",
     "license": { "name": "MIT", "identifier": "MIT" }
