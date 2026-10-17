@@ -107,3 +107,72 @@ test('the quota card carries the same pool switch', async ({ page }) => {
   await card.locator('label.toggle').click();
   await expect(sw).toBeChecked();
 });
+
+// The device sign-in copy button. navigator.clipboard exists only in a secure
+// context, so on the operator's plain-HTTP LAN origin the old code swallowed
+// the TypeError and copied nothing — silently, with no way to tell. The
+// fallback path is made visible here by taking the clipboard API away, which
+// is exactly what an insecure origin does.
+test('the device sign-in code copies without the clipboard API', async ({ page }) => {
+  await login(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+  });
+  // The issuer stays out of it: the code and the polling are canned.
+  await page.route('**/api/admin/providers/*/oauth/start', (route) =>
+    route.fulfill({
+      json: { user_code: 'ABCD-EFGH', verification_url: 'https://example.test/device', interval_seconds: 30 },
+    }),
+  );
+  await page.route('**/api/admin/providers/*/oauth/poll', (route) => route.fulfill({ json: { status: 'pending' } }));
+
+  await page.goto('/providers/codex-oauth');
+  await page.getByRole('button', { name: 'Add account' }).click();
+  await page.getByLabel('Account name').fill('copy-fallback-probe');
+  await page.getByRole('button', { name: 'Create & sign in' }).click();
+  await page.getByRole('button', { name: 'Start device sign-in' }).click();
+
+  await expect(page.getByRole('textbox', { name: 'User code' })).toHaveValue('ABCD-EFGH');
+  // The copy button's accessible name is its aria-label; "Copied" is the
+  // visible text the operator reads.
+  const copyBtn = page.getByRole('button', { name: 'Copy user code to clipboard' });
+  await copyBtn.click();
+  await expect(copyBtn).toContainText('Copied');
+
+  // Leave the fixture as it was found: the probe account goes again. The
+  // drawer is transient UI — a reload drops it and shows the table behind it.
+  await page.reload();
+  await page.locator('tr', { hasText: 'copy-fallback-probe' }).getByRole('button', { name: 'Delete' }).click();
+  await expect(page.locator('tr', { hasText: 'copy-fallback-probe' })).toHaveCount(0);
+});
+
+// The secure-context path stays the primary one: with the clipboard API
+// present the code lands in the system clipboard, not in the fallback.
+test('the device sign-in code copies through the clipboard API', async ({ page }) => {
+  await login(page);
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.route('**/api/admin/providers/*/oauth/start', (route) =>
+    route.fulfill({
+      json: { user_code: 'WXYZ-1234', verification_url: 'https://example.test/device', interval_seconds: 30 },
+    }),
+  );
+  await page.route('**/api/admin/providers/*/oauth/poll', (route) => route.fulfill({ json: { status: 'pending' } }));
+
+  await page.goto('/providers/codex-oauth');
+  await page.getByRole('button', { name: 'Add account' }).click();
+  await page.getByLabel('Account name').fill('copy-api-probe');
+  await page.getByRole('button', { name: 'Create & sign in' }).click();
+  await page.getByRole('button', { name: 'Start device sign-in' }).click();
+
+  await expect(page.getByRole('textbox', { name: 'User code' })).toHaveValue('WXYZ-1234');
+  // The copy button's accessible name is its aria-label; "Copied" is the
+  // visible text the operator reads.
+  const copyBtn = page.getByRole('button', { name: 'Copy user code to clipboard' });
+  await copyBtn.click();
+  await expect(copyBtn).toContainText('Copied');
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('WXYZ-1234');
+
+  await page.reload();
+  await page.locator('tr', { hasText: 'copy-api-probe' }).getByRole('button', { name: 'Delete' }).click();
+  await expect(page.locator('tr', { hasText: 'copy-api-probe' })).toHaveCount(0);
+});
