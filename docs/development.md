@@ -172,9 +172,11 @@ release; the perf-budget gate runs before any of it.
 2. Tag `vX.Y.Z` (annotated or not — the workflow triggers on `v*`) and push
    the tag.
 3. The workflow publishes `ghcr.io/tubeof/proxyllm:vX.Y.Z` and the archives.
-4. Point the pinned image default in `docker/compose.yaml` and the
-   `docker run` example in [deployment](deployment.md) at the new tag, and
-   commit that as `docs(release): point the pinned image default at vX.Y.Z`.
+4. Point the version references at the new tag — the pinned image default in
+   `docker/compose.yaml`, the `docker run` example in
+   [deployment](deployment.md), and `info.version` in
+   `docs/api/openapi.json` — and commit that as
+   `docs(release): point the pinned image default at vX.Y.Z`.
 
 Never commit a built `webui/dist/index.html`: it is a placeholder that lets
 a fresh clone compile without Node. `make webui-build` overwrites the
