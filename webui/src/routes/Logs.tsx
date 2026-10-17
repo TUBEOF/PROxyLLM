@@ -342,7 +342,7 @@ export default function Logs() {
       </div>
 
       {selected !== null && (
-        <Drawer title={`Request #${selected.id}`} onClose={closeTrace}>
+        <Drawer title={`Request #${selected.id}`} onClose={closeTrace} size="panel">
           <LogDetail
             selected={selected}
             subOps={data?.children?.[String(selected.id)] ?? []}
@@ -353,7 +353,7 @@ export default function Logs() {
       )}
 
       {selectedChild !== null && (
-        <Drawer title={childTitle(selectedChild.child)} onClose={closeChild}>
+        <Drawer title={childTitle(selectedChild.child)} onClose={closeChild} size="panel">
           <ChildDetail
             child={selectedChild.child}
             parent={selectedChild.parent}

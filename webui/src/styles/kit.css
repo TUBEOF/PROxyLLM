@@ -384,6 +384,19 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 .drawer-head h3{font-family:var(--font-display);font-size:17px;font-weight:var(--fw-semibold);margin:0}
 .drawer-body{padding:20px;overflow-y:auto;flex:1}
 .drawer-foot{display:flex;gap:10px;justify-content:flex-end;padding:16px 20px;border-top:1px solid var(--border)}
+/* The panel variant: the same shell, sized for a payload instead of a form.
+   Centred like .modal and 80% of the viewport, but capped — past ~1680px a
+   `pre` line of JSON outruns the eye tracking back to the next one — and
+   wearing the modal's shadow, since it is no longer a strip against an edge. */
+.drawer.drawer-panel{top:50%;left:50%;right:auto;bottom:auto;transform:translate(-50%,-50%);width:min(80vw,1680px);height:min(80vh,1040px);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:0 24px 60px oklch(0% 0 0 / 50%);overflow:hidden}
+/* A scrolling flex child only shrinks against a definite height once its
+   own min-height is released. */
+.drawer-panel .drawer-body{min-height:0}
+/* .form's 560px cap is a reading measure for a column of inputs; a panel holds
+   a read-only detail view, whose whole payload is the wrapped `pre` blocks a
+   request's trace and captured bodies render as. Leave the cap on and the
+   panel's extra width lands on empty space beside them. */
+.drawer-panel .form{max-width:none}
 
 .toast-wrap{display:flex;flex-direction:column;gap:10px}
 .toast{display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface-elevated);backdrop-filter:blur(var(--blur-card));box-shadow:0 8px 24px oklch(0% 0 0 / 35%);max-width:380px}
@@ -431,6 +444,10 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
   .w-1,.w-2,.w-3,.w-full{grid-column:span 1}
   .form-row{grid-template-columns:1fr}
   .table{min-width:560px}
+  /* On a phone the panel takes the viewport and drops its radius: there are no
+     margins to spare. Anchored to all four edges rather than sized in viewport
+     units, so a moving browser chrome needs no dvh. */
+  .drawer.drawer-panel{top:0;right:0;bottom:0;left:0;width:auto;height:auto;transform:none;border:0;border-radius:0}
 }
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}

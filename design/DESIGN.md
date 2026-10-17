@@ -67,7 +67,7 @@ components:
   cards: "widget: surface + border + blur(10px), 12px radius; border turns to --neutral-600 on hover, accent border + glow on interactive cards"
   tables: "glass table, 13px/16px cells, row hover --row-hover, sticky header, mono right-aligned numbers, pills for provider/protocol, badges for status"
   forms: "label above field, 40px input, focus = accent border + 3px accent halo, error = status-down border + inline message"
-  overlays: "modal (backdrop 60% + blur(4px)), drawer 420px, user menu 210px, toast, tooltip"
+  overlays: "modal (backdrop 60% + blur(4px)), drawer — rail 420px or the 80% panel, user menu 210px, toast, tooltip"
 do_not:
   - "Never introduce a second chromatic colour — the accent is green; status tones are the only other hues."
   - "Never ship a light theme or read prefers-color-scheme: light — dark is the only appearance."
@@ -253,7 +253,17 @@ login card, and overrides nothing.
   keyboard and assistive technology see a normal control.
 - **Tabs and breadcrumb** — `.tabs`/`.tab`, `.breadcrumb`.
 - **Overlays** — `.modal-backdrop` + `.modal` (centred, `--z-modal`), `.drawer`,
-  `.user-menu`, `.toast`, `.tooltip`.
+  `.user-menu`, `.toast`, `.tooltip`. The drawer has two sizes. The **rail**
+  (`.drawer`, `min(420px, 90vw)`) is the right-hand strip a form rides in. The
+  **panel** (`.drawer` + `.drawer-panel`) is the same shell centred like the
+  modal at `min(80vw, 1680px)` × `min(80vh, 1040px)` with the modal's shadow,
+  for a payload an operator reads rather than a form they fill: a request's
+  route trace and captured bodies. It carries no footer of its own, its body is
+  the only scrolling region, and it releases `.form`'s 560px reading cap — that
+  cap measures a column of inputs, and here it would only push the panel's extra
+  width into the empty space beside the wrapped `pre` blocks the payload renders
+  as. Below 768px it takes the whole viewport and
+  drops its border and radius, which is the same step the sidebar takes there.
 - **Lists** — `.feed` / `.feed-item` with a severity icon circle.
 - **Logs** — `.logs-table` and the row vocabulary: `.log-row`, `.log-row-child`
   with the `.child-elbow` tree rail, `.td-gutter`, `.child-failover`,
