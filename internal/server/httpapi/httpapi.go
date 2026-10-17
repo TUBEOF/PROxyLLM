@@ -13,7 +13,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/observability"
@@ -41,11 +40,6 @@ type Params struct {
 	// Executor dispatches requests through the chain with failover.
 	Executor *routing.Executor
 
-	// HasWebToolAccounts reports the web-tool account presence at
-	// assembly time (the emulation default). nil keeps native; the server
-	// refreshes it via RefreshWebToolAccounts on provider reloads.
-	HasWebToolAccounts func() bool
-
 	// Stream is the admin log stream hub (in-flight registry + finished-row
 	// broadcast). nil keeps it disabled — every existing test constructs
 	// api without it and stays green.
@@ -58,31 +52,18 @@ type api struct {
 	router   *routing.Router
 	executor *routing.Executor
 	stream   *reqlog.Stream // nil = live log stream disabled
-	// hasWebToolAccounts is refreshed by the admin provider reload (the
-	// emulation default consults it per compatFor; a per-request store
-	// scan is the alternative — a bool swap avoids the hot-path query).
-	hasWebToolAccounts atomic.Bool
 }
 
-// API is the assembled client-facing handler (New's return): the mux
-// itself, with the refresh points the server's admin reload hooks need
-// (emulation-presence live swap).
+// API is the assembled client-facing handler (New's return): the mux itself,
+// with the refresh points the server's admin reload hooks need.
 type API struct {
 	http.Handler
 	a *api
 }
 
-// SetWebToolAccounts swaps the cached emulation-presence bool (the admin
-// provider reload calls it). Atomic — the emulation default picks up the
-// next request after a provider write.
-func (p *API) SetWebToolAccounts(present bool) { p.a.hasWebToolAccounts.Store(present) }
-
 // New assembles the client-facing HTTP handler.
 func New(p Params) *API {
 	a := &api{store: p.Store, router: p.Router, executor: p.Executor, stream: p.Stream}
-	if p.HasWebToolAccounts != nil {
-		a.hasWebToolAccounts.Store(p.HasWebToolAccounts())
-	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/chat/completions", a.handleChat)
@@ -110,34 +91,47 @@ type wireCompat struct {
 	CacheControl        string `json:"cache_control"`
 }
 
-// compatFor loads the per-model compat policy. The model row's
-// capabilities drive the policy now (the WebUI compat editor is
-// REMOVED — the defaults are internal policy, capability-aware): a
-// stored compat blob still wins when present
-// (legacy rows keep their explicitly-set behavior — read-only, the SPA
-// no longer writes this field).
+// compatFor loads the compat policy of the model the request will LAND on.
+// The model row's capabilities drive the policy (the WebUI compat editor is
+// REMOVED — the defaults are internal policy, capability-aware): a stored
+// compat blob still wins when present (legacy rows keep their
+// explicitly-set behavior — read-only, the SPA no longer writes this field).
 //
-// A model without a row (or with an unparsable compat blob) is not an
-// error: it routes with the default (strip) policy — the store is
-// eventually consistent, and requests must not hard-fail on a missing
-// row.
+// The landed model is what the policy belongs to, so the lookup follows the
+// same two shifts the router applies before it routes: the Claude Code
+// context marker is stripped, then the alias table is followed ONE hop. A
+// client-typed ID such as claude-haiku-5-5 has no row of its own — its policy
+// lives on the alias target's row, and reading the typed name instead would
+// silently drop to the defaults (wrong emulation policy, wrong thinking
+// handling) while the request routes as the target. Missing row or a failed
+// read is not an error: the request routes with the DERIVED defaults — the
+// store is eventually consistent, and requests must not hard-fail on a
+// missing row.
 func (a *api) compatFor(ctx context.Context, model string) routing.Compat {
 	// Follow routing's context-marker strip: a suffixed request
 	// ("glm-5.3-flash[1M]") carries no row of its own — the operator's
 	// compat policy lives on the base row and must apply (otherwise the
 	// marker would silently bypass thinking handling, clamps, emulation).
 	base, _ := routing.StripContextMarker(model)
+	// ... and routing's alias hop: the policy is keyed by the landed model.
+	if a.router != nil {
+		if target, ok := a.router.AliasTarget(base); ok {
+			base = target
+		}
+	}
 	var c routing.Compat
 	m, err := a.store.GetModel(ctx, base)
 	if err != nil {
-		return c // zero value: strip default, no clamp
+		// No row for the landed model: the derived defaults below still
+		// apply. An unknown model is not an unconfigured one.
+		m = storage.Model{}
 	}
 	var w wireCompat
 	if len(m.Compat) > 0 {
 		_ = json.Unmarshal(m.Compat, &w)
 	}
 	c.ThinkingHandling = defaultThinkingFor(m.Capabilities, w.ThinkingHandling)
-	c.ServerToolEmulation = emulationFor(a.hasWebToolAccounts.Load(), w.ServerToolEmulation)
+	c.ServerToolEmulation = emulationFor(w.ServerToolEmulation)
 	c.MaxTokensClamp = w.MaxTokensClamp
 	c.ContextWindow = w.ContextWindow
 	c.CacheControl = defaultCacheControl(w.CacheControl)
@@ -199,18 +193,24 @@ func defaultCacheControl(stored string) string {
 	return "" // compat.go: "" = drop for non-Anthropic targets
 }
 
-// emulationFor pins the emulation default: emulate-firecrawl whenever
-// a web-tool account exists (the model cannot serve native web search
-// through this proxy without one), otherwise native (forward whatever
-// the provider accepts). A stored blob value still wins (legacy rows).
-func emulationFor(hasWebTool bool, stored string) string {
-	if stored != "" {
-		return stored
-	}
-	if hasWebTool {
+// emulationFor pins the emulation default: emulate-firecrawl for EVERY target
+// unless the row explicitly pinned `off`. The web-tool families are served by
+// the PROXY's web-tool accounts, never by a chat model's upstream — a dated
+// server-tool definition cannot ride to a provider that has never heard of it,
+// and letting it ride has only bad outcomes: the router's capability filter
+// skips every account that does not declare native web_search/web_fetch (the
+// request dies 404 before any fallback runs), or the model calls a function
+// the client cannot answer. A stored legacy `native` therefore reads as
+// emulate — the editor that could write it is gone, and no provider type in
+// this proxy speaks the server-tool wire. With no web-tool account configured
+// every emulated call degrades to the documented `unavailable` error result,
+// so the request still routes and the model can tell the client it could not
+// look the request up.
+func emulationFor(stored string) string {
+	if stored == "" || stored == routing.EmulationNative {
 		return routing.EmulationEmulateFirecrawl
 	}
-	return routing.EmulationNative
+	return stored
 }
 
 // Settings keys read by this package (the SPA Settings surface writes them

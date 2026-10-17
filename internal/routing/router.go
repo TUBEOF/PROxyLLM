@@ -75,10 +75,11 @@ type Router struct {
 	// capabilities were never learned.
 	visionLookup func(ctx context.Context, providerID, model string) (canSeeImages, known bool)
 
-	// mu guards rules and the round-robin counters — the live rule set is
-	// replaceable at runtime (WebUI routing writes reload it). Readers take
-	// RLock; the reload path takes Lock for one whole-set swap. Aliases and
-	// KeyScopes stay startup-fixed: only rules are DB-editable.
+	// mu guards the rule set, the alias map, the global strategy and the
+	// round-robin counters — all of them replaceable at runtime (WebUI
+	// routing/settings writes reload them). Readers take RLock; the reload
+	// path takes Lock for one whole-set swap. KeyScopes stay startup-fixed:
+	// they are the only routing input no WebUI page writes.
 	mu    sync.RWMutex
 	rules []Rule
 	// rrCounters holds one atomic counter per rule, keyed by rule id. A
@@ -237,6 +238,36 @@ func StripContextMarker(model string) (base string, hadMarker bool) {
 	return model, false
 }
 
+// aliasTarget resolves model through the live alias table: the exact entry
+// first, then the wildcard entries (the pattern with the most literal
+// characters wins, ties lexicographic — one deterministic answer). One hop
+// only: an alias target is never resolved again. The boolean reports whether
+// any entry matched.
+//
+// Callers outside routing use AliasTarget to name the model a request will
+// LAND on — the landed model's row is where the compatibility policy lives.
+func (r *Router) aliasTarget(model string) (string, bool) {
+	if r == nil {
+		return "", false
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if target, ok := r.cfg.Aliases[model]; ok {
+		return target, true
+	}
+	return wildcardAlias(model, r.cfg.Aliases)
+}
+
+// AliasTarget resolves a client-typed model name the way resolveWithTrace
+// step 2 does (see aliasTarget) and reports whether an alias matched. It
+// exists so a caller that must resolve something PER LANDED MODEL — the
+// per-model compatibility policy, which the client-typed name usually has no
+// row for — reaches the same answer the router routes on, instead of a
+// second, drifting implementation of alias resolution.
+func (r *Router) AliasTarget(model string) (string, bool) {
+	return r.aliasTarget(model)
+}
+
 // resolveWithTrace runs the deterministic pipeline:
 //
 //  1. key scope  — the key's allowed patterns must match the model
@@ -279,10 +310,7 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 	// release. The resolution is traced like any alias, and an alias target
 	// is never resolved again (no chains).
 	requested := model
-	target, aliased := r.cfg.Aliases[model]
-	if !aliased {
-		target, aliased = wildcardAlias(model, r.cfg.Aliases)
-	}
+	target, aliased := r.aliasTarget(model)
 	if aliased {
 		model = target
 		trace.add(Event{Type: EventAlias, From: requested, To: model})

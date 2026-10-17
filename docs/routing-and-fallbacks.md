@@ -47,7 +47,10 @@ whose message names the model ([errors](api/errors.md#model-not-found-404)).
    entry is unrestricted; a request outside its key's patterns is rejected
    ([errors](api/errors.md#status-codes)).
 2. **Alias** — the requested name maps to its configured target, which is
-   what everything below matches on.
+   what everything below matches on. The compatibility policy is keyed by the
+   same landed name: the surface resolves it from the alias target's row, never
+   from the client-typed name — which, for a Claude Code auxiliary ID, usually
+   has no row at all ([model compatibility](reference/model-compat.md#where-the-policy-is-applied)).
 3. **Model match** — the model id against the enabled rules: exact matches
    before wildcards, then priority (higher wins), then registration order. A
    wildcard `*` matches any run of characters, including none, and a pattern
@@ -261,17 +264,20 @@ tool emulation, clamps, context window, cache markers — is
 
 ## Tool emulation
 
-When a request needs `web_search` or `web_fetch` and the routed model's
-policy is `server_tool_emulation: emulate-firecrawl`, the server-tool
-definitions are converted into client-shaped tools, the model's calls are
-intercepted by the executor, answered through the configured web-tool
-accounts, and synthesized back into the client's protocol as the family's
-result blocks
+When a request carries `web_search` or `web_fetch` server-tool definitions,
+they are converted into client-shaped tools, the model's calls are intercepted
+by the executor, answered through the configured web-tool accounts, and
+synthesized back into the client's protocol as the family's result blocks
 ([model compatibility](reference/model-compat.md#the-settings)). The stored
 setting keeps the name it was introduced under; the pool it drives is no
 longer Firecrawl-only. With no account configured, a call is answered with
 the documented `unavailable` error result, so the model can tell the client
-it could not look the request up. Vision cannot be emulated this way: a model
+it could not look the request up.
+That conversion is also what keeps the request routable at all: an emulated
+request no longer *requires* native `web_search`/`web_fetch`, so the capability
+filter (step 6 above) has nothing to skip and an upstream that has never heard
+of the family stays reachable. This is the default policy for every target —
+`off` is the only operator pin, and it removes the definitions instead. Vision cannot be emulated this way: a model
 that really rejects image input is handled by the rescue above.
 
 Two backend types serve those calls, both connected in the console
