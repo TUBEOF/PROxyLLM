@@ -174,6 +174,21 @@ export const IconRefresh = (p: IconProps) => (
   </Icon>
 );
 
+export const IconClock = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </Icon>
+);
+
+export const IconDelta = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M7 5v10" />
+    <path d="M2 10h10" />
+    <path d="M15 16h6" />
+  </Icon>
+);
+
 export const IconExternal = (p: IconProps) => (
   <Icon {...p}>
     <path d="M14 4h6v6" />
