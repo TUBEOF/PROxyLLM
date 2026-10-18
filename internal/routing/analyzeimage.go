@@ -200,13 +200,15 @@ func (e *Executor) substituteForKnownBlind(ctx context.Context, chain []ChainEnt
 	}
 	cfg := e.currentCaptionConfig()
 
-	// Task hint: unchanged semantics from the caption cache's key — the
-	// client's current question steers the bootstrap description.
-	hint := ""
-	if cfg.taskAware() {
-		hint = truncateRunes(strings.TrimSpace(lastUserText(req)), captionTaskHintLimit)
-	}
-	prompt := composeCaptionPrompt(cfg.prompt(), hint, cfg.taskAware())
+	// ADR-018 addendum 2026-10-18: the bootstrap caption is ORIENTATION,
+	// deliberately task-independent — the base prompt, keyed on the image
+	// bytes only, so an image in a session transcript is described exactly
+	// once and every later turn is a cache hit with a bytestable placeholder.
+	// Steering the description on the client's newest message described the
+	// image again per turn — the tool is the question mechanism now; a
+	// question-targeted caption is the reactive rescue's business, not this
+	// path's.
+	prompt := cfg.prompt()
 	version := captionVersion(cfg.prompt(), models)
 	clientKey := clientKeyIDFromContext(ctx)
 
@@ -238,7 +240,7 @@ func (e *Executor) substituteForKnownBlind(ctx context.Context, chain []ChainEnt
 		state.images[refID] = img
 		state.ordinals[strconv.Itoa(i+1)] = refID
 
-		key := captionImageKey(clientKey, version, hint, img)
+		key := captionImageKey(clientKey, version, "", img) // task dimension: none — once per image
 		if entry, ok := e.captions.get(key); ok {
 			texts[i] = entry.text
 			trace.ImageCaptionCached(entry.providerID, entry.model, len(entry.text))

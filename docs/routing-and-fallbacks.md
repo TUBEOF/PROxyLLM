@@ -164,6 +164,10 @@ happens depends on the chain's known vision state:
 | Every entry known blind, vision fallbacks configured | **Pre-dispatch substitution**: every image becomes an `[Bild N (ref …)]` placeholder (bootstrap caption from the cache, else the describer walk) and the `analyze_image` tool is injected; the dispatch carries no image |
 | Every entry known blind, no vision fallback | The request goes out as-is; the honest `capability_gap` surfaces and the rescue below answers nothing |
 
+The bootstrap caption is composed from the base prompt only — an image is
+described **once** per client, and every later session turn carrying it is a
+cache hit; steering a re-description on the client's newest message paid a
+describer call per turn and is gone (see ADR-018's 2026-10-18 addendum).
 The placeholder embeds a **content ref** — the first 12 hex chars of the
 SHA-256 of the image's decoded bytes (the caption cache's own digest), so it
 survives the transcript re-send, is identical for an inline payload and a
@@ -227,7 +231,9 @@ Details that matter in operation:
 
 - The instruction is task-aware by default: the client's most recent text
   turn is appended so the description targets the question that came with the
-  image, and transcribing visible text is called out. The prompt, the
+  image, and transcribing visible text is called out. (This task awareness is the reactive
+  rescue's alone: the pre-dispatch bootstrap above describes once and stays
+  out of the conversation-questions business — those belong to `analyze_image`.) The prompt, the
   task-aware switch and the per-caption timeout are settings
   ([configuration](configuration.md#database-overrides-layer-4)).
 - A remote image is downloaded and inlined before it is described, through

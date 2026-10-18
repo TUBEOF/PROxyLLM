@@ -496,13 +496,13 @@ func TestExecute_AnalyzeImageCallsTheAnswerCache(t *testing.T) {
 		// Turn 1 (question "read the screenshot").
 		{ID: "r1", Content: []ir.Part{toolCall(`{"image_ref":"` + ref + `","prompt":"what error text?"}`)}},
 		{ID: "r2", Content: []ir.Part{ir.TextPart{Text: "turn one done"}}, Usage: ir.Usage{InputTokens: 7, OutputTokens: 1}},
-		// Turn 2: same image, a different client question (the bootstrap
-		// re-describes per the task-hint key), the model asks the SAME
-		// question about the image.
+		// Turn 2: same image, a different client question — the bootstrap is
+		// task-independent (ADR-018 addendum 2026-10-18) and hits the cache;
+		// the model asks the SAME question about the image: cache too.
 		{ID: "r3", Content: []ir.Part{toolCall(`{"image_ref":"` + ref + `","prompt":"what error text?"}`)}},
 		{ID: "r4", Content: []ir.Part{ir.TextPart{Text: "turn two done"}}, Usage: ir.Usage{InputTokens: 7, OutputTokens: 1}},
-		// Turn 3: same client question (the bootstrap hits the cache), the
-		// model asks a NEW question about the image.
+		// Turn 3: same client question, the model asks a NEW question about
+		// the image — only that ask is paid.
 		{ID: "r5", Content: []ir.Part{toolCall(`{"image_ref":"` + ref + `","prompt":"how many windows?"}`)}},
 		{ID: "r6", Content: []ir.Part{ir.TextPart{Text: "turn three done"}}, Usage: ir.Usage{InputTokens: 7, OutputTokens: 1}},
 	}}
@@ -527,13 +527,16 @@ func TestExecute_AnalyzeImageCallsTheAnswerCache(t *testing.T) {
 	}
 
 	imageTurn("and now?")
-	if got := vision.calls - 2; got != 1 {
-		t.Errorf("vision calls grew by %d on turn 2, want exactly 1 — the bootstrap re-describes (a new question), but the IDENTICAL tool ask must hit the cache", got)
+	if got := vision.calls - 2; got != 0 {
+		t.Errorf("vision calls grew by %d on turn 2, want 0 — the bootstrap is task-independent (a cache hit), and the identical tool ask is cached too", got)
 	}
 
-	imageTurn("and now?")
-	if got := vision.calls - 3; got != 1 {
-		t.Errorf("vision calls grew by %d on turn 3, want exactly 1 — the bootstrap hits the cache (same question), but the changed tool ask must re-describe", got)
+	if _, _, err := e.Execute(ctx, []routing.ChainEntry{{ProviderID: "main", Model: "m"}},
+		ir.Request{Model: "m", Messages: []ir.Message{{Role: ir.RoleUser, Parts: []ir.Part{ir.TextPart{Text: "and now?"}, c}}}}); err != nil {
+		t.Fatalf("Execute (turn 3): %v", err)
+	}
+	if got := vision.calls - 2; got != 1 {
+		t.Errorf("vision calls grew by %d on turn 3, want exactly 1 — the bootstrap is cached, but the changed tool ask must re-describe", got)
 	}
 
 	// The turn-3 answer for the new prompt must not equal the turn-1 cached
@@ -811,5 +814,51 @@ func TestExecute_ClientDeclaredAnalyzeImageIsNotHijacked(t *testing.T) {
 				t.Errorf("the client's tool arguments reached the vision model: %q", t2.Text)
 			}
 		}
+	}
+}
+
+// The observation the user filed (pinned end to end): a session that carries
+// an image in its transcript receives three different client messages over
+// it — and the VISION MODELS must be asked exactly once, on the first one.
+// Question steering is the tool's job, not a re-caption with the newest
+// message (ADR-018 addendum 2026-10-18). The placeholder text stays
+// bytestable across all three turns.
+func TestExecute_BlindChainImageIsDescribedOncePerSession(t *testing.T) {
+	c := ir.ImagePart{Source: "base64", MediaType: "image/png", Data: "iVBORw0KGgo="}
+	main := &toolScriptProvider{id: "main", resps: []ir.Response{
+		{ID: "t1", Content: []ir.Part{ir.TextPart{Text: "turn one"}}, Usage: ir.Usage{InputTokens: 5, OutputTokens: 1}},
+		{ID: "t2", Content: []ir.Part{ir.TextPart{Text: "turn two"}}, Usage: ir.Usage{InputTokens: 5, OutputTokens: 1}},
+		{ID: "t3", Content: []ir.Part{ir.TextPart{Text: "turn three"}}, Usage: ir.Usage{InputTokens: 5, OutputTokens: 1}},
+	}}
+	vision := &recordingProvider{id: "vision", text: "a screenshot of a terminal"}
+
+	ctx := routing.WithClientKeyID(context.Background(), "client-a")
+	e := analyzeExecutor(main, vision, blindLookup(), nil)
+
+	places := map[string]bool{}
+	for i, question := range []string{"first message", "second message, different words", "third message again"} {
+		resp, trace, err := e.Execute(ctx, []routing.ChainEntry{{ProviderID: "main", Model: "m"}},
+			ir.Request{Model: "m", Messages: []ir.Message{
+				{Role: ir.RoleUser, Parts: []ir.Part{ir.TextPart{Text: question}, c}},
+			}})
+		if err != nil {
+			t.Fatalf("turn %d: %v", i+1, err)
+		}
+		if len(resp.Content) == 0 || !strings.Contains(strings.Join(partStrings(resp.Content), " "), "turn") {
+			t.Errorf("turn %d did not serve the transcript: +%v", i+1, resp.Content)
+		}
+		// The dispatch body repeats the same placeholder text every turn.
+		for _, seen := range main.seen {
+			if strings.Contains(strings.Join(partStrings(seen.Messages[0].Parts), " "), "Bild 1 (ref ") {
+				places[string(seen.Messages[0].Parts[1].(ir.TextPart).Text)] = true
+			}
+		}
+		_ = trace
+	}
+	if vision.calls != 1 {
+		t.Errorf("vision describe calls = %d, want exactly 1 (the first message) — re-captions keyed on the newest message are the defect this pins", vision.calls)
+	}
+	if len(places) != 1 {
+		t.Errorf("placeholder text drifted between turns: %d distinct texts", len(places))
 	}
 }
