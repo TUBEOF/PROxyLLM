@@ -12,7 +12,9 @@ async function login(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: /sign in/i }).click();
   await expect(page.getByRole('link', { name: 'API keys' })).toBeVisible();
   await page.goto('/keys');
-  await expect(page.getByRole('heading', { name: 'API keys' })).toBeVisible();
+  // Exact: the loading state's h3 ("Loading API keys") also matches a
+  // non-exact role query, and strict mode rejects the pair on mobile.
+  await expect(page.getByRole('heading', { name: 'API keys', exact: true })).toBeVisible();
 }
 
 async function createKey(page: import('@playwright/test').Page, name: string): Promise<string> {
