@@ -26,6 +26,7 @@ its identifier and its history stay.
 | [ADR-015](ADR-015-web-tool-emulation-resilience.md) | Web-tool emulation resilience: ordered account walk, bounded time, honest empty answers, per-account tracing | Accepted |
 | [ADR-016](ADR-016-scalability-and-concurrency.md) | Scalability and concurrency: SQLite pool, key-hash caching, lock splitting, emulation budgets | Accepted |
 | [ADR-017](ADR-017-decision-models.md) | Decision models: a second IR operation class (System One / Jev, the OpenAI Decisions API) | Accepted |
+| [ADR-018](ADR-018-vision-passthrough-and-analyze-image.md) | Vision pass-through + the `analyze_image` tool: blind-chain images substitute pre-dispatch; the model sends the image with its own prompt to a vision model | Accepted |
 
 ADR template: [TEMPLATE.md](TEMPLATE.md)
 

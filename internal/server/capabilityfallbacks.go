@@ -30,6 +30,12 @@ const (
 	captionPromptKey    = "vision_caption_prompt"
 	captionTaskAwareKey = "vision_caption_task_aware"
 	captionTimeoutMSKey = "vision_caption_timeout_ms"
+
+	// ADR-018: vision_tool("0" disables it) toggles the analyze_image
+	// injection on blind chains, vision_placeholder_template overrides the
+	// substitution text ({n} {ref} {caption}).
+	visionToolKey     = "vision_tool"
+	visionTemplateKey = "vision_placeholder_template"
 )
 
 // resolveCaptionConfig reads the caption settings, keeping the built-in default
@@ -51,6 +57,17 @@ func resolveCaptionConfig(ctx context.Context, store *storage.Store) routing.Cap
 		if ms, perr := strconv.Atoi(strings.TrimSpace(v)); perr == nil && ms > 0 {
 			cfg.Timeout = time.Duration(ms) * time.Millisecond
 		}
+	}
+	// ADR-018: the tool is enabled unless explicitly disabled ("0"), and the
+	// template override rides verbatim (empty selects the executor default).
+	if v, ok, err := store.GetConfigValue(ctx, visionToolKey); err == nil && ok {
+		if strings.TrimSpace(v) == "0" {
+			off := false
+			cfg.VisionTool = &off
+		}
+	}
+	if v, ok, err := store.GetConfigValue(ctx, visionTemplateKey); err == nil && ok && strings.TrimSpace(v) != "" {
+		cfg.VisionPlaceholderTemplate = v
 	}
 	return cfg
 }

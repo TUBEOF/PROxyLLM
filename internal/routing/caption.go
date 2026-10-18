@@ -83,6 +83,18 @@ type CaptionConfig struct {
 
 	// MaxTokens caps a single caption.
 	MaxTokens int
+
+	// VisionTool controls the analyze_image injection (ADR-018): nil means
+	// enabled — on an all-blind chain the substituted placeholders come with
+	// the tool, so the model can ask its own questions about the image.
+	// Explicit false disables the injection (the pre-ADR-018 caption-only
+	// behavior).
+	VisionTool *bool
+
+	// VisionPlaceholderTemplate overrides the substitution text; the
+	// placeholders {n} {ref} {caption} are replaced per image. Empty selects
+	// the documented default.
+	VisionPlaceholderTemplate string
 }
 
 func (c CaptionConfig) prompt() string {

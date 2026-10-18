@@ -152,11 +152,61 @@ provider accounts in the vision list) is skipped with a log line rather than
 taking the rest of the list down with it. An empty or unresolvable web list
 keeps the accounts' own insertion order.
 
+## Images on a blind chain: the analyze_image tool
+
+**The rule (ADR-018).** A request whose images matter gets pixels or the
+means to look again — second-hand prose alone fails the requirement. What
+happens depends on the chain's known vision state:
+
+| Chain vision state | action before dispatch |
+|---|---|
+| Any entry unknown or can-see | **Pass-through**: the image blocks ride the dispatch natively; no caption, no tool |
+| Every entry known blind, vision fallbacks configured | **Pre-dispatch substitution**: every image becomes an `[Bild N (ref …)]` placeholder (bootstrap caption from the cache, else the describer walk) and the `analyze_image` tool is injected; the dispatch carries no image |
+| Every entry known blind, no vision fallback | The request goes out as-is; the honest `capability_gap` surfaces and the rescue below answers nothing |
+
+The placeholder embeds a **content ref** — the first 12 hex chars of the
+SHA-256 of the image's decoded bytes (the caption cache's own digest), so it
+survives the transcript re-send, is identical for an inline payload and a
+fetched URL, and costs no storage: the tool can only be called inside the
+request that carries the image. An image whose caption failed substitutes
+`image content not available` rather than staying raw — on an all-blind
+chain the raw image is certain to be rejected, so a spoken absence beats a
+doomed round trip (the one deliberate ADR-014 deviation, see
+[ADR-018](adr/ADR-018-vision-passthrough-and-analyze-image.md)).
+
+**The tool.** `analyze_image(image_ref, prompt)` is injected executor-side
+and answered executor-side: the image plus the model's OWN prompt goes to
+the `vision_fallback` models in order (same describer walk as the rescue,
+same cache — the tool prompt is the cache's task, so an identical ask is
+free and a changed ask re-describes). Bounds mirror the web-tool emulation
+(`max_uses` 8, the emulation call/total budgets). The client sees none of
+it: no tool definition, no blocks in the response — on every surface,
+because the injection happens against the canonical IR after routing, not
+in one codec.
+
+**Mixed turns.** A turn that combines an `analyze_image` call with a client
+tool call surfaces only the CLIENT's calls; the vision call is dropped and
+traced (reason "not answered: mixed with client tool calls") — an unknown
+`tool_use` must never reach a client. The ask survives as an `analyze_image`
+trace event with the decline.
+
+**Toggles.** `vision_tool=0` degrades to plain pre-dispatch caption
+substitution (no tool); `vision_placeholder_template` changes the placeholder
+wording (`{n}` `{ref}` `{caption}`); the per-call budget stays
+`vision_caption_timeout_ms`
+([configuration](configuration.md#database-overrides-layer-4)). Streaming
+requests on this path ride the complete loop like web-tool requests — same
+documented latency trade.
+
 ## The vision rescue
 
 **What triggers it.** After the routed chain has been attempted and *every*
 attempt failed with `capability_gap` — an upstream 400 naming the input
-modality ("image input is not supported"). Nothing else triggers it: a 401 or
+modality ("image input is not supported"). This is the REACTIVE half of the
+image handling (the pre-dispatch half lives in
+[the section above](#images-on-a-blind-chain-the-analyze_image-tool)); on a
+chain whose entries are all known-blind it never fires, because the images
+never reach the dispatch to be rejected. Nothing else triggers it: a 401 or
 a `content_filter` must not be "rescued" by another model, and a chain that
 failed for mixed reasons has no rescue to offer. Nor does it rescue a request
 that never routed at all: an unresolvable model stays the no-route error. An
@@ -367,9 +417,10 @@ both what the model is re-sent and what the client receives.
 
 ### Streaming requests with emulated tools
 
-A streaming request whose tools include emulated definitions rides the
-complete-path emulation round trip to finality, and the final response is
-synthesized into a protocol-conform event stream. The latency trade is
+A streaming request whose tools include emulated definitions — claimed web
+tools, or the injected analyze_image tool of a blind-chain image request —
+rides the complete-path emulation round trip to finality, and the final
+response is synthesized into a protocol-conform event stream. The latency trade is
 explicit: such a request has no token streaming, because the model's whole
 answer completes before the first byte reaches the client. That is the price
 of real tool results, and it is paid only by requests that carry emulated

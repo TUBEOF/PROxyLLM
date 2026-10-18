@@ -35,6 +35,10 @@ const (
 	// the tool name, Detail the invocation summary (query/url, outcome).
 	OpEmulatedTool OpKind = "emulated_tool"
 
+	// OpAnalyzeImage: the analyze_image tool answered — the routed model's
+	// own question was sent to a vision model (ADR-018).
+	OpAnalyzeImage OpKind = "analyze_image"
+
 	// OpImageCaption: a vision fallback model DESCRIBED an image and the
 	// description replaced it in the request (ADR-014). ProviderID/Model name
 	// the describer, Detail the description's length. This is the row that
@@ -141,6 +145,18 @@ func ChildOps(events []Event) []ChildOp {
 				// event names it directly, unlike the walk-derived ops.
 				ProviderID: ev.ProviderID,
 				Model:      ev.Model,
+				LatencyMS:  ev.LatencyMS,
+				Usage:      ev.Usage,
+			})
+		case EventAnalyzeImage:
+			ops = append(ops, ChildOp{
+				Kind: OpAnalyzeImage,
+				To:   analyzeImageToolName,
+				// The vision model that answered — the routed model's own
+				// round issued the call, so the operator wants where it went.
+				ProviderID: ev.ProviderID,
+				Model:      ev.Model,
+				Detail:     ev.Reason,
 				LatencyMS:  ev.LatencyMS,
 				Usage:      ev.Usage,
 			})

@@ -248,8 +248,16 @@ func TestExecutor_Caption_ConfigChangeInvalidatesTheCache(t *testing.T) {
 // rejection is a known outcome rather than a discovery. The images are then
 // replaced before dispatch: no rejected round trip, and no vision call.
 func TestExecutor_Caption_KnownBlindChainSkipsTheDispatch(t *testing.T) {
-	main := &recordingProvider{id: "main", errs: []error{gapErr(), nil}}
-	vision := &recordingProvider{id: "vision"}
+	// ADR-018: on an all-known-blind chain the image never reaches the
+	// dispatch at all — not just on a cached second turn (the old reactive
+	// contract), but on the FIRST one: the rejection is certain in advance,
+	// and a hung upstream may never even send it (the transport timeout that
+	// masked the gap 400 and broke the rescue). Turn 1 describes, substitutes
+	// the placeholder, injects the analyze_image tool, and is served in one
+	// walk. Turn 2 re-sends the transcript: the description is already known
+	// (cache) and the tool rides along again; the describer is not paid twice.
+	main := &recordingProvider{id: "main"}
+	vision := &recordingProvider{id: "vision", text: "a stack trace pointing at nil.go:42"}
 
 	e := routing.NewExecutor(routing.ExecutorConfig{
 		Registry:     regOf(main, vision),
@@ -264,37 +272,42 @@ func TestExecutor_Caption_KnownBlindChainSkipsTheDispatch(t *testing.T) {
 	})
 	chain := []routing.ChainEntry{{ProviderID: "main", Model: "m"}}
 
-	// Turn 1 discovers the image: rejected once, described once, served.
 	if _, _, err := e.Execute(context.Background(), chain, imageRequest("q1")); err != nil {
 		t.Fatalf("turn 1: %v", err)
 	}
-	// Turn 2 cannot be rejected for the image any more — it is gone before the
-	// dispatch, and the chain is walked exactly once. The question is unchanged,
-	// which is what makes the description already known.
 	_, trace2, err := e.Execute(context.Background(), chain, imageRequest("q1"))
 	if err != nil {
 		t.Fatalf("turn 2: %v", err)
 	}
 
-	if main.calls != 3 {
-		t.Errorf("chain dispatches = %d, want 3 (turn 1 rejected + retried, turn 2 once)", main.calls)
+	if main.calls != 2 {
+		t.Errorf("chain dispatches = %d, want 2 (one walk per turn; the blind rejection is never paid)", main.calls)
 	}
 	if vision.calls != 1 {
-		t.Errorf("vision calls = %d, want 1", vision.calls)
+		t.Errorf("vision calls = %d, want 1 (turn 1 describes, turn 2 is a cache hit)", vision.calls)
 	}
-	if hasEvent(trace2, routing.EventFailed) {
-		t.Error("turn 2 recorded a failed attempt: the rejection was known in advance and must not be paid for")
+	for _, trace := range []*routing.Trace{trace2} {
+		if hasEvent(trace, routing.EventFailed) {
+			t.Error("a turn recorded a failed attempt: the rejection was known in advance and must not be paid for")
+		}
 	}
-	if got := partStrings(main.seen[2].Messages[0].Parts); len(got) != 2 || got[1] == "image:iVBORw0KGgo=" {
+	if got := partStrings(main.seen[1].Messages[0].Parts); len(got) != 2 || got[1] == "image:iVBORw0KGgo=" {
 		t.Errorf("turn 2 dispatched parts = %q, want the image already replaced", got)
 	}
-	// The trace must not describe a rejection that never happened. Turn 2 was
-	// never refused for the image — nothing was attempted until after the
-	// replacement — so "the chain was exhausted and is being retried" would be a
-	// fiction an operator would chase.
+	// The trace must not describe a rejection that never happened. No turn
+	// was ever refused for the image — nothing was attempted until after the
+	// replacement — so "the chain was exhausted and is being retried" would
+	// be a fiction an operator would chase.
 	for _, ev := range eventsOf(trace2, routing.EventCapabilityFallback) {
 		if strings.Contains(ev.Reason, "exhausted") || strings.Contains(ev.Reason, "retrying") {
 			t.Errorf("pre-dispatch substitution traced as %q", ev.Reason)
+		}
+	}
+	// The injected tool rides BOTH turns: the model can ask its own
+	// questions about the image on turn 2 as well.
+	for i, seen := range main.seen {
+		if _, ok := findTool(seen, "analyze_image"); !ok {
+			t.Errorf("turn %d dispatch missing the analyze_image def", i+1)
 		}
 	}
 }

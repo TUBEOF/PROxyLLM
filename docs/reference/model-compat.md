@@ -9,6 +9,12 @@ Everything on this page is edited in the console's **Models** page and
 applied per request. Every application is recorded in the request's
 `route_trace` — an adaptation is never silent.
 
+Since [ADR-018](../adr/ADR-018-vision-passthrough-and-analyze-image.md) a
+learned or pinned `vision: false` does more than reorder candidates: on a
+chain whose entries are all known blind, images are substituted pre-dispatch
+and the `analyze_image` tool is injected, so the model can interrogate the
+image with its own prompts.
+
 ## Capabilities and pins
 
 A row carries a capability blob with eight flags: `streaming`, `tools`,
