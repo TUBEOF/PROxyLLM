@@ -18,9 +18,13 @@ async function login(page: import('@playwright/test').Page) {
   await expect(page.getByRole('link', { name: 'Quota' })).toBeVisible();
 }
 
-type StubLive = Record<string, number | null> & {
+interface StubLive {
+  session_pct?: number | null;
+  session_reset?: number;
+  weekly_pct?: number | null;
+  weekly_reset?: number;
   credits?: { remaining?: number | null; limit?: number | null; reset?: number };
-};
+}
 
 interface StubAccount {
   account_id: string;
