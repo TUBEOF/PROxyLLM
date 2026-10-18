@@ -137,6 +137,13 @@ func renderImagePlaceholder(cfg CaptionConfig, n int, ref, caption string) strin
 	if strings.TrimSpace(caption) == "" {
 		caption = unavailableCaptionText
 	}
+	if strings.TrimSpace(ref) == "" {
+		// No resolvable bytes behind this ordinal (an image the guarded
+		// fetch refused): a tool pointer would set the model chasing an
+		// image_ref that can never resolve. Say absence and stop there.
+		return "[Bild " + strconv.Itoa(n) + ": " + caption +
+			" — this image could not be loaded and cannot be inspected with analyze_image]"
+	}
 	text := strings.ReplaceAll(template, "{n}", strconv.Itoa(n))
 	text = strings.ReplaceAll(text, "{ref}", ref)
 	text = strings.ReplaceAll(text, "{caption}", caption)
@@ -217,7 +224,6 @@ func (e *Executor) substituteForKnownBlind(ctx context.Context, chain []ChainEnt
 
 	// Describe each image: cache first, then the describer walk.
 	texts := make([]string, len(refs))
-	haveCaption := make([]bool, len(refs))
 	var usage ir.Usage
 	state := &visionToolState{
 		images:   make(map[string]ir.ImagePart, len(refs)),
@@ -265,12 +271,8 @@ func (e *Executor) substituteForKnownBlind(ctx context.Context, chain []ChainEnt
 		place := renderImagePlaceholder(cfg, i+1, state.ordinals[strconv.Itoa(i+1)], texts[i])
 		descs[i] = &place
 	}
-	_ = haveCaption // text != "" already distinguishes described from failed
-
 	req = req.ReplaceImages(refs, descs)
 
-	// The tool rides the substitution: without it the model could still read
-	// the bootstrap captions but could never ask its own questions.
 	if !cfg.visionToolEnabled() {
 		trace.CapabilityFallback("vision", strconv.Itoa(len(refs))+" image(s) substituted pre-dispatch (vision_tool off; captions only)")
 		return req, usage, nil // no tool, no state to resolve one with
@@ -278,6 +280,16 @@ func (e *Executor) substituteForKnownBlind(ctx context.Context, chain []ChainEnt
 
 	// The tool rides the substitution: without it the model could still read
 	// the bootstrap captions but could never ask its own questions.
+	for _, t := range req.Tools {
+		if t.Name == analyzeImageToolName {
+			// A client-declared analyze_image owns the name: no second def
+			// (dupes 400 on OpenAI-compatible upstreams) and no interception —
+			// the loop only answers calls against OUR emulated def.
+			trace.CapabilityFallback("vision",
+				"analyze_image already declared by the client; injection skipped")
+			return req, usage, nil
+		}
+	}
 	tools := make([]ir.Tool, len(req.Tools))
 	copy(tools, req.Tools)
 	req.Tools = append(tools, analyzeImageToolDef())
@@ -339,8 +351,11 @@ func (e *Executor) answerAnalyzeImage(ctx context.Context, call ir.ToolCallPart,
 
 	// Cache first: the tool's prompt is the cache's task dimension.
 	version := captionVersion(cfg.prompt(), models)
-	key := captionImageKey(clientKeyIDFromContext(ctx), version,
-		truncateRunes(prompt, captionTaskHintLimit), img)
+	// The FULL prompt enters the key: model-authored asks are deliberately
+	// precise and can be long, and two asks sharing a 500-rune prefix must
+	// not serve each other's answers. The hash makes truncation pointless —
+	// hashing a truncated copy only bought collisions.
+	key := captionImageKey(clientKeyIDFromContext(ctx), version, prompt, img)
 	if entry, hit := e.captions.get(key); hit {
 		uses[analyzeImageToolName]++
 		trace.AnalyzeImage(entry.providerID, entry.model,

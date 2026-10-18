@@ -57,6 +57,16 @@ func TestRenderImagePlaceholder(t *testing.T) {
 	if strings.Contains(failed, "{caption}") || !strings.Contains(failed, unavailableCaptionText) {
 		t.Errorf("failed-caption placeholder = %q", failed)
 	}
+	// An image whose bytes could not be resolved gets NO tool pointer: an
+	// empty ref can never resolve, so the template's chase-the-tool clause
+	// would set the model on a doomed retry loop.
+	unresolvable := renderImagePlaceholder(cfg, 1, "", "")
+	if strings.Contains(unresolvable, "image_ref") || strings.Contains(unresolvable, "{ref}") {
+		t.Errorf("uninspectable placeholder keeps the tool pointer: %q", unresolvable)
+	}
+	if !strings.Contains(unresolvable, "cannot be inspected") {
+		t.Errorf("uninspectable placeholder = %q", unresolvable)
+	}
 	// The operator's template override rides verbatim (KV vision_placeholder_template).
 	over := CaptionConfig{VisionPlaceholderTemplate: "Picture #{n} ref={ref} caption: {caption}"}
 	if got := renderImagePlaceholder(over, 2, "zz", "cap"); got != "Picture #2 ref=zz caption: cap" {

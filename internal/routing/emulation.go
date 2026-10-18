@@ -105,7 +105,12 @@ func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry,
 			}
 			switch {
 			case call.Name == analyzeImageToolName && state != nil:
-				imgCalls = append(imgCalls, call)
+				if _, emulated := defs[analyzeImageToolName]; !emulated {
+					// A client-declared analyze_image is NOT ours: foreign.
+					foreign = true
+				} else {
+					imgCalls = append(imgCalls, call)
+				}
 			default:
 				if _, emulated := defs[call.Name]; emulated {
 					emuCalls = append(emuCalls, call)
@@ -121,20 +126,11 @@ func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry,
 		}
 		if foreign {
 			if len(imgCalls) > 0 {
-				// Mixed analyze_image + client tool calls: the client must
-				// never see the injected tool, so the vision calls are
-				// dropped (traced) and only the client's own calls surface;
-				// the model re-issues them next round.
-				var surfaced []ir.Part
-				for _, part := range resp.Content {
-					if call, ok := part.(ir.ToolCallPart); ok && call.Name == analyzeImageToolName {
-						trace.AnalyzeImage("", "",
-							"not answered: mixed with client tool calls; the client answers its own", 0, ir.Usage{})
-						continue
-					}
-					surfaced = append(surfaced, part)
-				}
-				return finishEmulated(respWithContent(resp, surfaced), synth, usage), nil
+				// Mixed analyze_image + client tool calls: the client's own
+				// calls surface, the vision calls drop (traced) — the model
+				// re-issues them next round.
+				return finishEmulated(dropUnansweredVision(resp, state, trace,
+					"not answered: mixed with client tool calls; the client answers its own"), synth, usage), nil
 			}
 			// Mixed emulated + client tool calls: the client must answer
 			// its own; surface the whole response unchanged.
@@ -143,7 +139,8 @@ func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry,
 		if round >= maxEmulationRounds {
 			trace.EmulatedTool("emulation_loop", "",
 				fmt.Sprintf("round cap %d reached; returning last upstream response", maxEmulationRounds), 0)
-			return finishEmulated(resp, synth, usage), nil
+			return finishEmulated(dropUnansweredVision(resp, state, trace,
+				"not answered: emulation round cap reached"), synth, usage), nil
 		}
 		// The other half of the safety net: the loop's own deadline (set when the
 		// loop started). Everything synthesized so far is honest output, so the
@@ -153,7 +150,8 @@ func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry,
 			trace.EmulatedTool("emulation_loop", "",
 				"emulation budget exhausted ("+e.cfg.EmulationTotalBudget.String()+
 					"); returning what the tools answered so far", 0)
-			return finishEmulated(resp, synth, usage), nil
+			return finishEmulated(dropUnansweredVision(resp, state, trace,
+				"not answered: emulation budget exhausted"), synth, usage), nil
 		}
 
 		// Synthesize the client-facing blocks for this round in wire
@@ -471,6 +469,27 @@ func mapMediaType(mt string) string {
 		return "text/plain"
 	}
 	return mt
+}
+
+// dropUnansweredVision removes every analyze_image tool_use the response
+// still carries — a call the loop never answered — and traces one decline
+// with `reason` per dropped call. The invariant it enforces lives in the ADR:
+// an unknown tool_use must never reach the client, whatever ended the loop
+// (mixed turn, round cap, emulation deadline). The client's own calls and
+// everything else in the response pass through untouched.
+func dropUnansweredVision(resp ir.Response, state *visionToolState, trace *Trace, reason string) ir.Response {
+	if state == nil {
+		return resp
+	}
+	var surfaced []ir.Part
+	for _, part := range resp.Content {
+		if call, ok := part.(ir.ToolCallPart); ok && call.Name == analyzeImageToolName {
+			trace.AnalyzeImage("", "", reason, 0, ir.Usage{})
+			continue
+		}
+		surfaced = append(surfaced, part)
+	}
+	return respWithContent(resp, surfaced)
 }
 
 // respWithContent returns resp with its content replaced (the mixed-corner

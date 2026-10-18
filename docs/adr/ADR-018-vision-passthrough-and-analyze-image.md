@@ -96,13 +96,18 @@ wire codec needs to know it:
 client-known names), `analyze_image` is *added*: its calls are answered
 inline and its blocks never enter the final response — on any surface.
 
-**Mixed turns:** when the model emits an `analyze_image` call AND a client
-tool call in one turn, the vision call is dropped (traced, reason "not
-answered: mixed with client tool calls") and the client's own calls surface
-unchanged — an unknown `tool_use` must never reach the client. The tool
-description instructs one-call-at-a-time so this corner stays rare. Should a
-model habitually pair them, the extension is to answer the vision call
-first and surface only the client's calls — open door, not built.
+**Mixed turns and loop ends:** when the model emits an `analyze_image` call
+AND a client tool call in one turn, the vision call is dropped (traced,
+reason "not answered: mixed with client tool calls") and the client's own
+calls surface unchanged — an unknown `tool_use` must never reach the client.
+The same drop rule applies wherever the loop ENDS without answering:
+round cap reached or the emulation deadline exhausted (a degraded vision
+fallback invites a model to keep retrying its ask). A client that itself
+declares a tool named `analyze_image` owns the name: no def is injected and
+no call of theirs is intercepted. The tool description instructs
+one-call-at-a-time so this corner stays rare. Should a model habitually pair
+them, the extension is to answer the vision call first and surface only the
+client's calls — open door, not built.
 
 ### 4. Streaming trade
 
@@ -140,12 +145,19 @@ from an image.
   answer built from a short caption plus the ability to interrogate the
   image — the proxy remains invisible (no new client-side tool, no unknown
   block shapes).
-- Operators configure the behavior through four settings-KV keys in
-  addition to `vision_fallback`: `vision_tool`, `vision_placeholder_template`,
-  and the existing `vision_caption_*` trio (the template and tool toggle
-  documented in `docs/configuration.md`).
+- Operators configure the behavior through two new settings-KV keys —
+  `vision_tool` and `vision_placeholder_template` — in addition to the
+  existing `vision_caption_*` trio and `vision_fallback` (documented in
+  `docs/configuration.md`).
 - The `vision_fallback` list now serves two consumers (pre-dispatch
   substitution/answers and the reactive bootstrap) with one contract: model
   IDs, first working model wins.
 - No storage migration: the substitution is per-request, the image bytes
   never persist beyond it.
+- **Known limitation (accepted): a chain whose rows are all known blind AND
+  tools-incapable gets the tool injected into a request its upstream could
+  reject for carrying tools (`requiredCapabilities` is computed pre-injection
+  at the surface, so the router does not know). Pre-018 the same request was
+  served from the caption alone. Rare cell; the follow-up is a tools flag
+  lookup beside ModelVisionLookup and skipping the injection the same way
+  `vision_tool=0` does.**

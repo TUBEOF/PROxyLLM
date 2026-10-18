@@ -32,6 +32,9 @@ type toolScriptProvider struct {
 	id    string
 	resps []ir.Response
 	errs  []error // per-call error, taking precedence over the response
+	// lastRepeats re-serves the final response instead of panicking on a
+	// script overrun — the shape of a model that never stops asking.
+	lastRepeats bool
 
 	calls int
 	seen  []ir.Request
@@ -51,7 +54,10 @@ func (p *toolScriptProvider) Complete(_ context.Context, req ir.Request) (ir.Res
 		return ir.Response{}, p.errs[i]
 	}
 	if i >= len(p.resps) {
-		panic("toolScriptProvider: script exhausted")
+		if !p.lastRepeats {
+			panic("toolScriptProvider: script exhausted")
+		}
+		return p.resps[len(p.resps)-1], nil
 	}
 	return p.resps[i], nil
 }
@@ -215,12 +221,8 @@ func TestExecute_SightedChainPassesThroughUntouched(t *testing.T) {
 	}{
 		{"known-sighted", true, true},
 		{"unknown-capability", false, false},
-		{"pinned-sighted-lookup-says-known-true", true, false}, // false,false = unknown; known-true requires canSee
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.name == "pinned-sighted-lookup-says-known-true" {
-				return // folded into known-sighted; documented pass-through only needs either flag
-			}
 			main := &toolScriptProvider{id: "main", resps: []ir.Response{{
 				ID: "ok", Content: []ir.Part{ir.TextPart{Text: "seen it"}}, Usage: ir.Usage{InputTokens: 10, OutputTokens: 2},
 			}}}
@@ -669,6 +671,144 @@ func collectStreamEvents(ctx context.Context, in <-chan ir.StreamEvent) []ir.Str
 			out = append(out, ev)
 			if ev.Type == ir.Done {
 				return out
+			}
+		}
+	}
+}
+
+// The emulated loop's safety nets (round cap, emulation deadline) must apply
+// the same rule the mixed corner does: the injected tool's unanswered calls
+// are DROPPED from what surfaces — a client that never declared analyze_image
+// must never receive a tool_use for it, no matter how degraded the vision
+// fallback was (ADR-018: "an unknown tool_use must never reach the client").
+func TestExecute_AnalyzeImageBudgetExhaustionDropsTheToolFromTheClient(t *testing.T) {
+	ref := testRef("iVBORw0KGgo=")
+	input, _ := json.Marshal(map[string]string{"image_ref": ref, "prompt": "what error text?"})
+	// A model that keeps calling the tool and never writes text: the fake
+	// repeats its only answer — one tool_call, forever.
+	one := ir.Response{ID: "loop", Content: []ir.Part{toolCall(string(input))}, Usage: ir.Usage{InputTokens: 9, OutputTokens: 1}}
+	main := &toolScriptProvider{id: "main", resps: []ir.Response{one}, lastRepeats: true}
+	// A vision fallback that always fails (the degraded scenario).
+	vision := &recordingProvider{id: "vision", errs: []error{gapErr(), gapErr(), gapErr(), gapErr(), gapErr(), gapErr(), gapErr(), gapErr(), gapErr(), gapErr(), gapErr(), gapErr(), gapErr(), gapErr(), gapErr(), gapErr(), gapErr(), gapErr()}}
+
+	cfg := routing.ExecutorConfig{
+		Registry:            regOf(main, vision),
+		Health:              routing.NewHealthTracker(),
+		RetrySleeper:        func(time.Duration) {},
+		CapabilityFallbacks: []routing.ChainEntry{{ProviderID: "vision", Model: "vl-1"}},
+		ModelVisionLookup:   blindLookup(),
+		// Force the loop's deadline safety net, not the round cap.
+		EmulationTotalBudget: 200 * time.Millisecond,
+	}
+	e := routing.NewExecutor(cfg)
+
+	resp, trace, err := e.Execute(context.Background(),
+		[]routing.ChainEntry{{ProviderID: "main", Model: "m"}}, imageRequest("look"))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	for _, part := range resp.Content {
+		if call, ok := part.(ir.ToolCallPart); ok && call.Name == "analyze_image" {
+			t.Errorf("budget exhaustion leaked the injected tool to the client: %+v", call)
+		}
+	}
+
+	// Every unanswered call is traced as a decline: the budget-exhausted
+	// drops carry that reason; the erroring tool calls carry their own.
+	declines := 0
+	for _, call := range eventsOf(trace, routing.EventAnalyzeImage) {
+		if strings.Contains(call.Reason, "not answered: emulation") {
+			declines++
+		}
+	}
+	if declines == 0 {
+		t.Errorf("no decline traced for the dropped terminal calls: %v", eventsOf(trace, routing.EventAnalyzeImage))
+	}
+}
+
+// Two tool asks on the same image that agree on their first 500 runes but
+// differ in the tail must NOT share the cached answer: the key hashes the
+// FULL prompt (one truncated reuse is a missed reuse; a wrong reuse is a
+// wrong answer served confidently).
+func TestExecute_AnalyzeImageLongPromptsDoNotShareTheCache(t *testing.T) {
+	ref := testRef("iVBORw0KGgo=")
+	long := strings.Repeat("list every visible file path in the screenshot ", 12) // > 500 runes
+	in1, _ := json.Marshal(map[string]string{"image_ref": ref, "prompt": long + "alphabetically"})
+	in2, _ := json.Marshal(map[string]string{"image_ref": ref, "prompt": long + "by length"})
+	main := &toolScriptProvider{id: "main", resps: []ir.Response{
+		{ID: "r1", Content: []ir.Part{toolCall(string(in1))}},
+		{ID: "r2", Content: []ir.Part{ir.TextPart{Text: "done 1"}}, Usage: ir.Usage{InputTokens: 7, OutputTokens: 1}},
+		{ID: "r3", Content: []ir.Part{toolCall(string(in2))}},
+		{ID: "r4", Content: []ir.Part{ir.TextPart{Text: "done 2"}}, Usage: ir.Usage{InputTokens: 7, OutputTokens: 1}},
+	}}
+	vision := &recordingProvider{id: "vision", text: "an answer"}
+
+	ctx := routing.WithClientKeyID(context.Background(), "client-a")
+	e := analyzeExecutor(main, vision, blindLookup(), nil)
+	if _, _, err := e.Execute(ctx, []routing.ChainEntry{{ProviderID: "main", Model: "m"}}, imageRequest("q")); err != nil {
+		t.Fatalf("Execute (ask 1): %v", err)
+	}
+	before := vision.calls
+	if _, _, err := e.Execute(ctx, []routing.ChainEntry{{ProviderID: "main", Model: "m"}}, imageRequest("q")); err != nil {
+		t.Fatalf("Execute (ask 2): %v", err)
+	}
+	if vision.calls != before+1 {
+		t.Errorf("the second, differently-tailed ask consumed %d vision calls, want 1 (re-describe) — a shared cache key serves the first ask's answer as the second's", vision.calls-before)
+	}
+}
+
+// A client that itself declares a tool named analyze_image owns that name:
+// the executor must not inject a second same-name def (OpenAI-compat
+// upstreams reject duplicates) and must not steal the client's calls —
+// interception happens only against the executor's OWN injected, emulated
+// def.
+func TestExecute_ClientDeclaredAnalyzeImageIsNotHijacked(t *testing.T) {
+	main := &toolScriptProvider{id: "main", resps: []ir.Response{
+		// The model calls the CLIENT's analyze_image — foreign to the loop.
+		{ID: "r1", Content: []ir.Part{ir.ToolCallPart{ID: "cc", Name: "analyze_image",
+			Input: json.RawMessage(`{"image_ref":"whatever"}`)}}, Usage: ir.Usage{InputTokens: 10, OutputTokens: 2}},
+	}}
+	vision := &recordingProvider{id: "vision", text: "should never be asked"}
+	e := analyzeExecutor(main, vision, blindLookup(), nil)
+
+	req := imageRequest("look")
+	req.Tools = []ir.Tool{{Name: "analyze_image", Description: "the client's own tool"}}
+	resp, _, err := e.Execute(context.Background(),
+		[]routing.ChainEntry{{ProviderID: "main", Model: "m"}}, req)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// Exactly one analyze_image def rode the dispatch — the client's.
+	for _, seen := range main.seen {
+		count := 0
+		for _, tl := range seen.Tools {
+			if tl.Name == "analyze_image" {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("dispatch carries %d analyze_image defs, want exactly the client's one", count)
+		}
+	}
+	found := false
+	for _, part := range resp.Content {
+		if call, ok := part.(ir.ToolCallPart); ok && call.Name == "analyze_image" {
+			found = true // the client's call surfaces
+		}
+	}
+	if !found {
+		t.Error("the client's analyze_image call did not surface")
+	}
+	// The vision model saw exactly the bootstrap caption — never the
+	// client's tool call.
+	if vision.calls != 1 {
+		t.Errorf("vision model calls = %d, want 1 (the bootstrap caption only)", vision.calls)
+	}
+	if len(vision.seen) == 1 {
+		for _, part := range vision.seen[0].Messages[0].Parts {
+			if t2, ok := part.(ir.TextPart); ok && strings.Contains(t2.Text, "whatever") {
+				t.Errorf("the client's tool arguments reached the vision model: %q", t2.Text)
 			}
 		}
 	}
