@@ -26,6 +26,9 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/tubeof/proxyllm/internal/httpguard"
 	"github.com/tubeof/proxyllm/internal/provider"
@@ -108,6 +111,31 @@ type NamedEmulator struct {
 // SSRF-guarded when they were written, and a transient DNS failure at
 // reload must never drop a live provider. The parse input is the ADR-009
 // merged config (type settings ⊕ own fields, own wins).
+// upstreamHeaderTimeoutMSKey is the operator's shared override for the
+// chat upstreams' response-header wall (ADR-018). It lives in the settings
+// KV like every other operator setting; a provider write re-applies it when
+// the live set is reconstructed.
+const upstreamHeaderTimeoutMSKey = "upstream_response_header_timeout_ms"
+
+// resolveUpstreamHeaderTimeout reads the response-header override. A nil
+// option means the shared 30s default — absent, malformed, and non-positive
+// values all degrade to it (the settings-read contract: store noise never
+// changes how a provider is built).
+func resolveUpstreamHeaderTimeout(ctx context.Context, store *storage.Store) httpguard.ClientOption {
+	if store == nil {
+		return nil
+	}
+	v, ok, err := store.GetConfigValue(ctx, upstreamHeaderTimeoutMSKey)
+	if err != nil || !ok {
+		return nil
+	}
+	ms, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || ms <= 0 {
+		return nil
+	}
+	return httpguard.WithHeaderTimeout(time.Duration(ms) * time.Millisecond)
+}
+
 func buildProvider(ctx context.Context, store *storage.Store, row storage.Provider,
 	typeSettings map[string]json.RawMessage, logger *slog.Logger) (provider.Provider, routing.Emulator, error) {
 	merged, err := webui.MergeProviderConfig(typeSettings[row.Type], row.Config)
@@ -117,6 +145,14 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 	cfg, err := webui.ParseProviderConfigStatic(row.Type, merged)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// ADR-018: the header wall is operator-tunable, read per construction
+	// (the live set is rebuilt on every provider write, so a settings change
+	// applies on the next reload). nil = shared 30s default.
+	headerOpts := []httpguard.ClientOption{}
+	if opt := resolveUpstreamHeaderTimeout(ctx, store); opt != nil {
+		headerOpts = append(headerOpts, opt)
 	}
 
 	switch row.Type {
@@ -137,12 +173,12 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 		return nil, emu, nil
 
 	case webui.ProviderTypeCustomOpenAI:
-		return custom.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type)), nil, nil
+		return custom.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type), headerOpts...), nil, nil
 
 	case webui.ProviderTypeOllamaCloud:
 		// Empty base_url is a legal save: the provider defaults to the
 		// hosted endpoint.
-		return ollamacloud.NewWithLogger(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type), logger), nil, nil
+		return ollamacloud.NewWithLogger(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type), logger, headerOpts...), nil, nil
 
 	case webui.ProviderTypeCodexOAuth:
 		// The codex provider speaks the ChatGPT backend; the
@@ -165,7 +201,7 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 			ClientVersion: cfg.ClientVersion,
 			// Streaming transport with guarded redirects — the OAuth access
 			// token rides the Bearer header on every dispatch.
-			HTTP: httpguard.NewStreamingClient(),
+			HTTP: httpguard.NewStreamingClient(headerOpts...),
 		}), nil, nil
 
 	default:

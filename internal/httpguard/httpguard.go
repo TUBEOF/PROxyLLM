@@ -133,13 +133,51 @@ const defaultTimeout = 30 * time.Second
 // MaxConnsPerHost is deliberately left unset: a cap turns upstream slowness into
 // queueing at our end, and the per-provider concurrency limits already bound the
 // fan-out deliberately.
-func newTransport() *http.Transport {
+// defaultHeaderTimeout bounds the time to first response byte: after it,
+// an upstream that accepted the connection and says nothing stops holding
+// the goroutine. Shared as the default for NewClient/NewStreamingClient and
+// overridable per caller — see ClientOption.
+const defaultHeaderTimeout = 30 * time.Second
+
+// ClientOption tunes one guarded client without changing the shared
+// tuning of the rest (pool sizing, dial/TLS budgets, SSRF redirect guard).
+type ClientOption func(*transportTuning)
+
+// transportTuning is the per-client override surface on top of the shared
+// transport defaults. Zero fields mean "shared default".
+type transportTuning struct {
+	// headerTimeout overrides defaultHeaderTimeout when > 0.
+	headerTimeout time.Duration
+}
+
+// WithHeaderTimeout sets the transport's ResponseHeaderTimeout: how long an
+// upstream may take to produce response headers before the transport
+// raises the header-wait failure. The 30s default rescues a hung upstream,
+// but the same wall converts a slow-but-correct multimodal upstream into a
+// transport failure that (being class-transport) masks the model's own
+// capability-gap rejection — operators raising it for a slow provider set
+// this once and the shared guard stays for everyone else.
+func WithHeaderTimeout(d time.Duration) ClientOption {
+	return func(t *transportTuning) { t.headerTimeout = d }
+}
+
+// newTransport builds the tuned base. The option sees only the override
+// surface; every field not overridden rides the shared defaults above.
+func newTransport(opts ...ClientOption) *http.Transport {
+	var tuned transportTuning
+	for _, o := range opts {
+		o(&tuned)
+	}
+	headerTimeout := defaultHeaderTimeout
+	if tuned.headerTimeout > 0 {
+		headerTimeout = tuned.headerTimeout
+	}
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	t.MaxIdleConns = 200
 	t.MaxIdleConnsPerHost = 32
 	t.IdleConnTimeout = 90 * time.Second
 	t.TLSHandshakeTimeout = 10 * time.Second
-	t.ResponseHeaderTimeout = 30 * time.Second
+	t.ResponseHeaderTimeout = headerTimeout
 	t.ExpectContinueTimeout = 1 * time.Second
 	t.DialContext = (&net.Dialer{
 		Timeout:   10 * time.Second,
@@ -160,8 +198,8 @@ func newTransport() *http.Transport {
 // Every client built here gets its OWN transport, so each caller has its own
 // connection pool. Callers that should share a pool must share the client
 // (see firecrawl's emulator client).
-func NewClient(timeout time.Duration) *http.Client {
-	transport := newTransport()
+func NewClient(timeout time.Duration, opts ...ClientOption) *http.Client {
+	transport := newTransport(opts...)
 	if timeout < 0 {
 		// Streaming: no total budget, but every phase still bounded.
 		client := &http.Client{
@@ -188,6 +226,6 @@ func NewClient(timeout time.Duration) *http.Client {
 // responses: no total body budget, but redirects are guarded and dial /
 // TLS / response-header phases stay bounded through the shared default
 // transport.
-func NewStreamingClient() *http.Client {
-	return NewClient(-1)
+func NewStreamingClient(opts ...ClientOption) *http.Client {
+	return NewClient(-1, opts...)
 }

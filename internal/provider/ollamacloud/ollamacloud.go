@@ -61,8 +61,10 @@ func New(id, baseURL, apiKey string, caps provider.Capabilities) *Provider {
 }
 
 // NewWithLogger is New with a logger for detection-enrichment failures
-// (best-effort probes degrade per model — but never silently).
-func NewWithLogger(id, baseURL, apiKey string, caps provider.Capabilities, logger *slog.Logger) *Provider {
+// (best-effort probes degrade per model — but never silently). opts tune
+// the guarded transport (e.g. ADR-018's response-header wall); none keeps
+// the shared defaults.
+func NewWithLogger(id, baseURL, apiKey string, caps provider.Capabilities, logger *slog.Logger, opts ...httpguard.ClientOption) *Provider {
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
@@ -76,7 +78,7 @@ func NewWithLogger(id, baseURL, apiKey string, caps provider.Capabilities, logge
 			// must not be cut off), but redirects re-validated against the
 			// private-address SSRF guard — the Bearer header would ride a
 			// followed redirect.
-			HTTP: httpguard.NewStreamingClient(),
+			HTTP: httpguard.NewStreamingClient(opts...),
 		},
 		id:      id,
 		caps:    caps,
