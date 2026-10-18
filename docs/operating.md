@@ -12,7 +12,7 @@ same binary as the API, on the same port, at `/`.
 | **Providers** | Provider-type cards and the accounts inside them; OAuth sign-in lives here |
 | **Models** | The model inventory: identity, provider, capabilities, priority — plus the model sync |
 | **Routing** | Routing rules, the global strategy, and the alias map |
-| **Keys** | Client keys: create (shown once), scope, revoke |
+| **API keys** | Create (shown once), regenerate, delete |
 | **Logs** | The request log: rows, the trace timeline, sub-operations, captured bodies, live tail |
 | **Quota** | Per-account usage and limits, with the account's cooldown state |
 
@@ -118,11 +118,15 @@ the health gate opens or a rate limit exhausts the retry budget.
 Semantics — capability filtering, failover, what opens the breaker — are in
 [routing and fallbacks](routing-and-fallbacks.md).
 
-## Keys
+## API keys
 
-A client key (`pk_…`) is created with a name and displayed **once**: it is
-stored as a keyed MAC, so it cannot be shown again. Revoking takes effect on
-the next request. The log shows which key opened a request, by name.
+An API key (`pk_…`) is created with a name and displayed **once**: only a
+one-way keyed hash is stored, so it cannot be shown again. **Regenerate**
+mints a new secret for the same key (same id and name) and the old secret
+stops working immediately; **Delete** removes the row from the database and
+the secret stops working at once. Only current keys are listed. The log
+shows which key opened a request, by name; a deleted key's historical rows
+keep its id and fall back to that id in the name column.
 
 ## Logs
 
@@ -148,18 +152,24 @@ admin session warm.
 
 ## Quota
 
-One card per chat account, carrying the account's **own** limits — nothing
-the proxy measured itself (local usage lives on the Overview page). For
-Ollama Cloud accounts with a stored session cookie the card shows the live
-usage and limit figures from the account's own settings page, refreshed on
-demand, with a reset countdown per window; hovering (or focusing) the
-countdown shows the exact reset instant in the reader's own timezone.
-Without a cookie the card shows the empty state that says how to set one.
-Percentages that are unknown render as `—`, never as zero. A cooldown — the
-account is out of quota, or its breaker is open — is named on the card,
-which is the fastest way to explain a wave of failures. Each card carries
-the account's **in the pool** switch, and a card whose account is switched
-off says so instead of showing a cooldown it cannot earn.
+One card per account that reports a usage window — chat accounts, plus the
+probe-supported web-tool accounts (Firecrawl credits, Ollama Cloud Web
+Tools) — carrying the account's **own** limits, nothing the proxy measured
+itself (local usage lives on the Overview page). Each window is a strip:
+the remaining percentage in the middle of a ring, the remaining value on the
+left (`… left`), and the reset timer on the right. For Ollama Cloud accounts
+with a stored session cookie the rings are the account's session and weekly
+windows from its settings page; hovering (or focusing) the timer shows the
+exact reset instant in the reader's own timezone. Firecrawl accounts show
+their team credits (`remaining / plan`) from the documented credit-usage
+endpoint, reset at the billing-period end; the probe uses the same API key as
+the emulator. Without a reported window the card shows the empty state (and
+the scrape error, when there is one). Percentages that are unknown render as
+`—`, never as zero. A cooldown — the account is out of quota, or its breaker
+is open — is named on the card, which is the fastest way to explain a wave
+of failures. Each card carries the account's **in the pool** switch, and a
+card whose account is switched off says so instead of showing a cooldown it
+cannot earn.
 
 ### The session cookie
 

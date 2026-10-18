@@ -188,6 +188,15 @@ var migrations = []string{
 	// behaves exactly as before. Append-only: earlier statements are never
 	// edited.
 	`ALTER TABLE providers ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;`,
+
+	// Deleted client keys are actually deleted. The Keys page used to
+	// keep revoked rows as an audit trail; the operator's rule is that a
+	// deleted key leaves the database. Purge the soft-deleted rows once;
+	// DeleteClientKey is a hard delete from here on. The `revoked` column
+	// stays (default 0) — no destructive schema change, and existing rows
+	// read as active. Historical request_logs.client_key_id strings are
+	// untouched (no foreign key); their name projection falls back to the id.
+	`DELETE FROM client_keys WHERE revoked = 1;`,
 }
 
 func (s *Store) migrate() error {

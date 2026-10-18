@@ -35,6 +35,11 @@ type accountUsageDTO struct {
 	Health string `json:"health,omitempty"`
 
 	FetchedAt int64 `json:"fetched_at,omitempty"`
+
+	// Refreshable says the production prober can scrape this account type.
+	// The UI uses it instead of hard-coding provider type strings, so the
+	// "Refresh now"/"Refresh all" affordances stay in step with the prober.
+	Refreshable bool `json:"refreshable,omitempty"`
 }
 
 type liveUsageDTO struct {
@@ -43,6 +48,29 @@ type liveUsageDTO struct {
 	SessionReset int64    `json:"session_reset,omitempty"`
 	WeeklyPct    *float64 `json:"weekly_pct,omitempty"`
 	WeeklyReset  int64    `json:"weekly_reset,omitempty"`
+
+	// Credits is the Firecrawl team-credit window: remaining/plan and the
+	// billing-period end. Pointers keep an unknown count unknown.
+	Credits *creditsUsageDTO `json:"credits,omitempty"`
+}
+
+type creditsUsageDTO struct {
+	Remaining *float64 `json:"remaining,omitempty"`
+	Limit     *float64 `json:"limit,omitempty"`
+	Reset     int64    `json:"reset,omitempty"`
+}
+
+// UsageProbeType reports whether the production prober implements a scrape
+// for the provider type. The Quota list, the refresh affordances and the
+// server's prober all read this, so a new probe is one entry, not a UI
+// change.
+func UsageProbeType(providerType string) bool {
+	switch providerType {
+	case "ollama-cloud", "ollama-cloud-web", "firecrawl":
+		return true
+	default:
+		return false
+	}
 }
 
 // getAccountUsage serves GET /api/admin/accounts/usage — one entry per
@@ -55,14 +83,15 @@ func (a *AdminAPI) getAccountUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]accountUsageDTO, 0, len(accts))
 	for _, acct := range accts {
-		if desc, isType := providerTypeByID(acct.Type); isType && desc.Kind == KindWebTool {
-			continue // web-tool accounts have no chat usage card
+		if desc, isType := providerTypeByID(acct.Type); isType && desc.Kind == KindWebTool && !UsageProbeType(acct.Type) {
+			continue // web-tool accounts without a usage probe have no card
 		}
 		entry := accountUsageDTO{
-			AccountID: acct.ID,
-			Type:      acct.Type,
-			Name:      acct.Name,
-			Enabled:   acct.Enabled,
+			AccountID:   acct.ID,
+			Type:        acct.Type,
+			Name:        acct.Name,
+			Enabled:     acct.Enabled,
+			Refreshable: UsageProbeType(acct.Type),
 		}
 		if blob, ok, err := a.store.GetAccountUsage(r.Context(), acct.ID); err == nil && ok {
 			entry.FetchedAt = blob.FetchedAt
@@ -76,6 +105,13 @@ func (a *AdminAPI) getAccountUsage(w http.ResponseWriter, r *http.Request) {
 					SessionReset: blob.SessionReset,
 					WeeklyPct:    blob.WeeklyPct,
 					WeeklyReset:  blob.WeeklyReset,
+				}
+				if blob.RemainingCredits != nil || blob.PlanCredits != nil || blob.CreditsReset > 0 {
+					entry.Live.Credits = &creditsUsageDTO{
+						Remaining: blob.RemainingCredits,
+						Limit:     blob.PlanCredits,
+						Reset:     blob.CreditsReset,
+					}
 				}
 			}
 		}

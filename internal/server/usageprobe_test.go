@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/tubeof/proxyllm/internal/translate/testutil"
 )
@@ -78,5 +79,63 @@ func TestProbeOllamaUsage_SendsCookieAndRejectsSignedOut(t *testing.T) {
 	}
 	if gotPath != "/settings" {
 		t.Fatalf("path = %q, want /settings (fixed)", gotPath)
+	}
+}
+
+// The Firecrawl credit window (Quota page): the documented
+// GET /v2/team/credit-usage shape maps onto the blob's credit fields, and
+// the billing-period end becomes the card's reset timestamp.
+func TestFetchFirecrawlUsage(t *testing.T) {
+	var gotPath, gotAuth string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(`{
+			"success": true,
+			"data": {
+				"remainingCredits": 850,
+				"planCredits": 1000,
+				"billingPeriodStart": "2026-10-01T00:00:00Z",
+				"billingPeriodEnd": "2026-11-01T00:00:00Z"
+			}
+		}`))
+	}))
+	defer ts.Close()
+
+	blob, err := fetchFirecrawlUsage(context.Background(), ts.URL, "fc-key", ts.Client())
+	if err != nil {
+		t.Fatalf("fetchFirecrawlUsage: %v", err)
+	}
+	if gotPath != "/v2/team/credit-usage" {
+		t.Errorf("path = %q, want /v2/team/credit-usage", gotPath)
+	}
+	if gotAuth != "Bearer fc-key" {
+		t.Errorf("Authorization = %q", gotAuth)
+	}
+	if blob.RemainingCredits == nil || *blob.RemainingCredits != 850 {
+		t.Errorf("remaining = %v, want 850", blob.RemainingCredits)
+	}
+	if blob.PlanCredits == nil || *blob.PlanCredits != 1000 {
+		t.Errorf("plan = %v, want 1000", blob.PlanCredits)
+	}
+	wantReset := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC).Unix()
+	if blob.CreditsReset != wantReset {
+		t.Errorf("reset = %d, want %d", blob.CreditsReset, wantReset)
+	}
+	if !blob.HasWindows() {
+		t.Error("a credit window must count as a live window")
+	}
+}
+
+// A success:false body is an error, never a zero-credit reading.
+func TestFetchFirecrawlUsage_SuccessFalseIsError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"success":false,"error":"Could not find credit usage information"}`))
+	}))
+	defer ts.Close()
+
+	if _, err := fetchFirecrawlUsage(context.Background(), ts.URL, "fc-key", ts.Client()); err == nil {
+		t.Fatal("success:false must be an error")
 	}
 }

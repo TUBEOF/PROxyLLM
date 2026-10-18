@@ -18,16 +18,25 @@ async function login(page: import('@playwright/test').Page) {
   await expect(page.getByRole('link', { name: 'Quota' })).toBeVisible();
 }
 
+interface StubLive {
+  session_pct?: number | null;
+  session_reset?: number;
+  weekly_pct?: number | null;
+  weekly_reset?: number;
+  credits?: { remaining?: number | null; limit?: number | null; reset?: number };
+}
+
 interface StubAccount {
   account_id: string;
   type: string;
   name: string;
   enabled: boolean;
-  live: Record<string, number | null> | null;
+  live: StubLive | null;
+  refreshable?: boolean;
 }
 
-function account(id: string, name: string, live: Record<string, number | null> | null): StubAccount {
-  return { account_id: id, type: 'ollama-cloud', name, enabled: true, live };
+function account(id: string, name: string, live: StubLive | null): StubAccount {
+  return { account_id: id, type: 'ollama-cloud', name, enabled: true, live, refreshable: true };
 }
 
 async function stubUsage(page: import('@playwright/test').Page, accounts: StubAccount[]) {
@@ -92,12 +101,52 @@ test('a window without a reset carries no countdown', async ({ page }) => {
   await page.goto('/quota');
 
   const c = card(page, 'No reset');
-  await expect(c).toContainText('55%');
+  // The provider reports "55 % used" — the card shows what is left.
+  await expect(c).toContainText('45% left');
+  await expect(
+    c.locator('.usage-window').filter({ hasText: 'Session' }).locator('.usage-ring-num'),
+  ).toHaveText('45%');
   await expect(c).toContainText('Session');
-  // Absence means something only against a rendered card: the bar is there,
+  // Absence means something only against a rendered card: the ring is there,
   // the countdown is not, and no tooltip was invented for the unknown reset.
   await expect(c).not.toContainText('resets in');
   await expect(page.getByRole('tooltip')).toHaveCount(0);
+});
+
+test('the remaining percent is centered and the reset timer is its own column', async ({ page }) => {
+  await login(page);
+  const now = Math.floor(Date.now() / 1000);
+  await stubUsage(page, [
+    account('acc-ring', 'Ring account', { session_pct: 28.8, session_reset: now + 2 * 3600 + 30 }),
+  ]);
+  await page.goto('/quota');
+
+  const c = card(page, 'Ring account');
+  await expect(c.locator('.usage-ring-num')).toHaveText('71%');
+  await expect(c).toContainText('71% left');
+  const timer = c.locator('.usage-reset .tooltip');
+  await expect(timer).toContainText('resets in 2h');
+});
+
+test('Firecrawl credits render a remaining ring and a reset from the billing period', async ({ page }) => {
+  await login(page);
+  const now = Math.floor(Date.now() / 1000);
+  await stubUsage(page, [
+    {
+      account_id: 'acc-fc',
+      type: 'firecrawl',
+      name: 'Firecrawl key 1',
+      enabled: true,
+      refreshable: true,
+      live: { credits: { remaining: 850, limit: 1000, reset: now + 24 * 3600 + 30 } },
+    },
+  ]);
+  await page.goto('/quota');
+
+  const c = card(page, 'Firecrawl key 1');
+  await expect(c.locator('.usage-ring-num')).toHaveText('85%');
+  await expect(c).toContainText('850 credits left');
+  await expect(c).toContainText('resets in 1d');
 });
 
 test('a reset in the past says so instead of going negative', async ({ page }) => {

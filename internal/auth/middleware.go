@@ -124,6 +124,29 @@ func CreateClientKeyWithScopes(ctx context.Context, st *storage.Store, name stri
 	return id, key, nil
 }
 
+// RegenerateClientKey mints a fresh display-once secret for an existing
+// row: the same id and name, a new prefix and hash, a new issuance time.
+// The old secret stops verifying as soon as the update lands. The caller
+// must show the returned key once and never store it.
+func RegenerateClientKey(ctx context.Context, st *storage.Store, id string) (string, error) {
+	key, err := GenerateClientKey()
+	if err != nil {
+		return "", err
+	}
+	prefix, secret, ok := splitClientKey(key)
+	if !ok {
+		return "", errKeyShape
+	}
+	phc, err := st.HashClientKey(secret)
+	if err != nil {
+		return "", err
+	}
+	if err := st.RegenerateClientKey(ctx, id, phc, prefix); err != nil {
+		return "", err
+	}
+	return key, nil
+}
+
 // verifyResult is the outcome of a key check.
 type verifyResult struct {
 	id string // row id of the matching key, "" when not verified

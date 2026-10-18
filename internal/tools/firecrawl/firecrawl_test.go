@@ -231,3 +231,63 @@ func TestScrape_SuccessFalseIsError(t *testing.T) {
 		t.Errorf("message = %q, want scrape failed", api.ErrorMsg)
 	}
 }
+
+// 7. Credit usage contract: GET {base}/v2/team/credit-usage with the same
+// Bearer auth, decoded from the documented 200 body (re-read 2026-10-18):
+// remainingCredits, planCredits, billingPeriodStart, billingPeriodEnd.
+func TestCreditUsage_Contract(t *testing.T) {
+	var c capture
+	srv := newUpstream(t, &c, http.StatusOK, `{
+		"success": true,
+		"data": {
+			"remainingCredits": 1000,
+			"planCredits": 500000,
+			"billingPeriodStart": "2025-01-01T00:00:00Z",
+			"billingPeriodEnd": "2025-01-31T23:59:59Z"
+		}
+	}`)
+	cl := New(srv.URL, "fc-test-key", nil)
+
+	resp, err := cl.CreditUsage(context.Background())
+	if err != nil {
+		t.Fatalf("CreditUsage: %v", err)
+	}
+	if c.method != http.MethodGet {
+		t.Errorf("method = %q, want GET", c.method)
+	}
+	if c.path != "/v2/team/credit-usage" {
+		t.Errorf("path = %q, want /v2/team/credit-usage", c.path)
+	}
+	if c.auth != "Bearer fc-test-key" {
+		t.Errorf("Authorization = %q, want Bearer fc-test-key", c.auth)
+	}
+	if resp.Data.RemainingCredits == nil || *resp.Data.RemainingCredits != 1000 {
+		t.Errorf("remainingCredits = %v, want 1000", resp.Data.RemainingCredits)
+	}
+	if resp.Data.PlanCredits == nil || *resp.Data.PlanCredits != 500000 {
+		t.Errorf("planCredits = %v, want 500000", resp.Data.PlanCredits)
+	}
+	if resp.Data.BillingPeriodEnd != "2025-01-31T23:59:59Z" {
+		t.Errorf("billingPeriodEnd = %q", resp.Data.BillingPeriodEnd)
+	}
+}
+
+// 8. A documented 404 body is success:false — an APIError, never a
+// zero-credit reading.
+func TestCreditUsage_NotFoundIsError(t *testing.T) {
+	var c capture
+	srv := newUpstream(t, &c, http.StatusNotFound, `{"success":false,"error":"Could not find credit usage information"}`)
+	cl := New(srv.URL, "fc-key", nil)
+
+	_, err := cl.CreditUsage(context.Background())
+	var api *APIError
+	if !errors.As(err, &api) {
+		t.Fatalf("error = %v, want *APIError", err)
+	}
+	if api.HTTPStatus != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", api.HTTPStatus)
+	}
+	if !strings.Contains(api.ErrorMsg, "Could not find credit usage") {
+		t.Errorf("message = %q", api.ErrorMsg)
+	}
+}

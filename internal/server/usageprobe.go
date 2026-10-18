@@ -19,6 +19,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -31,6 +32,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/httpguard"
 	"github.com/tubeof/proxyllm/internal/server/webui"
 	"github.com/tubeof/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/tools/firecrawl"
 )
 
 // ollamaSettingsUsageURL is the fixed scrape target origin. The path is
@@ -201,37 +203,102 @@ const (
 // the admin endpoint stays thin and stubbable.
 func (s *Server) prodUsageProber() func(ctx context.Context, accountID string, store *storage.Store) webui.RefreshOutcome {
 	prober := newUsageProber("", httpguard.NewClient(probeTimeout))
+	client := httpguard.NewClient(probeTimeout)
 	return func(ctx context.Context, accountID string, store *storage.Store) webui.RefreshOutcome {
 		acct, err := store.GetProvider(ctx, accountID)
 		if err != nil {
 			return webui.RefreshOutcome{Status: statusUnknownAccount, Text: "unknown account"}
 		}
-		if acct.Type != "ollama-cloud" && acct.Type != "ollama-cloud-web" {
+		if !webui.UsageProbeType(acct.Type) {
 			return webui.RefreshOutcome{Status: statusUnsupportedType,
-				Text: "usage scraping is implemented for the ollama.com account types (ollama-cloud, ollama-cloud-web)"}
+				Text: "usage scraping is implemented for ollama-cloud, ollama-cloud-web and firecrawl accounts"}
 		}
-		tok, err := store.GetProviderToken(ctx, accountID, webui.UsageCookieTokenKind)
-		if errors.Is(err, storage.ErrNotFound) {
-			return webui.RefreshOutcome{Status: statusMissingCookie,
-				Text: "account has no usage cookie — set it to enable live usage"}
-		}
-		if err != nil {
-			return webui.RefreshOutcome{Status: http.StatusInternalServerError, Text: "token store failure"}
-		}
-		blob, err := prober.Probe(ctx, string(tok.Secret))
-		if err != nil {
-			// Honest error state in the blob (the card shows it); the
-			// message carries no cookie/page material by construction.
-			_ = store.PutAccountUsage(ctx, accountID, storage.AccountUsageBlob{
-				Error: truncateProbeError(err.Error()),
-			})
-			return webui.RefreshOutcome{Status: statusProbeFailed, Text: "usage scrape failed: " + truncateProbeError(err.Error())}
+		var blob *storage.AccountUsageBlob
+		switch acct.Type {
+		case "ollama-cloud", "ollama-cloud-web":
+			tok, err := store.GetProviderToken(ctx, accountID, webui.UsageCookieTokenKind)
+			if errors.Is(err, storage.ErrNotFound) {
+				return webui.RefreshOutcome{Status: statusMissingCookie,
+					Text: "account has no usage cookie — set it to enable live usage"}
+			}
+			if err != nil {
+				return webui.RefreshOutcome{Status: http.StatusInternalServerError, Text: "token store failure"}
+			}
+			blob, err = prober.Probe(ctx, string(tok.Secret))
+			if err != nil {
+				// Honest error state in the blob (the card shows it); the
+				// message carries no cookie/page material by construction.
+				_ = store.PutAccountUsage(ctx, accountID, storage.AccountUsageBlob{
+					Error: truncateProbeError(err.Error()),
+				})
+				return webui.RefreshOutcome{Status: statusProbeFailed, Text: "usage scrape failed: " + truncateProbeError(err.Error())}
+			}
+		case "firecrawl":
+			tok, err := store.GetProviderToken(ctx, accountID, "access_token")
+			if errors.Is(err, storage.ErrNotFound) {
+				return webui.RefreshOutcome{Status: statusMissingCookie,
+					Text: "account has no API key — add one to enable credit usage"}
+			}
+			if err != nil {
+				return webui.RefreshOutcome{Status: http.StatusInternalServerError, Text: "token store failure"}
+			}
+			var cfg struct {
+				BaseURL string `json:"base_url"`
+			}
+			if len(acct.Config) > 0 {
+				_ = json.Unmarshal(acct.Config, &cfg)
+			}
+			blob, err = fetchFirecrawlUsage(ctx, cfg.BaseURL, string(tok.Secret), client)
+			if err != nil {
+				_ = store.PutAccountUsage(ctx, accountID, storage.AccountUsageBlob{
+					Error: truncateProbeError(err.Error()),
+				})
+				return webui.RefreshOutcome{Status: statusProbeFailed, Text: "credit usage failed: " + truncateProbeError(err.Error())}
+			}
+		default:
+			return webui.RefreshOutcome{Status: statusUnsupportedType,
+				Text: "usage scraping is implemented for ollama-cloud, ollama-cloud-web and firecrawl accounts"}
 		}
 		if err := store.PutAccountUsage(ctx, accountID, *blob); err != nil {
 			return webui.RefreshOutcome{Status: http.StatusInternalServerError, Text: "usage blob persist failed"}
 		}
 		return webui.RefreshOutcome{OK: true}
 	}
+}
+
+// fetchFirecrawlUsage calls the documented GET /v2/team/credit-usage
+// endpoint and maps it onto the Quota card's blob. The client is the
+// guarded one; baseURL is the account's optional self-hosted override
+// (empty selects the Firecrawl default) and apiKey is the same credential
+// the emulator uses.
+func fetchFirecrawlUsage(ctx context.Context, baseURL, apiKey string, client *http.Client) (*storage.AccountUsageBlob, error) {
+	fc := firecrawl.New(baseURL, apiKey, client)
+	resp, err := fc.CreditUsage(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Data.RemainingCredits == nil && resp.Data.PlanCredits == nil {
+		return nil, errors.New("firecrawl credit usage carries no credit counts")
+	}
+	return &storage.AccountUsageBlob{
+		FetchedAt:        time.Now().Unix(),
+		RemainingCredits: resp.Data.RemainingCredits,
+		PlanCredits:      resp.Data.PlanCredits,
+		CreditsReset:     parseRFC3339Unix(resp.Data.BillingPeriodEnd),
+	}, nil
+}
+
+// parseRFC3339Unix parses the documented billing-period instant; an empty
+// or malformed value is 0 (unknown), never a guessed time.
+func parseRFC3339Unix(s string) int64 {
+	if s == "" {
+		return 0
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return 0
+	}
+	return t.Unix()
 }
 
 // truncateProbeError bounds error text (defense in depth; the prober

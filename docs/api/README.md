@@ -20,10 +20,10 @@ different audience and has its own page: [admin.md](admin.md).
 
 ## Authentication
 
-Every `/v1/*` request carries a **client key** (`pk_<prefix>_<secret>`),
-created in the console (**Keys**) and shown exactly once. The key is stored
-as a keyed MAC, not as a recoverable secret — a lost key is revoked and
-replaced, never re-read.
+Every `/v1/*` request carries an **API key** (`pk_<prefix>_<secret>`),
+created in the console (**API keys**) and shown exactly once. The key is
+stored as a one-way keyed hash, not as a recoverable secret — a lost key is
+regenerated or deleted, never re-read.
 
 The Anthropic surface accepts both header families: `Authorization: Bearer`
 wins when it carries a well-formed key, otherwise `x-api-key` is read. The

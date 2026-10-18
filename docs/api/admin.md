@@ -105,13 +105,15 @@ running proxy.
 | `PUT /model-sync` | Both fields are optional; each present field is written independently. A non-positive interval is `400` (a ticker cannot run on it). |
 | `POST /model-sync/run` | Runs one synchronous pass — the console's "Sync now". Answers `{"last_run":{…}}` with per-account counts and the reason an account was skipped. |
 
-## Client keys
+## API keys
 
 | Route | Notes |
 |---|---|
-| `POST /keys` | `{"name"}` → `{"id","key"}`. **The only response that ever contains a client key**: the secret is generated, stored as a keyed MAC and returned once. |
-| `GET /keys` | `{"keys":[{"id","name","key_prefix","revoked"}]}` — non-secret columns only. An audit record, not a key-recovery surface. |
-| `POST /keys/{id}/revoke` | |
+| `POST /keys` | `{"name"}` → `{"id","key"}`. **The only response that ever contains an API key**: the secret is generated, stored as a one-way keyed hash and returned once. A whitespace-only name is `400`. |
+| `GET /keys` | `{"keys":[{"id","name","key_prefix","created_at","last_used_at"}]}` — current keys only, newest first; non-secret columns only. A key list, not a recovery surface. |
+| `POST /keys/{id}/regenerate` | Mints a fresh secret for the SAME row (same id and name) and returns `{"id","key"}` exactly once. The old secret stops verifying immediately. |
+| `DELETE /keys/{id}` | Hard-deletes the row. The secret stops verifying immediately; only current keys are listed. Historical log rows keep the key id. |
+| `POST /keys/{id}/revoke` | Compatibility alias for the hard delete — there is no soft-deleted state. |
 
 ## Observability
 
@@ -124,18 +126,22 @@ reads per poll.
 `GET /overview` — the dashboard's single poll: `generated_at`, the last 14
 UTC days of `usage` rows, and today's totals.
 
-`GET /accounts/usage` — one card per non-web-tool account: the account's own
+`GET /accounts/usage` — one card per account that reports a usage window
+(chat accounts, plus Firecrawl and Ollama Cloud Web Tools): the account's own
 limit snapshot (`live`, present only when the last scrape produced a window —
 an error-only blob answers with `error` instead, and `null` percentages render
-as "—", never as zero), and a `health` string naming an active cooldown reason
-(`quota_exhausted`, `breaker`) or empty when the account is healthy. The card
+as "—", never as zero), a `health` string naming an active cooldown reason
+(`quota_exhausted`, `breaker`) or empty when the account is healthy, and
+`refreshable` when the production prober can scrape that type. `live.credits`
+is the Firecrawl team-credit window (`remaining`, `limit`, `reset`). The card
 carries nothing the proxy measured itself (ADR-012 amendment; local usage
 belongs to `/overview`).
 
 `POST /accounts/usage/refresh/{id...}` — scrapes that account's usage now
-(60 s budget). The ollama.com account types only, and only with a stored
-usage cookie; answers `502 usage scrape failed: …` and persists the failure
-so the card shows the honest error state instead of a stale bar.
+(60 s budget). Ollama Cloud accounts need a stored usage cookie; Firecrawl
+accounts use their API key and the documented `GET /v2/team/credit-usage`
+endpoint. Answers `502 …` and persists the failure so the card shows the
+honest error state instead of a stale reading.
 
 ### Logs
 

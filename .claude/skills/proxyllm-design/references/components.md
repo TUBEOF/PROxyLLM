@@ -44,6 +44,7 @@ Working markup: `design/examples/components.html`.
 | `.spark`, `.spark-area`, `.spark-line`, `.spark-pt` | a sparkline: filled area, accent line, last point |
 | `.bars`, `.bar-row`, `.bar-lab`, `.bar-val`, `.bar-track`, `.bar-fill`, `.bar-fill.alt` | horizontal bars; `.alt` is the neutral comparison series |
 | `.ring`, `.ring-track`, `.ring-seg` | a donut |
+| `.usage-window`, `.usage-window-copy`, `.usage-window-label`, `.usage-left`, `.usage-ring`, `.usage-ring-track`, `.usage-ring-seg`, `.usage-ring-num`, `.usage-reset` | one Quota limit window: label + remaining value on the left, a centered ring with the remaining percent, the reset timer on the right (three grid columns, so the timer never wraps into the content) |
 | `.heat`, `.heat-row`, `.heat-cell`, `.heat-legend` | a density heatmap |
 | `.table thead th`, `.table tbody td`, `.table .mono`, `.table .num`, `.table .primary`, `.row-actions` | the data grid: sticky header, 13px/16px cells, mono right-aligned numbers, em dash for absent values, row actions revealed on hover |
 | `.pagination`, `.selbar` | paging; the bulk-selection bar |

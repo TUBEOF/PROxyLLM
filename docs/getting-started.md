@@ -69,12 +69,12 @@ directory it was started from (in the container, inside the bind mount):
 Both paths are configuration (see [configuration](configuration.md)); both
 belong in the backup.
 
-## Create a client key
+## Create an API key
 
-In the console, open **Keys** and create one. The `pk_…` secret is shown
-exactly once — it is stored as a MAC and cannot be displayed again — so
-copy it now. Keys are revocable at any time, and revocation takes effect on
-the next request.
+In the console, open **API keys** and create one. The `pk_…` secret is shown
+exactly once — it is stored as a one-way keyed hash and cannot be displayed
+again — so copy it now. A key can be regenerated (a new secret for the same
+key; the old one stops working immediately) or deleted at any time.
 
 ## Point a client at it
 

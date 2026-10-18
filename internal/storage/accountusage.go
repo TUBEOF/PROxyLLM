@@ -26,6 +26,14 @@ type AccountUsageBlob struct {
 	SessionReset int64    `json:"session_reset,omitempty"`
 	WeeklyPct    *float64 `json:"weekly_pct,omitempty"`
 	WeeklyReset  int64    `json:"weekly_reset,omitempty"`
+
+	// Firecrawl team credits (the documented GET /v2/team/credit-usage
+	// payload, re-read 2026-10-18): remaining/plan credits and the billing
+	// period end. The Quota card shows remaining/plan as the ring and
+	// "remaining credits left"; a missing value stays nil (honest unknown).
+	RemainingCredits *float64 `json:"remaining_credits,omitempty"`
+	PlanCredits      *float64 `json:"plan_credits,omitempty"`
+	CreditsReset     int64    `json:"credits_reset,omitempty"`
 }
 
 // HasWindows reports whether the blob carries at least one live window —
@@ -33,7 +41,8 @@ type AccountUsageBlob struct {
 // scrape persists Error and nothing else) has none, and the card renders
 // that error instead of a pair of empty bars.
 func (b AccountUsageBlob) HasWindows() bool {
-	return b.SessionPct != nil || b.WeeklyPct != nil || b.SessionReset > 0 || b.WeeklyReset > 0
+	return b.SessionPct != nil || b.WeeklyPct != nil || b.SessionReset > 0 || b.WeeklyReset > 0 ||
+		b.RemainingCredits != nil || b.PlanCredits != nil || b.CreditsReset > 0
 }
 
 // accountUsageKey is the config-KV key for one account's usage blob.

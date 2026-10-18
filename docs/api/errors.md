@@ -67,7 +67,7 @@ records the per-provider `skipped (health cooldown)` events and a terminal
 | Status | Meaning | Retryable |
 |---|---|---|
 | `400` | Invalid request: body decode failure, a surface policy rejection (`anthropic_surface_non_claude=block`, `thinking_handling=block`) | no |
-| `401` | Missing or unknown client key | no |
+| `401` | Missing or invalid API key | no |
 | `403` | Key present but not permitted (key scope) | no |
 | `404` | No route for the model (see above) | no |
 | `429` | Upstream rate limit, relayed with `Retry-After` | yes, after the delay |

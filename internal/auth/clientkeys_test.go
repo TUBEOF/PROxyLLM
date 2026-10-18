@@ -198,25 +198,69 @@ func TestScopes_RoundTrip(t *testing.T) {
 	}
 }
 
-// 5. Revocation (G control 1): a revoked key must not verify, even with
-// the correct secret.
-func TestRevoke(t *testing.T) {
+// 5. Deletion (G control 1): a deleted key must not verify, even with the
+// correct secret, and the row is gone from the store.
+func TestDelete(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
 
-	id, secret, err := CreateClientKey(ctx, st, "rev-me")
+	id, secret, err := CreateClientKey(ctx, st, "delete-me")
 	if err != nil {
 		t.Fatalf("CreateClientKey: %v", err)
 	}
 	if !VerifyClientKey(ctx, st, secret) {
-		t.Fatal("pre-revoke verification sanity failed")
+		t.Fatal("pre-delete verification sanity failed")
 	}
 
-	if err := st.RevokeClientKey(ctx, id); err != nil {
-		t.Fatalf("RevokeClientKey: %v", err)
+	if err := st.DeleteClientKey(ctx, id); err != nil {
+		t.Fatalf("DeleteClientKey: %v", err)
 	}
 	if VerifyClientKey(ctx, st, secret) {
-		t.Error("revoked key still verifies")
+		t.Error("deleted key still verifies")
+	}
+	if _, err := st.GetClientKey(ctx, id); err == nil {
+		t.Error("deleted key row still exists")
+	}
+}
+
+// 5b. Regeneration: a fresh display-once secret for the same row. The old
+// secret stops verifying at once; the new one verifies; the name survives.
+func TestRegenerate(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	id, oldSecret, err := CreateClientKey(ctx, st, "regenerate-me")
+	if err != nil {
+		t.Fatalf("CreateClientKey: %v", err)
+	}
+	newSecret, err := RegenerateClientKey(ctx, st, id)
+	if err != nil {
+		t.Fatalf("RegenerateClientKey: %v", err)
+	}
+	if newSecret == oldSecret {
+		t.Fatal("regeneration returned the old secret")
+	}
+	// Read the row BEFORE verifying: a successful verify stamps last_used_at
+	// (TouchClientKey), and regeneration is what must have cleared it.
+	row, err := st.GetClientKey(ctx, id)
+	if err != nil {
+		t.Fatalf("GetClientKey: %v", err)
+	}
+	if row.Name != "regenerate-me" {
+		t.Errorf("row name = %q, want regenerate-me", row.Name)
+	}
+	prefix, _, ok := splitClientKey(newSecret)
+	if !ok || row.KeyPrefix != prefix {
+		t.Errorf("row prefix = %q, want %q", row.KeyPrefix, prefix)
+	}
+	if row.LastUsedAt != nil {
+		t.Errorf("regenerated row kept last_used_at = %v", *row.LastUsedAt)
+	}
+	if VerifyClientKey(ctx, st, oldSecret) {
+		t.Error("old secret still verifies after regeneration")
+	}
+	if !VerifyClientKey(ctx, st, newSecret) {
+		t.Error("new secret does not verify")
 	}
 }
 
@@ -309,10 +353,10 @@ func TestMiddleware_401BodyPerSurface(t *testing.T) {
 	}
 }
 
-// 8. Immediate revocation through the middleware: a key that authenticated
-// successfully must stop working as soon as it is revoked — no TTL window
-// (G control 1; /keys revoke must take effect at once).
-func TestMiddleware_RevokedKeyStopsWorkingImmediately(t *testing.T) {
+// 8. Immediate deletion through the middleware: a key that authenticated
+// successfully must stop working as soon as its row is deleted — no TTL
+// window (G control 1; the API-keys delete must take effect at once).
+func TestMiddleware_DeletedKeyStopsWorkingImmediately(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
 	id, secret, err := CreateClientKey(ctx, st, "rev-mw")
@@ -326,11 +370,11 @@ func TestMiddleware_RevokedKeyStopsWorkingImmediately(t *testing.T) {
 	if got, _ := do(t, srv.URL+"/v1/messages", "Authorization", "Bearer "+secret); got != http.StatusOK {
 		t.Fatalf("pre-revoke status = %d, want 200", got)
 	}
-	if err := st.RevokeClientKey(ctx, id); err != nil {
-		t.Fatalf("RevokeClientKey: %v", err)
+	if err := st.DeleteClientKey(ctx, id); err != nil {
+		t.Fatalf("DeleteClientKey: %v", err)
 	}
 	if got, _ := do(t, srv.URL+"/v1/messages", "Authorization", "Bearer "+secret); got != http.StatusUnauthorized {
-		t.Errorf("post-revoke status = %d, want 401 — revocation must be immediate", got)
+		t.Errorf("post-delete status = %d, want 401 — deletion must be immediate", got)
 	}
 }
 

@@ -16,11 +16,11 @@ export function formatCountdown(secs: number): string {
   return remHours > 0 ? `${d}d ${remHours}h` : `${d}d`;
 }
 
-// formatResetInstant renders an instant in the BROWSER's locale and timezone:
+// formatDateTime renders an instant in the BROWSER's locale and timezone:
 // the exact date and time the reader can hold against their own clock. The
 // zone abbreviation rides the value itself (timeZoneName), so nobody has to
 // wonder which clock it is.
-export function formatResetInstant(unixSeconds: number): string {
+export function formatDateTime(unixSeconds: number): string {
   return new Date(unixSeconds * 1000).toLocaleString(undefined, {
     year: 'numeric',
     month: 'short',
@@ -30,6 +30,12 @@ export function formatResetInstant(unixSeconds: number): string {
     second: '2-digit',
     timeZoneName: 'short',
   });
+}
+
+// formatResetInstant is formatDateTime for a limit window's reset — the same
+// reading, named for the call site that renders a tooltip.
+export function formatResetInstant(unixSeconds: number): string {
+  return formatDateTime(unixSeconds);
 }
 
 // relativeAge renders a past instant as an age ("2h ago"), the same reading

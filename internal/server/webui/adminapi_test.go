@@ -21,8 +21,10 @@ package webui
 //   - PUT    /api/admin/routing/{id}          {"match_model","chain","priority","enabled"}
 //   - DELETE /api/admin/routing/{id}
 //   - POST   /api/admin/keys                  {"name"} → {"id","key"} (display-once)
-//   - GET    /api/admin/keys
-//   - POST   /api/admin/keys/{id}/revoke
+//   - GET    /api/admin/keys                  (current keys only)
+//   - POST   /api/admin/keys/{id}/regenerate  → {"id","key"} (display-once)
+//   - DELETE /api/admin/keys/{id}             (hard delete)
+//   - POST   /api/admin/keys/{id}/revoke      (compatibility alias for DELETE)
 //   - POST   /api/admin/providers/{id}/oauth/start  (device flow: user_code +
 //     verification URL surfaced to the operator; replaces any active flow)
 //   - POST   /api/admin/providers/{id}/oauth/poll   (one issuer round trip per call,
@@ -48,6 +50,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tubeof/proxyllm/internal/auth"
 	"github.com/tubeof/proxyllm/internal/config"
 	"github.com/tubeof/proxyllm/internal/storage"
 )
@@ -497,31 +500,78 @@ func TestClientKeys_DisplayOnceAndHashFreeList(t *testing.T) {
 	}
 	var list struct {
 		Keys []struct {
-			ID        string `json:"id"`
-			Name      string `json:"name"`
-			KeyPrefix string `json:"key_prefix"`
-			Revoked   bool   `json:"revoked"`
+			ID         string `json:"id"`
+			Name       string `json:"name"`
+			KeyPrefix  string `json:"key_prefix"`
+			CreatedAt  int64  `json:"created_at"`
+			LastUsedAt *int64 `json:"last_used_at"`
 		} `json:"keys"`
 	}
 	decodeJSON(t, w, &list)
 	if len(list.Keys) != 1 || list.Keys[0].ID != created.ID {
 		t.Fatalf("list: %+v", list.Keys)
 	}
-	if list.Keys[0].Name != "claude-code laptop" || list.Keys[0].KeyPrefix == "" {
+	if list.Keys[0].Name != "claude-code laptop" || list.Keys[0].KeyPrefix == "" || list.Keys[0].CreatedAt == 0 {
 		t.Errorf("key list fields: %+v", list.Keys[0])
 	}
-	if list.Keys[0].Revoked {
-		t.Errorf("fresh key listed as revoked: %+v", list.Keys[0])
+	if strings.Contains(w.Body.String(), `"revoked"`) {
+		t.Error("the list still carries a revoked field — only current keys are listed")
 	}
 
-	// Revoke flips the flag — revoked keys stay listed (audit trail).
-	w = env.authedCall(t, http.MethodPost, "/api/admin/keys/"+created.ID+"/revoke", `{}`, s)
-	assertStatus(t, w, http.StatusOK, "revoke key")
+	// Regenerate mints a fresh secret for the same row; the old one dies.
+	w = env.authedCall(t, http.MethodPost, "/api/admin/keys/"+created.ID+"/regenerate", `{}`, s)
+	assertStatus(t, w, http.StatusOK, "regenerate key")
+	var regenerated struct {
+		ID  string `json:"id"`
+		Key string `json:"key"`
+	}
+	decodeJSON(t, w, &regenerated)
+	if regenerated.ID != created.ID || regenerated.Key == "" || regenerated.Key == created.Key {
+		t.Fatalf("regenerate response: %+v", regenerated)
+	}
+	ctx := context.Background()
+	if auth.VerifyClientKey(ctx, env.api.store, created.Key) {
+		t.Error("the old secret still verifies after regeneration")
+	}
+	if !auth.VerifyClientKey(ctx, env.api.store, regenerated.Key) {
+		t.Error("the regenerated secret does not verify")
+	}
+
+	// Hard delete removes the row and the key stops verifying.
+	w = env.authedCall(t, http.MethodDelete, "/api/admin/keys/"+created.ID, "", s)
+	assertStatus(t, w, http.StatusOK, "delete key")
+	if _, err := env.api.store.GetClientKey(ctx, created.ID); err == nil {
+		t.Error("the deleted key row still exists")
+	}
+	if auth.VerifyClientKey(ctx, env.api.store, regenerated.Key) {
+		t.Error("the deleted secret still verifies")
+	}
 	list.Keys = nil
 	w = env.authedCall(t, http.MethodGet, "/api/admin/keys", "", s)
 	decodeJSON(t, w, &list)
-	if len(list.Keys) != 1 || !list.Keys[0].Revoked {
-		t.Errorf("revoked flag not visible after revoke: %+v", list.Keys)
+	if len(list.Keys) != 0 {
+		t.Errorf("deleted key still listed: %+v", list.Keys)
+	}
+
+	// The old /revoke route is a compatibility alias for the hard delete.
+	if _, _, err := auth.CreateClientKey(ctx, env.api.store, "alias delete"); err != nil {
+		t.Fatalf("create second key: %v", err)
+	}
+	id2 := ""
+	w = env.authedCall(t, http.MethodGet, "/api/admin/keys", "", s)
+	decodeJSON(t, w, &list)
+	for _, k := range list.Keys {
+		if k.Name == "alias delete" {
+			id2 = k.ID
+		}
+	}
+	if id2 == "" {
+		t.Fatal("second key not listed")
+	}
+	w = env.authedCall(t, http.MethodPost, "/api/admin/keys/"+id2+"/revoke", `{}`, s)
+	assertStatus(t, w, http.StatusOK, "revoke alias")
+	if _, err := env.api.store.GetClientKey(ctx, id2); err == nil {
+		t.Error("the revoke alias left the row in place; it must hard-delete")
 	}
 }
 

@@ -36,7 +36,7 @@ test.describe('signed in', () => {
     await page.goto('/quota');
     await readyForCapture(page);
     await expect(page).toHaveScreenshot('quota.png', {
-      mask: [...kpiMasks(page), page.locator('.bar-fill')],
+      mask: [...kpiMasks(page), page.locator('.usage-ring-seg')],
     });
   });
 
@@ -102,7 +102,12 @@ test.describe('signed in', () => {
   test('keys', async ({ page }) => {
     await page.goto('/keys');
     await readyForCapture(page);
-    await expect(page).toHaveScreenshot('keys.png');
+    // The fixture seeds keys through the real store, whose timestamps come
+    // from the wall clock — mask the Created/Last-used columns so the
+    // baseline pins the layout and labels, not the seed's clock.
+    await expect(page).toHaveScreenshot('keys.png', {
+      mask: [page.locator('.table tbody td:nth-child(3)'), page.locator('.table tbody td:nth-child(4)')],
+    });
   });
 
 });

@@ -580,7 +580,7 @@ function LogDetail({ selected, subOps, names, onOpenChild }: { selected: Request
           <dd style={{ margin: 0 }}>{selected.protocol ?? '—'}</dd>
           <dt className="muted">Conversation</dt>
           <dd className="mono" style={{ margin: 0 }}>{selected.conversation_id ?? '—'}</dd>
-          <dt className="muted">Client key</dt>
+          <dt className="muted">API key</dt>
           <dd className="mono" style={{ margin: 0 }} title={selected.client_key_id}>
             {selected.key_name
               ? selected.key_prefix

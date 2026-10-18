@@ -72,5 +72,10 @@ export function kpiMasks(page: Page): Locator[] {
     page.locator('.bar-val'),
     page.locator('.spark'),
     page.locator('.ring'),
+    // Quota usage windows: the remaining percent/value and the live timer
+    // are data-derived, so they are masked like the other KPI readings.
+    page.locator('.usage-ring-num'),
+    page.locator('.usage-left'),
+    page.locator('.usage-reset'),
   ];
 }
