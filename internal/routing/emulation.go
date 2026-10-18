@@ -538,8 +538,6 @@ func emulatedToolDefs(tools []ir.Tool) map[string]ir.Tool {
 	return defs
 }
 
-
-
 // callConfig dereferences a def's knobs (nil → provider defaults).
 func callConfig(t ir.Tool) ir.ServerToolConfig {
 	if t.ServerTool == nil {
