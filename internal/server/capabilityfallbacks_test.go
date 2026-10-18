@@ -584,9 +584,25 @@ func TestServer_FallbackWriteLiveSwapsModels(t *testing.T) {
 		t.Fatalf("fb-one requests = %d, want 1 (the written fallback was not consulted)", got)
 	}
 
-	// Admin write swaps to fb-two — the next image is described by fb-two.
+	// Admin write swaps to fb-two — the next image is described by fb-two,
+	// and by now the routed model's row has LEARNED vision:false from part
+	// 1's gap (stated explicitly, pinning it against async-learning race
+	// noise): ADR-018 substitutes the image pre-dispatch and asks fb-two
+	// BEFORE the routed model ever sees the request — no rejection paid.
+	// The write can race part 1's own async learning write for the row
+	// (same value); retry briefly rather than fail the test on a busy store.
+	var learnErr error
+	for i := 0; i < 40; i++ {
+		learnErr = st.MergeLearnedCapability(ctx, "mock-main", "chat-model", "vision", false)
+		if learnErr == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if learnErr != nil {
+		t.Fatalf("learn vision:false on the routed row: %v", learnErr)
+	}
 	saveFallbacks(t, ts, `["ollamacloud/fb-two"]`, login)
-	main.Enqueue(gapRejectedScript())
 	main.Enqueue(chatOKScript("chat-model", "main-answer"))
 	fb2.Enqueue(chatOKScript("fb-two", "described by fb-two"))
 	status, body = capabilityFallbackChat(t, ts, key)
@@ -595,6 +611,9 @@ func TestServer_FallbackWriteLiveSwapsModels(t *testing.T) {
 	}
 	if got := len(fb2.Requests()); got != 1 {
 		t.Fatalf("fb-two requests = %d, want 1 (live swap failed)", got)
+	}
+	if got := len(main.Requests()); got != 3 {
+		t.Fatalf("routed-model requests = %d, want 3 (part 1: reactive reject+retry, part 2: exactly one pre-dispatched walk — the known-blind row must not be paid another rejection)", got)
 	}
 }
 

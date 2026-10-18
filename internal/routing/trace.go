@@ -109,6 +109,12 @@ const (
 	// answering model was told the image showed.
 	EventImageCaption EventType = "image_caption"
 
+	// EventAnalyzeImage: the analyze_image tool (ADR-018) answered — ProviderID
+	// + Model name the vision model that produced the answer, Usage its spend,
+	// LatencyMS the call, Reason the question/answer summary (or, for a call
+	// that was declined, why).
+	EventAnalyzeImage EventType = "analyze_image"
+
 	// EventModelResolved: the requested model ID (a prefixed routing
 	// identity, e.g. "ollamacloud/glm-5.3") resolved to the upstream wire
 	// name for dispatch (e.g. "glm-5.3") — From/To carry routing ID → wire
@@ -268,6 +274,15 @@ func (t *Trace) ImageCaptionCached(providerID, model string, chars int) {
 	t.add(Event{Type: EventImageCaption, ProviderID: providerID, Model: model,
 		CacheHit: true,
 		Reason:   strconv.Itoa(chars) + " character(s) reused from the caption cache"})
+}
+
+// AnalyzeImage records one analyze_image answer (ADR-018, never silent):
+// the vision model that answered, its spend and latency, and what was asked.
+// A declined call (mixed with client tool calls, no state) carries no model.
+func (t *Trace) AnalyzeImage(providerID, model, reason string, latencyMS int64, usage ir.Usage) {
+	spent := usage
+	t.add(Event{Type: EventAnalyzeImage, ProviderID: providerID, Model: model,
+		LatencyMS: latencyMS, Usage: &spent, Reason: reason})
 }
 
 // EmulatedTool records a server-tool substitution by the emulation

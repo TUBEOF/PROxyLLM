@@ -67,7 +67,7 @@ const (
 // Responses containing tool calls that are NOT emulated pass through
 // untouched: those belong to the client, and the loop must not answer
 // (or swallow) them.
-func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry, req ir.Request, trace *Trace) (ir.Response, error) {
+func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry, req ir.Request, state *visionToolState, trace *Trace) (ir.Response, error) {
 	resp, err := e.executeOnce(ctx, chain, req, trace)
 	if err != nil {
 		return ir.Response{}, err
@@ -93,11 +93,45 @@ func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry,
 	for round := 0; ; round++ {
 		usage = addUsage(usage, resp.Usage)
 
-		calls := emulatedCalls(resp.Content, defs)
-		if len(calls) == 0 {
+		// Split the response's tool calls: web-tool emulations (answered via
+		// the emulator), the vision tool (answered via the vision fallbacks,
+		// never client-facing, ADR-018), and foreign calls (the client's own).
+		var emuCalls, imgCalls []ir.ToolCallPart
+		foreign := false
+		for _, part := range resp.Content {
+			call, ok := part.(ir.ToolCallPart)
+			if !ok {
+				continue
+			}
+			switch {
+			case call.Name == analyzeImageToolName && state != nil:
+				if _, emulated := defs[analyzeImageToolName]; !emulated {
+					// A client-declared analyze_image is NOT ours: foreign.
+					foreign = true
+				} else {
+					imgCalls = append(imgCalls, call)
+				}
+			default:
+				if _, emulated := defs[call.Name]; emulated {
+					emuCalls = append(emuCalls, call)
+				} else {
+					foreign = true
+				}
+			}
+		}
+		if len(emuCalls) == 0 && len(imgCalls) == 0 {
+			// Nothing this loop answers — possibly a client tool call only.
+			_ = foreign
 			return finishEmulated(resp, synth, usage), nil
 		}
-		if hasForeignToolCall(resp.Content, defs) {
+		if foreign {
+			if len(imgCalls) > 0 {
+				// Mixed analyze_image + client tool calls: the client's own
+				// calls surface, the vision calls drop (traced) — the model
+				// re-issues them next round.
+				return finishEmulated(dropUnansweredVision(resp, state, trace,
+					"not answered: mixed with client tool calls; the client answers its own"), synth, usage), nil
+			}
 			// Mixed emulated + client tool calls: the client must answer
 			// its own; surface the whole response unchanged.
 			return finishEmulated(resp, synth, usage), nil
@@ -105,7 +139,8 @@ func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry,
 		if round >= maxEmulationRounds {
 			trace.EmulatedTool("emulation_loop", "",
 				fmt.Sprintf("round cap %d reached; returning last upstream response", maxEmulationRounds), 0)
-			return finishEmulated(resp, synth, usage), nil
+			return finishEmulated(dropUnansweredVision(resp, state, trace,
+				"not answered: emulation round cap reached"), synth, usage), nil
 		}
 		// The other half of the safety net: the loop's own deadline (set when the
 		// loop started). Everything synthesized so far is honest output, so the
@@ -115,7 +150,8 @@ func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry,
 			trace.EmulatedTool("emulation_loop", "",
 				"emulation budget exhausted ("+e.cfg.EmulationTotalBudget.String()+
 					"); returning what the tools answered so far", 0)
-			return finishEmulated(resp, synth, usage), nil
+			return finishEmulated(dropUnansweredVision(resp, state, trace,
+				"not answered: emulation budget exhausted"), synth, usage), nil
 		}
 
 		// Synthesize the client-facing blocks for this round in wire
@@ -127,6 +163,15 @@ func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry,
 			call, ok := part.(ir.ToolCallPart)
 			if !ok {
 				roundParts = append(roundParts, part)
+				continue
+			}
+			if call.Name == analyzeImageToolName && state != nil {
+				tr, spent := e.answerAnalyzeImage(ctx, call, callConfig(defs[call.Name]), state, uses, trace)
+				if tr.ToolUseID != "" {
+					results = append(results, tr)
+				}
+				usage = addUsage(usage, spent)
+				// No client-facing blocks: the tool belongs to no client.
 				continue
 			}
 			st := callConfig(defs[call.Name])
@@ -426,6 +471,34 @@ func mapMediaType(mt string) string {
 	return mt
 }
 
+// dropUnansweredVision removes every analyze_image tool_use the response
+// still carries — a call the loop never answered — and traces one decline
+// with `reason` per dropped call. The invariant it enforces lives in the ADR:
+// an unknown tool_use must never reach the client, whatever ended the loop
+// (mixed turn, round cap, emulation deadline). The client's own calls and
+// everything else in the response pass through untouched.
+func dropUnansweredVision(resp ir.Response, state *visionToolState, trace *Trace, reason string) ir.Response {
+	if state == nil {
+		return resp
+	}
+	var surfaced []ir.Part
+	for _, part := range resp.Content {
+		if call, ok := part.(ir.ToolCallPart); ok && call.Name == analyzeImageToolName {
+			trace.AnalyzeImage("", "", reason, 0, ir.Usage{})
+			continue
+		}
+		surfaced = append(surfaced, part)
+	}
+	return respWithContent(resp, surfaced)
+}
+
+// respWithContent returns resp with its content replaced (the mixed-corner
+// filter works on a copy; the caller's response is not mutated).
+func respWithContent(resp ir.Response, content []ir.Part) ir.Response {
+	resp.Content = content
+	return resp
+}
+
 // appendRoundTrip extends the request with the model's assistant turn
 // and the synthesized tool-result answers (client-tool exchange shape:
 // assistant tool calls → user tool_result message).
@@ -448,11 +521,14 @@ func partsOf(results []ir.ToolResultPart) []ir.Part {
 // blocks first (wire order: tool use/results, then the final answer),
 // honest cross-round token usage, and the web-request counters.
 func finishEmulated(resp ir.Response, synth []ir.Part, usage ir.Usage) ir.Response {
+	// Honest cross-round accounting regardless of whether the round trips
+	// synthesized client-facing blocks: an analyze_image exchange (ADR-018)
+	// costs real calls and synthesizes nothing.
+	resp.Usage = usage
 	if len(synth) == 0 {
 		return resp
 	}
 	resp.Content = append(append([]ir.Part{}, synth...), resp.Content...)
-	resp.Usage = usage
 	return resp
 }
 
@@ -479,33 +555,6 @@ func emulatedToolDefs(tools []ir.Tool) map[string]ir.Tool {
 		}
 	}
 	return defs
-}
-
-// emulatedCalls collects the response's tool calls that target emulated
-// tools (by family name).
-func emulatedCalls(content []ir.Part, defs map[string]ir.Tool) []ir.ToolCallPart {
-	var calls []ir.ToolCallPart
-	for _, part := range content {
-		if call, ok := part.(ir.ToolCallPart); ok {
-			if _, emulated := defs[call.Name]; emulated {
-				calls = append(calls, call)
-			}
-		}
-	}
-	return calls
-}
-
-// hasForeignToolCall reports a tool call against a NON-emulated tool: the
-// client owns it and must answer it.
-func hasForeignToolCall(content []ir.Part, defs map[string]ir.Tool) bool {
-	for _, part := range content {
-		if call, ok := part.(ir.ToolCallPart); ok {
-			if _, emulated := defs[call.Name]; !emulated {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // callConfig dereferences a def's knobs (nil → provider defaults).

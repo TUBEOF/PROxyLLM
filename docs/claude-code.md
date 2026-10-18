@@ -127,6 +127,34 @@ the conversation (or in earlier search results), a definition's
 the call comes back as the documented `unavailable` error result instead of
 silently doing nothing.
 
+## Images (paste and screenshots)
+
+Anthropic-native behavior first: a pasted image, or a Playwright MCP
+screenshot, reaches the proxy as base64 `image` blocks in the conversation.
+What happens next depends on whether the ROUTED model can see images —
+nothing needs to change on the client side:
+
+- **Sighted chain**: the blocks flow through natively; Claude Code cannot
+  tell it is talking through a proxy.
+- **Chain where every model row has learned (or has pinned) `vision: false`**:
+  the image never reaches the dispatch. Each image becomes a
+  `[Bild N (ref xxxxxxxxxxxx): <short description>]` placeholder and the
+  executor injects an `analyze_image(image_ref, prompt)` tool for the model:
+  the model sends the image plus its OWN question — "what is the exact error
+  string?" — to the configured `vision_fallback` models and reads a targeted
+  answer, as many times as the task needs. The tool is answered inside the
+  request; Claude Code never sees the tool or any of its blocks, and its own
+  tool calls are unaffected. One request of this class answers completely
+  before the first streamed byte (see the emulated-tool streaming note in
+  [routing and fallbacks](routing-and-fallbacks.md#streaming-requests-with-emulated-tools)).
+
+The visibility of all of this is the log's: `image_caption` rows show what the
+answering model was told, `analyze_image` rows name the vision model that
+answered each ask, and the `capability_fallback` line records the
+substitution itself. `vision_tool=0` returns the workflow to plain
+descriptions only ([configuration](configuration.md#database-overrides-layer-4),
+[ADR-018](adr/ADR-018-vision-passthrough-and-analyze-image.md)).
+
 ## What a degraded run looks like
 
 Nothing is silent. The request's `route_trace` records every adaptation with

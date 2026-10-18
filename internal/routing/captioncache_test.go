@@ -1,13 +1,14 @@
 package routing_test
 
 // The caption cache's behaviour at the executor: an image that has been
-// described once is not described again on the next turn of a conversation,
-// and the text that replaces it is byte-identical every time.
+// described for a question is not described again when the same turn is
+// re-sent, and the text that replaces it is byte-identical every time.
 //
 // The failure this pins is the one an agentic client produces without trying:
 // it re-sends its own transcript on every turn, image parts included, so a
 // conversation that carries a screenshot used to pay one vision call per turn
-// for as long as it lived.
+// for as long as it lived. The cache must not go further than that: a NEW
+// question needs a description written for it (ChangedQuestionReDescribesTheImage).
 
 import (
 	"context"
@@ -46,7 +47,7 @@ func TestExecutor_Caption_SecondIdenticalRequestServesTheCachedDescription(t *te
 	if _, _, err := e.Execute(context.Background(), chain, imageRequest("what does this error say?")); err != nil {
 		t.Fatalf("turn 1: %v", err)
 	}
-	_, trace2, err := e.Execute(context.Background(), chain, imageRequest("and what about line 42?"))
+	_, trace2, err := e.Execute(context.Background(), chain, imageRequest("what does this error say?"))
 	if err != nil {
 		t.Fatalf("turn 2: %v", err)
 	}
@@ -74,6 +75,39 @@ func TestExecutor_Caption_SecondIdenticalRequestServesTheCachedDescription(t *te
 	}
 	if caps[0].ProviderID != "vision" || caps[0].Model != "vl-1" {
 		t.Errorf("cached event = %s/%s, want the describer that produced the text", caps[0].ProviderID, caps[0].Model)
+	}
+}
+
+// A description is written to answer the question it was asked for. When the
+// client re-sends the same image with a NEW question — what an agentic loop
+// does on every turn — the previous question's description must not stand in
+// for the current one: it is focused on something the client is no longer
+// asking about, and the answering model cannot see what the new question needs.
+func TestExecutor_Caption_ChangedQuestionReDescribesTheImage(t *testing.T) {
+	main := &recordingProvider{id: "main", errs: []error{gapErr(), nil, gapErr(), nil}}
+	vision := &recordingProvider{id: "vision", text: "description for the first question"}
+
+	e := captionExecutor(main, vision)
+	chain := []routing.ChainEntry{{ProviderID: "main", Model: "m"}}
+
+	if _, _, err := e.Execute(context.Background(), chain, imageRequest("what does the first page show?")); err != nil {
+		t.Fatalf("turn 1: %v", err)
+	}
+	vision.text = "description for the second question"
+	if _, _, err := e.Execute(context.Background(), chain, imageRequest("which numbers are in the table?")); err != nil {
+		t.Fatalf("turn 2: %v", err)
+	}
+
+	if vision.calls != 2 {
+		t.Fatalf("vision calls = %d, want 2: a changed question must not be served the previous question's description", vision.calls)
+	}
+	second := vision.seen[1].Messages[0].Parts[1].(ir.TextPart).Text
+	if !strings.Contains(second, "which numbers are in the table?") {
+		t.Errorf("turn 2 prompt did not carry the new question: %q", second)
+	}
+	got := partStrings(main.seen[3].Messages[0].Parts)
+	if len(got) != 2 || got[1] != "text:description for the second question" {
+		t.Errorf("turn 2 parts = %q, want the newly produced description", got)
 	}
 }
 
@@ -167,7 +201,7 @@ func TestExecutor_Caption_CacheHitAddsNoUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("turn 1: %v", err)
 	}
-	second, _, err := e.Execute(context.Background(), chain, imageRequest("q2"))
+	second, _, err := e.Execute(context.Background(), chain, imageRequest("q1"))
 	if err != nil {
 		t.Fatalf("turn 2: %v", err)
 	}
@@ -202,7 +236,7 @@ func TestExecutor_Caption_ConfigChangeInvalidatesTheCache(t *testing.T) {
 		t.Fatalf("turn 1: %v", err)
 	}
 	e.SetCapabilityFallbacks([]routing.ChainEntry{{ProviderID: "vision-two", Model: "vl-2"}})
-	if _, _, err := e.Execute(context.Background(), chain, imageRequest("q2")); err != nil {
+	if _, _, err := e.Execute(context.Background(), chain, imageRequest("q1")); err != nil {
 		t.Fatalf("turn 2: %v", err)
 	}
 	if vision2.calls != 1 {
@@ -214,8 +248,16 @@ func TestExecutor_Caption_ConfigChangeInvalidatesTheCache(t *testing.T) {
 // rejection is a known outcome rather than a discovery. The images are then
 // replaced before dispatch: no rejected round trip, and no vision call.
 func TestExecutor_Caption_KnownBlindChainSkipsTheDispatch(t *testing.T) {
-	main := &recordingProvider{id: "main", errs: []error{gapErr(), nil}}
-	vision := &recordingProvider{id: "vision"}
+	// ADR-018: on an all-known-blind chain the image never reaches the
+	// dispatch at all — not just on a cached second turn (the old reactive
+	// contract), but on the FIRST one: the rejection is certain in advance,
+	// and a hung upstream may never even send it (the transport timeout that
+	// masked the gap 400 and broke the rescue). Turn 1 describes, substitutes
+	// the placeholder, injects the analyze_image tool, and is served in one
+	// walk. Turn 2 re-sends the transcript: the description is already known
+	// (cache) and the tool rides along again; the describer is not paid twice.
+	main := &recordingProvider{id: "main"}
+	vision := &recordingProvider{id: "vision", text: "a stack trace pointing at nil.go:42"}
 
 	e := routing.NewExecutor(routing.ExecutorConfig{
 		Registry:     regOf(main, vision),
@@ -230,36 +272,42 @@ func TestExecutor_Caption_KnownBlindChainSkipsTheDispatch(t *testing.T) {
 	})
 	chain := []routing.ChainEntry{{ProviderID: "main", Model: "m"}}
 
-	// Turn 1 discovers the image: rejected once, described once, served.
 	if _, _, err := e.Execute(context.Background(), chain, imageRequest("q1")); err != nil {
 		t.Fatalf("turn 1: %v", err)
 	}
-	// Turn 2 cannot be rejected for the image any more — it is gone before the
-	// dispatch, and the chain is walked exactly once.
-	_, trace2, err := e.Execute(context.Background(), chain, imageRequest("q2"))
+	_, trace2, err := e.Execute(context.Background(), chain, imageRequest("q1"))
 	if err != nil {
 		t.Fatalf("turn 2: %v", err)
 	}
 
-	if main.calls != 3 {
-		t.Errorf("chain dispatches = %d, want 3 (turn 1 rejected + retried, turn 2 once)", main.calls)
+	if main.calls != 2 {
+		t.Errorf("chain dispatches = %d, want 2 (one walk per turn; the blind rejection is never paid)", main.calls)
 	}
 	if vision.calls != 1 {
-		t.Errorf("vision calls = %d, want 1", vision.calls)
+		t.Errorf("vision calls = %d, want 1 (turn 1 describes, turn 2 is a cache hit)", vision.calls)
 	}
-	if hasEvent(trace2, routing.EventFailed) {
-		t.Error("turn 2 recorded a failed attempt: the rejection was known in advance and must not be paid for")
+	for _, trace := range []*routing.Trace{trace2} {
+		if hasEvent(trace, routing.EventFailed) {
+			t.Error("a turn recorded a failed attempt: the rejection was known in advance and must not be paid for")
+		}
 	}
-	if got := partStrings(main.seen[2].Messages[0].Parts); len(got) != 2 || got[1] == "image:iVBORw0KGgo=" {
+	if got := partStrings(main.seen[1].Messages[0].Parts); len(got) != 2 || got[1] == "image:iVBORw0KGgo=" {
 		t.Errorf("turn 2 dispatched parts = %q, want the image already replaced", got)
 	}
-	// The trace must not describe a rejection that never happened. Turn 2 was
-	// never refused for the image — nothing was attempted until after the
-	// replacement — so "the chain was exhausted and is being retried" would be a
-	// fiction an operator would chase.
+	// The trace must not describe a rejection that never happened. No turn
+	// was ever refused for the image — nothing was attempted until after the
+	// replacement — so "the chain was exhausted and is being retried" would
+	// be a fiction an operator would chase.
 	for _, ev := range eventsOf(trace2, routing.EventCapabilityFallback) {
 		if strings.Contains(ev.Reason, "exhausted") || strings.Contains(ev.Reason, "retrying") {
 			t.Errorf("pre-dispatch substitution traced as %q", ev.Reason)
+		}
+	}
+	// The injected tool rides BOTH turns: the model can ask its own
+	// questions about the image on turn 2 as well.
+	for i, seen := range main.seen {
+		if _, ok := findTool(seen, "analyze_image"); !ok {
+			t.Errorf("turn %d dispatch missing the analyze_image def", i+1)
 		}
 	}
 }

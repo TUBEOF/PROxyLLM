@@ -134,6 +134,11 @@ func renderChildPayload(p routing.ChildPayload) (request, response string, ok bo
 		return marshalChildBody(captionRequest{Instruction: p.Input,
 				Image: captionImage{MediaType: p.MediaType, Bytes: p.ImageBytes}}),
 			marshalChildBody(captionResponse{Caption: p.Output}), true
+	case routing.OpAnalyzeImage:
+		// The vision tool's exchange, same shape as a web-tool row: the
+		// model's own ask in, the answering model's text out.
+		return marshalChildBody(emulatedToolRequest{Tool: p.Tool, Input: jsonValue(p.Input)}),
+			marshalChildBody(emulatedToolResponse{Result: jsonValue(p.Output)}), true
 	}
 	// A failover names its reason and nothing else; there is no body to show.
 	return "", "", false

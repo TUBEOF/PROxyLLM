@@ -18,22 +18,23 @@ import (
 // included. Without a cache the rescue in captionImages therefore describes
 // the same image again on every turn of a conversation that carries one — the
 // image is byte-identical, the description is not. This cache makes the second
-// and every later turn free, and keeps the substituted text identical turn over
-// turn, which is also what keeps an upstream prompt cache valid: a history
-// position whose text changes between turns invalidates the prefix from there
-// on.
+// and every later turn with the SAME question free, and keeps the substituted
+// text identical while that remains true, which is also what keeps an upstream
+// prompt cache valid: a history position whose text changes between turns
+// invalidates the prefix from there on. A changed question is a different
+// description (see below), and the prefix invalidation that follows is the
+// price of answering the question actually asked.
 //
-// The key is content-addressed (the image's decoded bytes), so the same image
-// reaching the proxy as a data URI, as a URL that got inlined first, or in a
-// later turn always maps to the same entry. The description is a property of
-// the image, not of the request that happened to carry it.
+// The key is content-addressed (the image's decoded bytes plus the task hint
+// the description was asked for), so the same image reaching the proxy as a
+// data URI, as a URL that got inlined first, or in a later turn always maps to
+// the same entry — as long as the question is the same. A description is a
+// property of the image AND of the question that shaped it: a later turn
+// asking something new must be described for that new question, not handed the
+// earlier question's text.
 //
-// Two things are deliberately NOT part of the key:
+// One thing is deliberately NOT part of the key:
 //
-//   - the task-aware prompt. It embeds the client's latest turn, so keying on
-//     it would miss on every turn and re-describe a byte-identical image. The
-//     describer still receives the task-aware prompt on the miss; only the
-//     cache key uses the stable base prompt.
 //   - the model that happened to answer. The describer list is consulted in
 //     order and its head changes with health, so keying on the responder would
 //     fragment the cache by outage. The configured list is what the key
@@ -61,6 +62,14 @@ type captionKey struct {
 	// version covers everything in the describer configuration that shapes the
 	// text: the base prompt and the configured describer list.
 	version string
+
+	// task is the digest of the task hint appended to the prompt (the client's
+	// text that the describer was asked to focus on), truncated exactly as it
+	// is sent. Zero when the task-aware switch is off. Without it, a later turn
+	// with a different question would hit the entry written for the earlier
+	// one and the answering model would be told what the image showed in terms
+	// of a question nobody is asking any more.
+	task [32]byte
 
 	// digest is the SHA-256 of the image's decoded bytes.
 	digest [32]byte
@@ -160,8 +169,8 @@ func (c *captionCache) keyOf(el *list.Element) (captionKey, bool) {
 
 // captionVersion renders the describer configuration that shapes a description.
 // Only what the describer is told before the image enters: the base prompt and
-// the model list. The task-aware suffix is excluded on purpose — see the file
-// comment.
+// the model list. The task-aware suffix is not part of the version because it
+// changes per request; it enters the key through captionImageKey's task digest.
 func captionVersion(basePrompt string, models []ChainEntry) string {
 	var b strings.Builder
 	b.WriteString(basePrompt)
@@ -194,13 +203,19 @@ func captionDigest(data string) [32]byte {
 	return out
 }
 
-// captionImageKey builds the cache key for one image.
-func captionImageKey(clientKeyID, version string, img ir.ImagePart) captionKey {
-	return captionKey{
+// captionImageKey builds the cache key for one image. task is the task hint
+// the describer was given (empty when the task-aware switch is off); it is
+// hashed so the map does not retain the client's text.
+func captionImageKey(clientKeyID, version, task string, img ir.ImagePart) captionKey {
+	key := captionKey{
 		clientKeyID: clientKeyID,
 		version:     version,
 		digest:      captionDigest(img.Data),
 	}
+	if task != "" {
+		key.task = sha256.Sum256([]byte(task))
+	}
+	return key
 }
 
 // clientKeyCtxKey carries the client key identity into the executor. The

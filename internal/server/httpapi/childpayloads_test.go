@@ -206,3 +206,29 @@ func TestAttachChildPayloads_LongCaptionIsExcerptedOnTheRowOnly(t *testing.T) {
 		t.Error("the body kept only the excerpt — the detail view must carry the whole caption")
 	}
 }
+
+// ADR-018: an analyze_image child row opens its drawer onto the tool's own
+// exchange — the image_ref+prompt the model sent, and the vision answer it
+// got back — exactly like a web-tool row does.
+func TestAttachChildPayloads_AnalyzeImageRowsCarryTheirOwnExchange(t *testing.T) {
+	ops := []storage.ChildLog{
+		{Kind: string(routing.OpAnalyzeImage), ToRef: "analyze_image", ProviderID: "acc-vision"},
+	}
+	payloads := []routing.ChildPayload{
+		{Kind: routing.OpAnalyzeImage, Tool: "analyze_image",
+			Input:  `{"image_ref":"ca96adb50da6","prompt":"what exact error string?"}`,
+			Output: `{"analysis":"the exact error string is E0201"}`},
+	}
+
+	rows, bodies := attachChildPayloads(ops, payloads, true)
+	if len(bodies) != 1 || bodies[0].request == "" || bodies[0].response == "" {
+		t.Fatalf("bodies = %+v, want request+response rendered", bodies)
+	}
+	if !strings.Contains(bodies[0].request, "ca96adb50da6") || !strings.Contains(bodies[0].request, "what exact error string?") {
+		t.Errorf("drawer request = %q, want the model's own ask", bodies[0].request)
+	}
+	if !strings.Contains(bodies[0].response, "E0201") {
+		t.Errorf("drawer response = %q, want the vision answer", bodies[0].response)
+	}
+	_ = rows[0]
+}

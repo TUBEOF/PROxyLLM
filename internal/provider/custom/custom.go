@@ -31,7 +31,9 @@ type Provider struct {
 // New constructs a custom provider. baseURL is the API root including the
 // version prefix (e.g. "https://api.example.com/v1"); chat completions
 // POST to {baseURL}/chat/completions.
-func New(id, baseURL, apiKey string, caps provider.Capabilities) *Provider {
+// opts tune the guarded transport (e.g. ADR-018's
+// response-header wall); none keeps the shared defaults.
+func New(id, baseURL, apiKey string, caps provider.Capabilities, opts ...httpguard.ClientOption) *Provider {
 	return &Provider{
 		client: httpx.Client{
 			BaseURL:    baseURL,
@@ -42,7 +44,7 @@ func New(id, baseURL, apiKey string, caps provider.Capabilities) *Provider {
 			// generation must not be cut off), but every redirect is
 			// re-validated against the private-address SSRF guard — Go
 			// re-sends the Bearer header to redirect targets.
-			HTTP: httpguard.NewStreamingClient(),
+			HTTP: httpguard.NewStreamingClient(opts...),
 		},
 		id:    id,
 		caps:  caps,

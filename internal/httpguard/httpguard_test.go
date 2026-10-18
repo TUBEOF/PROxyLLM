@@ -249,3 +249,55 @@ func TestNewClient_ReusesConnectionsAcrossBursts(t *testing.T) {
 			len(seen), burst, burst+1)
 	}
 }
+
+// Spec: the shared transport's ResponseHeaderTimeout (the wall an upstream
+// that accepts the connection and then says nothing hits) must be
+// operator-configurable: the same 30s that rescues a hung upstream also
+// turns a slow-but-correct multimodal upstream into a transport failure that
+// masks the model's own capability-gap rejection (ADR-018). The option must
+// change ONLY the header phase; every other tuning and the SSRF redirect
+// guard stay the shared default.
+
+func TestNewClient_HeaderTimeoutOptionOverridesTransport(t *testing.T) {
+	c := NewClient(0, WithHeaderTimeout(7*time.Second))
+	tr, ok := c.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport is %T, want *http.Transport", c.Transport)
+	}
+	if tr.ResponseHeaderTimeout != 7*time.Second {
+		t.Errorf("ResponseHeaderTimeout = %v, want 7s", tr.ResponseHeaderTimeout)
+	}
+	// The rest of the tuning must ride the shared defaults.
+	if tr.MaxIdleConnsPerHost != 32 {
+		t.Errorf("MaxIdleConnsPerHost = %d, want 32 (shared default)", tr.MaxIdleConnsPerHost)
+	}
+	if c.CheckRedirect == nil {
+		t.Error("redirect guard missing — the option must not drop the SSRF policy")
+	}
+}
+
+func TestNewClient_StreamingHeaderTimeoutOption(t *testing.T) {
+	c := NewStreamingClient(WithHeaderTimeout(45 * time.Second))
+	tr, ok := c.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("transport is %T, want *http.Transport", c.Transport)
+	}
+	if tr.ResponseHeaderTimeout != 45*time.Second {
+		t.Errorf("ResponseHeaderTimeout = %v, want 45s", tr.ResponseHeaderTimeout)
+	}
+	if c.Timeout != 0 {
+		t.Errorf("Timeout = %v, want 0 (streaming keeps no total budget)", c.Timeout)
+	}
+}
+
+func TestNewClient_NoOptionKeepsDefaultHeaderTimeout(t *testing.T) {
+	for _, c := range []*http.Client{NewClient(0), NewStreamingClient(), NewClient(15 * time.Second)} {
+		tr, ok := c.Transport.(*http.Transport)
+		if !ok {
+			t.Fatalf("transport is %T, want *http.Transport", c.Transport)
+		}
+		if tr.ResponseHeaderTimeout != 30*time.Second {
+			t.Errorf("ResponseHeaderTimeout = %v, want the 30s default", tr.ResponseHeaderTimeout)
+		}
+	}
+}

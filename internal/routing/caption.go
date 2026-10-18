@@ -83,6 +83,18 @@ type CaptionConfig struct {
 
 	// MaxTokens caps a single caption.
 	MaxTokens int
+
+	// VisionTool controls the analyze_image injection (ADR-018): nil means
+	// enabled — on an all-blind chain the substituted placeholders come with
+	// the tool, so the model can ask its own questions about the image.
+	// Explicit false disables the injection (the pre-ADR-018 caption-only
+	// behavior).
+	VisionTool *bool
+
+	// VisionPlaceholderTemplate overrides the substitution text; the
+	// placeholders {n} {ref} {caption} are replaced per image. Empty selects
+	// the documented default.
+	VisionPlaceholderTemplate string
 }
 
 func (c CaptionConfig) prompt() string {
@@ -141,11 +153,18 @@ func (e *Executor) captionImages(ctx context.Context, req ir.Request, trace *Tra
 	}
 	cfg := e.currentCaptionConfig()
 
-	prompt := composeCaptionPrompt(cfg.prompt(), lastUserText(req), cfg.taskAware())
-	// The version covers what shapes a description regardless of the turn it
-	// was asked in: the base prompt and the describer list. The task-aware
-	// suffix is deliberately absent — it embeds the client's latest turn, so
-	// keying on it would miss on every turn.
+	// The task hint is the part of the prompt that changes per turn. It is
+	// truncated exactly as the prompt truncates it, so the cache key names the
+	// instruction the describer actually received.
+	hint := ""
+	if cfg.taskAware() {
+		hint = truncateRunes(strings.TrimSpace(lastUserText(req)), captionTaskHintLimit)
+	}
+	prompt := composeCaptionPrompt(cfg.prompt(), hint, cfg.taskAware())
+	// The version covers what shapes a description regardless of the question:
+	// the base prompt and the describer list. The task hint enters the key on
+	// its own: a different question needs a description written for it, while
+	// the same question on a re-sent transcript still hits.
 	version := captionVersion(cfg.prompt(), models)
 	clientKey := clientKeyIDFromContext(ctx)
 
@@ -169,7 +188,7 @@ func (e *Executor) captionImages(ctx context.Context, req ir.Request, trace *Tra
 		if inlines[i] == nil {
 			continue
 		}
-		keys[i] = captionImageKey(clientKey, version, *inlines[i])
+		keys[i] = captionImageKey(clientKey, version, hint, *inlines[i])
 		if entry, ok := e.captions.get(keys[i]); ok {
 			hits[i] = entry
 			continue

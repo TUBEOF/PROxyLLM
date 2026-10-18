@@ -272,11 +272,17 @@ func NewExecutor(cfg ExecutorConfig) *Executor {
 // transition.
 func (e *Executor) Execute(ctx context.Context, chain []ChainEntry, req ir.Request) (ir.Response, *Trace, error) {
 	trace := &Trace{}
-	req = e.substituteKnownBlind(ctx, chain, req, trace)
-	resp, err := e.executeWithEmulation(ctx, chain, req, trace)
+	var captionUsage ir.Usage
+	var state *visionToolState
+	req, captionUsage, state = e.substituteForKnownBlind(ctx, chain, req, trace)
+	resp, err := e.executeWithEmulation(ctx, chain, req, state, trace)
 	if err != nil {
 		return resp, trace, err
 	}
+	// The substitution's caption spend is real money the request paid
+	// (ADR-018): fold it in here — the cache-only path spent nothing, the
+	// network path must not bill invisibly.
+	resp.Usage = addUsage(resp.Usage, captionUsage)
 	// The response is the client's: thinking blocks it never asked for are
 	// dropped here — the reference returns thinking blocks only for
 	// requests that enabled thinking.
@@ -343,39 +349,6 @@ func (e *Executor) ExecuteDecision(ctx context.Context, chain []ChainEntry, req 
 		return ir.DecisionResponse{}, trace, ErrNoDecisionProvider
 	}
 	return ir.DecisionResponse{}, trace, ErrChainOverloaded
-}
-
-// substituteKnownBlind replaces the images of a request that is certain to be
-// rejected for them.
-//
-// The rescue in captionImages normally runs after the chain has failed, which
-// costs one rejected round trip per turn for a conversation carrying an image.
-// When every candidate's model row has already learned that it cannot see
-// images, that rejection is not a discovery — it is a known outcome — and the
-// only thing the round trip buys is latency. So the images are replaced up
-// front instead.
-//
-// The gate is deliberately narrow. A single candidate that might see images, or
-// whose row has no opinion, leaves the request untouched: an unnecessary
-// description costs image fidelity, and the reactive rescue is still there to
-// catch the rejection. One image without a cached description also leaves it
-// untouched — a partial rewrite would show the model a conversation the client
-// never sent.
-func (e *Executor) substituteKnownBlind(ctx context.Context, chain []ChainEntry, req ir.Request, trace *Trace) ir.Request {
-	if e.cfg.ModelVisionLookup == nil || len(chain) == 0 || len(req.ImageRefs()) == 0 {
-		return req
-	}
-	for _, entry := range chain {
-		canSee, known := e.cfg.ModelVisionLookup(ctx, entry.ProviderID, entry.Model)
-		if !known || canSee {
-			return req
-		}
-	}
-	described, _, ok := e.captionImages(ctx, req, trace, true)
-	if !ok {
-		return req
-	}
-	return described
 }
 
 // executeOnce walks the chain once with the full retry/failover
@@ -594,11 +567,20 @@ func (e *Executor) ExecuteStream(ctx context.Context, chain []ChainEntry, req ir
 	// Latency trade: no token streaming for this request class (the model
 	// runs its whole answer before the first byte) — documented, and the
 	// trade for protocol-conform tool RESULTS.
-	if len(emulatedToolDefs(req.Tools)) > 0 {
-		return e.executeEmulatedAsStream(ctx, chain, req)
-	}
+	// The vision substitution (ADR-018) runs FIRST: it may inject the
+	// analyze_image tool, and a request that gained an emulated def — like
+	// one that carried claimed web tools all along — must ride the complete
+	// emulation loop, which the check below decides on the SUBSTITUTED
+	// request. Before this ordering, streamed requests never substituted at
+	// all (the injected tool changed nothing after that check), the latent
+	// bug the analyze_image flow inherits if left unfixed.
 	trace := &Trace{}
-	req = e.substituteKnownBlind(ctx, chain, req, trace)
+	var captionUsage ir.Usage
+	var state *visionToolState
+	req, captionUsage, state = e.substituteForKnownBlind(ctx, chain, req, trace)
+	if len(emulatedToolDefs(req.Tools)) > 0 {
+		return e.executeEmulatedAsStream(ctx, chain, req, trace, state, captionUsage)
+	}
 	ch, cancel, err := e.walkChainStream(ctx, chain, req, trace, true)
 	if ch == nil && err != nil {
 		return nil, cancel, trace, err
@@ -606,7 +588,13 @@ func (e *Executor) ExecuteStream(ctx context.Context, chain []ChainEntry, req ir
 	// The relayed events are the client's answer: an unsolicited thinking
 	// block rides them all the way into the client's message and breaks the
 	// client's web_fetch helper, so the filter sits on the stream.
-	return applyResponseThinkingStream(ctx, req, ch, trace), cancel, trace, err
+	out := applyResponseThinkingStream(ctx, req, ch, trace)
+	if captionUsage != (ir.Usage{}) {
+		// Pre-dispatch captions spent tokens on this request's behalf —
+		// fold them into the terminal usage (addUsageToStream).
+		out = addUsageToStream(ctx, out, captionUsage)
+	}
+	return out, cancel, trace, err
 }
 
 // executeEmulatedAsStream runs the complete-path emulation loop (full
@@ -616,15 +604,14 @@ func (e *Executor) ExecuteStream(ctx context.Context, chain []ChainEntry, req ir
 // rounds (executeWithEmulation honors it on the dispatches; a ctx.Done
 // while encoding closes the channel) and cancel() stops nothing extra —
 // everything the loop ran has released itself on return.
-func (e *Executor) executeEmulatedAsStream(ctx context.Context, chain []ChainEntry, req ir.Request) (<-chan ir.StreamEvent, func(), *Trace, error) {
+func (e *Executor) executeEmulatedAsStream(ctx context.Context, chain []ChainEntry, req ir.Request, trace *Trace, state *visionToolState, extraUsage ir.Usage) (<-chan ir.StreamEvent, func(), *Trace, error) {
 	// The client's stream flag rides the IR request — the complete-path
 	// decoders set it for streamed requests, and a complete dispatch that
 	// still carries true makes real upstreams answer chunked SSE (which
 	// the non-streaming decode cannot parse). Clear it on the detour's
 	// COPY (the caller's request object is not mutated).
 	req.Stream = false
-	trace := &Trace{}
-	resp, err := e.executeWithEmulation(ctx, chain, req, trace)
+	resp, err := e.executeWithEmulation(ctx, chain, req, state, trace)
 	if err != nil {
 		// Pre-stream failure semantics: no bytes were sent (the channel
 		// did not open), so ExecuteStream returns the error directly.
@@ -633,6 +620,7 @@ func (e *Executor) executeEmulatedAsStream(ctx context.Context, chain []ChainEnt
 	// The synthesized stream IS the client's answer: filter it on the
 	// response (the same rule the relayed path applies to its events).
 	resp = applyResponseThinking(req, resp, trace)
+	resp.Usage = addUsage(resp.Usage, extraUsage)
 
 	ch := make(chan ir.StreamEvent) // unbuffered: backpressure to the caller
 	cancel := func() {}

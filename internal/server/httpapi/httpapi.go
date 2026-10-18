@@ -379,12 +379,13 @@ type chainTrace struct {
 	Events  []json.RawMessage `json:"events"`
 }
 
-// routeTraceVersion is the current route_trace schema version (v8 adds the
-// per-operation facts — usage, latency and the cache-hit marker — that the
-// sub-operation rows of the log render; previously 7 / emulated_tool_attempt,
-// 6 / context_override, 5 / implicit model routes ADR-011). The WebUI renders
-// route_trace as raw JSON, so bumps are additive.
-const routeTraceVersion = 8
+// routeTraceVersion is the current route_trace schema version (v9 adds the
+// analyze_image tool event — the vision tool's calls, spend and answering
+// model, ADR-018; previously 8 / per-operation facts that the sub-operation
+// rows of the log render, 7 / emulated_tool_attempt, 6 / context_override,
+// 5 / implicit model routes ADR-011). The WebUI renders route_trace as raw
+// JSON, so bumps are additive.
+const routeTraceVersion = 9
 
 // traceField is a request's marshalled route_trace plus the in-memory
 // sub-operation payloads that must never enter it (Logs page).

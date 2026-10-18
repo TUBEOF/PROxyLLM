@@ -58,6 +58,14 @@ func (t *Trace) EmulatedToolPayload(tool, input, result string) {
 	t.addPayload(ChildPayload{Kind: OpEmulatedTool, Tool: tool, Input: input, Output: result})
 }
 
+// AnalyzeImagePayload records one analyze_image call: the arguments the
+// model supplied (its own question rides them) and the vision answer it
+// received back.
+func (t *Trace) AnalyzeImagePayload(input, result string) {
+	t.addPayload(ChildPayload{Kind: OpAnalyzeImage,
+		Tool: analyzeImageToolName, Input: input, Output: result})
+}
+
 // CaptionPayload records one image description: the instruction the describer
 // received, the image it was given (media type and decoded size only) and the
 // text it produced.

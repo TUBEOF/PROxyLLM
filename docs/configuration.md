@@ -135,6 +135,9 @@ these keys means the default.
 | `vision_caption_prompt` | string | [Routing and fallbacks](routing-and-fallbacks.md#the-vision-rescue) |
 | `vision_caption_task_aware` | `0` disables it (default: on) | [Routing and fallbacks](routing-and-fallbacks.md#the-vision-rescue) |
 | `vision_caption_timeout_ms` | integer > 0 (default `30000`) | [Routing and fallbacks](routing-and-fallbacks.md#the-vision-rescue) |
+| `upstream_response_header_timeout_ms` | integer > 0 (default `30000`) | [Routing and fallbacks](routing-and-fallbacks.md#transport-limits) |
+| `vision_tool` | `0` disables it (default: on) | [Routing and fallbacks](routing-and-fallbacks.md#the-vision-rescue) |
+| `vision_placeholder_template` | string (`{n}` `{ref}` `{caption}` placeholders) | [Routing and fallbacks](routing-and-fallbacks.md#the-vision-rescue) |
 | `web_search_fallback` | JSON array of web-tool account IDs | [Routing and fallbacks](routing-and-fallbacks.md#capability-fallback-lists) |
 | `web_fetch_fallback` | JSON array of web-tool account IDs | [Routing and fallbacks](routing-and-fallbacks.md#capability-fallback-lists) |
 | `anthropic_surface_non_claude` | `allow` (default) / `warn` / `block` | [Routing and fallbacks](routing-and-fallbacks.md#non-claude-routing--compatibility) |

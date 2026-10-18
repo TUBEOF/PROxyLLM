@@ -195,3 +195,32 @@ description that was already known is the absence of one. The substitution is
 still recorded — as a trace event, in the request's own detail view — because a
 description that silently replaced an image would be exactly the kind of
 unobservable behaviour this ADR exists to prevent.
+
+## Addendum 2026-10-17: the question is part of the key
+
+The first property above — key on the base prompt, never on the composed one —
+served the cost budget and broke the answer. An agentic client re-sends the
+whole transcript and appends a new question every turn, so the same image is
+described once with turn 1's question and then reused for turn 2's. The
+description was written to answer the first question; the second turn's
+answering model received a summary of the image in terms of something nobody
+was asking any more, and the describer — the vision fallback — was never called
+with the new instruction at all. Operationally it looks exactly like a fallback
+that does not work: the log shows a cache hit, no prompt, and an answer that
+ignores the screenshot.
+
+The cache key now carries a digest of the task hint alongside the image's
+decoded bytes (and the client key and the describer configuration, as before).
+The consequences are deliberate:
+
+- **A changed question re-describes the image**, with the new question in the
+  instruction. The substituted text then changes between turns, which
+  invalidates an upstream prompt cache from the image's position onwards. That
+  is the price of answering the current question; the earlier byte-stability
+  property only ever held when the question did not change, and in that case it
+  still holds.
+- **An identical re-send still hits**, so retries, duplicate requests and the
+  pre-dispatch substitution path keep their zero-caption cost.
+- **The task-aware switch still governs the key.** With task awareness off the
+  hint is empty, the key reduces to image content, and the old behavior is
+  correct — the prompt does not contain the question.

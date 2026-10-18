@@ -47,6 +47,7 @@ from before the field existed, which are read as version 1.
 | `image_caption` | An image was replaced by a description | `provider_id`, `latency_ms`, `usage`, `cache_hit` |
 | `emulated_tool` | A server-tool call was answered by a web-tool account | `provider_id`, `to`, `reason` |
 | `emulated_tool_attempt` | One account's outcome inside an emulated call (v7) | `provider_id`, `to`, `reason` |
+| `analyze_image` | The vision `analyze_image` tool answered (ADR-018): the image + the model's own prompt went to a vision model. A declined call (mixed with client tool calls) carries the decline in `reason` instead of a model | `provider_id`, `model`, `latency_ms`, `usage`, `reason` |
 | `rejected` | The request ended without an answer, with the reason | `reason` |
 
 `failure_position` distinguishes a failure **before** the first streamed
@@ -68,6 +69,7 @@ terminal). `class` is the failure classification — `rate_limit`,
 | 6 | `context_override` (the `[1m]` marker strip) |
 | 7 | `emulated_tool_attempt` (per-account outcomes in a web-tool walk) |
 | 8 | Per-operation facts on the events that describe an operation: token usage, latency, the emulating account, and the caption cache-hit marker |
+| 9 | `analyze_image` (the vision tool's calls, spend and answering model — ADR-018) |
 
 ## Sub-operations come from the trace
 
