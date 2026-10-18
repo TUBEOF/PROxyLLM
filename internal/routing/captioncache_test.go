@@ -1,13 +1,14 @@
 package routing_test
 
 // The caption cache's behaviour at the executor: an image that has been
-// described once is not described again on the next turn of a conversation,
-// and the text that replaces it is byte-identical every time.
+// described for a question is not described again when the same turn is
+// re-sent, and the text that replaces it is byte-identical every time.
 //
 // The failure this pins is the one an agentic client produces without trying:
 // it re-sends its own transcript on every turn, image parts included, so a
 // conversation that carries a screenshot used to pay one vision call per turn
-// for as long as it lived.
+// for as long as it lived. The cache must not go further than that: a NEW
+// question needs a description written for it (ChangedQuestionReDescribesTheImage).
 
 import (
 	"context"
@@ -46,7 +47,7 @@ func TestExecutor_Caption_SecondIdenticalRequestServesTheCachedDescription(t *te
 	if _, _, err := e.Execute(context.Background(), chain, imageRequest("what does this error say?")); err != nil {
 		t.Fatalf("turn 1: %v", err)
 	}
-	_, trace2, err := e.Execute(context.Background(), chain, imageRequest("and what about line 42?"))
+	_, trace2, err := e.Execute(context.Background(), chain, imageRequest("what does this error say?"))
 	if err != nil {
 		t.Fatalf("turn 2: %v", err)
 	}
@@ -74,6 +75,39 @@ func TestExecutor_Caption_SecondIdenticalRequestServesTheCachedDescription(t *te
 	}
 	if caps[0].ProviderID != "vision" || caps[0].Model != "vl-1" {
 		t.Errorf("cached event = %s/%s, want the describer that produced the text", caps[0].ProviderID, caps[0].Model)
+	}
+}
+
+// A description is written to answer the question it was asked for. When the
+// client re-sends the same image with a NEW question — what an agentic loop
+// does on every turn — the previous question's description must not stand in
+// for the current one: it is focused on something the client is no longer
+// asking about, and the answering model cannot see what the new question needs.
+func TestExecutor_Caption_ChangedQuestionReDescribesTheImage(t *testing.T) {
+	main := &recordingProvider{id: "main", errs: []error{gapErr(), nil, gapErr(), nil}}
+	vision := &recordingProvider{id: "vision", text: "description for the first question"}
+
+	e := captionExecutor(main, vision)
+	chain := []routing.ChainEntry{{ProviderID: "main", Model: "m"}}
+
+	if _, _, err := e.Execute(context.Background(), chain, imageRequest("what does the first page show?")); err != nil {
+		t.Fatalf("turn 1: %v", err)
+	}
+	vision.text = "description for the second question"
+	if _, _, err := e.Execute(context.Background(), chain, imageRequest("which numbers are in the table?")); err != nil {
+		t.Fatalf("turn 2: %v", err)
+	}
+
+	if vision.calls != 2 {
+		t.Fatalf("vision calls = %d, want 2: a changed question must not be served the previous question's description", vision.calls)
+	}
+	second := vision.seen[1].Messages[0].Parts[1].(ir.TextPart).Text
+	if !strings.Contains(second, "which numbers are in the table?") {
+		t.Errorf("turn 2 prompt did not carry the new question: %q", second)
+	}
+	got := partStrings(main.seen[3].Messages[0].Parts)
+	if len(got) != 2 || got[1] != "text:description for the second question" {
+		t.Errorf("turn 2 parts = %q, want the newly produced description", got)
 	}
 }
 
@@ -167,7 +201,7 @@ func TestExecutor_Caption_CacheHitAddsNoUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("turn 1: %v", err)
 	}
-	second, _, err := e.Execute(context.Background(), chain, imageRequest("q2"))
+	second, _, err := e.Execute(context.Background(), chain, imageRequest("q1"))
 	if err != nil {
 		t.Fatalf("turn 2: %v", err)
 	}
@@ -202,7 +236,7 @@ func TestExecutor_Caption_ConfigChangeInvalidatesTheCache(t *testing.T) {
 		t.Fatalf("turn 1: %v", err)
 	}
 	e.SetCapabilityFallbacks([]routing.ChainEntry{{ProviderID: "vision-two", Model: "vl-2"}})
-	if _, _, err := e.Execute(context.Background(), chain, imageRequest("q2")); err != nil {
+	if _, _, err := e.Execute(context.Background(), chain, imageRequest("q1")); err != nil {
 		t.Fatalf("turn 2: %v", err)
 	}
 	if vision2.calls != 1 {
@@ -235,8 +269,9 @@ func TestExecutor_Caption_KnownBlindChainSkipsTheDispatch(t *testing.T) {
 		t.Fatalf("turn 1: %v", err)
 	}
 	// Turn 2 cannot be rejected for the image any more — it is gone before the
-	// dispatch, and the chain is walked exactly once.
-	_, trace2, err := e.Execute(context.Background(), chain, imageRequest("q2"))
+	// dispatch, and the chain is walked exactly once. The question is unchanged,
+	// which is what makes the description already known.
+	_, trace2, err := e.Execute(context.Background(), chain, imageRequest("q1"))
 	if err != nil {
 		t.Fatalf("turn 2: %v", err)
 	}

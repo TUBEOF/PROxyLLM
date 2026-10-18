@@ -192,11 +192,13 @@ Details that matter in operation:
 - The rescue runs **once**: the re-dispatch carries the fallback disabled, so
   a model that rejects the transcript too ends the request instead of
   describing again.
-- Descriptions are cached by image content, so the second and every later
-  turn of a conversation carrying the same image costs nothing and the
-  substituted text stays stable from turn to turn. A cached description
-  replaced the image without an upstream call: it is traced, but it produces
-  no sub-operation row, because no operation ran.
+- Descriptions are cached by image content **and the question that shaped
+  them**. The same image with an unchanged question costs nothing on the next
+  turn and the substituted text stays stable; a new question re-describes the
+  image with that question in the instruction, because the earlier
+  description was written to answer the earlier question. A cached
+  description replaced the image without an upstream call: it is traced, but
+  it produces no sub-operation row, because no operation ran.
 - The caption's token spend folds into the request's usage, on the complete
   path and on the streamed one alike.
 - Every use is traced: an `image_caption` event per description — the log row

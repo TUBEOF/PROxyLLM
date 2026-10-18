@@ -12,9 +12,9 @@ import (
 
 func TestCaptionCache_EvictsLeastRecentlyUsedAtTheBound(t *testing.T) {
 	c := newCaptionCache(2)
-	a := captionImageKey("", "v", ir.ImagePart{Data: "aaa="})
-	b := captionImageKey("", "v", ir.ImagePart{Data: "bbb="})
-	d := captionImageKey("", "v", ir.ImagePart{Data: "ccc="})
+	a := captionImageKey("", "v", "", ir.ImagePart{Data: "aaa="})
+	b := captionImageKey("", "v", "", ir.ImagePart{Data: "bbb="})
+	d := captionImageKey("", "v", "", ir.ImagePart{Data: "ccc="})
 
 	c.put(a, &captionEntry{key: a, text: "A"})
 	c.put(b, &captionEntry{key: b, text: "B"})
@@ -44,10 +44,10 @@ func TestCaptionCache_NonCanonicalBase64IsStillKeyedAndHit(t *testing.T) {
 	// The OpenAI codec keeps a data URI's payload verbatim, invalid base64
 	// included; this is the shape that used to arrive.
 	img := ir.ImagePart{Source: "base64", MediaType: "image/png", Data: "x"}
-	key := captionImageKey("", "v", img)
+	key := captionImageKey("", "v", "", img)
 
 	c.put(key, &captionEntry{key: key, text: "described"})
-	if again := captionImageKey("", "v", img); again != key {
+	if again := captionImageKey("", "v", "", img); again != key {
 		t.Error("the same non-canonical payload produced two different keys")
 	}
 	entry, ok := c.get(key)
@@ -64,24 +64,32 @@ func TestCaptionCache_NonCanonicalBase64IsStillKeyedAndHit(t *testing.T) {
 func TestCaptionCache_KeyFollowsTheBytesAndNothingElse(t *testing.T) {
 	plain := ir.ImagePart{Source: "base64", MediaType: "image/png", Data: "aGVsbG8="}
 	labelledDifferently := ir.ImagePart{Source: "url", MediaType: "image/jpeg", Data: "aGVsbG8="}
-	if captionImageKey("k", "v", plain) != captionImageKey("k", "v", labelledDifferently) {
+	if captionImageKey("k", "v", "", plain) != captionImageKey("k", "v", "", labelledDifferently) {
 		t.Error("the same bytes produced two keys; the source and media type must not enter the key")
 	}
 	other := ir.ImagePart{Source: "base64", MediaType: "image/png", Data: "aGVsbG9z"}
-	if captionImageKey("k", "v", plain) == captionImageKey("k", "v", other) {
+	if captionImageKey("k", "v", "", plain) == captionImageKey("k", "v", "", other) {
 		t.Error("different image bytes collided")
 	}
 }
 
-// Neither the client key nor the describer configuration is decoration: both
-// partition the cache, so one cannot serve the other's text.
-func TestCaptionCache_KeySeparatesClientAndConfiguration(t *testing.T) {
+// Neither the client key, the describer configuration nor the task hint is
+// decoration: each partitions the cache, so one cannot serve the other's text.
+func TestCaptionCache_KeySeparatesClientConfigurationAndTask(t *testing.T) {
 	img := ir.ImagePart{Data: "aGVsbG8="}
-	if captionImageKey("k1", "v", img) == captionImageKey("k2", "v", img) {
+	if captionImageKey("k1", "v", "", img) == captionImageKey("k2", "v", "", img) {
 		t.Error("two client keys share one cache slot")
 	}
-	if captionImageKey("k1", "v", img) == captionImageKey("k1", "v2", img) {
+	if captionImageKey("k1", "v", "", img) == captionImageKey("k1", "v2", "", img) {
 		t.Error("a changed describer configuration reuses the old entry")
+	}
+	if captionImageKey("k1", "v", "what is the error?", img) == captionImageKey("k1", "v", "which numbers are shown?", img) {
+		t.Error("a changed question reuses the entry described for the previous one")
+	}
+	same := captionImageKey("k1", "v", "what is the error?", img)
+	again := captionImageKey("k1", "v", "what is the error?", img)
+	if same != again {
+		t.Error("the same question is not stable across requests")
 	}
 }
 
