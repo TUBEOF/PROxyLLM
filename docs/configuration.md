@@ -133,7 +133,7 @@ these keys means the default.
 | `routing_strategy` | `round_robin` (default) / `fill_first` | [Routing and fallbacks](routing-and-fallbacks.md#rule-model-evaluation-order) |
 | `vision_fallback` | JSON array of model IDs | [Routing and fallbacks](routing-and-fallbacks.md#capability-fallback-lists) |
 | `vision_caption_prompt` | string | [Routing and fallbacks](routing-and-fallbacks.md#the-vision-rescue) |
-| `vision_caption_task_aware` | `0` disables it (default: on) | [Routing and fallbacks](routing-and-fallbacks.md#the-vision-rescue) |
+| `vision_caption_task_aware` | `0` disables it (default: on) | — the reactive vision rescue only; the pre-dispatch bootstrap describes each image once, question-targeted answers are the `analyze_image` tool's [Routing and fallbacks](routing-and-fallbacks.md#the-vision-rescue) |
 | `vision_caption_timeout_ms` | integer > 0 (default `30000`) | [Routing and fallbacks](routing-and-fallbacks.md#the-vision-rescue) |
 | `upstream_response_header_timeout_ms` | integer > 0 (default `30000`) | [Routing and fallbacks](routing-and-fallbacks.md#transport-limits) |
 | `vision_tool` | `0` disables it (default: on) | [Routing and fallbacks](routing-and-fallbacks.md#the-vision-rescue) |

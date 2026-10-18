@@ -161,3 +161,22 @@ from an image.
   served from the caption alone. Rare cell; the follow-up is a tools flag
   lookup beside ModelVisionLookup and skipping the injection the same way
   `vision_tool=0` does.**
+
+## Addendum 2026-10-18 — the bootstrap describes once, not per message
+
+Live traffic showed the reactive rule still at work where it no longer
+belongs: the pre-dispatch bootstrap caption was composed task-aware — the
+client's newest text turn entered the prompt AND the cache key — so an
+agentic session that re-sends its transcript re-described the same image
+every turn, each re-description shaped by that turn's message. Under ADR-014
+that was correct: the caption was the ONLY information the routed model
+received. With the `analyze_image` tool the division is inverted:
+
+- the bootstrap caption is **orientation** — the base prompt only, keyed on
+  the image bytes; an image is described **exactly once**, and every later
+  turn of the session is a cache hit with a bytestable placeholder (which is
+  also what an upstream prompt cache wants to see);
+- question targeting is the **tool's** job — `analyze_image` sends the image
+  plus the model's own prompt, answers cached by image + ask.
+
+`vision_caption_task_aware` therefore now governs the reactive rescue only.
