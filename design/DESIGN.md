@@ -241,7 +241,9 @@ login card, and overrides nothing.
   `.status-dot`, `.mini` tiles in `.status-grid`, and the `.health-ring` score.
 - **Charts** — `.spark` (area + line + last-point dot), `.bars` with `.bar-track`
   /`.bar-fill`, `.ring` with `.ring-seg`/`.ring-track`, `.heat` cells. Fills, not
-  outlines; one accent series plus neutral comparisons.
+  outlines; one accent series plus neutral comparisons. The Quota limit window
+  (`.usage-window`) composes the ring at card size: remaining percent centered,
+  remaining value on the left, reset timer in its own right-hand column.
 - **Table** — `.table-wrap` → `.table-scroll` → `.table`, with `.primary`,
   `.mono`, `.num`, `.row-actions`, `.table-toolbar`, `.pagination`, `.selbar`.
 - **Forms** — `.form`, `.field` (label above, `.hint`, `.error`, `.is-error`,

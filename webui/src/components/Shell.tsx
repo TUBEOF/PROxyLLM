@@ -41,7 +41,7 @@ const NAV_SECTIONS: { label: string; items: { to: string; name: string; icon: ty
   {
     label: 'Access',
     items: [
-      { to: '/keys', name: 'Client keys', icon: IconKey },
+      { to: '/keys', name: 'API keys', icon: IconKey },
     ],
   },
 ];

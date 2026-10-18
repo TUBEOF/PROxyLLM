@@ -286,6 +286,20 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 		return fmt.Errorf("seed ollama usage blob: %w", err)
 	}
 
+	// Firecrawl credits (the documented team/credit-usage shape): a live
+	// window so the Quota page renders the credits ring and the billing
+	// reset alongside the ollama session/weekly windows.
+	remainingCredits := 850.0
+	planCredits := 1000.0
+	if err := store.PutAccountUsage(ctx, "prv-firecrawl", storage.AccountUsageBlob{
+		FetchedAt:        now.Unix(),
+		RemainingCredits: &remainingCredits,
+		PlanCredits:      &planCredits,
+		CreditsReset:     now.Add(24 * time.Hour).Unix(),
+	}); err != nil {
+		return fmt.Errorf("seed firecrawl usage blob: %w", err)
+	}
+
 	// ADR-010 model-sync state: a deterministic last run, two hours before the
 	// frozen clock, so the Models page's summary tiles render derived values —
 	// one account that synced, one skipped with a reason (which also covers

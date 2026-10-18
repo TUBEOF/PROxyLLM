@@ -59,12 +59,14 @@ func (s *Store) GetClientKey(ctx context.Context, id string) (ClientKey, error) 
 	return k, nil
 }
 
-// ListClientKeys returns every key for the WebUI /keys area. Revoked keys
-// are included — their history stays visible.
+// ListClientKeys returns the CURRENT keys for the WebUI /keys area —
+// deleted keys are hard-deleted (DeleteClientKey), and the migration that
+// introduced that behavior purged the old soft-deleted rows. Newest first:
+// the key an operator just created is the one they need to see.
 func (s *Store) ListClientKeys(ctx context.Context) ([]ClientKey, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT id, name, key_hash, key_prefix, scopes, created_at, last_used_at, revoked
-		FROM client_keys ORDER BY created_at ASC`)
+		FROM client_keys WHERE revoked = 0 ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -136,10 +138,37 @@ func (s *Store) UpdateClientKeyHash(ctx context.Context, id, keyHash string) err
 	return err
 }
 
-// RevokeClientKey flips revoked to 1 — display-once secrets mean there is
-// nothing to delete; the hash stays for audit. Missing rows are ErrNotFound.
-func (s *Store) RevokeClientKey(ctx context.Context, id string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE client_keys SET revoked = 1 WHERE id = ?`, id)
+// DeleteClientKey removes the row outright. The operator's rule is that a
+// deleted key leaves the database, not an audit trail: the row (name,
+// prefix, hash) is gone, and the key stops authenticating immediately
+// because the verification path reads the table per request. Historical
+// request_logs rows keep the id string (there is no foreign key); the log's
+// name projection falls back to that id. Missing rows are ErrNotFound.
+func (s *Store) DeleteClientKey(ctx context.Context, id string) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM client_keys WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("storage: client key %s: %w", id, ErrNotFound)
+	}
+	return nil
+}
+
+// RegenerateClientKey replaces one row's secret material: a fresh hash and
+// display prefix for the SAME id and name, with a new issuance time and no
+// last-used stamp. The old secret stops verifying as soon as the update
+// lands. Missing rows are ErrNotFound.
+func (s *Store) RegenerateClientKey(ctx context.Context, id, keyHash, keyPrefix string) error {
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE client_keys
+		SET key_hash = ?, key_prefix = ?, created_at = ?, last_used_at = NULL
+		WHERE id = ?`,
+		keyHash, keyPrefix, time.Now().Unix(), id)
 	if err != nil {
 		return err
 	}

@@ -23,10 +23,10 @@ untrusted network without that layer is outside the design.
 
 ## Authentication
 
-- **Client keys** (`pk_<prefix>_<secret>`) gate both model surfaces. The
-  secret is 256 bits of CSPRNG output, displayed exactly once at creation
-  and revocable in the console. Wire form and header handling are in the
-  [API reference](api/README.md#authentication).
+- **API keys** (`pk_<prefix>_<secret>`) gate both model surfaces. The secret
+  is 256 bits of CSPRNG output, displayed exactly once at creation and
+  regenerable or deletable in the console. Wire form and header handling are
+  in the [API reference](api/README.md#authentication).
 - **Console login** is per-admin. Passwords are hashed with Argon2id at the
   OWASP minimum parameter set (m=19 MiB, t=2, p=1) and compared in constant
   time; a login for an unknown username still pays one verification, so
@@ -71,9 +71,9 @@ untrusted network without that layer is outside the design.
   and back it up with the database
   ([configuration.md](configuration.md#master-key)).
 
-## Client keys and the master key
+## API keys and the master key
 
-A client key is 256 bits of CSPRNG output. It is stored as a **keyed MAC**,
+An API key is 256 bits of CSPRNG output. It is stored as a **keyed MAC**,
 not as a password hash:
 
 ```
@@ -101,9 +101,17 @@ use. No key has to be reissued, and a table holding both schemes is valid. A
 stolen database alone is not enough to test guesses offline: the MAC key
 lives in the process, not in the file.
 
+A **delete** removes the row (name, prefix, hash): the secret stops
+verifying immediately, and the key list shows only current keys. Historical
+`request_logs.client_key_id` strings remain — there is no foreign key — and
+the log's name projection falls back to the id. A **regenerate** keeps the
+row id and name, replaces the prefix and hash, clears the last-used stamp
+and returns the new secret exactly once; the old secret stops verifying at
+the same moment.
+
 **Consequence, stated plainly: rotating the master key invalidates every
-client key.** They are display-once, so their secrets cannot be recovered to
-be re-hashed, and every client key must be reissued after a rotation.
+API key.** They are display-once, so their secrets cannot be recovered to
+be re-hashed, and every API key must be reissued after a rotation.
 Rotation already requires re-entering provider credentials, so this widens
 an operation the operator was going to perform anyway.
 

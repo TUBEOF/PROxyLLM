@@ -97,7 +97,10 @@ export interface ClientKey {
   id: string;
   name: string;
   key_prefix: string;
-  revoked: boolean;
+  /** Unix seconds; the row is only listed while current (hard delete). */
+  created_at: number;
+  /** Unix seconds; omitted when never used. */
+  last_used_at?: number | null;
 }
 
 export interface CreatedKey {
@@ -314,11 +317,18 @@ export interface ModelTestFailureDetail {
 // The card carries the account's OWN limits (the scrape) and nothing the
 // proxy measured itself — the local month aggregate was retired 2026-10-17
 // (ADR-012 amendment).
+export interface CreditsUsage {
+  remaining?: number | null;
+  limit?: number | null;
+  reset?: number;
+}
 export interface LiveUsage {
   session_pct?: number | null;
   session_reset?: number;
   weekly_pct?: number | null;
   weekly_reset?: number;
+  /** Firecrawl team credits (remaining/plan + billing-period end). */
+  credits?: CreditsUsage | null;
 }
 export interface AccountUsage {
   account_id: string;
@@ -331,6 +341,8 @@ export interface AccountUsage {
   error?: string;
   health?: string;
   fetched_at?: number;
+  /** The production prober can scrape this account type. */
+  refreshable?: boolean;
 }
 export interface AccountUsageResponse {
   accounts: AccountUsage[];

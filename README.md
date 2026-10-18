@@ -65,8 +65,8 @@ curl http://localhost:8080/healthz
 ```
 
 Open `http://localhost:8080`: the first visit bootstraps the admin account.
-Connect a provider, create a client key (**Keys**), and point a client at the
-proxy:
+Connect a provider, create an API key (**API keys**), and point a client at
+the proxy:
 
 ```bash
 # Claude Code

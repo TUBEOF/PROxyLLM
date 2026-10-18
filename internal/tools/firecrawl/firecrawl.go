@@ -141,6 +141,32 @@ type ScrapeResponse struct {
 	} `json:"data"`
 }
 
+// CreditUsageResponse mirrors the documented GET /v2/team/credit-usage 200
+// body (re-read 2026-10-18):
+//
+//	{"success":true,"data":{"remainingCredits":1000,"planCredits":500000,
+//	 "billingPeriodStart":"...","billingPeriodEnd":"..."}}
+//
+// The credit counts are pointers so an absent field stays "unknown" rather
+// than becoming a fabricated zero. 404 and 500 bodies are success:false with
+// an error string and decode through the same path as search/scrape.
+type CreditUsageResponse struct {
+	Success bool `json:"success"`
+	Data    struct {
+		RemainingCredits   *float64 `json:"remainingCredits"`
+		PlanCredits        *float64 `json:"planCredits"`
+		BillingPeriodStart string   `json:"billingPeriodStart"`
+		BillingPeriodEnd   string   `json:"billingPeriodEnd"`
+	} `json:"data"`
+}
+
+func (r *CreditUsageResponse) checkSuccess(raw []byte) error {
+	if r.Success {
+		return nil
+	}
+	return successFalseError("credit-usage", raw)
+}
+
 // Client calls the Firecrawl v2 API. All requests carry
 // Authorization: Bearer fc-... and a bounded timeout.
 type Client struct {
@@ -201,11 +227,30 @@ func (c *Client) call(ctx context.Context, path string, req any, out successResp
 	if err != nil {
 		return fmt.Errorf("firecrawl: encode request: %w", err)
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+path, bytes.NewReader(body))
+	return c.do(ctx, http.MethodPost, path, body, out)
+}
+
+// get performs one GET and decodes the response through the same error
+// contract as call. The credit-usage endpoint is the first GET surface.
+func (c *Client) get(ctx context.Context, path string, out successResponse) error {
+	return c.do(ctx, http.MethodGet, path, nil, out)
+}
+
+// do is the one request path: the Authorization header, the bounded body
+// read, the non-2xx mapping and the success-flag check are identical for
+// every endpoint.
+func (c *Client) do(ctx context.Context, method, path string, body []byte, out successResponse) error {
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
 	if err != nil {
 		return fmt.Errorf("firecrawl: build request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
+	if body != nil {
+		httpReq.Header.Set("Content-Type", "application/json")
+	}
 	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
 
 	resp, err := c.http.Do(httpReq)
@@ -225,6 +270,17 @@ func (c *Client) call(ctx context.Context, path string, req any, out successResp
 		return fmt.Errorf("firecrawl: decode response: %w", err)
 	}
 	return out.checkSuccess(respBody)
+}
+
+// CreditUsage calls GET /v2/team/credit-usage — the account's remaining
+// credits and billing period. A success:false body (documented for 404/500)
+// is an APIError; the caller stores an honest error blob, never a zero.
+func (c *Client) CreditUsage(ctx context.Context) (*CreditUsageResponse, error) {
+	var out CreditUsageResponse
+	if err := c.get(ctx, "/v2/team/credit-usage", &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // successResponse is implemented by response types carrying the

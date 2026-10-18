@@ -195,7 +195,11 @@ func (a *AdminAPI) Handler() http.Handler {
 
 	mux.Handle("POST /api/admin/keys", a.sessions.RequireAdmin(http.HandlerFunc(a.createKey)))
 	mux.Handle("GET /api/admin/keys", a.sessions.RequireAdmin(http.HandlerFunc(a.listKeys)))
-	mux.Handle("POST /api/admin/keys/{id}/revoke", a.sessions.RequireAdmin(http.HandlerFunc(a.revokeKey)))
+	mux.Handle("DELETE /api/admin/keys/{id}", a.sessions.RequireAdmin(http.HandlerFunc(a.deleteKey)))
+	mux.Handle("POST /api/admin/keys/{id}/regenerate", a.sessions.RequireAdmin(http.HandlerFunc(a.regenerateKey)))
+	// Compatibility alias: the old revoke route now hard-deletes. The UI uses
+	// DELETE; scripts that still post to /revoke get the operator's rule.
+	mux.Handle("POST /api/admin/keys/{id}/revoke", a.sessions.RequireAdmin(http.HandlerFunc(a.deleteKey)))
 
 	mux.Handle("GET /api/admin/usage", a.sessions.RequireAdmin(http.HandlerFunc(a.getUsage)))
 	mux.Handle("GET /api/admin/logs", a.sessions.RequireAdmin(http.HandlerFunc(a.getLogs)))
@@ -1262,7 +1266,7 @@ func (a *AdminAPI) deleteRoutingRule(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Client keys
+// API keys
 // ---------------------------------------------------------------------------
 
 func (a *AdminAPI) createKey(w http.ResponseWriter, r *http.Request) {
@@ -1273,6 +1277,7 @@ func (a *AdminAPI) createKey(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	req.Name = strings.TrimSpace(req.Name)
 	if req.Name == "" {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
@@ -1295,25 +1300,42 @@ func (a *AdminAPI) listKeys(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The DTO projects ONLY non-secret columns: no key_hash, no secret
-	// half — the row is an audit record, not a key recovery surface.
+	// half — the row is a key list, not a recovery surface.
 	out := make([]keyDTO, 0, len(keys))
 	for _, k := range keys {
 		out = append(out, keyDTO{
-			ID:        k.ID,
-			Name:      k.Name,
-			KeyPrefix: k.KeyPrefix,
-			Revoked:   k.Revoked,
+			ID:         k.ID,
+			Name:       k.Name,
+			KeyPrefix:  k.KeyPrefix,
+			CreatedAt:  k.CreatedAt,
+			LastUsedAt: k.LastUsedAt,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"keys": out})
 }
 
-func (a *AdminAPI) revokeKey(w http.ResponseWriter, r *http.Request) {
-	if err := a.store.RevokeClientKey(r.Context(), r.PathValue("id")); err != nil {
+// deleteKey hard-deletes one key row. The auth path reads the table per
+// request, so the secret stops verifying as soon as this returns. The old
+// /revoke route aliases here — there is no soft-delete state to list.
+func (a *AdminAPI) deleteKey(w http.ResponseWriter, r *http.Request) {
+	if err := a.store.DeleteClientKey(r.Context(), r.PathValue("id")); err != nil {
 		writeStoreError(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// regenerateKey mints a fresh display-once secret for the same row (same
+// id/name) and returns it exactly once. The old secret stops verifying
+// immediately; the response is the same shape as createKey.
+func (a *AdminAPI) regenerateKey(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	key, err := auth.RegenerateClientKey(r.Context(), a.store, id)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"id": id, "key": key})
 }
 
 // ---------------------------------------------------------------------------
@@ -1776,10 +1798,11 @@ type accountDTO struct {
 }
 
 type keyDTO struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	KeyPrefix string `json:"key_prefix"`
-	Revoked   bool   `json:"revoked"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	KeyPrefix  string `json:"key_prefix"`
+	CreatedAt  int64  `json:"created_at"`
+	LastUsedAt *int64 `json:"last_used_at,omitempty"`
 }
 
 type usageDTO struct {

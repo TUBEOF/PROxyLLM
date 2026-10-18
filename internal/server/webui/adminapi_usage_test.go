@@ -159,3 +159,71 @@ func TestAccountUsage_RefreshUnknownAccountIs404(t *testing.T) {
 		t.Fatal("prober must be invoked with the path id")
 	}
 }
+
+// The Quota list includes web-tool accounts that have a usage probe:
+// Firecrawl's documented credit window is a live reading, and
+// ollama-cloud-web is probe-supported (it was excluded by the old blanket
+// web_tool filter). A type without a probe still gets its card and is
+// marked not refreshable.
+func TestAccountUsage_IncludesProbedWebToolAccounts(t *testing.T) {
+	e, _ := newUsageEnv(t)
+	s := e.bootstrap(t, "admin")
+	ctx := context.Background()
+
+	for _, p := range []struct{ id, typ, name string }{
+		{"fc1", "firecrawl", "Firecrawl key 1"},
+		{"web1", "ollama-cloud-web", "Ollama web"},
+		{"acc1", "ollama-cloud", "Chat account"},
+		{"c1", "codex-oauth", "Codex account"},
+	} {
+		if err := e.api.store.EnsureProvider(ctx, p.id, p.typ, p.name); err != nil {
+			t.Fatalf("ensure %s: %v", p.id, err)
+		}
+	}
+	remaining, plan := 850.0, 1000.0
+	if err := e.api.store.PutAccountUsage(ctx, "fc1", storage.AccountUsageBlob{
+		FetchedAt: 1_790_000_003, RemainingCredits: &remaining, PlanCredits: &plan,
+		CreditsReset: 1_790_010_000,
+	}); err != nil {
+		t.Fatalf("blob: %v", err)
+	}
+
+	w := e.authedCall(t, http.MethodGet, "/api/admin/accounts/usage", "", s)
+	assertStatus(t, w, http.StatusOK, "accounts usage")
+	var got struct {
+		Accounts []accountUsageDTO `json:"accounts"`
+	}
+	decodeJSON(t, w, &got)
+	if len(got.Accounts) != 4 {
+		t.Fatalf("accounts = %d, want 4: %+v", len(got.Accounts), got.Accounts)
+	}
+	byID := map[string]accountUsageDTO{}
+	for _, a := range got.Accounts {
+		byID[a.AccountID] = a
+	}
+	fc, ok := byID["fc1"]
+	if !ok {
+		t.Fatal("firecrawl account missing from the quota list")
+	}
+	if !fc.Refreshable {
+		t.Error("firecrawl card is not marked refreshable")
+	}
+	if fc.Live == nil || fc.Live.Credits == nil {
+		t.Fatalf("firecrawl live = %+v, want a credits window", fc.Live)
+	}
+	if fc.Live.Credits.Remaining == nil || *fc.Live.Credits.Remaining != 850 {
+		t.Errorf("credits remaining = %v, want 850", fc.Live.Credits.Remaining)
+	}
+	if fc.Live.Credits.Limit == nil || *fc.Live.Credits.Limit != 1000 {
+		t.Errorf("credits limit = %v, want 1000", fc.Live.Credits.Limit)
+	}
+	if fc.Live.Credits.Reset != 1_790_010_000 {
+		t.Errorf("credits reset = %d", fc.Live.Credits.Reset)
+	}
+	if web, ok := byID["web1"]; !ok || !web.Refreshable {
+		t.Errorf("ollama-cloud-web card = %+v, want present and refreshable", web)
+	}
+	if codex, ok := byID["c1"]; !ok || codex.Refreshable {
+		t.Errorf("codex card = %+v, want present and not refreshable", codex)
+	}
+}

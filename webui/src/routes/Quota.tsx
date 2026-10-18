@@ -1,15 +1,17 @@
 import { useId, useMemo, useState } from 'react';
 import { apiCall } from '../api';
 import { formatCountdown, formatResetInstant } from '../time';
-import type { AccountUsage, AccountUsageResponse } from '../types';
+import type { AccountUsage, AccountUsageResponse, CreditsUsage } from '../types';
 import { EmptyState, ErrorNote, PageHead, useLiveData, useMutation, useNow } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
 import { IconBoxes, IconPlug, IconRefresh } from '../icons';
 
 // Quota (ADR-012, amendment 2026-10-17): per-account LIMIT cards. The card
-// shows what the account itself reports — the scraped session/weekly windows
-// with a reset countdown — and nothing the proxy measured on its own (the
-// local month aggregate was retired; the Overview page owns local usage).
+// shows what the account itself reports — Ollama Cloud's session/weekly
+// windows and Firecrawl's team credits — and nothing the proxy measured on
+// its own (the local month aggregate was retired; the Overview page owns
+// local usage). Each window renders the REMAINING share: the percent centered
+// in a ring, the "… left" value on the left, the reset timer on the right.
 // Live updates: the card list polls itself (POLL_MS); the countdown rides its
 // own 30 s tick, so a failing poll cannot freeze it.
 // Health badge: breaker/quota cooldown from the routing HealthTracker.
@@ -40,20 +42,96 @@ function ResetCountdown({ reset, windowName }: { reset: number; windowName: stri
   );
 }
 
-// UsageBar renders one percent bar (the kit .bar-* classes; the value
-// rides .bar-val — masked for visual e2e determinism).
-function UsageBar({ label, pct, reset }: { label: string; pct: number | null; reset?: number }) {
+// remainingPct turns the provider's "X% used" into the reading the card
+// shows: what is LEFT. Null stays null — an unknown limit is never guessed.
+function remainingPct(usedPct: number | null | undefined): number | null {
+  if (usedPct === null || usedPct === undefined || Number.isNaN(usedPct)) return null;
+  return Math.max(0, Math.min(100, 100 - usedPct));
+}
+
+function creditPct(credits: CreditsUsage): number | null {
+  const remaining = credits.remaining ?? null;
+  const limit = credits.limit ?? null;
+  if (remaining === null || limit === null || limit <= 0) return null;
+  return Math.max(0, Math.min(100, (remaining / limit) * 100));
+}
+
+function formatCredits(value: number): string {
+  return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+function percentLeft(pct: number | null): string {
+  return pct === null ? '—' : `${Math.round(pct)}% left`;
+}
+
+function creditsLeft(credits: CreditsUsage): string {
+  const remaining = credits.remaining ?? null;
+  return remaining === null ? '—' : `${formatCredits(remaining)} credits left`;
+}
+
+// UsageRing: the kit's ring vocabulary at card size — a track, a segment for
+// the remaining share, and the percent centered inside. Colors are tokens:
+// accent while healthy, warn when little is left, down at zero. An unknown
+// reading draws no segment and shows "—"; the honest-empty rule.
+function UsageRing({ pct }: { pct: number | null }) {
+  const R = 34;
+  const C = 2 * Math.PI * R;
+  const clamped = pct === null ? 0 : Math.min(Math.max(pct, 0), 100);
+  const seg = (C * clamped) / 100;
+  const tone =
+    pct === null
+      ? 'var(--neutral-700)'
+      : clamped <= 0
+        ? 'var(--status-down)'
+        : clamped <= 20
+          ? 'var(--status-warn)'
+          : 'var(--chart-line)';
   return (
-    <div className="bar-row">
-      <span className="bar-lab">{label}</span>
-      <span className="bar-val">{pct === null ? '—' : `${Math.round(pct)}%`}</span>
-      <div className="bar-track">
-        <div
-          className={`bar-fill${pct !== null && pct >= 80 ? ' warn' : ''}`}
-          style={{ width: `${Math.min(Math.max(pct ?? 0, 0), 100)}%` }}
-        />
+    <div className="usage-ring">
+      <svg viewBox="0 0 80 80" aria-hidden="true">
+        <circle className="usage-ring-track" cx="40" cy="40" r={R} />
+        {pct !== null && clamped > 0 && (
+          <circle
+            className="usage-ring-seg"
+            cx="40"
+            cy="40"
+            r={R}
+            stroke={tone}
+            strokeDasharray={`${seg} ${C}`}
+            transform="rotate(-90 40 40)"
+          />
+        )}
+      </svg>
+      <span className="usage-ring-num">{pct === null ? '—' : `${Math.round(pct)}%`}</span>
+    </div>
+  );
+}
+
+// UsageWindow is one limit window: the window label and the remaining reading
+// on the left, the ring centered, the reset timer on the right. The timer
+// owns its grid column — no flex-wrap with variable-length text above the
+// ring, which is the font-metric drift trap.
+function UsageWindow({
+  label,
+  pct,
+  left,
+  reset,
+}: {
+  label: string;
+  pct: number | null;
+  left: string;
+  reset?: number;
+}) {
+  return (
+    <div className="usage-window">
+      <div className="usage-window-copy">
+        <span className="usage-window-label">{label}</span>
+        <span className="usage-left">{left}</span>
       </div>
-      {reset !== undefined && reset > 0 && <ResetCountdown reset={reset} windowName={label} />}
+      <UsageRing pct={pct} />
+      <div className="usage-reset">
+        {reset !== undefined && reset > 0 ? <ResetCountdown reset={reset} windowName={label} /> : null}
+      </div>
     </div>
   );
 }
@@ -94,7 +172,7 @@ export default function Quota() {
     // server-side when a periodic refresher is added (ADR-012).
     let failed = false;
     for (const a of accounts) {
-      if (a.type === 'ollama-cloud') {
+      if (a.refreshable) {
         const ok = await refreshOne(a);
         if (ok === null) failed = true; // thrown error is the truth
       }
@@ -112,7 +190,7 @@ export default function Quota() {
     <>
       <PageHead
         title="Quota"
-        sub="Per-account limits — the windows the provider reports, when the account has a usage cookie."
+        sub="Per-account limits — the windows each provider reports, live when the account can be scraped."
         actions={
           <>
             <LiveBadge updatedAt={updatedAt} intervalMs={POLL_MS} />
@@ -192,6 +270,9 @@ export default function Quota() {
                 // cooldown, so the health badge is suppressed rather than
                 // showing a state it cannot be in.
                 const hb = a.enabled ? healthBadge(a.health) : null;
+                const live = a.live;
+                const sessionLeft = remainingPct(live?.session_pct);
+                const weeklyLeft = remainingPct(live?.weekly_pct);
                 return (
                   <div key={a.account_id} className="widget w-full" style={{ padding: '12px 14px' }}>
                     <div className="widget-head" style={{ marginBottom: 6 }}>
@@ -216,21 +297,45 @@ export default function Quota() {
                         <span className="tswitch" />
                       </label>
                     </div>
-                    {a.live !== null && a.live !== undefined ? (
-                      <div className="bars">
-                        <UsageBar label="Session" pct={a.live.session_pct ?? null} reset={a.live.session_reset} />
-                        <UsageBar label="Weekly" pct={a.live.weekly_pct ?? null} reset={a.live.weekly_reset} />
+                    {live !== null && live !== undefined ? (
+                      <div className="usage-windows">
+                        {(live.session_pct !== undefined || (live.session_reset ?? 0) > 0) && (
+                          <UsageWindow
+                            label="Session"
+                            pct={sessionLeft}
+                            left={percentLeft(sessionLeft)}
+                            reset={live.session_reset}
+                          />
+                        )}
+                        {(live.weekly_pct !== undefined || (live.weekly_reset ?? 0) > 0) && (
+                          <UsageWindow
+                            label="Weekly"
+                            pct={weeklyLeft}
+                            left={percentLeft(weeklyLeft)}
+                            reset={live.weekly_reset}
+                          />
+                        )}
+                        {live.credits && (
+                          <UsageWindow
+                            label="Credits"
+                            pct={creditPct(live.credits)}
+                            left={creditsLeft(live.credits)}
+                            reset={live.credits.reset}
+                          />
+                        )}
                       </div>
                     ) : (
                       <EmptyState
                         title="No live usage"
                         body={a.error !== undefined && a.error !== ''
-                          ? `Last scrape failed: ${a.error}. Set a usage cookie on the account to enable live windows.`
-                          : 'Set a usage cookie on this account — Providers → Ollama Cloud → the account’s Edit — to fetch the live windows.'}
+                          ? `Last scrape failed: ${a.error}.`
+                          : a.refreshable
+                            ? 'No limit window reported yet — use Refresh now to fetch it.'
+                            : 'This provider does not report usage windows.'}
                       />
                     )}
                     <div style={{ textAlign: 'right' }}>
-                      {a.type === 'ollama-cloud' && (
+                      {a.refreshable && (
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"

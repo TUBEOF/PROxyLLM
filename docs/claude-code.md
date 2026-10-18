@@ -10,7 +10,7 @@ names are mapped, and what a degraded run looks like.
 
 ```bash
 export ANTHROPIC_BASE_URL="http://localhost:8080"
-export ANTHROPIC_AUTH_TOKEN="pk_<prefix>_<secret>"   # a client key from the console
+export ANTHROPIC_AUTH_TOKEN="pk_<prefix>_<secret>"   # an API key from the console
 export ANTHROPIC_MODEL="claudecode/sonnet"           # any model row or alias
 ```
 
