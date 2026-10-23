@@ -71,6 +71,12 @@ func (Codec) DecodeRequest(raw []byte) (ir.Request, error) {
 			if wm.Content != "" {
 				tr.Content = append(tr.Content, ir.TextPart{Text: wm.Content})
 			}
+			// The Message schema's images field is role-agnostic (docs/api.md,
+			// "a list of images to include in the message"): a tool result may
+			// carry the pixels a tool produced (matrix catalog №1).
+			for _, img := range wm.Images {
+				tr.Content = append(tr.Content, ir.ImagePart{Source: "base64", Data: img})
+			}
 			req.Messages = append(req.Messages, ir.Message{Role: ir.RoleTool, Parts: []ir.Part{tr}})
 		}
 	}
@@ -115,12 +121,17 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 		switch m.Role {
 		case ir.RoleTool:
 			// Ollama tool results are role:"tool" messages with text
-			// content.
+			// content — and images ride the message's role-agnostic
+			// images field (docs/api.md; matrix catalog №1): a tool that
+			// produced pixels must not lose them in transit.
 			for _, p := range m.Parts {
 				if tr, ok := p.(ir.ToolResultPart); ok {
 					for _, cp := range tr.Content {
 						if tp, ok := cp.(ir.TextPart); ok {
 							wm.Content += tp.Text
+						}
+						if img, ok := cp.(ir.ImagePart); ok && img.Source == "base64" {
+							wm.Images = append(wm.Images, img.Data)
 						}
 					}
 				}
