@@ -119,3 +119,36 @@ func TestFirecrawlAPIKeyFromEnv(t *testing.T) {
 		t.Errorf("firecrawl api key from env: got %q ok=%v", raw, ok)
 	}
 }
+
+// Spec: docs/configuration.md — server.trusted_proxies (the reverse proxies
+// whose X-Forwarded-* headers the WebUI origin check may trust). Default is
+// EMPTY: without explicit configuration no forwarded header is ever
+// trusted.
+func TestLoad_TrustedProxiesDefaultEmpty(t *testing.T) {
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Server.TrustedProxies) != 0 {
+		t.Errorf("trusted proxies must default to empty, got %v", cfg.Server.TrustedProxies)
+	}
+}
+
+func TestLoad_TrustedProxiesEnv(t *testing.T) {
+	withEnv(t, map[string]string{
+		"PROXYLLM_SERVER_TRUSTED_PROXIES": "10.0.0.0/8, 192.168.1.7",
+	})
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := []string{"10.0.0.0/8", "192.168.1.7"}
+	if len(cfg.Server.TrustedProxies) != len(want) {
+		t.Fatalf("trusted proxies: got %v want %v", cfg.Server.TrustedProxies, want)
+	}
+	for i := range want {
+		if cfg.Server.TrustedProxies[i] != want[i] {
+			t.Errorf("trusted proxy %d: got %q want %q", i, cfg.Server.TrustedProxies[i], want[i])
+		}
+	}
+}

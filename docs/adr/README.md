@@ -27,6 +27,7 @@ its identifier and its history stay.
 | [ADR-016](ADR-016-scalability-and-concurrency.md) | Scalability and concurrency: SQLite pool, key-hash caching, lock splitting, emulation budgets | Accepted |
 | [ADR-017](ADR-017-decision-models.md) | Decision models: a second IR operation class (System One / Jev, the OpenAI Decisions API) | Accepted |
 | [ADR-018](ADR-018-vision-passthrough-and-analyze-image.md) | Vision pass-through + the `analyze_image` tool: blind-chain images substitute pre-dispatch; the model sends the image with its own prompt to a vision model | Accepted |
+| [ADR-019](ADR-019-trusted-proxy-forwarded-headers.md) | Trusted-proxy forwarded headers: the console's origin check honors `X-Forwarded-*` only from configured proxy CIDRs (`server.trusted_proxies`) | Accepted |
 
 ADR template: [TEMPLATE.md](TEMPLATE.md)
 

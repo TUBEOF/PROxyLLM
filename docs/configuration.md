@@ -47,6 +47,11 @@ names the offending field. A typo in `config.json` must fail loudly, never
 silently reroute traffic under a default.
 
 - `server.addr` — the HTTP listen address.
+- `server.trusted_proxies` — the reverse proxies (CIDRs or bare IPs) whose
+  `X-Forwarded-Proto`/`X-Forwarded-Host` headers the console's origin
+  check may honor; empty (the default) trusts no one. An invalid entry is
+  a startup failure. See [deployment](deployment.md#reverse-proxy) for the
+  full setup.
 - `storage.path` — the SQLite database file.
 - `storage.master_key_path` — the envelope key file (see [Master key](#master-key)).
 - `log.level`, `log.format` — the logger, see the [defaults](#defaults) for accepted values.
@@ -72,6 +77,7 @@ mount, so the relative defaults resolve to `/data/proxyllm.db` and
 | Setting | Default | Notes |
 |---|---|---|
 | `server.addr` | `:8080` | HTTP listen address |
+| `server.trusted_proxies` | *(empty)* | reverse-proxy CIDRs whose `X-Forwarded-*` the console trusts ([deployment](deployment.md#reverse-proxy)); empty trusts no one |
 | `storage.path` | `data/proxyllm.db` | SQLite file; its directory is created on first start |
 | `storage.master_key_path` | `data/master.key` | envelope key file, mode 0600 |
 | `log.level` | `info` | `debug`, `info`, `warn`, `error`; any other value fails startup |
@@ -84,6 +90,7 @@ mount, so the relative defaults resolve to `/data/proxyllm.db` and
 |---|---|---|
 | `PROXYLLM_CONFIG_FILE` | config file path | an empty value falls back to `config.json` |
 | `PROXYLLM_SERVER_ADDR` | `server.addr` | e.g. `:9090`; also the fallback probe target of `proxyllm -healthcheck` |
+| `PROXYLLM_SERVER_TRUSTED_PROXIES` | `server.trusted_proxies` | comma-separated CIDRs or IPs, e.g. `10.0.0.0/8,192.168.1.7` |
 | `PROXYLLM_STORAGE_PATH` | `storage.path` | |
 | `PROXYLLM_MASTER_KEY_PATH` | `storage.master_key_path` | |
 | `PROXYLLM_LOG_LEVEL` | `log.level` | |

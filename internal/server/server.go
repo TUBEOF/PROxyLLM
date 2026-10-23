@@ -222,6 +222,15 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 	// key's.
 	s.mux.Handle("/v1/", authMiddleware.Wrap(handler))
 
+	// Reverse-proxy trust (docs/deployment.md): the configured CIDRs are
+	// the peers whose X-Forwarded-* headers the WebUI origin check honors.
+	// Parsed here so a typo'd entry fails startup loudly — and unconditionally,
+	// not only when the admin API happens to be mounted.
+	trustedProxies, err := auth.ParseTrustedProxies(cfg.Server.TrustedProxies)
+	if err != nil {
+		return nil, err
+	}
+
 	// Admin API: mounted only when the master key is wired —
 	//
 	// Without the master key there is no admin surface to mount — but the
@@ -319,6 +328,10 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 			},
 			TestModel: s.testModel(reg),
 			MasterKey: o.masterKey,
+			// The parsed server.trusted_proxies set (see the parse above the
+			// admin mount): the session manager honors forwarded headers
+			// from exactly these peers.
+			TrustedProxies: trustedProxies,
 		})
 		s.mux.Handle("/api/admin/", admin.Handler())
 	} else {

@@ -113,6 +113,58 @@ does not give it: behind one, the session cookie is a plain host cookie.
 The terminator is therefore the only thing standing between that cookie and
 the network, and must not be reachable over plain HTTP itself.
 
+## Reverse proxy
+
+The console's CSRF layer compares a mutating request's `Origin` header
+against the origin the server reconstructs from the connection — and
+behind a proxy that connection is the proxy's, not the browser's. Two
+things must therefore hold, or every console interaction fails with
+`403 origin mismatch`:
+
+1. **The proxy must preserve the public Host** (`proxy_set_header Host
+   $host;` in nginx; Caddy and Traefik do it by default). Otherwise the
+   server reconstructs `http://127.0.0.1:8080`-style origins that no
+   browser ever sends.
+2. **For HTTPS specifically**, the proxy must forward the scheme it
+   terminated (`proxy_set_header X-Forwarded-Proto $scheme;` in nginx —
+   Caddy and Traefik set `X-Forwarded-Proto` automatically), and PROxyLLM
+   must be told to trust it: forwarded headers are only honored when the
+   immediate peer is a configured trusted proxy (ADR-019). Nothing is
+   trusted by default — a client that reaches the server directly must
+   not spoof its way past the check.
+
+```nginx
+# nginx, HTTPS in front, plain HTTP to PROxyLLM on 127.0.0.1:8080
+server {
+    listen 443 ssl;
+    server_name proxyllm.example.com;
+    # … certificate setup …
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+```bash
+# tell PROxyLLM which peers may set the forwarded headers —
+# the narrowest CIDR that covers your proxy
+PROXYLLM_SERVER_TRUSTED_PROXIES=127.0.0.1  # same host: the proxy itself
+PROXYLLM_SERVER_TRUSTED_PROXIES=10.0.0.0/24  # the proxy's subnet
+```
+
+The same list can be set from the config file as
+`server.trusted_proxies` (an array). An invalid entry fails startup
+loudly. Keep the list as narrow as the real topology: every address in it
+can redefine what the console considers its own origin.
+
+A console served over plain HTTP (no terminator, or an HTTP-only proxy
+in front) needs only point 1 — with the Host preserved, the reconstructed
+origin already matches the browser's `http` Origin and no trust is
+required. That is still a cookie without `Secure` on the wire; see the
+TLS section above for what that means.
+
 ## Resource sizing
 
 The budgets the benchmarks measure against:
