@@ -163,8 +163,15 @@ windows from its settings page; hovering (or focusing) the timer shows the
 exact reset instant in the reader's own timezone. Firecrawl accounts show
 their team credits (`remaining / plan`) from the documented credit-usage
 endpoint, reset at the billing-period end; the probe uses the same API key as
-the emulator. Without a reported window the card shows the empty state (and
-the scrape error, when there is one). Percentages that are unknown render as
+the emulator. **ChatGPT / Codex accounts** have no usage endpoint at all:
+their card fills from the rate-limit headers of the account's own live
+traffic (the primary window reads as the session strip, the secondary as
+the weekly one) — a fresh account starts empty until its first request
+answers. Custom OpenAI-compatible accounts carry no probe: the wire has no
+usage surface to read, so their card shows health and the in-the-pool
+switch, nothing else. Without a reported window the card shows the empty
+state (and the scrape error, when there is one). Percentages that are unknown
+render as
 `—`, never as zero. A cooldown — the account is out of quota, or its breaker
 is open — is named on the card, which is the fastest way to explain a wave
 of failures. Each card carries the account's **in the pool** switch, and a
