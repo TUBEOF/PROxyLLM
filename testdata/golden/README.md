@@ -34,7 +34,8 @@ Messages API and its event stream), `openai/` (chat completions and the Response
 API), `ollama/` (the native `/api/chat` NDJSON stream) and `firecrawl/` (the
 web-tool backend). Each fixture pins a request, a response or a stream event, and
 each `.meta.json` beside it records where the shape came from and when it was
-read.
+read. (`_templates/` is not a surface: it holds the empty
+`fixture.meta.json` every new sidecar starts from.)
 
 The fixtures are the specification, not a record of what the code does. When a
 reference changes, the fixture and its `.meta.json` change first — a fixture that

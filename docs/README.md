@@ -66,3 +66,19 @@ The layers are:
   token source (`colors_and_type.css`), and the machine-readable profile.
 - **`testdata/golden/`** — the wire fixtures, each with the URL it was read
   from and the date.
+
+## Writing a page
+
+Start from the template that matches the page's layer:
+
+| Writing… | Template |
+|---|---|
+| A task page (what to do, in order) | [`_templates/task-page.md`](_templates/task-page.md) |
+| A reference page (what exists, precisely) | [`_templates/reference-page.md`](_templates/reference-page.md) |
+| An endpoint block in `api/` | [`_templates/api-endpoint.md`](_templates/api-endpoint.md) |
+| An ADR | [`adr/TEMPLATE.md`](adr/TEMPLATE.md) |
+| A wire fixture | [`../testdata/golden/_templates/fixture.meta.json`](../testdata/golden/_templates/fixture.meta.json) |
+
+Templates carry the shape, not facts: fill them, then cut every section that
+stayed empty. A new page lands in the index above in the same change, and
+the page it takes a fact from loses that fact — stated twice, drifted once.
