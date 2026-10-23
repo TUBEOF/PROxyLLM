@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -120,6 +121,36 @@ func (e *sessionTestEnv) authed(t *testing.T, method, path, body, cookieHeader, 
 		// The OK handler must observe the admin id from the request context —
 		// asserted so the middleware cannot pass requests without actually
 		// authenticating them.
+		if AdminIDFromContext(r.Context()) == "" {
+			t.Errorf("no admin id in context for an accepted request (%s %s)", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(w, req)
+	return w
+}
+
+// authedVia is authed with request-level mutations (RemoteAddr, forwarded
+// headers) so the trusted-proxy origin tests can simulate a hop.
+func (e *sessionTestEnv) authedVia(t *testing.T, mutate func(*http.Request), method, path, body, cookieHeader, csrfToken, origin string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	if mutate != nil {
+		mutate(req)
+	}
+	if cookieHeader != "" {
+		req.Header.Set("Cookie", cookieHeader)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if csrfToken != "" {
+		req.Header.Set("X-CSRF-Token", csrfToken)
+	}
+	if origin != "" {
+		req.Header.Set("Origin", origin)
+	}
+	w := httptest.NewRecorder()
+	e.sm.RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if AdminIDFromContext(r.Context()) == "" {
 			t.Errorf("no admin id in context for an accepted request (%s %s)", r.Method, r.URL.Path)
 		}
@@ -407,6 +438,127 @@ func TestCSRF_OriginMismatchRejected(t *testing.T) {
 		l.cookieHeader(), l.csrfToken, "http://example.com")
 	if w.Code != http.StatusOK {
 		t.Errorf("same-origin mutation rejected: %d", w.Code)
+	}
+}
+
+// A TLS terminator in front speaks plain HTTP to the server, so r.TLS is
+// nil and the browser's https Origin can never equal the reconstructed
+// http origin. When the immediate peer is a configured trusted proxy, the
+// X-Forwarded-Proto/X-Forwarded-Host headers it sets reconstruct the
+// public origin instead — the console works behind the terminator.
+func TestCSRF_TrustedProxyForwardedOriginAccepted(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	nets, err := ParseTrustedProxies([]string{"10.0.0.0/8"})
+	if err != nil {
+		t.Fatalf("ParseTrustedProxies: %v", err)
+	}
+	env.sm = NewSessionManager(env.st, testMasterKey(),
+		func() int64 { return env.now }, WithTrustedProxies(nets))
+	l := env.login(t, "operator", testPassword, false)
+
+	via := func(req *http.Request) {
+		req.RemoteAddr = "10.0.0.5:55555"
+		req.Header.Set("X-Forwarded-Proto", "https")
+		req.Header.Set("X-Forwarded-Host", "console.example.com")
+	}
+	w := env.authedVia(t, via, http.MethodPost, "/api/admin/providers", `{}`,
+		l.cookieHeader(), l.csrfToken, "https://console.example.com")
+	if w.Code != http.StatusOK {
+		t.Errorf("forwarded same-origin mutation rejected: %d", w.Code)
+	}
+}
+
+// The forwarded headers are only honored from a trusted peer. A client
+// that reaches the server directly cannot spoof its way past the origin
+// check by setting them itself.
+func TestCSRF_UntrustedForwardedHeadersIgnored(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	l := env.login(t, "operator", testPassword, false)
+
+	via := func(req *http.Request) {
+		req.RemoteAddr = "203.0.113.9:55555"
+		req.Header.Set("X-Forwarded-Proto", "https")
+		req.Header.Set("X-Forwarded-Host", "console.example.com")
+	}
+	w := env.authedVia(t, via, http.MethodPost, "/api/admin/providers", `{}`,
+		l.cookieHeader(), l.csrfToken, "https://console.example.com")
+	if w.Code != http.StatusForbidden {
+		t.Errorf("spoofed forwarded headers accepted: %d", w.Code)
+	}
+}
+
+// A trusted proxy's X-Forwarded-Proto must carry a real scheme: anything
+// other than http/https is dropped, so the reconstruction falls back to
+// the connection state and a https Origin still mismatches.
+func TestCSRF_TrustedProxyGarbageProtoIgnored(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	nets, err := ParseTrustedProxies([]string{"10.0.0.0/8"})
+	if err != nil {
+		t.Fatalf("ParseTrustedProxies: %v", err)
+	}
+	env.sm = NewSessionManager(env.st, testMasterKey(),
+		func() int64 { return env.now }, WithTrustedProxies(nets))
+	l := env.login(t, "operator", testPassword, false)
+
+	via := func(req *http.Request) {
+		req.RemoteAddr = "10.0.0.5:55555"
+		req.Header.Set("X-Forwarded-Proto", "ftp")
+		req.Header.Set("X-Forwarded-Host", "console.example.com")
+	}
+	w := env.authedVia(t, via, http.MethodPost, "/api/admin/providers", `{}`,
+		l.cookieHeader(), l.csrfToken, "https://console.example.com")
+	if w.Code != http.StatusForbidden {
+		t.Errorf("garbage forwarded proto accepted: %d", w.Code)
+	}
+}
+
+// Plain HTTP through a proxy needs no trust at all: when the proxy
+// preserves the Host header, the reconstructed origin already matches the
+// browser's http Origin.
+func TestCSRF_ProxyHostPreservedPlainHTTP(t *testing.T) {
+	env := newSessionEnv(t)
+	env.admin()
+	l := env.login(t, "operator", testPassword, false)
+
+	via := func(req *http.Request) { req.RemoteAddr = "10.0.0.5:55555" }
+	w := env.authedVia(t, via, http.MethodPost, "http://console.example.com/api/admin/providers", `{}`,
+		l.cookieHeader(), l.csrfToken, "http://console.example.com")
+	if w.Code != http.StatusOK {
+		t.Errorf("same-origin mutation behind host-preserving proxy rejected: %d", w.Code)
+	}
+}
+
+// ParseTrustedProxies accepts CIDRs and bare IPs (a bare IP becomes its
+// own /32 or /128) and rejects anything else loudly — a typo'd entry must
+// fail startup, never silently widen the trust boundary.
+func TestParseTrustedProxies(t *testing.T) {
+	nets, err := ParseTrustedProxies([]string{"10.0.0.0/8", "192.168.1.7", "fd00::/16", "fd12::1"})
+	if err != nil {
+		t.Fatalf("ParseTrustedProxies: %v", err)
+	}
+	if len(nets) != 4 {
+		t.Fatalf("entry count: got %d want 4", len(nets))
+	}
+	if !nets[0].Contains(net.ParseIP("10.1.2.3")) {
+		t.Error("10.0.0.0/8 does not contain 10.1.2.3")
+	}
+	if !nets[1].Contains(net.ParseIP("192.168.1.7")) {
+		t.Error("bare IP must contain itself")
+	}
+	if nets[1].Contains(net.ParseIP("192.168.1.8")) {
+		t.Error("bare IP must be a /32, not a wider match")
+	}
+	if !nets[2].Contains(net.ParseIP("fd00::42")) {
+		t.Error("fd00::/16 does not contain fd00::42")
+	}
+	if !nets[3].Contains(net.ParseIP("fd12::1")) {
+		t.Error("bare IPv6 must contain itself")
+	}
+	if _, err := ParseTrustedProxies([]string{"10.0.0.0/8", "not-an-ip"}); err == nil {
+		t.Error("invalid entry must error")
 	}
 }
 

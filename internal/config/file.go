@@ -41,7 +41,8 @@ func configFile() string {
 // either (docs/configuration.md — secrets resolve via ENV/keyfile only).
 type fileWire struct {
 	Server struct {
-		Addr string `json:"addr"`
+		Addr           string   `json:"addr"`
+		TrustedProxies []string `json:"trusted_proxies"`
 	} `json:"server"`
 	Storage struct {
 		Path          string `json:"path"`
@@ -86,6 +87,9 @@ func applyFile(cfg *Config) (*Config, error) {
 
 	if w.Server.Addr != "" {
 		cfg.Server.Addr = w.Server.Addr
+	}
+	if len(w.Server.TrustedProxies) > 0 {
+		cfg.Server.TrustedProxies = w.Server.TrustedProxies
 	}
 	if w.Storage.Path != "" {
 		cfg.Storage.Path = w.Storage.Path

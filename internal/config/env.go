@@ -12,6 +12,15 @@ func applyEnv(cfg *Config) (*Config, error) {
 	if v, ok := os.LookupEnv("PROXYLLM_SERVER_ADDR"); ok {
 		cfg.Server.Addr = v
 	}
+	if v, ok := os.LookupEnv("PROXYLLM_SERVER_TRUSTED_PROXIES"); ok {
+		var entries []string
+		for e := range strings.SplitSeq(v, ",") {
+			if e = strings.TrimSpace(e); e != "" {
+				entries = append(entries, e)
+			}
+		}
+		cfg.Server.TrustedProxies = entries
+	}
 	if v, ok := os.LookupEnv("PROXYLLM_STORAGE_PATH"); ok {
 		cfg.Storage.Path = v
 	}

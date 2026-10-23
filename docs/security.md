@@ -41,6 +41,11 @@ untrusted network without that layer is outside the design.
   constant time. When `Origin` is present it must match the request's own
   scheme and host, and a `Content-Type` other than `application/json` is
   refused. The session and CSRF cookies are `SameSite=Strict` as well.
+  Behind a reverse proxy the connection state is the proxy's, not the
+  browser's, so `X-Forwarded-Proto`/`X-Forwarded-Host` are honored only
+  when the immediate peer is a configured trusted proxy
+  (`server.trusted_proxies`, ADR-019) — from anyone else those headers are
+  ignored, and no forwarded header is ever trusted by default.
 - **Default ON.** Authentication can be turned off only by the environment
   variable `PROXYLLM_AUTH_DISABLED=1` — never from the config file (an
   `auth` group there is a startup failure) and never from the console — and

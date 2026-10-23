@@ -13,6 +13,14 @@ type Config struct {
 type ServerConfig struct {
 	// Addr is the listen address, e.g. ":8080".
 	Addr string
+
+	// TrustedProxies lists the reverse proxies (CIDRs or bare IPs) whose
+	// X-Forwarded-Proto/X-Forwarded-Host headers the WebUI's origin check
+	// may trust — the setup a TLS terminator in front requires. Empty (the
+	// default) trusts no one: forwarded headers are never honored then.
+	// Validation happens where the set is consumed (auth.ParseTrustedProxies
+	// fails startup on a bad entry).
+	TrustedProxies []string
 }
 
 // StorageConfig holds SQLite settings.
