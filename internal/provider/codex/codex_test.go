@@ -908,3 +908,57 @@ func TestListModels_EmptyCatalogIsAnError(t *testing.T) {
 		t.Errorf("error %q should name the client_version gate so the operator can act on it", err)
 	}
 }
+
+// The rate-limit snapshot rides live traffic: the backend's x-codex-*
+// response headers reach the configured sink on every round trip, so the
+// Quota page can show a codex-oauth account's usage without a probe
+// endpoint (the backend has none).
+func TestComplete_RateLimitSinkReceivesSnapshot(t *testing.T) {
+	var got codex.RateLimits
+	var sinkHits int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/oauth/token", noopRefresh(t, new(int32)))
+	mux.HandleFunc("/codex/responses", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("x-codex-primary-used-percent", "25")
+		w.Header().Set("x-codex-primary-reset-at", "1771000000")
+		w.Header().Set("x-codex-secondary-used-percent", "75")
+		w.Header().Set("x-codex-secondary-reset-at", "1772000000")
+		mustWrite(t, w, testutil.LoadGolden(t, "openai/responses-stream.sse"))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	store := newMemStore()
+	seedTokens(t, store, "a1", farFuture())
+	auth := codex.NewAuthClient(codex.AuthConfig{Issuer: srv.URL, HTTP: srv.Client(), Store: store, ProviderID: providerID})
+	p := codex.New(codex.ProviderConfig{
+		ID:           providerID,
+		BaseURL:      srv.URL,
+		Capabilities: provider.Capabilities{Streaming: true, Tools: true},
+		Auth:         auth,
+		HTTP:         srv.Client(),
+		RateLimitSink: func(rl codex.RateLimits) {
+			sinkHits++
+			got = rl
+		},
+	})
+	if _, err := p.Complete(context.Background(), responsesRequest()); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if sinkHits != 1 {
+		t.Fatalf("sink hits = %d, want 1", sinkHits)
+	}
+	if got.PrimaryUsedPct == nil || *got.PrimaryUsedPct != 25 {
+		t.Errorf("primary used = %v, want 25", got.PrimaryUsedPct)
+	}
+	if got.PrimaryResetAt != 1771000000 {
+		t.Errorf("primary reset = %d, want 1771000000", got.PrimaryResetAt)
+	}
+	if got.SecondaryUsedPct == nil || *got.SecondaryUsedPct != 75 {
+		t.Errorf("secondary used = %v, want 75", got.SecondaryUsedPct)
+	}
+	if got.SecondaryResetAt != 1772000000 {
+		t.Errorf("secondary reset = %d, want 1772000000", got.SecondaryResetAt)
+	}
+}
