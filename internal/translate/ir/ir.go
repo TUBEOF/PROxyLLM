@@ -69,12 +69,17 @@ type TextPart struct {
 // semantically interchangeable; codecs normalize on decode and reconstruct
 // the protocol-appropriate form on encode.
 type ImagePart struct {
-	// Source is "base64" or "url". Data: URIs from OpenAI decode to
+	// Source is "base64", "url" or "file". Data: URIs from OpenAI decode to
 	// base64 parts with MediaType set.
 	Source    string
 	MediaType string // image/png, image/jpeg, image/gif, image/webp
 	Data      string // base64 payload when Source == "base64"
 	URL       string // http(s) URL when Source == "url"
+	// FileID is the Files-API upload reference when Source == "file". It is
+	// opaque and account-scoped: the id rides for same-protocol round trips
+	// (an origin account resolves it); a crossing protocol drops the image,
+	// because no other wire can name the file.
+	FileID string
 	// Detail is the OpenAI fidelity hint (low/high/original/auto);
 	// "" = protocol default.
 	Detail string

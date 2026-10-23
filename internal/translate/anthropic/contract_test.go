@@ -325,3 +325,40 @@ func TestEncodeRequest_FromIR(t *testing.T) {
 		t.Errorf("round trip tools = %+v", got.Tools)
 	}
 }
+
+// A file-source image (Files API) rides its opaque file_id: decode must keep
+// it, and a same-protocol re-encode must hand the id back — an account-scoped
+// id cannot be resolved to bytes, but losing it makes the round trip invalid
+// upstream (fixture message-request-file-image.json, matrix catalog №2).
+func TestDecodeRequest_FileSourceImageKeepsFileID(t *testing.T) {
+	raw := testutil.LoadGolden(t, "anthropic/message-request-file-image.json")
+	req, err := anth.Codec{}.DecodeRequest(raw)
+	if err != nil {
+		t.Fatalf("DecodeRequest: %v", err)
+	}
+	if len(req.Messages) != 1 {
+		t.Fatalf("messages = %d, want 1", len(req.Messages))
+	}
+	parts := req.Messages[0].Parts
+	if len(parts) != 2 {
+		t.Fatalf("parts = %d, want 2 (image, text)", len(parts))
+	}
+	img, ok := parts[0].(ir.ImagePart)
+	if !ok {
+		t.Fatalf("parts[0] type = %T, want ir.ImagePart", parts[0])
+	}
+	if img.Source != "file" {
+		t.Errorf("image source = %q, want file", img.Source)
+	}
+	if img.FileID != "file-3kHqLx7PpYvN8kZmBqYjNkZm" {
+		t.Errorf("image file_id = %q, want the fixture's id", img.FileID)
+	}
+	// Re-encoding toward the same protocol must carry the id back.
+	out, err := anth.Codec{}.EncodeRequest(req)
+	if err != nil {
+		t.Fatalf("EncodeRequest(round trip): %v", err)
+	}
+	if !strings.Contains(string(out), `"file_id":"file-3kHqLx7PpYvN8kZmBqYjNkZm"`) {
+		t.Errorf("round trip must re-emit the file_id, got %s", out)
+	}
+}

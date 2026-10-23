@@ -526,3 +526,26 @@ func TestStreamEncode_ToolCallAnchorWithArgs(t *testing.T) {
 	// Argument fragments (DeltaToolInput) still ride their own chunk
 	// afterwards; nothing about the fragment shape changes.
 }
+
+// A Files-API file-source image (matrix catalog №2) has no bytes the OpenAI
+// wire could carry: encoding it would emit an image_url with an empty URL —
+// invalid on the wire. The part is dropped as the documented degradation
+// instead of producing a garbage request.
+func TestEncodeRequest_FileSourceImageDropsCrossProtocol(t *testing.T) {
+	req := ir.Request{
+		Model: "m",
+		Messages: []ir.Message{
+			{Role: ir.RoleUser, Parts: []ir.Part{
+				ir.TextPart{Text: "Describe"},
+				ir.ImagePart{Source: "file", FileID: "file-abc123"},
+			}},
+		},
+	}
+	raw, err := oa.Codec{}.EncodeRequest(req)
+	if err != nil {
+		t.Fatalf("EncodeRequest: %v", err)
+	}
+	if strings.Contains(string(raw), "image_url") {
+		t.Errorf("file-source image must drop cross-protocol, got %s", raw)
+	}
+}
