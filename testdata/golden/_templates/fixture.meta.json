@@ -1,0 +1,6 @@
+{
+  "fixture": "<the fixture's file name, exactly as committed>",
+  "source": "<the URL(s) the shape was read from — the official documentation or the reference client source, never this repo>",
+  "accessed": "<YYYY-MM-DD the source was last verified>",
+  "notes": "<Why this shape is what it is: the fields that are REQUIRED versus optional on the wire, the behaviour that motivated the fixture (a defect it pins, an edge it covers), whether it was read live or TRANSCRIBED from type definitions, and which fields are deliberately ABSENT rather than guessed. A fixture encoding a shape the reference does not describe is a bug, not a snapshot."
+}
