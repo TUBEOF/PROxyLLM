@@ -31,7 +31,10 @@ A `file` source on an Anthropic image block (a Files-API `file_id`) rides the
 IR as an identity: an Anthropic→Anthropic round trip hands the id back, and a
 crossing protocol **drops the image** — the id names a file only the origin
 account can fetch, so no other wire can carry it (fixture
-`anthropic/message-request-file-image.json`).
+`anthropic/message-request-file-image.json`). The caption path refuses such an
+image like a guarded URL: no fetchable bytes means no description — the
+unavailability placeholder stands in and the refusal is traced, never a
+fabricated caption shared by every file id.
 | Tool definitions | `tools[].function` | function item, flat — no nested `function` wrapper | `tools[]` | `tools[]`, function-shaped |
 | Vision substitution (ADR-018) | On a chain whose every entry is known-blind, the executor replaces every image with placeholder TEXT (a `[Bild N (ref …)]` note) in the request and appends an `analyze_image` function definition to `tools`. The codec layers never see the tool: injection and answer interception happen against the canonical IR, so all four columns behave identically. The final response carries no `analyze_image` block on any surface |  |  |  |
 | Tool call | `tool_calls[]`, deltas assembled by index | function-call item | `tool_use` block | `tool_calls[]`, object arguments |
