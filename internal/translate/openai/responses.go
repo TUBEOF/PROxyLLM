@@ -580,6 +580,12 @@ func responsesContentFromParts(parts []ir.Part, textType string) *responsesWireC
 		case ir.TextPart:
 			c.Parts = append(c.Parts, responsesWirePart{Type: textType, Text: pt.Text})
 		case ir.ImagePart:
+			// Same file-source degradation as the chat encoder: the id
+			// names a file this wire cannot fetch, and an input_image with
+			// an empty URL is invalid (matrix catalog №2).
+			if pt.Source == "file" && pt.Data == "" {
+				continue
+			}
 			c.Parts = append(c.Parts, responsesWirePart{
 				Type:     "input_image",
 				ImageURL: imageURL(pt),

@@ -26,6 +26,15 @@ is adapted — is the compatibility policy, documented once in
 | System prompt | `system` / `developer` role | `instructions`, or a system-role input item | `system`; block form is preserved verbatim, a string re-encodes as one text block, non-text blocks are dropped | system-role message |
 | Text content | `content` parts (a lone text part re-encodes as a plain string) | `input`, a string or typed items | `content` blocks (a string re-encodes as one block) | `content` string |
 | Image | `image_url` part, URL or `data:` URI | `input_image` item | `image` block, URL or base64 source | `images[]`, bare base64 |
+
+A `file` source on an Anthropic image block (a Files-API `file_id`) rides the
+IR as an identity: an Anthropic→Anthropic round trip hands the id back, and a
+crossing protocol **drops the image** — the id names a file only the origin
+account can fetch, so no other wire can carry it (fixture
+`anthropic/message-request-file-image.json`). The caption path refuses such an
+image like a guarded URL: no fetchable bytes means no description — the
+unavailability placeholder stands in and the refusal is traced, never a
+fabricated caption shared by every file id.
 | Tool definitions | `tools[].function` | function item, flat — no nested `function` wrapper | `tools[]` | `tools[]`, function-shaped |
 | Vision substitution (ADR-018) | On a chain whose every entry is known-blind, the executor replaces every image with placeholder TEXT (a `[Bild N (ref …)]` note) in the request and appends an `analyze_image` function definition to `tools`. The codec layers never see the tool: injection and answer interception happen against the canonical IR, so all four columns behave identically. The final response carries no `analyze_image` block on any surface |  |  |  |
 | Tool call | `tool_calls[]`, deltas assembled by index | function-call item | `tool_use` block | `tool_calls[]`, object arguments |
@@ -34,7 +43,7 @@ is adapted — is the compatibility policy, documented once in
 | Empty content (tool-call-only assistant turn) | `content: ""`, never `null` — Ollama's OpenAI-compatibility endpoint rejects null content with `400 invalid message content type: <nil>`, and an empty string decodes to zero parts | the message item is omitted | `content: []`, never null | `content: ""`, never null |
 | `system` message inside `messages` | carried as a system-role message holding its text, never left as `content: null` (the same 400; agents append hook output and injected reminders mid-conversation) | system-role input item | kept verbatim | system-role message |
 | Context-window marker `[1m]` / `[1M]` | stripped at routing, case-insensitively: the marker is never part of the model identity, so the base model routes, dispatches and matches — the strip is recorded as a `context_override` event ([route trace](route-trace.md)) | base model | base model | base model |
-| Tool result | role `tool` message | `function_call_output` item | `tool_result` block | role `tool` message with text content |
+| Tool result | role `tool` message | `function_call_output` item | `tool_result` block | role `tool` message, its text content and its images (`images[]` rides the Ollama Message schema's role-agnostic field) |
 | Extended thinking | `reasoning_effort` is read from the raw body into the request's thinking intent, which the compatibility policy then governs; the codec itself has no wire field for it and never forwards an effort hint | `reasoning` (effort) and `encrypted_content` | `thinking` parameter — enabled with a budget, or adaptive — plus thinking blocks carrying an opaque signature | `think`: an effort level (`high` / `medium` / `low` / `max`), or `true` for adaptive; a budget maps to the nearest level |
 | Cache markers | — | — | `cache_control`, forwarded verbatim | — |
 | Server tools | — | not represented — a tool item without a name is dropped | `server_tool_use` blocks, and dated `web_search_*` / `web_fetch_*` definitions whose stable identity is the family name | — |

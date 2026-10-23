@@ -294,6 +294,15 @@ func rescueSummary(captioned, reused int) string {
 // ranges and redirects refused), the same guard every other operator- or
 // request-influenced outbound path uses.
 func resolveImageForCaption(ctx context.Context, img ir.ImagePart) (ir.ImagePart, error) {
+	if img.Source == "file" {
+		// A Files-API id names a file only the origin Anthropic account can
+		// fetch — there are no bytes to describe, and a describer asked about
+		// an image it cannot receive fabricates one caption shared by every
+		// file id (the empty payload digests identically). Treated like an
+		// unresolvable image: the caller traces the refusal and the
+		// unavailability placeholder stands in (matrix catalog №2).
+		return img, fmt.Errorf("file-source image has no fetchable bytes")
+	}
 	if img.Source != "url" || img.URL == "" {
 		return img, nil
 	}

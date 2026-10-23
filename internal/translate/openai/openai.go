@@ -460,6 +460,13 @@ func contentFromParts(parts []ir.Part) wireContent {
 			}
 			text, hasText = pt.Text, true
 		case ir.ImagePart:
+			// A Files-API file-source image (Source "file") names a file the
+			// origin Anthropic account holds; this wire cannot fetch it, and
+			// an image_url with an empty URL is invalid on the wire — the
+			// part drops as the documented degradation (matrix catalog №2).
+			if pt.Source == "file" && pt.Data == "" {
+				continue
+			}
 			c.Parts = append(c.Parts, wireContentPart{Type: "image_url", ImageURL: &wireImageURL{
 				URL:    imageURL(pt),
 				Detail: pt.Detail,
