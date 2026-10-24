@@ -71,11 +71,21 @@ Live smoke tests exist and never run in CI: `PROXYLLM_SMOKE=1 go test
   read from and the date.
 - `design/` — the UI's design system: `DESIGN.md` for the rules,
   `brand.json` for the machine-readable profile, `colors_and_type.css` for
-  the token values. The skill under `.claude/skills/proxyllm-design` loads on
+  the token values. The skill under `.agents/skills/proxyllm-design` loads on
   its own when a task touches `webui/`; read `design/DESIGN.md` before
   inventing a colour, spacing or component.
 - `docs/reference/translation-matrix.md` — the per-field mapping between
   protocols.
+
+## Skills
+
+Agent Skills live in `.agents/skills/` in the open `SKILL.md` format
+(`agentskills.io`): `proxyllm-core` is the entry map, then
+`proxyllm-protocol`, `proxyllm-provider`, `proxyllm-routing`,
+`proxyllm-webui`, `proxyllm-ops`, plus `proxyllm-design`. Codex, Gemini CLI,
+Cursor, Antigravity, Copilot, Zed and others read that path directly;
+`.claude/skills/` holds only symlinks to the same directories so Claude Code
+discovers them too. Skills are the map — `docs/` stays the truth.
 
 ## Conventions that differ from the default
 

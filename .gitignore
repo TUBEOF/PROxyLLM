@@ -33,8 +33,9 @@ go.work
 go.work.sum
 
 # Agent tooling — local working files, never part of the project.
-# The exception is the project's own design skill: it is a shared artifact that
-# agents discover on their own, so it ships with the project like any other doc.
+# Project skills ship with the repo in .agents/skills/ (the cross-harness
+# Agent Skills path). .claude/skills/ holds only symlinks to those directories
+# so Claude Code discovers the same files; nothing there is a second copy.
 .claude/*
 !.claude/skills/
 CLAUDE.md

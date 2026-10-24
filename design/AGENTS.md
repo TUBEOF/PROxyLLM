@@ -12,7 +12,7 @@ layer. This file is the minimum you need before touching either.
 - **`colors_and_type.css`** — the token source. `webui/src/styles/colors_and_type.css`
   is the runtime copy the console loads and must stay byte-identical to it (a Go
   test in `webui/` fails if the two drift).
-- **`.claude/skills/proxyllm-design/`** — the same material as an agent skill,
+- **`.agents/skills/proxyllm-design/`** — the same material as an agent skill,
   loaded automatically when you work under `webui/**`.
 
 ## Where things live
@@ -35,7 +35,7 @@ layer. This file is the minimum you need before touching either.
 2. Compose from the kit: `.appshell`, `.widget` + `.widget-head`/`.widget-body`,
    `.kpi`, `.table-wrap`/`.table`, `.field`/`.input`, `.btn`, `.badge`, `.pill`,
    `.modal`. The inventory with every class is in
-   `.claude/skills/proxyllm-design/references/components.md`.
+   `.agents/skills/proxyllm-design/references/components.md`.
 3. Colour, size and motion come from tokens — never a literal in a route
    component or in `app.css`.
 4. Missing data renders an em dash or `.empty`, never a plausible-looking number.
