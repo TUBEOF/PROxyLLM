@@ -19,6 +19,86 @@ is adapted — is the compatibility policy, documented once in
 [model compatibility](model-compat.md). Endpoint behaviour belongs to the
 [client API pages](../api/README.md).
 
+**The rule for a new wire capability.** It lands with all four, in the same
+change: a fixture under `testdata/golden/` citing the source and date, a row
+in this matrix, a codec test derived from the fixture and the specification,
+and — if any crossing is lossy — a named degradation below. A capability that
+cannot carry all four is not added.
+
+## Crossing matrix
+
+Status of each operation class on the wires the shipped provider types
+speak — every client surface funnels through the IR, so the target wire is
+the axis: **`custom-openai` and `ollama-cloud` talk OpenAI Chat Completions**
+(`ollama-cloud` at `https://ollama.com/v1`), **`codex-oauth` talks the
+Responses wire**. No shipped upstream speaks the Anthropic or Ollama-native
+wires (see Known degradations) — those codecs serve the client surfaces, so
+an Anthropic→Anthropic route exists only as decode-encode against the IR.
+Statuses: **native** (same-protocol, carried as-is), **translated** (codec
+pair + IR), **degraded** (translated with a recorded loss), **emulated**
+(routing supplies it against a target that lacks it), **not supported**
+(refused or absent, documented here).
+
+| Operation | → OpenAI Chat (custom-openai, ollama-cloud) | → Responses (codex) |
+|---|---|---|
+| Text content | translated | translated |
+| Client tools: definitions, calls, results | translated | translated |
+| Streaming | translated | translated (`stream: true` forced) |
+| Extended thinking | translated — no wire field out; `reasoning` / `reasoning_content` decoded in | translated (`reasoning`, `encrypted_content`) |
+| Images in user content | translated (`image_url` ↔ `images[]`) | translated (`input_image`) |
+| Images in tool results | translated for OpenAI/Anthropic clients; **degraded when the target is the Ollama-native wire** (catalog №1) | translated |
+| Images with an Anthropic file source | degraded — the `file_id` decodes away (catalog №2) | degraded (catalog №2) |
+| Server tools (`web_search` / `web_fetch`) | emulated (web-tool accounts, ADR-015) | emulated |
+| Stop reasons | translated | translated (`incomplete` reads as max-tokens) |
+| Usage | translated (per-flavour counters, catalog №11) | translated |
+| Cache markers | not supported (catalog №9) | not supported |
+| Decisions (systemone / OpenAI Decisions client) | translated (ADR-017 pair, losses documented under Decision operations) | translated |
+
+## Edge-case catalog
+
+Numbered, each with the behaviour a request actually gets. Entries the codecs
+already handle cite the handling; gaps carry **known gap** until fixed — the
+fix lands with its fixture, matrix row, test and this entry's update.
+
+1. **Images in tool results → Ollama-native target** — known gap: the
+   `role: "tool"` encode carries text content only; `ImagePart`s are dropped
+   silently (`internal/translate/ollama/ollama.go`, the RoleTool branch), so a
+   sighted Ollama chain loses an image a tool returned without a trace event.
+   Blind chains are unaffected — the caption substitution replaces tool-result
+   images before encode (ADR-018).
+2. **Anthropic image blocks with `source.type: "file"`** — known gap: the IR
+   image part has no file-id role and `wireImageSource` has no `file_id`
+   field, so the id decodes away. Cross-protocol the image drops; Anthropic→
+   Anthropic re-encodes an invalid source upstream.
+3. **`data:` URI images from an OpenAI client** — decoded into a base64 part
+   with its media type (`internal/translate/openai/datauri.go`); re-encoding
+   rebuilds the URI, so the bytes survive transit.
+4. **One-shot tool-call arguments** — a spec-legal single `tool_calls` delta
+   carrying the complete `arguments` string (seen from `ollama.com/v1`,
+   fixture `chat-stream-tool-oneshot.sse`): queued for the opening block and
+   re-emitted in the anchor chunk toward OpenAI clients.
+5. **Empty content on a tool-call-only turn** — `content: ""`, never `null`
+   (Ollama's compatibility endpoint 400s on null); toward Responses the item is
+   omitted, toward Anthropic `content: []`.
+6. **`system` role inside `messages`** — carried as its own system-role
+   message, never `content: null` (same 400 as №5).
+7. **Unrequested thinking in a response** — dropped on every wire, streamed
+   blocks renumbered so the client sees no gap; recorded in the trace.
+8. **Interleaved thinking/content fragments (Ollama-native)** — buffered and
+   emitted as one thinking block once content completes, so text never
+   fragments.
+9. **`cache_control`** — survives an Anthropic→Anthropic route only; every
+   other crossing drops it by construction and records the loss.
+10. **Guarded image URLs in captioning** — a remote image URL the caption
+    path refuses to fetch leaves the image unplumbed: the unavailability
+    placeholder stands in and the refusal is traced.
+11. **Usage flavours** — `reasoning`-style and cached counters
+    (`prompt_eval_cached_count`, Anthropic cache and web-request counters)
+    normalize into the canonical usage; a flavour an upstream does not report
+    stays absent, never zero-invented.
+12. **Decision-image without a sniffable media type** — fails the encode with
+    a clear error instead of a guessed data URL (see Decision operations).
+
 ## Request-side mapping
 
 | Concept | OpenAI Chat Completions | OpenAI Responses | Anthropic Messages | Ollama native |
