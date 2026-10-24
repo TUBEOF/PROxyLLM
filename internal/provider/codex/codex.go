@@ -55,6 +55,12 @@ type ProviderConfig struct {
 
 	// ClientVersion overrides DefaultClientVersion; empty selects the pin.
 	ClientVersion string
+
+	// RateLimitSink, when set, receives the account's rate-limit snapshot
+	// parsed off every response's x-codex-* headers — the backend has no
+	// usage endpoint, so live traffic is the only honest source. Nil
+	// disables the parse entirely.
+	RateLimitSink func(RateLimits)
 }
 
 // New builds the provider. The transport talks {BaseURL}/codex/responses
@@ -85,6 +91,16 @@ func New(cfg ProviderConfig) *Provider {
 		client:        client,
 		responses:     openai.ResponsesCodec{},
 		clientVersion: clientVersion,
+	}
+	if cfg.RateLimitSink != nil {
+		// The sink runs on the dispatch path: parse here, hand the snapshot
+		// over, and let the wiring layer decide what to persist — the
+		// provider never touches storage itself.
+		client.ResponseHeaderHook = func(h http.Header) {
+			if rl, ok := rateLimitFromHeaders(h); ok {
+				cfg.RateLimitSink(rl)
+			}
+		}
 	}
 	client.HeaderHook = p.headers
 	return p

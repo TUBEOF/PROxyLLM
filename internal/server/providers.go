@@ -202,6 +202,13 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 			// Streaming transport with guarded redirects — the OAuth access
 			// token rides the Bearer header on every dispatch.
 			HTTP: httpguard.NewStreamingClient(headerOpts...),
+			// ADR-012: the backend has no usage endpoint — live response
+			// headers are the account's only usage source. The write runs
+			// off the dispatch path (a snapshot races no request; last
+			// write wins).
+			RateLimitSink: func(rl codex.RateLimits) {
+				go persistRateLimits(store, row.ID, rl)
+			},
 		}), nil, nil
 
 	default:
@@ -209,6 +216,23 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 		// construction-table drift, not operator input.
 		return nil, nil, errors.New("no construction path for type " + row.Type)
 	}
+}
+
+// persistRateLimits maps one codex rate-limit snapshot into the account's
+// ADR-012 usage blob: the primary window is the session, the secondary the
+// weekly one (codex-rs rate_limits.rs, accessed 2026-10-23). Unreported
+// values stay zero — the blob renders them as unknown, never invented. A
+// storage failure drops the snapshot silently: usage display is not a
+// dispatch concern, and the next response writes a fresh one anyway.
+func persistRateLimits(store *storage.Store, providerID string, rl codex.RateLimits) {
+	blob := storage.AccountUsageBlob{
+		FetchedAt:    time.Now().Unix(),
+		SessionPct:   rl.PrimaryUsedPct,
+		SessionReset: rl.PrimaryResetAt,
+		WeeklyPct:    rl.SecondaryUsedPct,
+		WeeklyReset:  rl.SecondaryResetAt,
+	}
+	_ = store.PutAccountUsage(context.Background(), providerID, blob)
 }
 
 // modelVisionLookup is the router's model-row vision source (ADR-014

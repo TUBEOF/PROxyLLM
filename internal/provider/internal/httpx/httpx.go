@@ -54,6 +54,13 @@ type Client struct {
 	// (e.g. OAuth access tokens refreshed lazily on demand). stream reports
 	// whether the request is a streaming request (Accept negotiation).
 	HeaderHook func(ctx context.Context, stream bool) (http.Header, error)
+
+	// ResponseHeaderHook, when set, receives the response headers of every
+	// chat round trip (Complete and Stream, any status) — for providers that
+	// read usage signals off live traffic, e.g. the Codex backend's
+	// x-codex-* rate-limit headers. Nil on providers without one; the hook
+	// must not block (it runs on the dispatch path).
+	ResponseHeaderHook func(h http.Header)
 }
 
 // ErrorShape names the upstream's non-2xx body layout.
@@ -128,6 +135,7 @@ func (c *Client) Stream(
 		reqCancel()
 		return nil, nil, err
 	}
+	c.notifyResponseHeaders(resp.Header)
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		up := c.mapError(resp)
 		_ = resp.Body.Close()
@@ -288,6 +296,15 @@ func (c *Client) pump(
 	}
 }
 
+// notifyResponseHeaders hands one dispatch's response headers to the hook
+// when one is set. Failures inside the hook are the hook's own: the dispatch
+// path never blocks on or fails because of them.
+func (c *Client) notifyResponseHeaders(h http.Header) {
+	if c.ResponseHeaderHook != nil {
+		c.ResponseHeaderHook(h)
+	}
+}
+
 // post sends one request and returns the 2xx body. Non-2xx responses map
 // to *provider.UpstreamError; transport failures return unwrapped.
 func (c *Client) post(ctx context.Context, stream bool, raw []byte) ([]byte, error) {
@@ -300,6 +317,7 @@ func (c *Client) post(ctx context.Context, stream bool, raw []byte) ([]byte, err
 		return nil, err // transport failure: no UpstreamError (tier 1)
 	}
 	defer func() { _ = resp.Body.Close() }()
+	c.notifyResponseHeaders(resp.Header)
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, c.mapError(resp)
 	}
