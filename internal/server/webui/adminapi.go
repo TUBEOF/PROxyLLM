@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -77,6 +78,10 @@ type AdminParams struct {
 	// the page falls back to its page fetch (every existing test green).
 	Stream    *reqlog.Stream
 	MasterKey []byte
+	// TrustedProxies is the parsed server.trusted_proxies set: the reverse
+	// proxies whose X-Forwarded-* headers the session manager's origin
+	// check honors (nil/empty = trust no one).
+	TrustedProxies []*net.IPNet
 }
 
 // AdminAPI serves the /api/admin/ surface. It holds no state of its own
@@ -126,7 +131,7 @@ func NewAdminAPI(p AdminParams) *AdminAPI {
 		reloadFallbacks: p.ReloadFallbacks,
 		syncNow:         p.SyncNow,
 		testModel:       p.TestModel,
-		sessions:        auth.NewSessionManager(p.Store, p.MasterKey, now),
+		sessions:        auth.NewSessionManager(p.Store, p.MasterKey, now, auth.WithTrustedProxies(p.TrustedProxies)),
 		healthSnapshot:  p.HealthSnapshot,
 		prober:          p.Prober,
 		stream:          p.Stream,

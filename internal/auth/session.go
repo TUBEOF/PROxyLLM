@@ -32,7 +32,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"mime"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -69,18 +71,34 @@ const dummyArgon2PHC = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA"
 // middleware. now is injectable so the idle/absolute windows are testable
 // against pinned clocks.
 type SessionManager struct {
-	st        *storage.Store
-	masterKey []byte
-	now       func() int64
+	st             *storage.Store
+	masterKey      []byte
+	now            func() int64
+	trustedProxies []*net.IPNet
+}
+
+// SessionOption configures NewSessionManager (a separate type from the
+// client-key middleware's Option).
+type SessionOption func(*SessionManager)
+
+// WithTrustedProxies sets the reverse proxies (ParseTrustedProxies output)
+// whose forwarded headers the origin reconstruction honors. Nil/empty keeps
+// the direct-connection behavior: X-Forwarded-* is never trusted then.
+func WithTrustedProxies(nets []*net.IPNet) SessionOption {
+	return func(sm *SessionManager) { sm.trustedProxies = nets }
 }
 
 // NewSessionManager wires a manager over st with the CSRF master key
 // (32 bytes recommended; used only as an HMAC secret) and a clock.
-func NewSessionManager(st *storage.Store, masterKey []byte, now func() int64) *SessionManager {
+func NewSessionManager(st *storage.Store, masterKey []byte, now func() int64, opts ...SessionOption) *SessionManager {
 	if now == nil {
 		now = func() int64 { return time.Now().Unix() }
 	}
-	return &SessionManager{st: st, masterKey: masterKey, now: now}
+	sm := &SessionManager{st: st, masterKey: masterKey, now: now}
+	for _, opt := range opts {
+		opt(sm)
+	}
+	return sm
 }
 
 type adminCtxKey struct{}
@@ -259,7 +277,7 @@ func (sm *SessionManager) RequireAdmin(next http.Handler) http.Handler {
 				}
 			}
 			// when Origin is present it must match scheme+host exactly.
-			if origin := r.Header.Get("Origin"); origin != "" && origin != requestOrigin(r) {
+			if origin := r.Header.Get("Origin"); origin != "" && origin != sm.requestOrigin(r) {
 				writeAdminError(w, http.StatusForbidden, "origin mismatch")
 				return
 			}
@@ -374,13 +392,92 @@ func isMutation(method string) bool {
 }
 
 // requestOrigin reconstructs this request's own origin (scheme://host) for
-// the exact-match comparison.
-func requestOrigin(r *http.Request) string {
+// the exact-match comparison. Behind a reverse proxy the connection state
+// is the proxy's, not the browser's: a TLS terminator leaves r.TLS nil and
+// the Host may be the upstream address. When the immediate peer is a
+// configured trusted proxy, its X-Forwarded-Proto/X-Forwarded-Host carry
+// the public origin instead — and only then: an untrusted client must not
+// spoof its way past the check by setting those headers itself.
+func (sm *SessionManager) requestOrigin(r *http.Request) string {
 	scheme := "http"
 	if r.TLS != nil {
 		scheme = "https"
 	}
-	return scheme + "://" + r.Host
+	host := r.Host
+	if sm.trustedForwarder(r) {
+		// Only real schemes: garbage falls back to the connection state
+		// (and the comparison then fails, never passes).
+		if p := firstForwarded(r.Header.Get("X-Forwarded-Proto")); p == "http" || p == "https" {
+			scheme = p
+		}
+		if h := firstForwarded(r.Header.Get("X-Forwarded-Host")); h != "" {
+			host = h
+		}
+	}
+	return scheme + "://" + host
+}
+
+// trustedForwarder reports whether the request's immediate peer is a
+// configured trusted proxy. An empty trust set trusts no one.
+func (sm *SessionManager) trustedForwarder(r *http.Request) bool {
+	if len(sm.trustedProxies) == 0 {
+		return false
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	for _, n := range sm.trustedProxies {
+		if n.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// firstForwarded takes the leftmost comma-separated element of a forwarded
+// header (the client-facing value when proxies append) and normalizes case:
+// the comparison against the browser's Origin is an exact string match.
+func firstForwarded(v string) string {
+	first, _, _ := strings.Cut(v, ",")
+	return strings.ToLower(strings.TrimSpace(first))
+}
+
+// ParseTrustedProxies validates the operator's trusted-proxy entries into
+// the match set WithTrustedProxies consumes. A CIDR is taken as given; a
+// bare IP becomes its own /32 or /128 (exactly itself, never a wider
+// match). Invalid entries error — a typo must fail startup loudly, never
+// silently widen or narrow the trust boundary.
+func ParseTrustedProxies(entries []string) ([]*net.IPNet, error) {
+	var nets []*net.IPNet
+	for _, e := range entries {
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
+		}
+		if !strings.Contains(e, "/") {
+			ip := net.ParseIP(e)
+			if ip == nil {
+				return nil, fmt.Errorf("auth: trusted proxy %q: not an IP or CIDR", e)
+			}
+			bits := 8 * net.IPv6len
+			if ip.To4() != nil {
+				bits = 8 * net.IPv4len
+			}
+			nets = append(nets, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+			continue
+		}
+		_, ipnet, err := net.ParseCIDR(e)
+		if err != nil {
+			return nil, fmt.Errorf("auth: trusted proxy %q: %w", e, err)
+		}
+		nets = append(nets, ipnet)
+	}
+	return nets, nil
 }
 
 func setSessionCookie(w http.ResponseWriter, value string, tlsArrival bool) {
