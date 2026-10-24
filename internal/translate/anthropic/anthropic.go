@@ -214,6 +214,7 @@ type wireImageSource struct {
 	MediaType string `json:"media_type,omitempty"`
 	Data      string `json:"data,omitempty"`
 	URL       string `json:"url,omitempty"`
+	FileID    string `json:"file_id,omitempty"`
 }
 
 // wireContent is an Anthropic content value: a plain string, an array of
@@ -513,10 +514,11 @@ func partFromBlock(b wireBlock) (ir.Part, bool) {
 			return nil, false
 		}
 		return ir.ImagePart{
-			Source:    b.Source.Type, // "base64" | "url"
+			Source:    b.Source.Type, // "base64" | "url" | "file"
 			MediaType: b.Source.MediaType,
 			Data:      b.Source.Data,
 			URL:       b.Source.URL,
+			FileID:    b.Source.FileID,
 		}, true
 	case "tool_use":
 		return ir.ToolCallPart{ID: b.ID, Name: b.Name, Input: b.Input}, true
@@ -670,6 +672,7 @@ func blockFromPart(p ir.Part) wireBlock {
 			MediaType: pt.MediaType,
 			Data:      pt.Data,
 			URL:       pt.URL,
+			FileID:    pt.FileID,
 		}}
 	case ir.ToolCallPart:
 		return wireBlock{Type: "tool_use", ID: pt.ID, Name: pt.Name, Input: pt.Input}

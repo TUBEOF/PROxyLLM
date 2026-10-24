@@ -504,3 +504,45 @@ func TestExecutor_Caption_RefusesGuardedImageURL(t *testing.T) {
 		t.Error("the refused image was not traced")
 	}
 }
+
+// A Files-API file-source image has no bytes the proxy can describe: the id
+// names a file only the origin account can fetch. Asking the describer about
+// it would fabricate one caption shared by every file id (the empty payload
+// digests identically) — so the refusal is the honest answer, exactly like a
+// guarded URL: left in place, traced, never sent.
+func TestExecutor_Caption_RefusesFileSourceImage(t *testing.T) {
+	main := &recordingProvider{id: "main", errs: []error{gapErr()}}
+	vision := &recordingProvider{id: "vision"}
+
+	e := routing.NewExecutor(routing.ExecutorConfig{
+		Registry:     regOf(main, vision),
+		Health:       routing.NewHealthTracker(),
+		RetrySleeper: func(time.Duration) {},
+		CapabilityFallbacks: []routing.ChainEntry{
+			{ProviderID: "vision", Model: "vl-1"},
+		},
+	})
+
+	req := ir.Request{Model: "m", Messages: []ir.Message{
+		{Role: ir.RoleUser, Parts: []ir.Part{
+			ir.ImagePart{Source: "file", FileID: "file-abc123"},
+		}},
+	}}
+	_, trace, err := e.Execute(context.Background(),
+		[]routing.ChainEntry{{ProviderID: "main", Model: "m"}}, req)
+	if err == nil {
+		t.Fatal("an unrescuable gap chain must fail")
+	}
+	if vision.calls != 0 {
+		t.Error("the describer was called for an image with no fetchable bytes")
+	}
+	var reason string
+	for _, ev := range eventsOf(trace, routing.EventCapabilityFallback) {
+		if strings.Contains(ev.Reason, "image left in place") {
+			reason = ev.Reason
+		}
+	}
+	if reason == "" || !strings.Contains(reason, "file") {
+		t.Errorf("the file-source refusal was not traced, got %q", reason)
+	}
+}

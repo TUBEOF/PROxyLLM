@@ -1,0 +1,6 @@
+{
+  "fixture": "message-request-file-image.json",
+  "source": "https://platform.claude.com/docs/en/build-with-claude/vision (Files API image example: image source {\"type\":\"file\",\"file_id\":\"$FILE_ID\"})",
+  "accessed": "2026-10-23",
+  "notes": "The Messages API accepts THREE image source types: base64, url, and file — the file source references a Files-API upload by its file_id (\"Upload the image once, then reference the returned file_id in subsequent messages instead of resenting base64 data\"). The file_id is opaque and account-scoped: a proxy cannot resolve it to bytes, so it rides the IR as an identity to preserve on same-protocol round trips; cross-protocol encodes drop the image as a named degradation (a target that is not the origin account cannot fetch the file). TRANSCRIBED from the documented example (the field spellings type/file_id are the docs' own)."
+}

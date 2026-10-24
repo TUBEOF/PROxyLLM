@@ -167,6 +167,61 @@ func TestEncodeRequest_FromIR(t *testing.T) {
 	}
 }
 
+// Images in tool results ride the role-agnostic `images` field the
+// Ollama Message schema defines (docs/api.md, "a list of images to include
+// in the message", no role restriction; accessed 2026-10-23): a tool result
+// carrying an image must survive the encode instead of silently dropping
+// the pixels (matrix catalog №1).
+func TestEncodeRequest_ToolResultImagesRideTheMessage(t *testing.T) {
+	const b64 = "aVBORw0KGgo=" // png magic, base64
+	req := ir.Request{
+		Model: "llama3.3",
+		Messages: []ir.Message{
+			{Role: ir.RoleUser, Parts: []ir.Part{ir.TextPart{Text: "look"}}},
+			{Role: ir.RoleAssistant, Parts: []ir.Part{ir.ToolCallPart{ID: "call_1", Name: "read_screen", Input: []byte(`{"path":"a.png"}`)}}},
+			{Role: ir.RoleTool, Parts: []ir.Part{ir.ToolResultPart{
+				ToolUseID: "call_1",
+				Content:   []ir.Part{ir.TextPart{Text: "screenshot"}, ir.ImagePart{Source: "base64", MediaType: "image/png", Data: b64}},
+			}}},
+		},
+	}
+	raw, err := ol.Codec{}.EncodeRequest(req)
+	if err != nil {
+		t.Fatalf("EncodeRequest: %v", err)
+	}
+	if !strings.Contains(string(raw), `"images":["`+b64+`"]`) {
+		t.Errorf("tool-result image must ride the message images field, got %s", raw)
+	}
+	// And back: decode returns the image inside the tool result.
+	got, err := ol.Codec{}.DecodeRequest(raw)
+	if err != nil {
+		t.Fatalf("DecodeRequest(round trip): %v", err)
+	}
+	if len(got.Messages) != 3 {
+		t.Fatalf("round trip messages = %d", len(got.Messages))
+	}
+	tool := got.Messages[2]
+	if len(tool.Parts) != 1 {
+		t.Fatalf("round trip tool message parts = %d", len(tool.Parts))
+	}
+	tr, ok := tool.Parts[0].(ir.ToolResultPart)
+	if !ok {
+		t.Fatalf("round trip tool part = %T", tool.Parts[0])
+	}
+	var images int
+	for _, p := range tr.Content {
+		if img, ok := p.(ir.ImagePart); ok {
+			images++
+			if img.Data != b64 {
+				t.Errorf("round trip tool-result image data = %q", img.Data)
+			}
+		}
+	}
+	if images != 1 {
+		t.Errorf("round trip tool result must carry the image, got %d image parts", images)
+	}
+}
+
 func TestEncodeResponse_FromIR(t *testing.T) {
 	resp := ir.Response{
 		ID:    "ollama_test",
