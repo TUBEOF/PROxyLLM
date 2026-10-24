@@ -87,7 +87,7 @@ whitespace, and numbers in a monospaced face so columns line up.
 
 Everything in this document is derived from what the console renders.
 `colors_and_type.css` is the token source, `webui/src/styles/kit.css` is the
-component layer, and `.claude/skills/proxyllm-design/` carries the same material
+component layer, and `.agents/skills/proxyllm-design/` carries the same material
 in agent-readable form. If this document and the console ever disagree, the
 console is right and this document has a bug.
 
