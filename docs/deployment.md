@@ -78,16 +78,19 @@ Every release publishes a multi-arch manifest list (amd64 and arm64) to
 GHCR:
 
 ```bash
-docker run -d -p 8080:8080 -v ./data:/data ghcr.io/tubeof/proxyllm:v1.20.0
+docker run -d -p 8080:8080 --user "0:0" -v ./data:/data ghcr.io/tubeof/proxyllm:v1.20.0
 ```
 
 `:latest` tracks the newest release; a version tag is the reproducible
 choice. The image is distroless, so there is no shell to configure it from —
 configuration comes from environment variables or a mounted `config.json`
-([configuration](configuration.md)). Note that a host bind mount keeps the
-host's ownership, which the image's non-root user cannot write; either give
-the directory to UID 65532 or run the container as the invoking user, as
-the compose file does.
+([configuration](configuration.md)). A host bind mount keeps the host's
+ownership, which the image's own `nonroot` user (UID 65532) cannot write, so
+the example passes `--user "0:0"` — the same deliberate root choice as the
+compose profile ([container hardening](#container-hardening)). If the data
+directory is under your control, `chown 65532:65532 ./data` and
+`--user "65532:65532"` is a supported tightening; on a Linux host, a
+directory you created also works with `--user "$(id -u):$(id -g)"`.
 
 ## Binary archives
 
