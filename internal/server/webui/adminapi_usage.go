@@ -18,6 +18,9 @@ import (
 type accountUsageDTO struct {
 	AccountID string `json:"account_id"`
 	Type      string `json:"type"`
+	TypeLabel string `json:"type_label,omitempty"`
+	Kind      string `json:"kind,omitempty"`
+	TypeOrder int    `json:"type_order,omitempty"`
 	Name      string `json:"name"`
 
 	// Enabled is the account's pool switch: a disabled account serves no
@@ -32,7 +35,9 @@ type accountUsageDTO struct {
 	Error string        `json:"error,omitempty"`
 
 	// Health snapshot (breaker/quota cooldown). Empty = healthy.
-	Health string `json:"health,omitempty"`
+	Health      string       `json:"health,omitempty"`
+	HealthUntil int64        `json:"health_until,omitempty"`
+	Cooldown    *cooldownDTO `json:"cooldown,omitempty"`
 
 	FetchedAt int64 `json:"fetched_at,omitempty"`
 
@@ -42,9 +47,38 @@ type accountUsageDTO struct {
 	Refreshable bool `json:"refreshable,omitempty"`
 }
 
+// usageWindowDTO is the provider-neutral limit window the Quota card renders.
+type usageWindowDTO struct {
+	Key           string   `json:"key"`
+	Label         string   `json:"label,omitempty"`
+	Kind          string   `json:"kind,omitempty"`
+	RemainingPct  *float64 `json:"remaining_pct,omitempty"`
+	UsedPct       *float64 `json:"used_pct,omitempty"`
+	Remaining     *float64 `json:"remaining,omitempty"`
+	Limit         *float64 `json:"limit,omitempty"`
+	Unit          string   `json:"unit,omitempty"`
+	Unlimited     bool     `json:"unlimited,omitempty"`
+	ResetAt       int64    `json:"reset_at,omitempty"`
+	WindowSeconds int64    `json:"window_seconds,omitempty"`
+	Source        string   `json:"source,omitempty"`
+	Note          string   `json:"note,omitempty"`
+}
+
+// cooldownDTO carries the active cooldown deadlines (unix seconds; 0 =
+// inactive). The badge reason is also mirrored in the legacy health field.
+type cooldownDTO struct {
+	Reason       string `json:"reason"`
+	Until        int64  `json:"until,omitempty"`
+	QuotaUntil   int64  `json:"quota_until,omitempty"`
+	BreakerUntil int64  `json:"breaker_until,omitempty"`
+}
+
 type liveUsageDTO struct {
-	SessionPct *float64 `json:"session_pct,omitempty"`
-	// Reset unix seconds (0 = unknown).
+	// Windows is the current, provider-neutral reading.
+	Windows []usageWindowDTO `json:"windows,omitempty"`
+
+	// Legacy mirrors; kept for one release so an older bundle still renders.
+	SessionPct   *float64 `json:"session_pct,omitempty"`
 	SessionReset int64    `json:"session_reset,omitempty"`
 	WeeklyPct    *float64 `json:"weekly_pct,omitempty"`
 	WeeklyReset  int64    `json:"weekly_reset,omitempty"`
@@ -93,6 +127,11 @@ func (a *AdminAPI) getAccountUsage(w http.ResponseWriter, r *http.Request) {
 			Enabled:     acct.Enabled,
 			Refreshable: UsageProbeType(acct.Type),
 		}
+		if desc, ok := providerTypeByID(acct.Type); ok {
+			entry.TypeLabel = desc.Label
+			entry.Kind = desc.Kind
+			entry.TypeOrder = providerTypeOrder(acct.Type)
+		}
 		if blob, ok, err := a.store.GetAccountUsage(r.Context(), acct.ID); err == nil && ok {
 			entry.FetchedAt = blob.FetchedAt
 			entry.Error = blob.Error
@@ -106,6 +145,16 @@ func (a *AdminAPI) getAccountUsage(w http.ResponseWriter, r *http.Request) {
 					WeeklyPct:    blob.WeeklyPct,
 					WeeklyReset:  blob.WeeklyReset,
 				}
+				for _, w := range blob.Windows {
+					entry.Live.Windows = append(entry.Live.Windows, usageWindowDTO{
+						Key: w.Key, Label: w.Label, Kind: w.Kind,
+						RemainingPct: w.RemainingPct, UsedPct: w.UsedPct,
+						Remaining: w.Remaining, Limit: w.Limit,
+						Unit: w.Unit, Unlimited: w.Unlimited,
+						ResetAt: w.ResetAt, WindowSeconds: w.WindowSeconds,
+						Source: w.Source, Note: w.Note,
+					})
+				}
 				if blob.RemainingCredits != nil || blob.PlanCredits != nil || blob.CreditsReset > 0 {
 					entry.Live.Credits = &creditsUsageDTO{
 						Remaining: blob.RemainingCredits,
@@ -116,7 +165,15 @@ func (a *AdminAPI) getAccountUsage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if a.healthSnapshot != nil {
-			entry.Health = a.healthSnapshot(acct.ID)
+			hv := a.healthSnapshot(acct.ID)
+			entry.Health = hv.Reason
+			entry.HealthUntil = max(hv.QuotaUntil, hv.BreakerUntil)
+			if hv.Reason != "" || hv.QuotaUntil > 0 || hv.BreakerUntil > 0 {
+				entry.Cooldown = &cooldownDTO{
+					Reason: hv.Reason, Until: entry.HealthUntil,
+					QuotaUntil: hv.QuotaUntil, BreakerUntil: hv.BreakerUntil,
+				}
+			}
 		}
 		out = append(out, entry)
 	}
@@ -141,6 +198,10 @@ type RefreshOutcome struct {
 	OK     bool
 	Status int
 	Text   string
+	// Skipped means the prober's throttle served the cached reading instead
+	// of calling upstream; RetryAfter is the wait in seconds.
+	Skipped    bool
+	RetryAfter int64
 }
 
 // accountsUsageRefresh handles POST /api/admin/accounts/usage/refresh/{id}
@@ -156,7 +217,12 @@ func (a *AdminAPI) accountsUsageRefresh(w http.ResponseWriter, r *http.Request) 
 	defer cancel()
 	out := a.refreshAccountUsage(ctx, id)
 	if out.OK {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		body := map[string]any{"ok": true}
+		if out.Skipped {
+			body["skipped"] = true
+			body["retry_after"] = out.RetryAfter
+		}
+		writeJSON(w, http.StatusOK, body)
 		return
 	}
 	writeError(w, out.Status, out.Text)

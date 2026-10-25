@@ -179,6 +179,44 @@ func (h *HealthTracker) ReportQuotaExhausted(providerID string, until time.Time)
 	}
 }
 
+// HealthState is a point-in-time health snapshot: the badge reason plus the
+// active cooldown deadlines. Deadlines are zero when no such cooldown is
+// active; state is process-local (a restart clears it).
+type HealthState struct {
+	Reason       string
+	BreakerUntil time.Time
+	QuotaUntil   time.Time
+	Consecutive  int
+}
+
+// State returns the current health snapshot for the Quota card.
+func (h *HealthTracker) State(providerID string) HealthState {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	e := h.entries[providerID]
+	if e == nil {
+		return HealthState{}
+	}
+	now := h.clock()
+	st := HealthState{Consecutive: e.consecutive}
+	if now.Before(e.quotaUntil) {
+		st.QuotaUntil = e.quotaUntil
+	}
+	if now.Before(e.until) {
+		st.BreakerUntil = e.until
+	}
+	if h.cooling(e) {
+		if now.Before(e.quotaUntil) {
+			st.Reason = "quota_exhausted"
+		} else {
+			st.Reason = "breaker"
+		}
+	} else if e.consecutive >= h.degradedAt() {
+		st.Reason = "degraded"
+	}
+	return st
+}
+
 // Reason names the active cooldown for the Quota page badge
 // ("quota_exhausted" | "breaker" | "degraded"; "" = healthy).
 //
@@ -187,22 +225,7 @@ func (h *HealthTracker) ReportQuotaExhausted(providerID string, until time.Time)
 // single threshold gives a cliff — nothing to see until the moment everything
 // stops working.
 func (h *HealthTracker) Reason(providerID string) string {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	e := h.entries[providerID]
-	if e == nil {
-		return ""
-	}
-	if h.cooling(e) {
-		if h.clock().Before(e.quotaUntil) {
-			return "quota_exhausted"
-		}
-		return "breaker"
-	}
-	if e.consecutive >= h.degradedAt() {
-		return "degraded"
-	}
-	return ""
+	return h.State(providerID).Reason
 }
 
 // degradedAt is the failure count at which an account is worth flagging: the

@@ -75,6 +75,42 @@ func TestAccountUsage_ListsAccountsAndWindows(t *testing.T) {
 	if a.FetchedAt != 1_790_000_001 {
 		t.Fatalf("fetched_at = %d", a.FetchedAt)
 	}
+	if len(a.Live.Windows) != 1 || a.Live.Windows[0].Key != "session" ||
+		a.Live.Windows[0].RemainingPct == nil || *a.Live.Windows[0].RemainingPct != 66.7 {
+		t.Fatalf("windows = %+v, want the derived session window (66.7 remaining)", a.Live.Windows)
+	}
+}
+
+// The card carries the active cooldown deadline, not just the badge word.
+func TestAccountUsage_CooldownDeadline(t *testing.T) {
+	e, _ := newUsageEnv(t)
+	s := e.bootstrap(t, "admin")
+	ctx := context.Background()
+	if err := e.api.store.EnsureProvider(ctx, "acc1", "ollama-cloud", "Acc 1"); err != nil {
+		t.Fatalf("ensure: %v", err)
+	}
+	e.api.healthSnapshot = func(string) HealthView {
+		return HealthView{Reason: "quota_exhausted", Until: 1_790_000_900,
+			QuotaUntil: 1_790_000_900}
+	}
+
+	w := e.authedCall(t, http.MethodGet, "/api/admin/accounts/usage", "", s)
+	assertStatus(t, w, http.StatusOK, "accounts usage")
+	var got struct {
+		Accounts []accountUsageDTO `json:"accounts"`
+	}
+	decodeJSON(t, w, &got)
+	if len(got.Accounts) != 1 {
+		t.Fatalf("accounts = %d, want 1", len(got.Accounts))
+	}
+	a := got.Accounts[0]
+	if a.Health != "quota_exhausted" || a.HealthUntil != 1_790_000_900 {
+		t.Errorf("health = %q/%d, want quota_exhausted/1790000900", a.Health, a.HealthUntil)
+	}
+	if a.Cooldown == nil || a.Cooldown.Reason != "quota_exhausted" ||
+		a.Cooldown.QuotaUntil != 1_790_000_900 || a.Cooldown.BreakerUntil != 0 {
+		t.Errorf("cooldown = %+v, want the quota deadline", a.Cooldown)
+	}
 }
 
 // TestAccountUsage_ErrorBlobRendersNoLiveWindows pins the honest-empty path
@@ -145,6 +181,21 @@ func TestAccountUsage_RefreshRunsProber(t *testing.T) {
 	assertStatus(t, w, http.StatusOK, "refresh")
 	if len(*probed) != 1 || (*probed)[0] != "acc1" {
 		t.Fatalf("probed = %v, want [acc1]", *probed)
+	}
+}
+
+func TestAccountUsage_RefreshSkippedReturnsCached(t *testing.T) {
+	e, _ := newUsageEnv(t)
+	s := e.bootstrap(t, "admin")
+	e.api.prober = func(context.Context, string, *storage.Store) RefreshOutcome {
+		return RefreshOutcome{OK: true, Skipped: true, RetryAfter: 42}
+	}
+	w := e.authedCall(t, http.MethodPost, "/api/admin/accounts/usage/refresh/acc1", "", s)
+	assertStatus(t, w, http.StatusOK, "refresh skipped")
+	var got map[string]any
+	decodeJSON(t, w, &got)
+	if got["skipped"] != true || got["retry_after"] != float64(42) {
+		t.Fatalf("response = %v, want skipped=true retry_after=42", got)
 	}
 }
 

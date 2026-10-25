@@ -126,21 +126,31 @@ reads per poll.
 `GET /overview` — the dashboard's single poll: `generated_at`, the last 14
 UTC days of `usage` rows, and today's totals.
 
-`GET /accounts/usage` — one card per account that reports a usage window
-(chat accounts, plus Firecrawl and Ollama Cloud Web Tools): the account's own
-limit snapshot (`live`, present only when the last scrape produced a window —
-an error-only blob answers with `error` instead, and `null` percentages render
-as "—", never as zero), a `health` string naming an active cooldown reason
-(`quota_exhausted`, `breaker`) or empty when the account is healthy, and
-`refreshable` when the production prober can scrape that type. `live.credits`
-is the Firecrawl team-credit window (`remaining`, `limit`, `reset`). The card
-carries nothing the proxy measured itself (ADR-012 amendment; local usage
-belongs to `/overview`).
+`GET /accounts/usage` — one card per account (chat and web-tool), with
+`type_label`, `kind` (`llm`/`web_tool`), `type_order` (catalog group order) and
+the account's own limit snapshot. `live` is present only when the last scrape
+produced a window — an error-only blob answers with `error` instead, and
+`null` percentages render as "—", never as zero. `live.windows[]` is the
+provider-neutral list: `key`, `label`, `kind` (`percent`/`credits`/`usd`),
+`remaining_pct`/`used_pct`, `remaining`/`limit`/`unit`, `unlimited`,
+`reset_at`, `window_seconds`, `source` (`ollama_balance`, `ollama_settings`,
+`firecrawl_credit_usage`, `codex_headers`, `codex_sse`, `legacy`) and an
+optional `note`. The legacy `session_pct`/`weekly_pct`/`credits` mirrors remain
+for one release. `health` names the active cooldown reason
+(`quota_exhausted`, `breaker`, `degraded`), `health_until` and
+`cooldown{reason,until,quota_until,breaker_until}` carry its deadline, and
+`fetched_at` is the age reading. `refreshable` says the production prober can
+scrape that type. The card carries nothing the proxy measured itself
+(ADR-012 amendment; local usage belongs to `/overview`).
 
-`POST /accounts/usage/refresh/{id...}` — scrapes that account's usage now
-(60 s budget). Ollama Cloud accounts need a stored usage cookie; Firecrawl
-accounts use their API key and the documented `GET /v2/team/credit-usage`
-endpoint. Answers `502 …` and persists the failure so the card shows the
+`POST /accounts/usage/refresh/{id...}` — probes that account's usage now
+(60 s budget). Ollama Cloud accounts try the documented
+`GET /api/balance` with their API key first, then the settings-page cookie
+fallback; Firecrawl accounts use their API key and the documented
+`GET /v2/team/credit-usage` endpoint. A manual refresh is throttled to 60 s
+per account and about 6/minute globally; a fresh cached reading answers
+`{"ok":true,"skipped":true,"retry_after":N}` instead of calling upstream.
+A failed probe answers `502 …` and persists the failure so the card shows the
 honest error state instead of a stale reading.
 
 ### Logs

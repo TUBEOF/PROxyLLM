@@ -226,7 +226,7 @@ export default function Logs() {
                 sub-ops unavailable
               </span>
             )}
-            <button type="button" className="btn btn-ghost btn-sm" onClick={reload}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => reload()}>
               Refresh
             </button>
           </>

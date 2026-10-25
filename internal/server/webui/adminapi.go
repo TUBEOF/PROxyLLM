@@ -64,10 +64,10 @@ type AdminParams struct {
 	// row's provider (the Models page test button). nil when not
 	// wired (no master key) — the endpoint answers the uniform 404.
 	TestModel func(ctx context.Context, modelID string) (TestModelResult, error)
-	// HealthSnapshot names the per-account cooldown reason for the Quota
-	// page badge (ADR-012; "quota_exhausted" | "breaker" | ""). nil when
-	// not wired — badges render unknown.
-	HealthSnapshot func(accountID string) string
+	// HealthSnapshot names the per-account cooldown reason and deadlines for
+	// the Quota page badge (ADR-012; "quota_exhausted" | "breaker" |
+	// "degraded" | ""). nil when not wired — badges render unknown.
+	HealthSnapshot func(accountID string) HealthView
 	// Prober is the on-demand usage scrape (ADR-012; injectable for
 	// tests). nil = the production ollama.com client.
 	Prober UsageProbeFunc
@@ -82,6 +82,15 @@ type AdminParams struct {
 	// proxies whose X-Forwarded-* headers the session manager's origin
 	// check honors (nil/empty = trust no one).
 	TrustedProxies []*net.IPNet
+}
+
+// HealthView is the Quota badge snapshot: the reason string plus active
+// cooldown deadlines (unix seconds; 0 = inactive). State is process-local.
+type HealthView struct {
+	Reason       string
+	Until        int64
+	QuotaUntil   int64
+	BreakerUntil int64
 }
 
 // AdminAPI serves the /api/admin/ surface. It holds no state of its own
@@ -107,7 +116,7 @@ type AdminAPI struct {
 	// cooldown reason for the Quota badge; prober scrapes on demand
 	// (injectable — tests stub it; nil = the fixed ollama.com client).
 	// now is the injected clock.
-	healthSnapshot func(accountID string) string
+	healthSnapshot func(accountID string) HealthView
 	prober         UsageProbeFunc
 	now            func() int64
 

@@ -322,7 +322,30 @@ export interface CreditsUsage {
   limit?: number | null;
   reset?: number;
 }
+export interface UsageWindow {
+  key: string;
+  label?: string;
+  kind?: 'percent' | 'credits' | 'usd' | string;
+  remaining_pct?: number | null;
+  used_pct?: number | null;
+  remaining?: number | null;
+  limit?: number | null;
+  unit?: string;
+  unlimited?: boolean;
+  reset_at?: number;
+  window_seconds?: number;
+  source?: string;
+  note?: string;
+}
+export interface Cooldown {
+  reason: string;
+  until?: number;
+  quota_until?: number;
+  breaker_until?: number;
+}
 export interface LiveUsage {
+  /** Provider-neutral windows; the legacy mirrors below remain for one release. */
+  windows?: UsageWindow[];
   session_pct?: number | null;
   session_reset?: number;
   weekly_pct?: number | null;
@@ -333,6 +356,9 @@ export interface LiveUsage {
 export interface AccountUsage {
   account_id: string;
   type: string;
+  type_label?: string;
+  kind?: 'llm' | 'web_tool' | string;
+  type_order?: number;
   name: string;
   // The account's pool switch: a disabled account serves no traffic, so the
   // card says that rather than showing a cooldown it cannot earn.
@@ -340,6 +366,8 @@ export interface AccountUsage {
   live?: LiveUsage | null;
   error?: string;
   health?: string;
+  health_until?: number;
+  cooldown?: Cooldown | null;
   fetched_at?: number;
   /** The production prober can scrape this account type. */
   refreshable?: boolean;

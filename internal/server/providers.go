@@ -25,6 +25,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -219,20 +220,125 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 }
 
 // persistRateLimits maps one codex rate-limit snapshot into the account's
-// ADR-012 usage blob: the primary window is the session, the secondary the
-// weekly one (codex-rs rate_limits.rs, accessed 2026-10-23). Unreported
-// values stay zero — the blob renders them as unknown, never invented. A
-// storage failure drops the snapshot silently: usage display is not a
-// dispatch concern, and the next response writes a fresh one anyway.
+// ADR-012 usage blob. The default family fills the legacy session/weekly
+// mirrors; every family (including extra limit ids) and the credit balance
+// become uniform windows. Unreported values stay zero/nil — the blob renders
+// them as unknown, never invented. A storage failure drops the snapshot
+// silently: usage display is not a dispatch concern, and the next response
+// writes a fresh one anyway.
 func persistRateLimits(store *storage.Store, providerID string, rl codex.RateLimits) {
-	blob := storage.AccountUsageBlob{
-		FetchedAt:    time.Now().Unix(),
-		SessionPct:   rl.PrimaryUsedPct,
-		SessionReset: rl.PrimaryResetAt,
-		WeeklyPct:    rl.SecondaryUsedPct,
-		WeeklyReset:  rl.SecondaryResetAt,
+	blob := storage.AccountUsageBlob{FetchedAt: time.Now().Unix()}
+	families := rl.Families
+	if len(families) == 0 && (rl.PrimaryUsedPct != nil || rl.SecondaryUsedPct != nil ||
+		rl.PrimaryResetAt > 0 || rl.SecondaryResetAt > 0) {
+		// Backward compatibility for callers that still fill only the
+		// legacy mirrors (the pre-window shape).
+		families = []codex.RateLimitFamily{{
+			ID: "codex", Name: "Codex",
+			Primary: &codex.RateLimitWindow{
+				UsedPct: rl.PrimaryUsedPct, WindowMinutes: rl.PrimaryWindowMinutes,
+				ResetAt: rl.PrimaryResetAt,
+			},
+			Secondary: &codex.RateLimitWindow{
+				UsedPct: rl.SecondaryUsedPct, WindowMinutes: rl.SecondaryWindowMinutes,
+				ResetAt: rl.SecondaryResetAt,
+			},
+		}}
+	}
+	addWindow := func(key, label string, w *codex.RateLimitWindow) {
+		if w == nil {
+			return
+		}
+		window := storage.UsageWindow{
+			Key: key, Label: label, Kind: "percent",
+			ResetAt: w.ResetAt, WindowSeconds: w.WindowMinutes * 60,
+			Source: rl.Source,
+		}
+		if w.UsedPct != nil {
+			used := clampUsagePct(*w.UsedPct)
+			window.UsedPct = &used
+			remaining := 100 - used
+			window.RemainingPct = &remaining
+		}
+		if window.UsedPct == nil && window.ResetAt == 0 && window.WindowSeconds == 0 {
+			return
+		}
+		blob.Windows = append(blob.Windows, window)
+	}
+	for _, fam := range families {
+		prefix := "codex"
+		if fam.ID != "" && fam.ID != "codex" {
+			prefix = "codex." + fam.ID
+		}
+		addWindow(prefix+".primary", codexWindowLabel(fam, fam.Primary, "Session"), fam.Primary)
+		addWindow(prefix+".secondary", codexWindowLabel(fam, fam.Secondary, "Weekly"), fam.Secondary)
+	}
+	if rl.Credits != nil {
+		window := storage.UsageWindow{
+			Key: "codex.credits", Label: "Credits", Kind: "credits", Unit: "credits",
+			Unlimited: rl.Credits.Unlimited, Source: rl.Source,
+		}
+		if rl.Credits.Balance != nil {
+			window.Remaining = rl.Credits.Balance
+		} else if rl.Credits.Raw != "" {
+			window.Note = rl.Credits.Raw
+		}
+		blob.Windows = append(blob.Windows, window)
+	}
+	// Legacy mirrors for the default family (the old session/weekly shape).
+	for _, fam := range families {
+		if fam.ID != "" && fam.ID != "codex" {
+			continue
+		}
+		if fam.Primary != nil {
+			blob.SessionPct = fam.Primary.UsedPct
+			blob.SessionReset = fam.Primary.ResetAt
+		}
+		if fam.Secondary != nil {
+			blob.WeeklyPct = fam.Secondary.UsedPct
+			blob.WeeklyReset = fam.Secondary.ResetAt
+		}
+		break
+	}
+	if len(blob.Windows) == 0 && blob.SessionPct == nil && blob.WeeklyPct == nil &&
+		blob.SessionReset == 0 && blob.WeeklyReset == 0 {
+		return
 	}
 	_ = store.PutAccountUsage(context.Background(), providerID, blob)
+}
+
+// codexWindowLabel names a window from its length. The default family keeps
+// the familiar Session/Weekly names; extra families prefix their own name.
+func codexWindowLabel(fam codex.RateLimitFamily, w *codex.RateLimitWindow, fallback string) string {
+	label := fallback
+	if w != nil && w.WindowMinutes > 0 {
+		switch {
+		case w.WindowMinutes == 300:
+			label = "5-hour"
+		case w.WindowMinutes == 10080 || w.WindowMinutes == 7*24*60:
+			label = "Weekly"
+		case w.WindowMinutes%1440 == 0:
+			label = fmt.Sprintf("%dd", w.WindowMinutes/1440)
+		case w.WindowMinutes%60 == 0:
+			label = fmt.Sprintf("%dh", w.WindowMinutes/60)
+		default:
+			label = fmt.Sprintf("%dm", w.WindowMinutes)
+		}
+	}
+	if fam.Name != "" && fam.ID != "" && fam.ID != "codex" {
+		return fam.Name + " · " + label
+	}
+	return label
+}
+
+func clampUsagePct(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 100 {
+		return 100
+	}
+	return v
 }
 
 // modelVisionLookup is the router's model-row vision source (ADR-014

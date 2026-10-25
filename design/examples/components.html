@@ -134,19 +134,16 @@
             </div>
           </div>
           <div class="usage-windows" style="margin-top: 16px">
-            <div class="usage-window">
-              <div class="usage-window-copy">
-                <span class="usage-window-label">Session</span>
-                <span class="usage-left">71% left</span>
+            <div class="usage-meter" data-tone="up">
+              <div class="usage-meter-head">
+                <span class="usage-meter-label">Session</span>
+                <span class="usage-meter-value">71% left</span>
               </div>
-              <div class="usage-ring">
-                <svg viewBox="0 0 80 80" aria-hidden="true">
-                  <circle class="usage-ring-track" cx="40" cy="40" r="34"/>
-                  <circle class="usage-ring-seg" cx="40" cy="40" r="34" stroke="var(--chart-line)" stroke-dasharray="152 214" transform="rotate(-90 40 40)"/>
-                </svg>
-                <span class="usage-ring-num">71%</span>
+              <div class="usage-meter-track" role="meter" aria-label="Session remaining"
+                   aria-valuemin="0" aria-valuemax="100" aria-valuenow="71" aria-valuetext="71% left">
+                <div class="usage-meter-fill" style="width: 71%"></div>
               </div>
-              <div class="usage-reset"><span class="hint">resets in 2h 10m</span></div>
+              <div class="usage-meter-reset"><span class="hint">resets in 2h 10m</span></div>
             </div>
           </div>
         </div>

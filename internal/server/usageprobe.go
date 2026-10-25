@@ -27,6 +27,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/httpguard"
@@ -41,6 +42,15 @@ const ollamaSettingsUsageURL = "https://ollama.com"
 
 // ollamaSettingsUsagePath is the fixed scraping path on the origin.
 const ollamaSettingsUsagePath = "/settings"
+
+// ollamaBalancePath is the documented account-balance API (Bearer key).
+// Used before the cookie scrape; the key is the same credential the chat
+// provider uses.
+const ollamaBalancePath = "/api/balance"
+
+// errNoUsageCredential distinguishes "nothing to probe with" from a probe
+// that reached the upstream and failed.
+var errNoUsageCredential = errors.New("account has no usage credential")
 
 // probeTimeout bounds one scrape.
 const probeTimeout = 15 * time.Second
@@ -104,6 +114,142 @@ func (p *usageProber) Probe(ctx context.Context, sessionCookie string) (*storage
 	return usage, nil
 }
 
+// probeOllamaUsage tries the official balance API with the account's API key
+// first, then the settings-page cookie fallback. Balance is preferred: it
+// needs no browser session and carries reset times; the cookie scrape stays
+// for accounts configured before the key was available.
+func (s *Server) probeOllamaUsage(ctx context.Context, store *storage.Store, accountID string, prober *usageProber, client *http.Client) (*storage.AccountUsageBlob, error) {
+	var balanceErr error
+	if tok, err := store.GetProviderToken(ctx, accountID, "access_token"); err == nil {
+		blob, err := fetchOllamaBalance(ctx, prober.baseURL, string(tok.Secret), client)
+		if err == nil {
+			return blob, nil
+		}
+		balanceErr = err
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		return nil, err
+	}
+	if tok, err := store.GetProviderToken(ctx, accountID, webui.UsageCookieTokenKind); err == nil {
+		blob, err := prober.Probe(ctx, string(tok.Secret))
+		if err == nil {
+			return blob, nil
+		}
+		if balanceErr != nil {
+			return nil, fmt.Errorf("balance: %v; settings: %w", balanceErr, err)
+		}
+		return nil, err
+	} else if !errors.Is(err, storage.ErrNotFound) {
+		return nil, err
+	}
+	if balanceErr != nil {
+		return nil, balanceErr
+	}
+	return nil, errNoUsageCredential
+}
+
+// ollamaBalanceResponse is the documented GET /api/balance shape. Legacy
+// plans carry session/weekly remaining_percent + resets_at; monthly plans
+// carry balance_usd/allowance_usd/period. Both may coexist; purchased credit
+// is a separate balance.
+type ollamaBalanceResponse struct {
+	Included struct {
+		Session      *ollamaBalanceWindow `json:"session"`
+		Weekly       *ollamaBalanceWindow `json:"weekly"`
+		BalanceUSD   *float64             `json:"balance_usd"`
+		AllowanceUSD *float64             `json:"allowance_usd"`
+		Period       *struct {
+			From  string `json:"from"`
+			Until string `json:"until"`
+		} `json:"period"`
+	} `json:"included"`
+	Purchased *struct {
+		BalanceUSD *float64 `json:"balance_usd"`
+	} `json:"purchased"`
+}
+
+type ollamaBalanceWindow struct {
+	RemainingPercent *float64 `json:"remaining_percent"`
+	ResetsAt         string   `json:"resets_at"`
+}
+
+func fetchOllamaBalance(ctx context.Context, baseURL, apiKey string, client *http.Client) (*storage.AccountUsageBlob, error) {
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	if baseURL == "" {
+		baseURL = ollamaSettingsUsageURL
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		strings.TrimRight(baseURL, "/")+ollamaBalancePath, nil)
+	if err != nil {
+		return nil, fmt.Errorf("ollama balance: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Accept", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("ollama balance: fetch: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("ollama balance: read body: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("ollama balance: HTTP %d", resp.StatusCode)
+	}
+	var payload ollamaBalanceResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("ollama balance: decode: %w", err)
+	}
+	usage := &storage.AccountUsageBlob{FetchedAt: time.Now().Unix()}
+	addPercent := func(key, label string, w *ollamaBalanceWindow) {
+		if w == nil {
+			return
+		}
+		window := storage.UsageWindow{
+			Key: key, Label: label, Kind: "percent",
+			ResetAt: parseRFC3339Unix(w.ResetsAt), Source: "ollama_balance",
+		}
+		if w.RemainingPercent != nil {
+			remaining := clampPctPtr(*w.RemainingPercent)
+			if remaining != nil {
+				window.RemainingPct = remaining
+				used := 100 - *remaining
+				window.UsedPct = &used
+			}
+		}
+		usage.Windows = append(usage.Windows, window)
+	}
+	addPercent("session", "Session", payload.Included.Session)
+	addPercent("weekly", "Weekly", payload.Included.Weekly)
+
+	if payload.Included.BalanceUSD != nil || payload.Included.AllowanceUSD != nil || payload.Included.Period != nil {
+		window := storage.UsageWindow{
+			Key: "monthly", Label: "Monthly", Kind: "usd", Unit: "usd",
+			Remaining: payload.Included.BalanceUSD, Limit: payload.Included.AllowanceUSD,
+			Source: "ollama_balance",
+		}
+		if payload.Included.Period != nil {
+			window.ResetAt = parseRFC3339Unix(payload.Included.Period.Until)
+			from := parseRFC3339Unix(payload.Included.Period.From)
+			if from > 0 && window.ResetAt > from {
+				window.WindowSeconds = window.ResetAt - from
+			}
+		}
+		usage.Windows = append(usage.Windows, window)
+	}
+	if payload.Purchased != nil && payload.Purchased.BalanceUSD != nil && *payload.Purchased.BalanceUSD > 0 {
+		usage.Windows = append(usage.Windows, storage.UsageWindow{
+			Key: "purchased", Label: "Purchased credits", Kind: "usd", Unit: "usd",
+			Remaining: payload.Purchased.BalanceUSD, Source: "ollama_balance",
+		})
+	}
+	if len(usage.Windows) == 0 {
+		return nil, errors.New("ollama balance carries no usage data")
+	}
+	return usage, nil
+}
+
 // percentFromAria extracts X from "X% used" (the page's own phrasing).
 var percentFromAria = regexp.MustCompile(`(\d+(?:\.\d+)?)%\s*used`)
 
@@ -133,7 +279,32 @@ func parseOllamaSettingsHTML(html []byte) (*storage.AccountUsageBlob, error) {
 		usage.WeeklyPct = extractUsagePercent(parts[2])
 		usage.WeeklyReset = firstTimeAttr(parts[2])
 	}
+	usage.Windows = legacyPercentWindows(usage, "ollama_settings")
 	return usage, nil
+}
+
+// legacyPercentWindows mirrors the settings-page percent fields into the
+// uniform window list, keeping the source tag so the UI can explain where
+// the reading came from.
+func legacyPercentWindows(b *storage.AccountUsageBlob, source string) []storage.UsageWindow {
+	var out []storage.UsageWindow
+	add := func(key, label string, used *float64, reset int64) {
+		if used == nil && reset == 0 {
+			return
+		}
+		w := storage.UsageWindow{Key: key, Label: label, Kind: "percent",
+			ResetAt: reset, Source: source}
+		if used != nil {
+			u := *used
+			w.UsedPct = &u
+			remaining := 100 - u
+			w.RemainingPct = &remaining
+		}
+		out = append(out, w)
+	}
+	add("session", "Session", b.SessionPct, b.SessionReset)
+	add("weekly", "Weekly", b.WeeklyPct, b.WeeklyReset)
+	return out
 }
 
 // extractUsagePercent pulls the percent out of one usage-track block:
@@ -197,6 +368,53 @@ const (
 	statusUnsupportedType = http.StatusBadRequest
 )
 
+// refreshThrottle keeps a manual "Refresh now" from turning into a scrape
+// storm. Ollama allows 10 requests/minute per user, shared across keys and
+// devices; the prober is per-account 60 s and global 6/minute.
+type refreshThrottle struct {
+	mu     sync.Mutex
+	last   map[string]time.Time
+	recent []time.Time
+}
+
+func newRefreshThrottle() *refreshThrottle {
+	return &refreshThrottle{last: map[string]time.Time{}}
+}
+
+// allow reports whether the probe may run now; when it may not, retryAfter
+// is the number of seconds to wait. A granted probe is recorded immediately
+// (a failed probe still consumed upstream capacity).
+func (t *refreshThrottle) allow(accountID string, now time.Time) (bool, int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	cutoff := now.Add(-time.Minute)
+	kept := t.recent[:0]
+	for _, at := range t.recent {
+		if at.After(cutoff) {
+			kept = append(kept, at)
+		}
+	}
+	t.recent = kept
+
+	var wait int64
+	if last, ok := t.last[accountID]; ok {
+		if remaining := 60 - int64(now.Sub(last).Seconds()); remaining > 0 {
+			wait = max(wait, remaining+1)
+		}
+	}
+	if len(t.recent) >= 6 {
+		if remaining := 60 - int64(now.Sub(t.recent[0]).Seconds()); remaining > 0 {
+			wait = max(wait, remaining+1)
+		}
+	}
+	if wait > 0 {
+		return false, wait
+	}
+	t.last[accountID] = now
+	t.recent = append(t.recent, now)
+	return true, 0
+}
+
 // prodUsageProber is the production probe closure: account validation →
 // cookie read (encrypted token store kind usage_cookie) → fixed-host
 // scrape → KV persist. Injected into webui.AdminParams.Prober by New —
@@ -204,7 +422,11 @@ const (
 func (s *Server) prodUsageProber() func(ctx context.Context, accountID string, store *storage.Store) webui.RefreshOutcome {
 	prober := newUsageProber("", httpguard.NewClient(probeTimeout))
 	client := httpguard.NewClient(probeTimeout)
+	throttle := newRefreshThrottle()
 	return func(ctx context.Context, accountID string, store *storage.Store) webui.RefreshOutcome {
+		if ok, retry := throttle.allow(accountID, time.Now()); !ok {
+			return webui.RefreshOutcome{OK: true, Skipped: true, RetryAfter: retry}
+		}
 		acct, err := store.GetProvider(ctx, accountID)
 		if err != nil {
 			return webui.RefreshOutcome{Status: statusUnknownAccount, Text: "unknown account"}
@@ -216,22 +438,18 @@ func (s *Server) prodUsageProber() func(ctx context.Context, accountID string, s
 		var blob *storage.AccountUsageBlob
 		switch acct.Type {
 		case "ollama-cloud", "ollama-cloud-web":
-			tok, err := store.GetProviderToken(ctx, accountID, webui.UsageCookieTokenKind)
-			if errors.Is(err, storage.ErrNotFound) {
+			blob, err = s.probeOllamaUsage(ctx, store, accountID, prober, client)
+			if errors.Is(err, errNoUsageCredential) {
 				return webui.RefreshOutcome{Status: statusMissingCookie,
-					Text: "account has no usage cookie — set it to enable live usage"}
+					Text: "account has no usage credential — add an API key or a usage cookie"}
 			}
-			if err != nil {
-				return webui.RefreshOutcome{Status: http.StatusInternalServerError, Text: "token store failure"}
-			}
-			blob, err = prober.Probe(ctx, string(tok.Secret))
 			if err != nil {
 				// Honest error state in the blob (the card shows it); the
-				// message carries no cookie/page material by construction.
+				// message carries no cookie/page/body material by construction.
 				_ = store.PutAccountUsage(ctx, accountID, storage.AccountUsageBlob{
 					Error: truncateProbeError(err.Error()),
 				})
-				return webui.RefreshOutcome{Status: statusProbeFailed, Text: "usage scrape failed: " + truncateProbeError(err.Error())}
+				return webui.RefreshOutcome{Status: statusProbeFailed, Text: "usage probe failed: " + truncateProbeError(err.Error())}
 			}
 		case "firecrawl":
 			tok, err := store.GetProviderToken(ctx, accountID, "access_token")
@@ -280,11 +498,17 @@ func fetchFirecrawlUsage(ctx context.Context, baseURL, apiKey string, client *ht
 	if resp.Data.RemainingCredits == nil && resp.Data.PlanCredits == nil {
 		return nil, errors.New("firecrawl credit usage carries no credit counts")
 	}
+	reset := parseRFC3339Unix(resp.Data.BillingPeriodEnd)
 	return &storage.AccountUsageBlob{
 		FetchedAt:        time.Now().Unix(),
 		RemainingCredits: resp.Data.RemainingCredits,
 		PlanCredits:      resp.Data.PlanCredits,
-		CreditsReset:     parseRFC3339Unix(resp.Data.BillingPeriodEnd),
+		CreditsReset:     reset,
+		Windows: []storage.UsageWindow{{
+			Key: "credits", Label: "Credits", Kind: "credits", Unit: "credits",
+			Remaining: resp.Data.RemainingCredits, Limit: resp.Data.PlanCredits,
+			ResetAt: reset, Source: "firecrawl_credit_usage",
+		}},
 	}, nil
 }
 

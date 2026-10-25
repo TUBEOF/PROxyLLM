@@ -1,147 +1,170 @@
-import { useId, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { apiCall } from '../api';
-import { formatCountdown, formatResetInstant } from '../time';
-import type { AccountUsage, AccountUsageResponse, CreditsUsage } from '../types';
-import { EmptyState, ErrorNote, PageHead, useLiveData, useMutation, useNow } from '../hooks';
+import { formatCountdown, relativeAge } from '../time';
+import type {
+  AccountUsage,
+  AccountUsageResponse,
+  Cooldown,
+  UsageWindow,
+} from '../types';
+import { EmptyState, ErrorNote, PageHead, useLiveData, useNow } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
-import { IconBoxes, IconPlug, IconRefresh } from '../icons';
+import { UsageBar } from '../components/UsageBar';
+import { IconBoxes, IconGauge, IconPlug, IconRefresh } from '../icons';
 
-// Quota (ADR-012, amendment 2026-10-17): per-account LIMIT cards. The card
-// shows what the account itself reports — Ollama Cloud's session/weekly
-// windows and Firecrawl's team credits — and nothing the proxy measured on
-// its own (the local month aggregate was retired; the Overview page owns
-// local usage). Each window renders the REMAINING share: the percent centered
-// in a ring, the "… left" value on the left, the reset timer on the right.
-// Live updates: the card list polls itself (POLL_MS); the countdown rides its
-// own 30 s tick, so a failing poll cannot freeze it.
-// Health badge: breaker/quota cooldown from the routing HealthTracker.
+// Quota (ADR-012): per-account LIMIT cards. The card shows what the account
+// itself reports — Ollama's session/weekly/monthly windows, Firecrawl's
+// credits, Codex's header windows — and nothing the proxy measured on its
+// own. Each window renders the REMAINING share as a shrinking bar: green
+// while there is room, orange in the last half, red under 20%. A cooldown
+// badge carries the deadline, not just the word.
+//
+// The page groups by provider type (chat before web tools, live groups
+// before empty ones), keeps a single 30 s clock for every countdown, and
+// refreshes one card without remounting the page.
 
 const POLL_MS = 5000;
 
-// ResetCountdown renders a window's reset as a live countdown; the exact
-// instant — in the READER's timezone, via the browser locale — is on the
-// hover/focus tooltip. No timestamp (0/absent) → the caller renders nothing:
-// an unknown reset is never guessed at.
-function ResetCountdown({ reset, windowName }: { reset: number; windowName: string }) {
-  const id = useId();
-  // A 30 s tick keeps the minute reading honest without a per-second timer.
-  const now = useNow(30_000);
-  const secs = reset - Math.floor(now / 1000);
-  return (
-    <span
-      className="tooltip hint"
-      style={{ margin: 0, fontSize: 'var(--fs-xs)' }}
-      tabIndex={0}
-      aria-describedby={id}
-    >
-      {secs <= 0 ? 'resetting…' : `resets in ${formatCountdown(secs)}`}
-      <span className="tt" role="tooltip" id={id}>
-        {`${windowName} window resets ${formatResetInstant(reset)}`}
-      </span>
-    </span>
-  );
+function clampPct(v: number): number {
+  return Math.max(0, Math.min(100, v));
 }
 
-// remainingPct turns the provider's "X% used" into the reading the card
-// shows: what is LEFT. Null stays null — an unknown limit is never guessed.
-function remainingPct(usedPct: number | null | undefined): number | null {
-  if (usedPct === null || usedPct === undefined || Number.isNaN(usedPct)) return null;
-  return Math.max(0, Math.min(100, 100 - usedPct));
+function windowPct(w: UsageWindow): number | null {
+  if (w.remaining_pct !== undefined && w.remaining_pct !== null) {
+    return clampPct(w.remaining_pct);
+  }
+  if (w.used_pct !== undefined && w.used_pct !== null) {
+    return clampPct(100 - w.used_pct);
+  }
+  if (
+    (w.kind === 'credits' || w.kind === 'usd') &&
+    w.remaining !== undefined &&
+    w.remaining !== null &&
+    w.limit !== undefined &&
+    w.limit !== null &&
+    w.limit > 0
+  ) {
+    return clampPct((w.remaining / w.limit) * 100);
+  }
+  return null;
 }
 
-function creditPct(credits: CreditsUsage): number | null {
-  const remaining = credits.remaining ?? null;
-  const limit = credits.limit ?? null;
-  if (remaining === null || limit === null || limit <= 0) return null;
-  return Math.max(0, Math.min(100, (remaining / limit) * 100));
+function formatNumber(value: number, digits = 0): string {
+  return value.toLocaleString(undefined, { maximumFractionDigits: digits });
 }
 
-function formatCredits(value: number): string {
-  return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
-}
-
-function percentLeft(pct: number | null): string {
+function windowReading(w: UsageWindow): string {
+  if (w.unlimited) return 'unlimited';
+  if (w.kind === 'usd') {
+    if (w.remaining === undefined || w.remaining === null) return '—';
+    if (w.limit !== undefined && w.limit !== null) {
+      return `$${formatNumber(w.remaining, 2)} of $${formatNumber(w.limit, 2)} left`;
+    }
+    return `$${formatNumber(w.remaining, 2)} left`;
+  }
+  if (w.kind === 'credits') {
+    if (w.remaining === undefined || w.remaining === null) return '—';
+    return `${formatNumber(w.remaining)} credits left`;
+  }
+  const pct = windowPct(w);
   return pct === null ? '—' : `${Math.round(pct)}% left`;
 }
 
-function creditsLeft(credits: CreditsUsage): string {
-  const remaining = credits.remaining ?? null;
-  return remaining === null ? '—' : `${formatCredits(remaining)} credits left`;
+function sourceLabel(source: string | undefined): string {
+  switch (source) {
+    case 'ollama_balance':
+      return 'Ollama balance';
+    case 'ollama_settings':
+      return 'Ollama settings';
+    case 'firecrawl_credit_usage':
+      return 'Firecrawl credits';
+    case 'codex_headers':
+      return 'Codex headers';
+    case 'codex_sse':
+      return 'Codex stream';
+    case 'legacy':
+      return 'cached reading';
+    default:
+      return source ?? '';
+  }
 }
 
-// UsageRing: the kit's ring vocabulary at card size — a track, a segment for
-// the remaining share, and the percent centered inside. Colors are tokens:
-// accent while healthy, warn when little is left, down at zero. An unknown
-// reading draws no segment and shows "—"; the honest-empty rule.
-function UsageRing({ pct }: { pct: number | null }) {
-  const R = 34;
-  const C = 2 * Math.PI * R;
-  const clamped = pct === null ? 0 : Math.min(Math.max(pct, 0), 100);
-  const seg = (C * clamped) / 100;
-  const tone =
-    pct === null
-      ? 'var(--neutral-700)'
-      : clamped <= 0
-        ? 'var(--status-down)'
-        : clamped <= 20
-          ? 'var(--status-warn)'
-          : 'var(--chart-line)';
-  return (
-    <div className="usage-ring">
-      <svg viewBox="0 0 80 80" aria-hidden="true">
-        <circle className="usage-ring-track" cx="40" cy="40" r={R} />
-        {pct !== null && clamped > 0 && (
-          <circle
-            className="usage-ring-seg"
-            cx="40"
-            cy="40"
-            r={R}
-            stroke={tone}
-            strokeDasharray={`${seg} ${C}`}
-            transform="rotate(-90 40 40)"
-          />
-        )}
-      </svg>
-      <span className="usage-ring-num">{pct === null ? '—' : `${Math.round(pct)}%`}</span>
-    </div>
-  );
+// accountWindows falls back to the legacy session/weekly/credits fields when
+// an older server does not send the uniform windows list (rolling deploy).
+function accountWindows(a: AccountUsage): UsageWindow[] {
+  const live = a.live;
+  if (live?.windows !== undefined && live.windows.length > 0) return live.windows;
+  const out: UsageWindow[] = [];
+  if (!live) return out;
+  if (live.session_pct !== undefined || (live.session_reset ?? 0) > 0) {
+    out.push({
+      key: 'session',
+      label: 'Session',
+      kind: 'percent',
+      used_pct: live.session_pct ?? null,
+      remaining_pct: live.session_pct === undefined || live.session_pct === null
+        ? null
+        : 100 - live.session_pct,
+      reset_at: live.session_reset,
+      source: 'legacy',
+    });
+  }
+  if (live?.weekly_pct !== undefined || (live?.weekly_reset ?? 0) > 0) {
+    out.push({
+      key: 'weekly',
+      label: 'Weekly',
+      kind: 'percent',
+      used_pct: live.weekly_pct ?? null,
+      remaining_pct: live.weekly_pct === undefined || live.weekly_pct === null
+        ? null
+        : 100 - live.weekly_pct,
+      reset_at: live.weekly_reset,
+      source: 'legacy',
+    });
+  }
+  if (live?.credits) {
+    out.push({
+      key: 'credits',
+      label: 'Credits',
+      kind: 'credits',
+      unit: 'credits',
+      remaining: live.credits.remaining ?? null,
+      limit: live.credits.limit ?? null,
+      reset_at: live.credits.reset,
+      source: 'legacy',
+    });
+  }
+  return out;
 }
 
-// UsageWindow is one limit window: the window label and the remaining reading
-// on the left, the ring centered, the reset timer on the right. The timer
-// owns its grid column — no flex-wrap with variable-length text above the
-// ring, which is the font-metric drift trap.
-function UsageWindow({
-  label,
-  pct,
-  left,
-  reset,
-}: {
-  label: string;
-  pct: number | null;
-  left: string;
-  reset?: number;
-}) {
-  return (
-    <div className="usage-window">
-      <div className="usage-window-copy">
-        <span className="usage-window-label">{label}</span>
-        <span className="usage-left">{left}</span>
-      </div>
-      <UsageRing pct={pct} />
-      <div className="usage-reset">
-        {reset !== undefined && reset > 0 ? <ResetCountdown reset={reset} windowName={label} /> : null}
-      </div>
-    </div>
-  );
+function groupSource(windows: UsageWindow[]): string {
+  const labels = [...new Set(windows.map((w) => sourceLabel(w.source)).filter(Boolean))];
+  return labels.length > 0 ? labels.join(' · ') : 'no live windows';
 }
 
-function healthBadge(health: string | undefined): { label: string; cls: string } | null {
-  if (health === 'quota_exhausted') return { label: 'quota', cls: 'warn' };
-  if (health === 'breaker') return { label: 'cooling', cls: 'down' };
-  // Failing but still in rotation: the last failure before the breaker opens.
-  if (health === 'degraded') return { label: 'degraded', cls: 'warn' };
+function healthBadge(a: AccountUsage, nowMs: number): { label: string; cls: string } | null {
+  if (!a.enabled) return null;
+  const now = Math.floor(nowMs / 1000);
+  const countdown = (until: number | undefined): string | null => {
+    if (until === undefined || until <= 0) return null;
+    return formatCountdown(Math.max(0, until - now));
+  };
+  if (a.health === 'quota_exhausted') {
+    const until = a.cooldown?.quota_until ?? a.health_until;
+    const left = countdown(until);
+    return { label: left === null ? 'quota' : `quota · resets in ${left}`, cls: 'warn' };
+  }
+  if (a.health === 'breaker') {
+    const until = a.cooldown?.breaker_until ?? a.health_until;
+    const left = countdown(until);
+    return { label: left === null ? 'cooling' : `cooling · ${left}`, cls: 'down' };
+  }
+  if (a.health === 'degraded') return { label: 'degraded', cls: 'warn' };
   return null;
+}
+
+function cooldownOf(a: AccountUsage): Cooldown | undefined {
+  return a.cooldown ?? undefined;
 }
 
 export default function Quota() {
@@ -149,42 +172,132 @@ export default function Quota() {
     (signal) => apiCall<AccountUsageResponse>('GET', '/api/admin/accounts/usage', undefined, signal),
     POLL_MS,
   );
-  const refresh = useMutation();
-
+  const nowMs = useNow(30_000);
   const accounts = useMemo(() => data?.accounts ?? [], [data]);
-  const healthy = useMemo(() => accounts.filter((a) => a.health === undefined).length, [accounts]);
-  const cooling = accounts.length - healthy;
-
-  // The pool switch, right where the account's numbers are: an account that
-  // is switched off serves nothing, which is exactly the reading an operator
-  // wants while looking at its quota.
-  const toggleAccount = (account: AccountUsage, enabled: boolean) =>
-    refresh.run(() =>
-      apiCall('PUT', `/api/admin/providers/${encodeURIComponent(account.account_id)}/enabled`, { enabled }),
-    ).then(() => reload());
-
-  const refreshOne = (account: AccountUsage) =>
-    refresh.run(() =>
-      apiCall('POST', `/api/admin/accounts/usage/refresh/${encodeURIComponent(account.account_id)}`, {}),
-    );
-  const refreshAll = async () => {
-    // Sequential per-card refreshes — the bounded-concurrency pool lives
-    // server-side when a periodic refresher is added (ADR-012).
-    let failed = false;
-    for (const a of accounts) {
-      if (a.refreshable) {
-        const ok = await refreshOne(a);
-        if (ok === null) failed = true; // thrown error is the truth
-      }
-    }
-    if (failed) setRefreshError('One or more accounts failed to refresh — see the card errors.');
-    else setRefreshError(null);
-    reload();
-  };
-  // Per-card refresh error surfacing: the mutation's error field is
-  // shared, so the page note is set alongside (the v1.0.2 stale-error
-  // lesson: branch on our own state).
+  const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [toggleError, setToggleError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+
+  const summary = useMemo(() => {
+    const inPool = accounts.filter((a) => a.enabled).length;
+    const reporting = accounts.filter((a) => accountWindows(a).length > 0).length;
+    const cooling = accounts.filter(
+      (a) => a.enabled && (a.health === 'quota_exhausted' || a.health === 'breaker'),
+    ).length;
+    const degraded = accounts.filter((a) => a.enabled && a.health === 'degraded').length;
+    return { inPool, reporting, cooling, degraded };
+  }, [accounts]);
+
+  const groups = useMemo(() => {
+    type Group = {
+      key: string;
+      label: string;
+      kind: string;
+      order: number;
+      accounts: AccountUsage[];
+      live: boolean;
+    };
+    const map = new Map<string, Group>();
+    for (const a of accounts) {
+      const key = a.type;
+      const group = map.get(key) ?? {
+        key,
+        label: a.type_label ?? a.type,
+        kind: a.kind ?? '',
+        order: a.type_order ?? Number.MAX_SAFE_INTEGER,
+        accounts: [],
+        live: false,
+      };
+      group.accounts.push(a);
+      group.live = group.live || accountWindows(a).length > 0;
+      map.set(key, group);
+    }
+    const out = [...map.values()];
+    for (const group of out) {
+      group.accounts.sort((a, b) => {
+        const liveDelta = Number(accountWindows(b).length > 0) - Number(accountWindows(a).length > 0);
+        return liveDelta || a.name.localeCompare(b.name) || a.account_id.localeCompare(b.account_id);
+      });
+    }
+    out.sort((a, b) => {
+      const kindDelta = Number(a.kind !== 'llm') - Number(b.kind !== 'llm');
+      const liveDelta = Number(b.live) - Number(a.live);
+      return kindDelta || liveDelta || a.order - b.order || a.label.localeCompare(b.label);
+    });
+    return out;
+  }, [accounts]);
+
+  const markPending = (id: string, pending: boolean) => {
+    setPendingIds((prev) => {
+      const next = new Set(prev);
+      if (pending) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const refreshOne = async (a: AccountUsage): Promise<boolean> => {
+    markPending(a.account_id, true);
+    setRefreshError(null);
+    try {
+      const res = await apiCall<{ ok: boolean; skipped?: boolean; retry_after?: number }>(
+        'POST',
+        `/api/admin/accounts/usage/refresh/${encodeURIComponent(a.account_id)}`,
+        {},
+      );
+      if (res.skipped) {
+        const wait = res.retry_after;
+        setRefreshNote(
+          wait !== undefined && wait > 0
+            ? `Refreshed recently — cached reading is current (retry in ${formatCountdown(wait)}).`
+            : 'Refreshed recently — cached reading is current.',
+        );
+      } else {
+        setRefreshNote(null);
+      }
+      reload({ quiet: true });
+      return true;
+    } catch (err) {
+      setRefreshError(err instanceof Error ? err.message : 'Refresh failed');
+      return false;
+    } finally {
+      markPending(a.account_id, false);
+    }
+  };
+
+  const refreshAll = async () => {
+    const list = accounts.filter((a) => a.refreshable);
+    if (list.length === 0) return;
+    setRefreshError(null);
+    setRefreshNote(null);
+    setProgress({ done: 0, total: list.length });
+    let failed = 0;
+    for (let i = 0; i < list.length; i += 1) {
+      const account = list[i];
+      if (account === undefined) continue;
+      const ok = await refreshOne(account);
+      if (!ok) failed += 1;
+      setProgress({ done: i + 1, total: list.length });
+    }
+    setProgress(null);
+    setRefreshNote(failed > 0 ? `${failed} of ${list.length} refreshes failed.` : `Refreshed ${list.length} account(s).`);
+    reload({ quiet: true });
+  };
+
+  const toggleAccount = async (a: AccountUsage, enabled: boolean) => {
+    setToggleError(null);
+    try {
+      await apiCall('PUT', `/api/admin/providers/${encodeURIComponent(a.account_id)}/enabled`, { enabled });
+      reload({ quiet: true });
+    } catch (err) {
+      setToggleError(err instanceof Error ? err.message : 'Pool switch failed');
+    }
+  };
+
+  const note = toggleError ?? refreshError ?? refreshNote;
+  const busy = progress !== null || pendingIds.size > 0;
 
   return (
     <>
@@ -194,16 +307,17 @@ export default function Quota() {
         actions={
           <>
             <LiveBadge updatedAt={updatedAt} intervalMs={POLL_MS} />
-            <button type="button" className="btn btn-ghost btn-sm" onClick={refreshAll} disabled={refresh.pending}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => void refreshAll()} disabled={busy || accounts.length === 0}>
               Refresh all
             </button>
           </>
         }
       />
-      {(refreshError !== null || refresh.error !== null) && (
-        <div style={{ margin: '8px 0' }}>
-          <p role="alert" className="form-note">{refreshError ?? refresh.error}</p>
-        </div>
+      {note !== null && (
+        <p role="status" className="form-note usage-page-note">
+          {note}
+          {progress !== null ? ` Refreshing ${progress.done} of ${progress.total}…` : ''}
+        </p>
       )}
       <div className="canvas">
         {error !== null ? (
@@ -223,133 +337,141 @@ export default function Quota() {
           </div>
         ) : (
           <div className="w-full">
-            {/* Honest summary tiles (kit .kpi; values masked in e2e). Three
-                equal columns, and the icon rides the label line — the kit's
-                kpi-label is built to carry it there. As a bare flex child of
-                .kpi (a column) it used to wrap onto its own line under the
-                value. Labels are title-case here; .kpi-label uppercases them. */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-                gap: 8,
-                marginBottom: 12,
-              }}
-            >
-              <div className="widget" style={{ padding: '10px 14px' }}>
+            <div className="usage-summary">
+              <div className="widget usage-summary-tile">
                 <div className="kpi">
                   <div className="kpi-label">
                     <span className="ic"><IconBoxes width="14" height="14" /></span>
-                    Total
+                    Accounts
                   </div>
                   <div className="kpi-value">{accounts.length}</div>
+                  <div className="usage-summary-foot">{summary.inPool} in pool</div>
                 </div>
               </div>
-              <div className="widget" style={{ padding: '10px 14px' }}>
+              <div className="widget usage-summary-tile">
                 <div className="kpi">
                   <div className="kpi-label">
-                    <span className="ic"><IconPlug width="14" height="14" /></span>
-                    Healthy
+                    <span className="ic"><IconGauge width="14" height="14" /></span>
+                    Reporting
                   </div>
-                  <div className="kpi-value">{healthy}</div>
+                  <div className="kpi-value">{summary.reporting}</div>
+                  <div className="usage-summary-foot">of {accounts.length} accounts</div>
                 </div>
               </div>
-              <div className="widget" style={{ padding: '10px 14px' }}>
+              <div className="widget usage-summary-tile">
                 <div className="kpi">
                   <div className="kpi-label">
                     <span className="ic"><IconRefresh width="14" height="14" /></span>
                     Cooling
                   </div>
-                  <div className="kpi-value">{cooling}</div>
+                  <div className="kpi-value">{summary.cooling}</div>
+                  <div className="usage-summary-foot">
+                    {summary.degraded > 0 ? `${summary.degraded} degraded` : 'none degraded'}
+                  </div>
                 </div>
               </div>
             </div>
-            <div className="cards" style={{ display: 'grid', gap: 8 }}>
-              {accounts.map((a) => {
-                // A switched-off account is out of the pool: it earns no
-                // cooldown, so the health badge is suppressed rather than
-                // showing a state it cannot be in.
-                const hb = a.enabled ? healthBadge(a.health) : null;
-                const live = a.live;
-                const sessionLeft = remainingPct(live?.session_pct);
-                const weeklyLeft = remainingPct(live?.weekly_pct);
-                return (
-                  <div key={a.account_id} className="widget w-full" style={{ padding: '12px 14px' }}>
-                    <div className="widget-head" style={{ marginBottom: 6 }}>
-                      <h3 className="title">
-                        <span className="ic"><IconPlug width="14" height="14" /></span>
-                        {a.name}
-                        {hb && <span className={`badge ${hb.cls}`} style={{ marginLeft: 6 }}>{hb.label}</span>}
-                        {!a.enabled ? (
-                          <span className="badge paused" style={{ marginLeft: 6 }}>out of the pool</span>
-                        ) : a.live ? (
-                          <span className="badge up" style={{ marginLeft: 6 }}>live</span>
-                        ) : null}
-                      </h3>
-                      <label className="toggle" title={a.enabled ? 'In the pool — this account serves traffic' : 'Out of the pool — it serves nothing until switched back on'}>
-                        <input
-                          type="checkbox"
-                          checked={a.enabled}
-                          onChange={(e) => void toggleAccount(a, e.target.checked)}
-                          disabled={refresh.pending}
-                          aria-label={`${a.name} in the pool`}
-                        />
-                        <span className="tswitch" />
-                      </label>
-                    </div>
-                    {live !== null && live !== undefined ? (
-                      <div className="usage-windows">
-                        {(live.session_pct !== undefined || (live.session_reset ?? 0) > 0) && (
-                          <UsageWindow
-                            label="Session"
-                            pct={sessionLeft}
-                            left={percentLeft(sessionLeft)}
-                            reset={live.session_reset}
+
+            {groups.map((group) => (
+              <section key={group.key} className="usage-group" aria-labelledby={`usage-group-${group.key}`}>
+                <div className="usage-group-head">
+                  <h2 className="usage-group-title" id={`usage-group-${group.key}`}>
+                    {group.label}
+                  </h2>
+                  <span className="usage-group-note">
+                    {group.accounts.length} account{group.accounts.length === 1 ? '' : 's'} ·{' '}
+                    {groupSource(group.accounts.flatMap((a) => accountWindows(a)))}
+                  </span>
+                </div>
+                <div className="usage-group-grid">
+                  {group.accounts.map((a) => {
+                    const windows = accountWindows(a);
+                    const hb = healthBadge(a, nowMs);
+                    const pending = pendingIds.has(a.account_id);
+                    const metaSource = windows.length > 0 ? ` · ${groupSource(windows)}` : '';
+                    return (
+                      <article key={a.account_id} className="widget usage-card" data-account-id={a.account_id}>
+                        <div className="usage-card-head">
+                          <div className="usage-card-title">
+                            <span className="ic"><IconPlug width="14" height="14" /></span>
+                            <h3 className="title">{a.name}</h3>
+                            <span className="badge neutral">{a.type_label ?? a.type}</span>
+                            {hb && <span className={`badge ${hb.cls}`}>{hb.label}</span>}
+                            {!a.enabled ? (
+                              <span className="badge paused">out of the pool</span>
+                            ) : windows.length > 0 ? (
+                              <span className="badge up">live</span>
+                            ) : null}
+                          </div>
+                          <label
+                            className="toggle"
+                            title={a.enabled ? 'In the pool — this account serves traffic' : 'Out of the pool — it serves nothing until switched back on'}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={a.enabled}
+                              onChange={(e) => void toggleAccount(a, e.target.checked)}
+                              aria-label={`${a.name} in the pool`}
+                            />
+                            <span className="tswitch" />
+                          </label>
+                        </div>
+                        <div className="usage-card-meta">
+                          {a.fetched_at !== undefined && a.fetched_at > 0
+                            ? `Updated ${relativeAge(a.fetched_at, nowMs)}`
+                            : 'Never fetched'}
+                          {metaSource}
+                        </div>
+                        {windows.length > 0 ? (
+                          <div className="usage-windows">
+                            {windows.map((w) => (
+                              <UsageBar
+                                key={w.key}
+                                label={w.label ?? w.key}
+                                pct={windowPct(w)}
+                                reading={windowReading(w)}
+                                resetAt={w.reset_at}
+                                windowName={w.label ?? w.key}
+                                nowMs={nowMs}
+                                unlimited={w.unlimited}
+                                note={w.note}
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <EmptyState
+                            title="No live usage"
+                            body={
+                              a.error !== undefined && a.error !== ''
+                                ? `Last scrape failed: ${a.error}.`
+                                : a.refreshable
+                                  ? 'No limit window reported yet — use Refresh now to fetch it.'
+                                  : 'This provider does not report usage windows.'
+                            }
                           />
                         )}
-                        {(live.weekly_pct !== undefined || (live.weekly_reset ?? 0) > 0) && (
-                          <UsageWindow
-                            label="Weekly"
-                            pct={weeklyLeft}
-                            left={percentLeft(weeklyLeft)}
-                            reset={live.weekly_reset}
-                          />
-                        )}
-                        {live.credits && (
-                          <UsageWindow
-                            label="Credits"
-                            pct={creditPct(live.credits)}
-                            left={creditsLeft(live.credits)}
-                            reset={live.credits.reset}
-                          />
-                        )}
-                      </div>
-                    ) : (
-                      <EmptyState
-                        title="No live usage"
-                        body={a.error !== undefined && a.error !== ''
-                          ? `Last scrape failed: ${a.error}.`
-                          : a.refreshable
-                            ? 'No limit window reported yet — use Refresh now to fetch it.'
-                            : 'This provider does not report usage windows.'}
-                      />
-                    )}
-                    <div style={{ textAlign: 'right' }}>
-                      {a.refreshable && (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => void refreshOne(a)}
-                          disabled={refresh.pending}
-                        >
-                          Refresh now
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                        <div className="usage-card-actions">
+                          {a.refreshable && (
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => void refreshOne(a)}
+                              disabled={pending}
+                              aria-busy={pending}
+                            >
+                              {pending ? 'Refreshing…' : 'Refresh now'}
+                            </button>
+                          )}
+                          {cooldownOf(a)?.reason === 'quota_exhausted' && (
+                            <span className="hint">Quota cooldown is process-local; a restart clears the badge.</span>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
           </div>
         )}
       </div>

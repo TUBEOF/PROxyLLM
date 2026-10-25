@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/tubeof/proxyllm/internal/auth"
 	"github.com/tubeof/proxyllm/internal/config"
@@ -83,6 +84,24 @@ func WithModelSync() Option {
 // New assembles the live server: registry, router (rules from the store),
 // executor, httpapi surfaces behind auth middleware, and the health
 // endpoint. A nil logger is tolerated (slog.Default takes over).
+// healthView converts the routing tracker's time-based state into the
+// admin API's unix-second badge snapshot.
+func healthView(st routing.HealthState) webui.HealthView {
+	unixOrZero := func(t time.Time) int64 {
+		if t.IsZero() {
+			return 0
+		}
+		return t.Unix()
+	}
+	v := webui.HealthView{
+		Reason:       st.Reason,
+		QuotaUntil:   unixOrZero(st.QuotaUntil),
+		BreakerUntil: unixOrZero(st.BreakerUntil),
+	}
+	v.Until = max(v.QuotaUntil, v.BreakerUntil)
+	return v
+}
+
 func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...Option) (*Server, error) {
 	o := &serverOptions{}
 	for _, opt := range opts {
@@ -245,8 +264,10 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 			// ADR-012 Quota page: the per-account cooldown-reason badge and
 			// the on-demand usage scrape (fixed ollama.com host; the
 			// cookie rides the encrypted token store).
-			HealthSnapshot: health.Reason,
-			Prober:         s.prodUsageProber(),
+			HealthSnapshot: func(id string) webui.HealthView {
+				return healthView(health.State(id))
+			},
+			Prober: s.prodUsageProber(),
 			ReloadRouting: func() {
 				fresh, err := loadRoutingRules(context.Background(), store)
 				if err != nil {

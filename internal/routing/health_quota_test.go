@@ -39,6 +39,28 @@ func TestHealthTracker_QuotaExhaustedCooldown(t *testing.T) {
 	}
 }
 
+func TestHealthTracker_StateExposesCooldownDeadline(t *testing.T) {
+	h := routing.NewHealthTracker()
+	base := time.Unix(1_700_000_000, 0)
+	h.SetClock(func() time.Time { return base })
+	reset := base.Add(2 * time.Hour)
+	h.ReportQuotaExhausted("acct", reset)
+
+	st := h.State("acct")
+	if st.Reason != "quota_exhausted" {
+		t.Errorf("reason = %q, want quota_exhausted", st.Reason)
+	}
+	if !st.QuotaUntil.Equal(reset) {
+		t.Errorf("quota until = %v, want %v", st.QuotaUntil, reset)
+	}
+	if !st.BreakerUntil.IsZero() {
+		t.Errorf("breaker until = %v, want zero", st.BreakerUntil)
+	}
+	if unknown := h.State("nobody"); unknown.Reason != "" || !unknown.QuotaUntil.IsZero() {
+		t.Errorf("unknown account state = %+v, want zero", unknown)
+	}
+}
+
 func TestHealthTracker_QuotaResetWindow(t *testing.T) {
 	h := routing.NewHealthTracker()
 	base := time.Unix(1_700_000_000, 0)

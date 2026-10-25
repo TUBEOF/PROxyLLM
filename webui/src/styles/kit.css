@@ -232,22 +232,44 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 .bar-fill{height:100%;border-radius:inherit;background:var(--chart-line)}
 .bar-fill.alt{background:var(--chart-2)}
 
-/* Usage windows — the Quota card's remaining ring + value + reset strip.
-   Three grid areas, so the variable-length timer text never wraps into the
-   content above it (the font-metric drift rule). */
-.usage-windows{display:flex;flex-direction:column}
-.usage-window{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:12px;padding:8px 0;border-top:1px solid var(--border)}
-.usage-window:first-child{border-top:0}
-.usage-window-copy{display:flex;flex-direction:column;gap:2px;min-width:0}
-.usage-window-label{color:var(--muted);font-size:var(--fs-xs);text-transform:uppercase;letter-spacing:.05em}
-.usage-left{font-family:var(--font-mono);font-size:var(--fs-sm);color:var(--fg);font-variant-numeric:tabular-nums;white-space:nowrap}
-.usage-ring{position:relative;width:84px;height:84px;flex-shrink:0}
-.usage-ring svg{width:84px;height:84px;display:block}
-.usage-ring-track{fill:none;stroke:var(--neutral-800);stroke-width:8}
-.usage-ring-seg{fill:none;stroke-width:8;stroke-linecap:round}
-.usage-ring-num{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-size:1.375rem;font-weight:var(--fw-semibold);color:var(--fg)}
-.usage-reset{display:flex;justify-content:flex-end;text-align:right;min-width:0}
-.usage-reset .tooltip{white-space:nowrap}
+/* Quota — grouped limit meters. The bar shows the REMAINING share and
+   shrinks with consumption. Tones are discrete token families (the
+   design-rule hue windows forbid interpolating between them); the fill's
+   same-hue alpha gradient only softens the edge. */
+.usage-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:16px}
+.usage-summary-tile{padding:10px 14px}
+.usage-summary-foot{color:var(--muted);font-size:var(--fs-xs);margin-top:2px}
+.usage-page-note{margin:8px 0}
+.usage-group{margin-bottom:18px}
+.usage-group-head{display:flex;align-items:baseline;gap:12px;margin-bottom:8px;flex-wrap:wrap}
+.usage-group-title{font-family:var(--font-display);font-size:var(--fs-base);font-weight:var(--fw-semibold);color:var(--fg);margin:0}
+.usage-group-note{color:var(--muted);font-size:var(--fs-xs)}
+.usage-group-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:16px}
+.usage-card{padding:12px 14px;min-width:0}
+.usage-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:4px}
+.usage-card-title{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.usage-card-title .title{overflow-wrap:anywhere;white-space:normal;margin:0}
+.usage-card-meta{color:var(--muted);font-size:var(--fs-xs);margin-bottom:6px}
+.usage-windows{display:flex;flex-direction:column;gap:2px}
+.usage-meter{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-top:1px solid var(--border)}
+.usage-meter:first-child{border-top:0}
+.usage-meter-head{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:baseline}
+.usage-meter-label{color:var(--muted);font-size:var(--fs-xs);text-transform:uppercase;letter-spacing:.05em}
+.usage-meter-value{font-family:var(--font-mono);font-size:var(--fs-sm);color:var(--fg);font-variant-numeric:tabular-nums;white-space:nowrap}
+.usage-meter-track{height:8px;border-radius:var(--radius-full);background:oklch(14% 0.013 250 / 80%);overflow:hidden}
+.usage-meter-fill{height:100%;border-radius:inherit;background-color:var(--meter-tone,var(--neutral-600));background-image:linear-gradient(90deg,color-mix(in oklab,var(--meter-tone) 72%,transparent),var(--meter-tone));transition:width var(--transition-base),background-color var(--transition-base)}
+.usage-meter[data-tone="up"]{--meter-tone:var(--status-up)}
+.usage-meter[data-tone="warn"]{--meter-tone:var(--status-warn)}
+.usage-meter[data-tone="down"]{--meter-tone:var(--status-down)}
+.usage-meter[data-tone="none"] .usage-meter-fill{display:none}
+.usage-meter-unlimited{margin-top:2px}
+.usage-meter-note{color:var(--muted);font-size:var(--fs-xs);overflow-wrap:anywhere}
+.usage-meter-reset{display:flex;justify-content:flex-end;min-width:0}
+.usage-meter-reset-copy{margin:0;font-size:var(--fs-xs);white-space:nowrap}
+.usage-card-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap;margin-top:6px}
+.usage-card-actions .hint{margin:0;max-width:100%}
+@media (max-width:720px){.usage-summary{grid-template-columns:1fr}.usage-group-grid{grid-template-columns:1fr}}
+@media (max-width:480px){.usage-meter-head{grid-template-columns:1fr}.usage-meter-value{white-space:normal}}
 
 .heat{display:grid;grid-auto-rows:18px;gap:4px}
 .heat-row{display:grid;grid-template-columns:repeat(24,1fr);gap:4px}

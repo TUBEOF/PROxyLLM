@@ -38,6 +38,14 @@ func TestParseOllamaSettingsUsage(t *testing.T) {
 	if usage.WeeklyReset != 1_759_500_000 {
 		t.Fatalf("weekly reset = %d, want 1759500000", usage.WeeklyReset)
 	}
+	if len(usage.Windows) != 2 {
+		t.Fatalf("windows = %+v, want the derived session+weekly entries", usage.Windows)
+	}
+	if usage.Windows[0].Key != "session" || usage.Windows[0].Source != "ollama_settings" ||
+		usage.Windows[0].RemainingPct == nil || *usage.Windows[0].RemainingPct < 71.1 ||
+		*usage.Windows[0].RemainingPct > 71.3 {
+		t.Errorf("session window = %+v, want remaining 71.2 with the settings source", usage.Windows[0])
+	}
 }
 
 func TestParseOllamaSettingsUsage_EmptyPage(t *testing.T) {
@@ -79,6 +87,99 @@ func TestProbeOllamaUsage_SendsCookieAndRejectsSignedOut(t *testing.T) {
 	}
 	if gotPath != "/settings" {
 		t.Fatalf("path = %q, want /settings (fixed)", gotPath)
+	}
+}
+
+// The official balance API is the preferred Ollama source: a Bearer key
+// (no browser cookie), remaining percentages and reset instants.
+func TestFetchOllamaBalance_LegacyWindows(t *testing.T) {
+	var gotPath, gotAuth string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuth = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(`{
+			"included": {
+				"session": {"remaining_percent": 68.23, "resets_at": "2026-10-25T16:00:00Z"},
+				"weekly":  {"remaining_percent": 78.37, "resets_at": "2026-10-26T00:00:00Z"}
+			},
+			"purchased": {"balance_usd": 0}
+		}`))
+	}))
+	defer ts.Close()
+
+	blob, err := fetchOllamaBalance(context.Background(), ts.URL, "ollama-key", ts.Client())
+	if err != nil {
+		t.Fatalf("fetchOllamaBalance: %v", err)
+	}
+	if gotPath != "/api/balance" {
+		t.Errorf("path = %q, want /api/balance", gotPath)
+	}
+	if gotAuth != "Bearer ollama-key" {
+		t.Errorf("Authorization = %q, want the Bearer key", gotAuth)
+	}
+	if len(blob.Windows) != 2 {
+		t.Fatalf("windows = %+v, want session+weekly", blob.Windows)
+	}
+	session := blob.Windows[0]
+	if session.Key != "session" || session.Source != "ollama_balance" ||
+		session.RemainingPct == nil || *session.RemainingPct != 68.23 ||
+		session.UsedPct == nil || *session.UsedPct < 31.76 || *session.UsedPct > 31.78 {
+		t.Errorf("session = %+v, want 68.23 remaining / 31.77 used", session)
+	}
+	if session.ResetAt != parseRFC3339Unix("2026-10-25T16:00:00Z") {
+		t.Errorf("session reset = %d", session.ResetAt)
+	}
+	if blob.Windows[1].Key != "weekly" {
+		t.Errorf("second window = %+v, want weekly", blob.Windows[1])
+	}
+}
+
+// Monthly plans carry a USD balance and billing period; purchased credit is
+// a separate window when it is non-zero.
+func TestFetchOllamaBalance_MonthlyAndPurchased(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"included": {
+				"balance_usd": 72.5,
+				"allowance_usd": 100,
+				"period": {"from": "2026-10-01T00:00:00Z", "until": "2026-11-01T00:00:00Z"}
+			},
+			"purchased": {"balance_usd": 5}
+		}`))
+	}))
+	defer ts.Close()
+
+	blob, err := fetchOllamaBalance(context.Background(), ts.URL, "ollama-key", ts.Client())
+	if err != nil {
+		t.Fatalf("fetchOllamaBalance: %v", err)
+	}
+	if len(blob.Windows) != 2 {
+		t.Fatalf("windows = %+v, want monthly+purchased", blob.Windows)
+	}
+	monthly := blob.Windows[0]
+	if monthly.Key != "monthly" || monthly.Kind != "usd" ||
+		monthly.Remaining == nil || *monthly.Remaining != 72.5 ||
+		monthly.Limit == nil || *monthly.Limit != 100 {
+		t.Errorf("monthly = %+v, want $72.50 of $100", monthly)
+	}
+	if monthly.WindowSeconds != 31*24*60*60 {
+		t.Errorf("window seconds = %d, want 31 days", monthly.WindowSeconds)
+	}
+	if blob.Windows[1].Key != "purchased" || blob.Windows[1].Remaining == nil ||
+		*blob.Windows[1].Remaining != 5 {
+		t.Errorf("purchased = %+v, want $5", blob.Windows[1])
+	}
+}
+
+// A balance payload with no recognized window is an error, never invented
+// zeros.
+func TestFetchOllamaBalance_NoUsageIsError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"included":{},"purchased":{"balance_usd":0}}`))
+	}))
+	defer ts.Close()
+	if _, err := fetchOllamaBalance(context.Background(), ts.URL, "ollama-key", ts.Client()); err == nil {
+		t.Fatal("a balance payload with no window must be an error")
 	}
 }
 
@@ -124,6 +225,11 @@ func TestFetchFirecrawlUsage(t *testing.T) {
 	}
 	if !blob.HasWindows() {
 		t.Error("a credit window must count as a live window")
+	}
+	if len(blob.Windows) != 1 || blob.Windows[0].Key != "credits" ||
+		blob.Windows[0].Source != "firecrawl_credit_usage" ||
+		blob.Windows[0].Remaining == nil || *blob.Windows[0].Remaining != 850 {
+		t.Errorf("windows = %+v, want one firecrawl credit window", blob.Windows)
 	}
 }
 

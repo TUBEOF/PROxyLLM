@@ -36,7 +36,7 @@ test.describe('signed in', () => {
     await page.goto('/quota');
     await readyForCapture(page);
     await expect(page).toHaveScreenshot('quota.png', {
-      mask: [...kpiMasks(page), page.locator('.usage-ring-seg')],
+      mask: [...kpiMasks(page), page.locator('.usage-meter-fill')],
     });
   });
 

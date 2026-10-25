@@ -419,16 +419,33 @@ func (c *Client) newRequestTo(ctx context.Context, path string, stream bool, raw
 	return httpReq, nil
 }
 
+// parseRetryAfter accepts both Retry-After forms the HTTP spec allows:
+// delta-seconds and an HTTP-date (RFC 1123 / RFC 850 / ANSI C). A past date
+// or a non-positive delta is 0 (no hint), never a negative duration.
+func parseRetryAfter(raw string, now time.Time) time.Duration {
+	if raw == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(raw); err == nil {
+		if secs <= 0 {
+			return 0
+		}
+		return time.Duration(secs) * time.Second
+	}
+	if t, err := http.ParseTime(raw); err == nil {
+		if d := t.Sub(now); d > 0 {
+			return d
+		}
+	}
+	return 0
+}
+
 // mapError converts a non-2xx response into the typed upstream error with
 // both classification tiers: HTTP status (tier 1) and the decoded body
 // error object (tier 2), plus the Retry-After hint.
 func (c *Client) mapError(resp *http.Response) *provider.UpstreamError {
 	up := &provider.UpstreamError{HTTPStatus: resp.StatusCode}
-	if ra := resp.Header.Get("Retry-After"); ra != "" {
-		if secs, err := strconv.Atoi(ra); err == nil && secs > 0 {
-			up.RetryAfter = time.Duration(secs) * time.Second
-		}
-	}
+	up.RetryAfter = parseRetryAfter(resp.Header.Get("Retry-After"), time.Now())
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if err != nil {
 		return up

@@ -77,3 +77,30 @@ What changed:
 - Superseded consequence: an account that was never scraped no longer renders
   a "local" window; it renders the empty state that says how to set the usage
   cookie.
+
+## Amendment (2026-10-25): uniform windows, balance API and cooldowns
+
+The blob grows a `schema_version` and a provider-neutral `windows[]` list
+(`key`, `label`, `kind`, `remaining_pct`, `used_pct`, `remaining`, `limit`,
+`unit`, `unlimited`, `reset_at`, `window_seconds`, `source`, `note`). The
+legacy session/weekly/credit fields stay readable and are dual-written for one
+release, and the old capitalized `FetchedAt`/`Error` keys still decode, so a
+rollback binary renders the same card.
+
+- **Ollama** prefers the documented `GET /api/balance` with the account's API
+  key (session/weekly remaining percentages and reset instants; monthly USD
+  balance and period) and keeps the settings-page cookie scrape as the
+  fallback. The balance call sends the key only to the fixed ollama.com origin.
+- **Firecrawl** credits and **Codex** header/stream facts are mapped into the
+  same window shape; Codex now reads window lengths, extra limit families,
+  credit headers and the `codex.rate_limits` SSE event.
+- **Cooldowns** are observable: `HealthTracker.State` exposes the breaker and
+  quota deadlines, and the usage DTO carries `health_until` plus a
+  `cooldown` object. The state remains process-local by design — a restart
+  clears the badge, while the provider's own reset instant stays on the window.
+- **Refresh** is throttled per account and globally; a fresh cached reading
+  answers `skipped: true` with a retry hint instead of calling upstream.
+- **The Quota UI** groups by provider type, renders the remaining share as a
+  shrinking bar (green → orange → red), shows the last-refresh age and the
+  cooldown deadline, and keeps the local-usage prohibition from the previous
+  amendment.
