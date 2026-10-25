@@ -38,6 +38,10 @@ go.work.sum
 # so Claude Code discovers the same files; nothing there is a second copy.
 .claude/*
 !.claude/skills/
+
+# Python bytecode from the test-instance harness (scripts run with -I, but
+# direct imports can still leave a cache).
+__pycache__/
 CLAUDE.md
 .codegraph/
 .remember/

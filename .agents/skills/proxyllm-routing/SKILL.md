@@ -49,5 +49,7 @@ go test ./internal/routing/...          # includes emulation + caption tests
 make test-race                          # routing is streaming-adjacent
 ```
 
-Live, against the local instance (127.0.0.1:18080): rebuild the binary via the
-test-instance script first, then inspect `request_logs` / trace rows read-only.
+Live, against the local instance (127.0.0.1:18080): the `proxyllm-test-instance`
+skill owns the harness — `scripts/test-instance.sh start --build`, `setup`, then
+`test` — and its `scripts/db.py` inspects `request_logs` / trace rows read-only.
+Procedure and invariants: `docs/test-instance.md`.
