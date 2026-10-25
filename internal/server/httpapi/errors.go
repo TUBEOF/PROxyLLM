@@ -195,6 +195,16 @@ func overloadMessage(err error) (string, int) {
 	return msg + " Retry shortly.", 0
 }
 
+// writeDecodeError answers a request body the surface codec could not decode.
+// A malformed request is the client's, never a 500: docs/api/errors.md lists
+// body decode failure as 400. The message is redacted like every logged text
+// (a type/path error normally carries no values, but the rule is blanket).
+func (a *api) writeDecodeError(w http.ResponseWriter, ew errorWriter, err error) (int, string) {
+	msg := redactUpstreamMessage(err.Error())
+	ew.write(w, http.StatusBadRequest, errTypeInvalidRequest, msg)
+	return http.StatusBadRequest, msg
+}
+
 // errorStatus maps a pipeline error to its HTTP status without writing
 // the body (the request-log row needs the status even when the response
 // was already served). Mirrors writeRouteError, surface-aware for the

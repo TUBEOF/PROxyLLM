@@ -40,7 +40,9 @@ func (a *api) handleChat(w http.ResponseWriter, r *http.Request) {
 	codec := openai.Codec{}
 	req, err := codec.DecodeRequest(raw)
 	if err != nil {
-		a.writeRouteError(w, openAIErrorWriter(), err)
+		status, msg := a.writeDecodeError(w, openAIErrorWriter(), err)
+		a.writeRequestLog(r.Context(), auth.ClientKeyIDFromContext(r.Context()),
+			"", "", status, 0, nil, nil, msg)
 		return
 	}
 

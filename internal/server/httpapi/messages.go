@@ -31,7 +31,9 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 
 	req, err := anthropic.Codec{}.DecodeRequest(raw)
 	if err != nil {
-		a.writeRouteError(w, anthropicErrorWriter(), err)
+		status, msg := a.writeDecodeError(w, ew, err)
+		a.writeRequestLog(r.Context(), auth.ClientKeyIDFromContext(r.Context()),
+			"", "", status, 0, nil, nil, msg)
 		return
 	}
 
@@ -196,9 +198,9 @@ func (a *api) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 
 	req, err := anthropic.Codec{}.DecodeRequest(raw)
 	if err != nil {
-		_, msg := a.writeRouteError(w, ew, err)
+		status, msg := a.writeDecodeError(w, ew, err)
 		a.writeRequestLog(r.Context(), auth.ClientKeyIDFromContext(r.Context()),
-			"", "", http.StatusBadRequest, 0, nil, nil, msg)
+			"", "", status, 0, nil, nil, msg)
 		return
 	}
 
