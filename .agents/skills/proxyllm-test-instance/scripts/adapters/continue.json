@@ -1,0 +1,16 @@
+{
+  "name": "continue",
+  "label": "Continue CLI",
+  "tier": "tier2",
+  "command": "cn",
+  "install": "npm install -g @continuedev/cli@1.5.47",
+  "tested": "1.5.47",
+  "runnable": false,
+  "env_keep": ["PATH", "LANG", "LC_ALL", "TERM", "TMPDIR", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS"],
+  "scrub_env": ["OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"],
+  "files": {
+    "{{CONFIG_DIR}}/continue/config.yaml": "name: proxyllm\nversion: 0.0.1\nschema: v1\nmodels:\n  - name: proxy-chat\n    provider: openai\n    model: {{MODEL}}\n    apiBase: {{BASE_URL}}/v1\n    apiKey: {{CLIENT_KEY}}\n    useResponsesApi: false\n"
+  },
+  "args": ["-p", "{{PROMPT}}", "--config", "{{CONFIG_DIR}}/continue/config.yaml", "--format", "json"],
+  "canary": ["~/.continue"]
+}

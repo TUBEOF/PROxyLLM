@@ -1,0 +1,21 @@
+{
+  "name": "codex",
+  "label": "Codex CLI",
+  "tier": "core",
+  "command": "codex",
+  "install": "npm install -g @openai/codex@0.164.0",
+  "tested": "0.164.0",
+  "runnable": true,
+  "env_keep": ["PATH", "LANG", "LC_ALL", "TERM", "TMPDIR", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS"],
+  "scrub_env": ["OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"],
+  "env": {
+    "CODEX_HOME": "{{CONFIG_DIR}}/codex",
+    "PROXYLLM_CLIENT_KEY": "{{CLIENT_KEY}}"
+  },
+  "files": {
+    "{{CONFIG_DIR}}/codex/config.toml": "model = \"{{MODEL}}\"\nmodel_provider = \"proxyllm\"\nmodel_context_window = 128000\n\n[model_providers.proxyllm]\nname = \"PROxyLLM\"\nbase_url = \"{{BASE_URL}}/v1\"\nenv_key = \"PROXYLLM_CLIENT_KEY\"\nwire_api = \"responses\"\n"
+  },
+  "args": ["exec", "--ephemeral", "--skip-git-repo-check", "--json", "{{PROMPT}}"],
+  "web_args": ["exec", "--ephemeral", "--skip-git-repo-check", "--search", "--json", "{{PROMPT}}"],
+  "canary": ["~/.codex"]
+}

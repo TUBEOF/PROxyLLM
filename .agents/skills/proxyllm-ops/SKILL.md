@@ -25,6 +25,8 @@ Makefile AND `ci.yml`; bump both together.
 - Live smoke: `PROXYLLM_SMOKE=1 go test ./internal/smoke/...`
 - Playwright screenshot baselines: rendered in CI only; the assertion suite
   runs locally with `--project=desktop-chrome`.
+- Live multi-CLI test: the `proxyllm-test-instance` skill
+  (`scripts/test-instance.sh test`), procedure in `docs/test-instance.md`.
 
 ## Pull requests
 

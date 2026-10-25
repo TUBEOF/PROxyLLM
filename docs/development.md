@@ -140,6 +140,20 @@ They read their targets from the environment:
 `PROXYLLM_SMOKE_CODEX_{REFRESH_TOKEN,ISSUER,BACKEND}` for a Codex account.
 They never assert on token values and never echo an upstream body.
 
+### Local test instance
+
+For a disposable instance with seeded providers, real client CLIs and a
+machine-readable report, use the `proxyllm-test-instance` skill; the stable
+procedure and invariants live in [Local test instance](test-instance.md).
+
+```bash
+.agents/skills/proxyllm-test-instance/scripts/test-instance.sh init \
+  --home ~/proxyllm-test-instance --key-file ~/.config/proxyllm/keys.env
+.agents/skills/proxyllm-test-instance/scripts/test-instance.sh start --build
+.agents/skills/proxyllm-test-instance/scripts/test-instance.sh setup
+.agents/skills/proxyllm-test-instance/scripts/test-instance.sh test
+```
+
 ## Performance
 
 The end-to-end budgets — proxy-added p99 latency, streaming first-byte

@@ -1,0 +1,17 @@
+{
+  "name": "cline",
+  "label": "Cline CLI",
+  "tier": "tier2",
+  "command": "cline",
+  "install": "npm install -g cline@3.0.73",
+  "tested": "3.0.73",
+  "runnable": false,
+  "env_keep": ["PATH", "LANG", "LC_ALL", "TERM", "TMPDIR", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS"],
+  "scrub_env": ["OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"],
+  "env": {
+    "CLINE_DIR": "{{CONFIG_DIR}}/cline",
+    "CLINE_DATA_DIR": "{{DATA_DIR}}/cline"
+  },
+  "args": ["{{PROMPT}}", "-P", "anthropic", "-m", "{{MODEL}}", "--json", "--auto-approve", "true"],
+  "canary": ["~/.cline"]
+}

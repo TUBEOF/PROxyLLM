@@ -21,6 +21,7 @@ app loads is `webui/src/styles/`.
 | Page shell, grid, gutter, breakpoints, density | `references/layout.md` |
 | hover / focus / active / disabled / loading / empty / error / running / healed | `references/states.md` |
 | Focus, motion, contrast, keyboard, aria | `references/accessibility.md` |
+| Interaction/UX polish checklist for a review | `references/ux-polish.md` |
 | Everything, from the app's own rules | `../../../design/DESIGN.md` |
 
 ## Non-negotiables
@@ -55,7 +56,7 @@ Then `git checkout webui/dist/index.html` — the committed placeholder must sta
 |---|---|---|
 | A hex or `oklch()` literal in a route component or `app.css` | The hue-window check in `design-rules.spec.ts` flags it, or a future palette change misses it | Use a token; if none fits, add one to the token source and its runtime copy |
 | Declaring a token inside a component rule (`.logs-table{--rail:…}`) | The value exists only where that one rule runs, and the sync test cannot see it | Declare it in `colors_and_type.css`, both copies |
-| Editing `webui/src/styles/colors_and_type.css` alone | `webui/design_sync_test.go` fails | Edit `design/colors_and_type.css`, then copy the file over |
+| Editing `webui/src/styles/colors_and_type.css` alone | `webui/design_tokens_sync_test.go` fails | Edit `design/colors_and_type.css`, then copy the file over |
 | A second accent for a chart series or a new badge | Two systems in one screen | `--chart-2` (neutral) for a comparison series, a `--status-*` tone for state |
 | Reading `useMutation().error` right after `run()` | The previous mutation's error renders | Branch on the thrown error or on `run()`'s null return |
 | Variable-length text on a `flex-wrap` line above other content | Font-metric drift between machines moves the wrap point and everything below shifts a line | Block layout |

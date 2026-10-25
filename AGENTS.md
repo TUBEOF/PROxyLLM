@@ -82,10 +82,15 @@ Live smoke tests exist and never run in CI: `PROXYLLM_SMOKE=1 go test
 Agent Skills live in `.agents/skills/` in the open `SKILL.md` format
 (`agentskills.io`): `proxyllm-core` is the entry map, then
 `proxyllm-protocol`, `proxyllm-provider`, `proxyllm-routing`,
-`proxyllm-webui`, `proxyllm-ops`, plus `proxyllm-design`. Codex, Gemini CLI,
+`proxyllm-webui`, `proxyllm-ops`, `proxyllm-test-instance`, plus
+`proxyllm-design`. Codex, Gemini CLI,
 Cursor, Antigravity, Copilot, Zed and others read that path directly;
 `.claude/skills/` holds only symlinks to the same directories so Claude Code
 discovers them too. Skills are the map — `docs/` stays the truth.
+
+`proxyllm-test-instance/scripts/` is the repo's first skill-owned script
+directory: dependency-free bash + `python3 -I`, idempotent, secret-safe and
+runnable from a fresh checkout. Keep that contract for anything added there.
 
 ## Conventions that differ from the default
 
