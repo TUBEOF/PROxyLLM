@@ -237,6 +237,18 @@ function LogRowInner({
       className="log-row"
       data-has-children={(shape.childCount ?? 0) > 0 || undefined}
       onClick={onOpen ? () => onOpen(l) : undefined}
+      onKeyDown={
+        onOpen
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onOpen(l);
+              }
+            }
+          : undefined
+      }
+      tabIndex={onOpen ? 0 : undefined}
+      aria-label={onOpen ? `Open request ${l.id}, ${l.model}` : undefined}
       title={`conversation ${conv}`}
     >
       <td className="td-gutter" />

@@ -36,6 +36,15 @@ export const IconGauge = (p: IconProps) => (
   </Icon>
 );
 
+export const IconBarChart = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 20V10" />
+    <path d="M10 20V4" />
+    <path d="M16 20v-7" />
+    <path d="M22 20H2" opacity="0.4" />
+  </Icon>
+);
+
 export const IconPlug = (p: IconProps) => (
   <Icon {...p}>
     <path d="M9 3v6" />

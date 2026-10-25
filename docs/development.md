@@ -108,7 +108,7 @@ Playwright run locally:
 
 | Suite | Runs where | What it covers |
 |---|---|---|
-| `e2e/design-rules.spec.ts`, `e2e/log-childops.spec.ts`, `e2e/provider-type-form.spec.ts`, `e2e/setup.spec.ts` | anywhere | Design rules, log rendering, provider forms, first-run wizard — no image baselines |
+| `e2e/design-rules.spec.ts`, `e2e/log-childops.spec.ts`, `e2e/provider-type-form.spec.ts`, `e2e/setup.spec.ts`, `e2e/polish.spec.ts` | anywhere | Design rules, log rendering, provider forms, first-run wizard, focus/keyboard/confirmation polish — no image baselines |
 | `e2e/routes.spec.ts` and the screenshot suites | CI | Multi-viewport screenshots against committed baselines |
 
 Screenshot baselines are rendered **in CI only**; a local render differs by

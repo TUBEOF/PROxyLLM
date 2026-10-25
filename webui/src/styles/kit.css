@@ -33,6 +33,8 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
    ============================================================ */
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 20px;border-radius:2rem;border:1px solid transparent;font-family:inherit;font-size:var(--fs-sm);font-weight:var(--fw-regular);line-height:1;text-decoration:none;cursor:pointer;transition:all var(--transition-button);white-space:nowrap}
+.btn:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
+.btn:disabled:hover{box-shadow:none}
 /* form-note is the honest error/alert line under a field or widget —
    replaces the per-page inline alert styles (design-polish pass
    2026-10-06; one class instead of seven inline copies). */
@@ -70,7 +72,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
    system uses. It inherits like every other nav link. */
 .sidebar-brand{display:flex;align-items:center;gap:10px;padding:0 20px;height:var(--nav-height);border-bottom:1px solid var(--border);color:var(--fg);text-decoration:none;flex-shrink:0}
 .sidebar.collapsed .sidebar-brand .name{display:none}
-.sidebar-brand .dot{width:12px;height:12px;border-radius:var(--radius-full);background:var(--accent);flex-shrink:0;animation:status-ping 2s cubic-bezier(0,0,.2,1) infinite}
+.sidebar-brand .dot{width:12px;height:12px;border-radius:var(--radius-full);background:var(--accent);flex-shrink:0}
 .sidebar-brand .name{color:#fff;font-family:var(--font-display);font-weight:var(--fw-bold);font-size:16px;white-space:nowrap}
 .sidebar-nav{list-style:none;margin:0;padding:12px;display:flex;flex-direction:column;gap:2px;flex:1;overflow-y:auto}
 .sidebar-section{padding:14px 12px 6px;color:var(--neutral-500);font-size:11px;text-transform:uppercase;letter-spacing:.08em;white-space:nowrap}
@@ -152,6 +154,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 .empty .empty-ic{width:40px;height:40px;border-radius:var(--radius-full);border:1px solid var(--border);display:inline-flex;align-items:center;justify-content:center;color:var(--neutral-500)}
 .empty .empty-t{font-size:var(--fs-sm);color:var(--muted)}
 .empty .empty-h{font-size:13px}
+.empty-action{margin-top:8px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
 
 /* ============================================================
    KPI TILE
@@ -323,6 +326,8 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 .table .mono{font-family:var(--font-mono);color:var(--neutral-300);font-size:12px}
 .table .row-actions{display:flex;gap:4px;justify-content:flex-end;opacity:0;transition:opacity var(--transition-base)}
 .table tbody tr:hover .row-actions{opacity:1}
+.table tbody tr:focus-within .row-actions{opacity:1}
+.table tbody tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .table .row-actions.is-visible{opacity:1}
 .table .primary{color:var(--fg);font-weight:var(--fw-medium)}
 
@@ -346,7 +351,7 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 .form{display:flex;flex-direction:column;gap:20px;max-width:560px}
 .field{display:flex;flex-direction:column;gap:6px}
 .field label{font-size:13px;font-weight:var(--fw-medium);color:var(--fg)}
-.field .hint{font-size:12px;color:var(--neutral-500)}
+.field .hint{font-size:12px;color:var(--neutral-400)}
 .field .error{font-size:12px;color:var(--status-down);display:none;align-items:center;gap:5px}
 .field .req{color:var(--accent);margin-left:2px}
 .input,.textarea,.field select{appearance:none;width:100%;height:40px;border:1px solid var(--border);border-radius:var(--radius-md);background:oklch(11% 0.011 250 / 60%);color:var(--fg);font-family:inherit;font-size:var(--fs-sm);padding:0 12px;transition:border-color var(--transition-base),box-shadow var(--transition-base)}
@@ -501,8 +506,8 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 @media(max-width:1100px){.w-1{grid-column:span 6}.w-2{grid-column:span 12}.w-3{grid-column:span 12}}
 @media(max-width:768px){
   .sidebar{position:fixed;left:0;z-index:120;transform:translateX(-100%);transition:transform .25s ease-out}
-  .sidebar.collapsed{transform:translateX(0);width:240px}
-  .sidebar.collapsed .sidebar-link span,.sidebar.collapsed .sidebar-brand .name,.sidebar.collapsed .sidebar-section span{display:inline}
+  .sidebar.mobile-open{transform:translateX(0);width:240px}
+  .sidebar.mobile-open .sidebar-link span,.sidebar.mobile-open .sidebar-brand .name,.sidebar.mobile-open .sidebar-section span{display:inline}
   .appshell{grid-template-columns:1fr}
   .canvas{grid-template-columns:1fr;gap:12px}
   .w-1,.w-2,.w-3,.w-full{grid-column:span 1}
@@ -532,11 +537,11 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
    glow, description block, auth hint. Block layout throughout (the
    v1.0.1/v1.0.2 lesson: no variable-length text on a flex-wrap line that
    other content sits under). */
-.provider-type-card{padding:16px 18px;gap:10px;text-align:left;cursor:pointer;color:var(--fg);font:inherit;align-items:stretch}
+.provider-type-card{display:flex;flex-direction:column;padding:16px 18px;gap:10px;text-align:left;cursor:pointer;color:var(--fg);font:inherit;align-items:stretch;text-decoration:none}
 .provider-type-card:hover{border-color:var(--primary-500-alpha);box-shadow:var(--shadow-card-hover)}
 .provider-type-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .provider-type-card .type-head{display:flex;align-items:center;gap:8px}
-.provider-type-card .type-head .title{font-family:var(--font-display);font-size:var(--fs-base);font-weight:var(--fw-semibold);margin:0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.provider-type-card .type-head .title{font-family:var(--font-display);font-size:var(--fs-base);font-weight:var(--fw-semibold);margin:0;flex:1;min-width:0;overflow-wrap:anywhere;white-space:normal}
 .provider-type-card .type-desc{margin:0;font-size:var(--fs-sm);color:var(--muted);line-height:1.45}
 .provider-type-card .type-auth{font-size:var(--fs-xs);letter-spacing:0.04em;text-transform:uppercase;color:var(--neutral-400)}
 .provider-type-card .type-count{display:inline-flex;align-items:center;gap:6px;flex-shrink:0}

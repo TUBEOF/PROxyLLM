@@ -41,7 +41,10 @@ test('the model editor offers chat providers only', async ({ page }) => {
 /** Opens the provider-type group a model card lives in and returns that card. */
 async function modelCard(page: Page, groupLabel: string, modelId: string) {
   const group = page.locator('details.fieldset').filter({ hasText: groupLabel });
-  await group.locator('summary').click();
+  // The first group is open by default; clicking its summary would close it.
+  if (!(await group.evaluate((el) => (el as HTMLDetailsElement).open))) {
+    await group.locator('summary').click();
+  }
   const card = group.locator('.widget').filter({ hasText: modelId });
   await expect(card).toHaveCount(1);
   return card;

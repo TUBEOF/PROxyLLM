@@ -143,17 +143,20 @@ test('the wizard walks a fresh instance through provider, web tools, fallbacks, 
 
   await expect(page.getByRole('heading', { name: 'Welcome' })).toBeVisible();
   await page.getByRole('button', { name: 'Start' }).click();
+  // The shell's "API keys" nav link is a substring match for getByLabel('API
+  // key') now that every nav link carries its name; scope to the wizard card.
+  const wizard = page.locator('.setup-card');
 
   // Provider + real model test.
-  await page.getByLabel('Account name').fill('Primary');
-  await page.getByLabel('API key').fill('ollama-key');
+  await wizard.getByLabel('Account name').fill('Primary');
+  await wizard.getByLabel('API key').fill('ollama-key');
   await page.getByRole('button', { name: 'Connect and test' }).click();
   await expect(page.getByText(/Model test passed/)).toBeVisible();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
 
   // Web-tool account + credential probe.
-  await page.getByLabel('Account name').fill('Web');
-  await page.getByLabel('API key').fill('ollama-key');
+  await wizard.getByLabel('Account name').fill('Web');
+  await wizard.getByLabel('API key').fill('ollama-key');
   await page.getByRole('button', { name: 'Add and check' }).click();
   await expect(page.getByText(/Credential accepted/)).toBeVisible();
   await page.getByRole('button', { name: 'Continue', exact: true }).click();

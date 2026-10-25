@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ApiError, apiCall } from './api';
 import { useAuth } from './components/AuthContext';
+import { IconAlert } from './icons';
 
 // Shared data-fetch plumbing for the admin routes:
 // - `useAdminData` loads any GET endpoint with loading/error/empty states.
@@ -113,12 +114,27 @@ export function PageHead({ title, sub, actions }: { title: string; sub: string; 
 
 // EmptyState is the honest empty placeholder (kit .empty) — never fabricated
 // metrics, always a sentence saying what is missing and where to create it.
-export function EmptyState({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
+// The icon and action are part of the kit's empty vocabulary; the live region
+// announces the state to assistive technology.
+export function EmptyState({
+  title,
+  body,
+  action,
+  icon,
+}: {
+  title: string;
+  body: string;
+  action?: ReactNode;
+  icon?: ReactNode;
+}) {
   return (
-    <div className="empty">
-      <h3>{title}</h3>
-      <p>{body}</p>
-      {action}
+    <div className="empty" role="status">
+      <span className="empty-ic" aria-hidden="true">
+        {icon ?? <IconAlert width="18" height="18" />}
+      </span>
+      <h3 className="empty-t">{title}</h3>
+      <p className="empty-h">{body}</p>
+      {action !== undefined && <div className="empty-action">{action}</div>}
     </div>
   );
 }
@@ -126,9 +142,10 @@ export function EmptyState({ title, body, action }: { title: string; body: strin
 // ErrorNote shows a failed fetch inline — honest, with the server's message.
 export function ErrorNote({ message }: { message: string }) {
   return (
-    <div className="empty">
-      <h3>Could not load data</h3>
-      <p>{message}</p>
+    <div className="empty" role="alert">
+      <span className="empty-ic" aria-hidden="true"><IconAlert width="18" height="18" /></span>
+      <h3 className="empty-t">Could not load data</h3>
+      <p className="empty-h">{message}</p>
     </div>
   );
 }

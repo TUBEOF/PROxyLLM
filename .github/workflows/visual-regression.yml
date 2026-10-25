@@ -76,9 +76,9 @@ jobs:
       # baseline PNGs, so a rendering-environment change cannot fail it. Every
       # file is listed explicitly; the screenshot-comparing specs are excluded
       # by construction, not by a filter.
-      - name: assertions (design rules + log behaviour + models surface + setup)
+      - name: assertions (design rules + log behaviour + models surface + setup + polish)
         working-directory: webui
-        run: npx playwright test -c playwright.config.ts e2e/design-rules.spec.ts e2e/log-childops.spec.ts e2e/provider-type-form.spec.ts e2e/models-page.spec.ts e2e/quota-page.spec.ts e2e/setup.spec.ts
+        run: npx playwright test -c playwright.config.ts e2e/design-rules.spec.ts e2e/log-childops.spec.ts e2e/provider-type-form.spec.ts e2e/models-page.spec.ts e2e/quota-page.spec.ts e2e/setup.spec.ts e2e/polish.spec.ts
 
       # Phase 2 — REPORTING ONLY. Exit codes are captured and OR'd, the step
       # always succeeds, and the outcome travels in a step output. Not

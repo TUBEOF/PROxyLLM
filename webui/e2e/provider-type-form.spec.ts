@@ -143,6 +143,7 @@ test('the device sign-in code copies without the clipboard API', async ({ page }
   // drawer is transient UI — a reload drops it and shows the table behind it.
   await page.reload();
   await page.locator('tr', { hasText: 'copy-fallback-probe' }).getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
   await expect(page.locator('tr', { hasText: 'copy-fallback-probe' })).toHaveCount(0);
 });
 
@@ -177,5 +178,6 @@ test('the device sign-in code copies through the clipboard API', async ({ page }
 
   await page.reload();
   await page.locator('tr', { hasText: 'copy-api-probe' }).getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
   await expect(page.locator('tr', { hasText: 'copy-api-probe' })).toHaveCount(0);
 });

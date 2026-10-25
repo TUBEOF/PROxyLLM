@@ -1,5 +1,5 @@
-import { useCallback, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { apiCall } from '../api';
 import type { ProvidersResponse, ProviderTypesResponse } from '../types';
 import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useLiveData } from '../hooks';
@@ -11,7 +11,6 @@ import { LiveBadge } from '../components/LiveBadge';
 // catalog the server ships. The old table+textarea drawer is gone.
 
 export default function Providers() {
-  const navigate = useNavigate();
   const { data: catalog, loading, error, updatedAt } = useLiveData<ProviderTypesResponse>(
     (signal) => apiCall<ProviderTypesResponse>('GET', '/api/admin/provider-types', undefined, signal),
     CONFIG_LIVE_MS,
@@ -31,32 +30,46 @@ export default function Providers() {
     return byType;
   }, [providersData]);
 
-  const open = useCallback(
-    (type: string) => navigate(`/providers/${encodeURIComponent(type)}`),
-    [navigate],
+  const head = (
+    <PageHead
+      title="Providers"
+      sub="Every supported provider type. Add accounts per type — routing spreads requests over them."
+      actions={
+        <>
+          <LiveBadge updatedAt={updatedAt} intervalMs={CONFIG_LIVE_MS} />
+          <Link className="btn btn-ghost btn-sm" to="/setup">
+            Setup wizard
+          </Link>
+        </>
+      }
+    />
   );
-
   if (error !== null) {
-    return <ErrorNote message={error} />;
+    return (
+      <>
+        {head}
+        <div className="canvas">
+          <div className="w-full"><ErrorNote message={error} /></div>
+        </div>
+      </>
+    );
   }
   if (loading || catalog === null) {
-    return <EmptyState title="Loading providers" body="Fetching the provider catalog." />;
+    return (
+      <>
+        {head}
+        <div className="canvas">
+          <div className="w-full">
+            <EmptyState title="Loading providers" body="Fetching the provider catalog." />
+          </div>
+        </div>
+      </>
+    );
   }
 
   return (
     <>
-      <PageHead
-        title="Providers"
-        sub="Every supported provider type. Add accounts per type — routing spreads requests over them."
-        actions={
-          <>
-            <LiveBadge updatedAt={updatedAt} intervalMs={CONFIG_LIVE_MS} />
-            <Link className="btn btn-ghost btn-sm" to="/setup">
-              Setup wizard
-            </Link>
-          </>
-        }
-      />
+      {head}
       <div className="canvas">
         <div
           className="w-full"
@@ -65,11 +78,10 @@ export default function Providers() {
           {catalog.types.map((t) => {
             const count = counts.get(t.type)?.total ?? 0;
             return (
-              <button
+              <Link
                 key={t.type}
-                type="button"
+                to={`/providers/${encodeURIComponent(t.type)}`}
                 className="widget provider-type-card"
-                onClick={() => open(t.type)}
               >
                 <div className="type-head">
                   <h3 className="title">{t.label}</h3>
@@ -89,7 +101,7 @@ export default function Providers() {
                 <span className="mono hint type-auth">
                   {t.auth === 'oauth' ? 'OAuth device sign-in' : 'API key'}
                 </span>
-              </button>
+              </Link>
             );
           })}
         </div>

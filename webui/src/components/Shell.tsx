@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import UserMenu from './UserMenu';
 import {
+  IconBarChart,
   IconGauge,
   IconKey,
   IconList,
@@ -12,9 +13,10 @@ import {
 } from '../icons';
 
 // App shell (kit "APP SHELL" section): sticky sidebar + topbar + routed
-// content. The `collapsed` class is the kit's single lever — desktop shows
-// the 64px icon rail, mobile slides the off-canvas sidebar in. Navigating
-// closes it again on mobile so the content is never covered for long.
+// content. Desktop `collapsed` is the 64px icon rail and persists in
+// localStorage; mobile `mobile-open` slides the off-canvas sidebar in and is
+// closed on navigation. The two states are separate so changing a desktop
+// preference never opens the phone drawer.
 //
 // Account surface: the topbar avatar IS the user menu —
 // identity, account settings (password change), sign out. The sidebar's
@@ -26,7 +28,7 @@ const NAV_SECTIONS: { label: string; items: { to: string; name: string; icon: ty
     label: 'Monitor',
     items: [
       { to: '/', name: 'Overview', icon: IconGauge, end: true },
-      { to: '/quota', name: 'Quota', icon: IconPlug },
+      { to: '/quota', name: 'Quota', icon: IconBarChart },
       { to: '/logs', name: 'Logs', icon: IconList },
     ],
   },
@@ -46,27 +48,62 @@ const NAV_SECTIONS: { label: string; items: { to: string; name: string; icon: ty
   },
 ];
 
+function readCollapsed(): boolean {
+  try {
+    return localStorage.getItem('proxyllm.sidebar') === 'collapsed';
+  } catch {
+    return false;
+  }
+}
+
 export default function Shell() {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobile, setMobile] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches,
+  );
   const location = useLocation();
 
-  // After navigating, put the mobile off-canvas sidebar away again.
   useEffect(() => {
-    setCollapsed(false);
+    const query = window.matchMedia('(max-width: 768px)');
+    const onChange = () => setMobile(query.matches);
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
+
+  // Navigating closes the mobile drawer; a desktop collapse preference stays.
+  useEffect(() => {
+    setMobileOpen(false);
   }, [location.pathname]);
 
   const toggleCollapsed = useCallback(() => {
-    setCollapsed((c) => !c);
-  }, []);
+    if (mobile) {
+      setMobileOpen((open) => !open);
+      return;
+    }
+    setCollapsed((c) => {
+      const next = !c;
+      try {
+        localStorage.setItem('proxyllm.sidebar', next ? 'collapsed' : 'expanded');
+      } catch {
+        // Storage can be unavailable (private mode); the rail still toggles.
+      }
+      return next;
+    });
+  }, [mobile]);
 
+  const expanded = mobile ? mobileOpen : !collapsed;
   return (
     <div className="appshell">
-      <aside className={`sidebar${collapsed ? ' collapsed' : ''}`}>
-        <a className="sidebar-brand" href="/">
+      <aside
+        id="app-sidebar"
+        className={`sidebar${collapsed ? ' collapsed' : ''}${mobileOpen ? ' mobile-open' : ''}`}
+      >
+        <Link className="sidebar-brand" to="/" aria-label="PROxyLLM home">
           <span className="dot" />
           <span className="name">PROxyLLM</span>
-        </a>
-        <nav className="sidebar-nav">
+        </Link>
+        <nav className="sidebar-nav" aria-label="Main navigation">
           {NAV_SECTIONS.map((section) => (
             <div key={section.label}>
               <div className="sidebar-section">
@@ -77,6 +114,8 @@ export default function Shell() {
                   key={item.to}
                   to={item.to}
                   end={item.end}
+                  title={item.name}
+                  aria-label={item.name}
                   className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
                 >
                   <span className="ic">
@@ -96,7 +135,9 @@ export default function Shell() {
             type="button"
             className="collapse-toggle"
             onClick={toggleCollapsed}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
+            aria-expanded={expanded}
+            aria-controls="app-sidebar"
           >
             <IconPanelLeft width="18" height="18" />
           </button>
