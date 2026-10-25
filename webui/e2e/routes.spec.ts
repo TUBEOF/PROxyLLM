@@ -99,6 +99,12 @@ test.describe('signed in', () => {
     });
   });
 
+  test('setup', async ({ page }) => {
+    await page.goto('/setup');
+    await readyForCapture(page);
+    await expect(page).toHaveScreenshot('setup.png');
+  });
+
   test('keys', async ({ page }) => {
     await page.goto('/keys');
     await readyForCapture(page);

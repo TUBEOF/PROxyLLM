@@ -237,6 +237,10 @@ func (a *AdminAPI) Handler() http.Handler {
 	mux.Handle("PUT /api/admin/settings", a.sessions.RequireAdmin(http.HandlerFunc(a.putSetting)))
 	mux.Handle("DELETE /api/admin/settings/{key}", a.sessions.RequireAdmin(http.HandlerFunc(a.deleteSetting)))
 
+	// First-run onboarding: status (counts + state) and typed progress.
+	mux.Handle("GET /api/admin/onboarding", a.sessions.RequireAdmin(http.HandlerFunc(a.getOnboarding)))
+	mux.Handle("PUT /api/admin/onboarding", a.sessions.RequireAdmin(http.HandlerFunc(a.putOnboarding)))
+
 	// Account (the Shell avatar menu): /me names the session's admin (the
 	// honest username the UI shows after a refresh), the password change
 	// verifies the current password (Argon2id, dummy-hash timing

@@ -52,6 +52,7 @@ Working markup: `design/examples/components.html`.
 | `.table thead th`, `.table tbody td`, `.table .mono`, `.table .num`, `.table .primary`, `.row-actions` | the data grid: sticky header, 13px/16px cells, mono right-aligned numbers, em dash for absent values, row actions revealed on hover |
 | `.pagination`, `.selbar` | paging; the bulk-selection bar |
 | `.empty`, `.empty-ic`, `.empty-t`, `.empty-h` | the honest empty state: an icon circle, a short title, one sentence |
+| `.setup-layout`, `.setup-steps`, `.setup-step`, `.setup-step-num`, `.setup-card`, `.setup-presets`, `.setup-key`, `.setup-callout` | the first-run wizard: a 260px step rail (buttons with `aria-current="step"`, completed numbers in `--status-up`), a form card, alias preset checks and the display-once key |
 | `.feed`, `.feed-item`, `.f-ic`, `.f-main`, `.f-title`, `.f-meta`, `.sev-*` | the event list behind the routing timeline |
 | `.num` | mono with tabular figures |
 | `.muted`, `.hint`, `.txt-muted`, `.heading`, `.sub` | text helpers |

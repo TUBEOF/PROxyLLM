@@ -43,7 +43,7 @@ test('dark-only color-scheme', async ({ page }) => {
 });
 
 test('tokens-only colors on all routes', async ({ page }) => {
-  for (const route of ['/', '/quota', '/providers', '/models', '/routing', '/logs', '/keys']) {
+  for (const route of ['/', '/quota', '/providers', '/models', '/routing', '/logs', '/keys', '/setup']) {
     await page.goto(route);
     await readyForCapture(page);
     // `route` is closure-scoped on the Node side and not visible inside the
@@ -132,7 +132,7 @@ test('tokens-only colors on all routes', async ({ page }) => {
 });
 
 test('no emoji in rendered output', async ({ page }) => {
-  for (const route of ['/', '/providers', '/models', '/routing', '/logs', '/keys', '/settings']) {
+  for (const route of ['/', '/providers', '/models', '/routing', '/logs', '/keys', '/settings', '/setup']) {
     await page.goto(route);
     await readyForCapture(page);
     const emoji = await page.evaluate(() => {

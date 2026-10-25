@@ -440,7 +440,8 @@
       "alias_editor": ".alias-editor/.alias-row/.alias-input/.free-pick — the alias to model map",
       "provider_type_card": ".provider-type-card — provider-type chooser with hover lift",
       "login": ".login-wrap/.login-card/.login-error + .loading/.loading-spinner",
-      "usage_meter": ".usage-meter — the Quota remaining bar: discrete token tones (green while there is room, warn in the last half, down under 20%), role=meter with aria-valuenow/aria-valuetext, grouped by provider type (.usage-group) with summary tiles (.usage-summary)"
+      "usage_meter": ".usage-meter — the Quota remaining bar: discrete token tones (green while there is room, warn in the last half, down under 20%), role=meter with aria-valuenow/aria-valuetext, grouped by provider type (.usage-group) with summary tiles (.usage-summary)",
+      "setup_wizard": ".setup-layout/.setup-steps/.setup-step/.setup-step-num/.setup-card — the lazy first-run wizard; steps are buttons with aria-current=step, progress is persisted after each step, and the key is display-once"
     }
   },
   "implementation": {

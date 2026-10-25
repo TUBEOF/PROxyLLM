@@ -55,7 +55,11 @@ curl http://localhost:8080/healthz
 
 Open `http://localhost:8080`. The first visit offers the console's
 bootstrap form: create the admin account. That window is open only while no
-admin exists. What each page of the console does is documented in
+admin exists. Bootstrap lands on `/setup`, which walks one provider (with a
+real model test), the web-search/fetch account, optional fallbacks, alias
+presets and the client key. Every step can be skipped; the wizard is also
+reachable later from the Overview "Finish setup" card and the Providers page.
+What each page of the console does is documented in
 [operating PROxyLLM](operating.md); from here on this page only walks the
 first request through.
 

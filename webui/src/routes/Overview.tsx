@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { apiCall } from '../api';
-import type { UsageResponse, UsageRow } from '../types';
-import { EmptyState, ErrorNote, PageHead, useLiveData } from '../hooks';
+import type { OnboardingResponse, UsageResponse, UsageRow } from '../types';
+import { EmptyState, ErrorNote, PageHead, useAdminData, useLiveData } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
 import { IconBoxes, IconGauge, IconPlug, IconRoute } from '../icons';
 
@@ -87,6 +88,9 @@ export default function Overview() {
     (signal) => apiCall<UsageResponse>('GET', `/api/admin/usage?from=${from}&to=${to}`, undefined, signal),
     POLL_MS,
   );
+  const setup = useAdminData<OnboardingResponse>((signal) =>
+    apiCall<OnboardingResponse>('GET', '/api/admin/onboarding', undefined, signal),
+  );
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
 
@@ -137,6 +141,22 @@ export default function Overview() {
         }
       />
       <div className="canvas">
+        {setup.data?.needs_setup === true && (
+          <div className="widget w-full setup-callout">
+            <div className="widget-head">
+              <h3 className="title">Finish setup</h3>
+            </div>
+            <div className="widget-body">
+              <p className="sub">
+                Connect a provider, add the web tools and create a client key — the wizard keeps
+                your progress.
+              </p>
+              <Link className="btn btn-primary btn-sm" to="/setup">
+                Open setup
+              </Link>
+            </div>
+          </div>
+        )}
         {error !== null ? (
           <div className="w-full">
             <ErrorNote message={error} />
@@ -150,6 +170,7 @@ export default function Overview() {
             <EmptyState
               title="No usage recorded yet"
               body="Send requests through the proxy — token counts, request volumes and failure rates appear here once traffic flows. Configure a provider and a routing rule first."
+              action={<Link className="btn btn-ghost btn-sm" to="/setup">Open setup</Link>}
             />
           </div>
         ) : (

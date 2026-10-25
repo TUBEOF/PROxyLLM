@@ -231,6 +231,8 @@ side effect of the idle-window refresh, not a bug.
 | `GET /settings` | `{"entries":[{"key","value"}]}`, key-ascending. |
 | `PUT /settings` | `{"key","value"}` — the generic key/value store. Any key is accepted; only an empty key is `400`. |
 | `DELETE /settings/{key}` | Deleting a missing key is a successful no-op. |
+| `GET /onboarding` | `{"needs_setup","state":{"version","completed","dismissed","completed_at","updated_at"},"counts":{"providers","llm_providers","web_tools","models","routing_rules","client_keys"}}`. `needs_setup` is recomputed from the live counts (an LLM provider, a model and a client key) and is false when the wizard is dismissed or completed. |
+| `PUT /onboarding` | `{"version","completed":["provider","model","web_tools","fallbacks","routing","key","done"],"dismissed","completed_at"}`. Unknown step names are `400`; the response is `{"state":{…}}`. The state rides the `onboarding_state` KV entry, no migration. |
 
 The keys the console and the runtime read are documented once in
 [configuration](../configuration.md#database-overrides-layer-4) — that page
