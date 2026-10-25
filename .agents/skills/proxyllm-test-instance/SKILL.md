@@ -23,9 +23,9 @@ cd <repo>
 
 `init` asks for the instance path, the Ollama key source and the models unless
 the flags above are given. The key is written to `<home>/.env` (0600) and is
-never printed. `test` writes `artifacts/<run-id>/report.json` and `report.md`.
-Add `--allow-private-provider-urls` to `init` to enable the local-500 failover
-injection; without it that phase is reported `skipped`.
+never printed. `test` writes `artifacts/<run-id>/report.json` and `report.md`;
+`--clients all` (the default) runs every adapter, and
+`clients install NAME --yes-install` installs a missing one.
 
 ## Read the right file
 
@@ -35,15 +35,20 @@ injection; without it that phase is reported `skipped`.
 | Which CLI, how it is isolated and invoked, install command | `references/cli-adapters.md` |
 | Exact assertions and evidence per phase | `references/test-pattern.md` |
 | Upstream vs proxy vs client vs model failure | `references/troubleshooting.md` |
-| UX/design checks for the console | `references/ux-checks.md` and `proxyllm-design` |
 | Endpoints, JSON shapes, CSRF | `docs/api/admin.md` |
 | Config keys and layers | `docs/configuration.md` |
 | Claude Code env and aliases | `docs/claude-code.md` |
 
 ## Non-negotiables
 
-- **Ask before installing a CLI.** Missing CLIs are `skipped_missing` with the
-  install command; never install silently.
+- **Every stimulus is a real CLI.** The `test` command never calls
+  `/v1/messages` itself, never starts a stub upstream, and never replays a
+  fixture. DB/log rows are evidence, not a second test surface. Ask before
+  installing a CLI; `--yes-install` is the explicit consent.
+- **Never leak an emulated tool name.** A client `tool_use` named lowercase
+  `web_fetch`/`web_search` is the proxy bug this suite catches; Claude Code
+  reports it as `No such tool available`. A client-side `WebSearch`/`WebFetch`
+  under Claude Code's ToolSearch is `model_behavior`, not a failure.
 - **No permanent CLI changes.** Every run gets a fresh HOME/XDG/config dir
   under `<home>/clients/`; the real config paths are checksummed before and
   after. Any change is a hard failure.
@@ -59,9 +64,10 @@ injection; without it that phase is reported `skipped`.
   chain entry is known blind.
 - **Real PNGs only.** A 1x1 PNG makes the vision upstream return 500; use
   `scripts/make_png.py`.
-- **Classify failures honestly.** An upstream 202/403/0-byte fetch is
-  `upstream`, not a proxy bug; a missing emulation event is `proxy`; a model
-  that ignores an offered tool is `model_behavior`.
+- **Classify failures honestly.** An upstream 202/403/0-byte fetch is an
+  upstream fact, not a proxy bug; a model that ignores an offered tool, or a
+  CLI that executes its own web tool under ToolSearch, is `model_behavior`; a
+  leaked emulated name or an unknown-tool error naming a web tool is `fail`.
 - **No runtime state in the repo.** Instances live outside the repo or under
   the gitignored `data/` directory.
 

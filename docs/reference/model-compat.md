@@ -78,7 +78,12 @@ carry the family's result blocks): Claude Code sends `WebFetch`/`WebSearch` as
 plain client tools and would otherwise fetch in the CLI itself, so the proxy
 would see no web-tool request at all. Claiming one rewrites the definition into
 the family def; the client stops doing the work, the proxy serves it, and the
-call appears in the log like any other emulated call.
+call appears in the log like any other emulated call. A forced `tool_choice`
+follows the rename (and degrades to `auto` when `off` removes the definition),
+so the upstream never receives a dangling name. A turn that mixes an emulated
+call with the client's own calls is still answered by the proxy, and the round
+cap/budget synthesize an `unavailable` result: an emulated family name is never
+returned as a client `tool_use`.
 
 Emulation is therefore the default for **every** target, not a property a
 web-tool account has to be present for. Two things go wrong when a definition

@@ -218,6 +218,26 @@ func ChainFailure(err error) (mixed, timedOut, ok bool) {
 	return mixed, ex.timedOut, true
 }
 
+// ChainTransportFailure reports whether an exhausted chain failed entirely
+// before any HTTP response existed: every attempt classified transport (the
+// request went out and the connection or deadline failed) or network (dial,
+// DNS, TLS — the request never reached the provider). ok is false for a mixed
+// chain, for any typed upstream answer (429/5xx keep their own status), and
+// for a walk that made no attempt. timedOut is true when any attempt ran out
+// of time, so the surface can answer the documented 504 instead of 502.
+func ChainTransportFailure(err error) (timedOut, ok bool) {
+	var ex *exhaustedError
+	if !errors.As(err, &ex) || len(ex.classes) == 0 {
+		return false, false
+	}
+	for _, c := range ex.classes {
+		if c != ClassTransport && c != ClassNetwork {
+			return false, false
+		}
+	}
+	return ex.timedOut, true
+}
+
 // record keeps the classification of one failed attempt; the walk calls it for
 // every attempt it makes.
 func (e *exhaustedError) record(c Classification, err error) {

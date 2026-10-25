@@ -377,6 +377,10 @@ func applyEmulation(c Compat, req ir.Request, trace *Trace) ir.Request {
 
 	kept := make([]ir.Tool, 0, len(req.Tools))
 	removed, converted, claimed := 0, 0, 0
+	// A forced tool_choice must follow the rename: a request that forces a
+	// tool the proxy no longer sends (or sends under a family name) gets a
+	// dangling name, and a strict upstream answers a tool-not-found 400.
+	choiceRewritten := false
 	// Families the request already speaks natively or emulated: a client tool
 	// is never claimed for a family that is already present, so one request
 	// can never carry the same family twice (the loop would see duplicates).
@@ -394,6 +398,10 @@ func applyEmulation(c Compat, req ir.Request, trace *Trace) ir.Request {
 			// the client's own tool alone — it is the client's to run.
 			f := c.ClientWebTools[tool.Name]
 			if f != "" && !tool.Emulated && !present[f] && c.ServerToolEmulation == EmulationEmulateFirecrawl {
+				if req.ToolChoice != nil && req.ToolChoice.Type == ir.ToolChoiceTool && req.ToolChoice.Name == tool.Name {
+					req.ToolChoice.Name = f
+					choiceRewritten = true
+				}
 				kept = append(kept, emulatedToolDef(f, tool.Description, &ir.ServerToolConfig{}))
 				claimed++
 				continue
@@ -402,10 +410,21 @@ func applyEmulation(c Compat, req ir.Request, trace *Trace) ir.Request {
 			continue
 		}
 		if c.ServerToolEmulation == EmulationOff {
+			if req.ToolChoice != nil && req.ToolChoice.Type == ir.ToolChoiceTool &&
+				(req.ToolChoice.Name == tool.Name || req.ToolChoice.Name == family) {
+				req.ToolChoice.Type = ir.ToolChoiceAuto
+				req.ToolChoice.Name = ""
+				choiceRewritten = true
+			}
 			removed++
 			continue
 		}
 		// emulate-firecrawl: convert in place.
+		if req.ToolChoice != nil && req.ToolChoice.Type == ir.ToolChoiceTool &&
+			req.ToolChoice.Name == tool.Name && tool.Name != family {
+			req.ToolChoice.Name = family
+			choiceRewritten = true
+		}
 		st := tool.ServerTool
 		if st == nil {
 			st = &ir.ServerToolConfig{}
@@ -419,17 +438,21 @@ func applyEmulation(c Compat, req ir.Request, trace *Trace) ir.Request {
 	}
 
 	req.Tools = kept
+	choiceNote := ""
+	if choiceRewritten {
+		choiceNote = "; tool_choice followed the served tool name"
+	}
 	switch {
 	case c.ServerToolEmulation == EmulationOff:
 		trace.CompatPolicy("server_tool_emulation", EmulationOff,
-			strconv.Itoa(removed)+" server-tool def(s) removed (emulation off)")
+			strconv.Itoa(removed)+" server-tool def(s) removed (emulation off)"+choiceNote)
 	case claimed > 0:
 		trace.CompatPolicy("server_tool_emulation", EmulationEmulateFirecrawl,
 			"client web-tool def(s) served by the proxy (emulation): "+
-				strconv.Itoa(claimed)+" claimed, "+strconv.Itoa(converted)+" server-tool def(s) converted")
+				strconv.Itoa(claimed)+" claimed, "+strconv.Itoa(converted)+" server-tool def(s) converted"+choiceNote)
 	default:
 		trace.CompatPolicy("server_tool_emulation", EmulationEmulateFirecrawl,
-			"server-tool def(s) converted to emulated client tool(s) (web-tool accounts)")
+			"server-tool def(s) converted to emulated client tool(s) (web-tool accounts)"+choiceNote)
 	}
 	return req
 }

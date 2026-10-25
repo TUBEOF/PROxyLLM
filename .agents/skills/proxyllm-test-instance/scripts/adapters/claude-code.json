@@ -24,7 +24,7 @@
     "DISABLE_AUTOUPDATER": "1"
   },
   "args": ["-p", "{{PROMPT}}", "--output-format", "json"],
-  "web_args": ["-p", "{{PROMPT}}", "--output-format", "json", "--allowedTools", "WebSearch", "WebFetch"],
+  "web_args": ["-p", "{{PROMPT}}", "--output-format", "json", "--allowedTools", "WebSearch", "WebFetch", "Read"],
   "canary": ["~/.claude", "~/.claude.json"],
   "canary_skip_env": "CLAUDECODE",
   "canary_note": "Canary is skipped when the harness runs inside Claude Code: the parent session writes ~/.claude and ~/.claude.json concurrently. Isolation is enforced by CLAUDE_CONFIG_DIR plus a fresh HOME; the child must write only under the run directory."

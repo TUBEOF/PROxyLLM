@@ -11,8 +11,11 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/tubeof/proxyllm/internal/provider"
 	"github.com/tubeof/proxyllm/internal/routing"
@@ -143,21 +146,53 @@ func systemOneErrorWriter() errorWriter {
 //   - routing.ErrNoRoute → 404, the model has no route
 //   - routing.ErrChainOverloaded → the surface's retryable overload
 //     mapping (529 overloaded_error on Anthropic, 503 on OpenAI)
-//   - upstream errors keep their status (429 stays 429); transport
-//     failures (status 0) become 502 bad gateway; exhausted chains fall
-//     back to the last upstream classification, else 500
+//   - upstream errors keep their status (429 stays 429); a chain whose every
+//     attempt died before an HTTP response is 502, or 504 when one ran out of
+//     time; exhausted chains otherwise fall back to the last upstream
+//     classification, else 500
 //
 // It returns the status written (for the request-log row) and the
 // redacted message.
 func (a *api) writeRouteError(w http.ResponseWriter, ew errorWriter, err error) (int, string) {
 	if errors.Is(err, routing.ErrChainOverloaded) && ew.overloadStatus > 0 {
-		const msg = "All providers for this model are in health cooldown (circuit breaker open). Retry shortly."
+		msg, retryAfter := overloadMessage(err)
+		if retryAfter > 0 {
+			w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+		}
 		ew.write(w, ew.overloadStatus, ew.overloadType, msg)
 		return ew.overloadStatus, msg
 	}
 	status, errType, message := mapRouteError(err)
 	ew.write(w, status, errType, message)
 	return status, message
+}
+
+// overloadMessage names the cooldown the router reported — circuit breaker
+// or an upstream quota/rate-limit window — and, when a deadline is known, the
+// seconds until the earliest provider recovers (returned for Retry-After).
+// The sentinel-only fallback keeps the historical wording for callers that
+// did not carry the typed facts (decision surfaces).
+func overloadMessage(err error) (string, int) {
+	const breaker = "All providers for this model are in health cooldown (circuit breaker open)."
+	var oe *routing.ChainOverloadedError
+	if !errors.As(err, &oe) {
+		return breaker + " Retry shortly.", 0
+	}
+	secs := 0
+	if !oe.Until.IsZero() {
+		secs = int(math.Ceil(time.Until(oe.Until).Seconds()))
+		if secs < 1 {
+			secs = 1
+		}
+	}
+	msg := breaker
+	if oe.Reason == "quota_exhausted" {
+		msg = "All providers for this model are in an upstream quota/rate-limit cooldown."
+	}
+	if secs > 0 {
+		return msg + " Retry in " + strconv.Itoa(secs) + "s.", secs
+	}
+	return msg + " Retry shortly.", 0
 }
 
 // errorStatus maps a pipeline error to its HTTP status without writing
@@ -229,6 +264,20 @@ func mapRouteError(err error) (int, string, string) {
 		}
 		return http.StatusBadGateway, errTypeUpstream,
 			"Every route for this request failed, for different reasons."
+	}
+
+	// A homogeneous chain that never produced an HTTP response is a gateway
+	// failure, not an internal error: 502 when the connection failed, 504 when
+	// an attempt ran out of time (the response-header wall included). Before
+	// this branch, a raw transport error fell through to 500, contradicting
+	// docs/api/errors.md and hiding a retryable condition.
+	if timedOut, ok := routing.ChainTransportFailure(err); ok {
+		if timedOut {
+			return statusAbandonedBudget, errTypeUpstream,
+				"Every route for this request failed; at least one ran out of time."
+		}
+		return http.StatusBadGateway, errTypeUpstream,
+			"Every route for this request failed; no provider produced a response."
 	}
 
 	// Upstream-classified errors: keep the status (429 stays 429), relay

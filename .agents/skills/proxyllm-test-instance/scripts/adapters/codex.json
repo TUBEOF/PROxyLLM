@@ -15,7 +15,7 @@
   "files": {
     "{{CONFIG_DIR}}/codex/config.toml": "model = \"{{MODEL}}\"\nmodel_provider = \"proxyllm\"\nmodel_context_window = 128000\n\n[model_providers.proxyllm]\nname = \"PROxyLLM\"\nbase_url = \"{{BASE_URL}}/v1\"\nenv_key = \"PROXYLLM_CLIENT_KEY\"\nwire_api = \"responses\"\n"
   },
-  "args": ["exec", "--ephemeral", "--skip-git-repo-check", "--json", "{{PROMPT}}"],
-  "web_args": ["exec", "--ephemeral", "--skip-git-repo-check", "--search", "--json", "{{PROMPT}}"],
+  "args": ["exec", "--ephemeral", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--json", "{{PROMPT}}"],
+  "web_args": ["--search", "exec", "--ephemeral", "--skip-git-repo-check", "--sandbox", "danger-full-access", "--json", "{{PROMPT}}"],
   "canary": ["~/.codex"]
 }

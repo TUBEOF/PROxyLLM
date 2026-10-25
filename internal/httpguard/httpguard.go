@@ -137,7 +137,14 @@ const defaultTimeout = 30 * time.Second
 // an upstream that accepted the connection and says nothing stops holding
 // the goroutine. Shared as the default for NewClient/NewStreamingClient and
 // overridable per caller — see ClientOption.
-const defaultHeaderTimeout = 30 * time.Second
+//
+// This is NOT the firecrawl/ollamaweb total budget above. Chat providers use
+// a streaming client with no total timeout, and claimed client web tools or
+// an injected analyze_image force the complete (non-streaming) emulation
+// detour: there the wall covers the whole model generation, not time to
+// first byte. Thirty seconds routinely killed reasoning-model answers; five
+// minutes matches the emulation loop's own total budget.
+const defaultHeaderTimeout = 5 * time.Minute
 
 // ClientOption tunes one guarded client without changing the shared
 // tuning of the rest (pool sizing, dial/TLS budgets, SSRF redirect guard).
@@ -152,11 +159,10 @@ type transportTuning struct {
 
 // WithHeaderTimeout sets the transport's ResponseHeaderTimeout: how long an
 // upstream may take to produce response headers before the transport
-// raises the header-wait failure. The 30s default rescues a hung upstream,
-// but the same wall converts a slow-but-correct multimodal upstream into a
-// transport failure that (being class-transport) masks the model's own
-// capability-gap rejection — operators raising it for a slow provider set
-// this once and the shared guard stays for everyone else.
+// raises the header-wait failure. The five-minute default rescues a hung
+// upstream while leaving a reasoning model's complete generation (the
+// emulation detour is non-streaming) inside the wall; operators may lower it
+// for a faster failure or raise it for a slower provider.
 func WithHeaderTimeout(d time.Duration) ClientOption {
 	return func(t *transportTuning) { t.headerTimeout = d }
 }

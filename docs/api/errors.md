@@ -49,8 +49,9 @@ see the overload case below.
 
 ## All providers unavailable (retryable)
 
-When the model routed but every provider in its chain is in health cooldown
-(circuit breaker open), the answer is retryable and surface-specific:
+When the model routed but every provider in its chain is cooling down — a
+circuit breaker or an upstream quota/rate-limit window — the answer is
+retryable and surface-specific:
 
 | Surface | Status | Type |
 |---|---|---|
@@ -58,9 +59,12 @@ When the model routed but every provider in its chain is in health cooldown
 | OpenAI-compatible | `503` | `server_error` |
 | System One | `500` | — |
 
-Unlike the 404, a client is expected to retry these. The `route_trace`
-records the per-provider `skipped (health cooldown)` events and a terminal
-`rejected` event naming the cooldown.
+Unlike the 404, a client is expected to retry these. The body names the actual
+state — `circuit breaker` or an upstream `quota/rate-limit` window — and, when
+a deadline is known, the response carries `Retry-After` with the seconds until
+the earliest provider recovers. The `route_trace` records the per-provider
+`skipped (health cooldown)` events and a terminal `rejected` event naming the
+cooldown and its reason.
 
 ## Status codes
 
@@ -74,7 +78,7 @@ records the per-provider `skipped (health cooldown)` events and a terminal
 | `499` | The client closed the request — a log marker, never sent to a client | — |
 | `502` | Transport failure to every attempted provider, or a chain whose failures differed | yes |
 | `503` | OpenAI surfaces: all providers in cooldown | yes |
-| `504` | The request's own budget expired (emulation loop budget, client-side deadline) | yes |
+| `504` | A dispatch attempt ran out of time (response-header wall), or the request's own budget expired (emulation loop budget, client-side deadline) | yes |
 | `529` | Anthropic surface: all providers in cooldown | yes |
 
 ## Failure classification

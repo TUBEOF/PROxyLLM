@@ -69,6 +69,7 @@ def main() -> int:
     parser.add_argument("--model", required=True)
     parser.add_argument("--prompt", required=True)
     parser.add_argument("--web", action="store_true")
+    parser.add_argument("--image", default="")
     parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
     if not args.client_key:
@@ -108,7 +109,10 @@ def main() -> int:
         if key in os.environ:
             env[key] = os.environ[key]
     for key in manifest.get("scrub_env", []):
-        env[key] = ""
+        # Unset rather than set to "": some SDKs treat an empty *_API_KEY /
+        # *_BASE_URL as an explicitly configured provider and override the
+        # manifest's file-based base URL with an empty string.
+        env.pop(key, None)
     env["HOME"] = dirs["HOME"]
     env["XDG_CONFIG_HOME"] = dirs["CONFIG_DIR"]
     env["XDG_DATA_HOME"] = dirs["DATA_DIR"]
@@ -131,6 +135,18 @@ def main() -> int:
     argv = [render(str(a), dirs) for a in manifest.get("args", [])]
     if args.web and manifest.get("web_args"):
         argv = [render(str(a), dirs) for a in manifest["web_args"]]
+    if args.image:
+        # Only Codex's exec mode accepts an image attachment; the other
+        # adapters' wire paths do not carry one. -i belongs to the exec
+        # subcommand, after it and before the positional prompt.
+        if manifest.get("name") != "codex":
+            print(f"{manifest.get('name')} does not support --image", file=sys.stderr)
+            return 2
+        try:
+            at = argv.index("exec") + 1
+        except ValueError:
+            at = 0
+        argv = [*argv[:at], "-i", args.image, *argv[at:]]
     command = manifest["command"]
     if not shutil.which(command, path=env.get("PATH", os.environ.get("PATH", ""))):
         print(f"missing CLI: {command}", file=sys.stderr)

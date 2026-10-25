@@ -125,21 +125,37 @@ func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry,
 			return finishEmulated(resp, synth, usage), nil
 		}
 		if foreign {
-			if len(imgCalls) > 0 {
-				// Mixed analyze_image + client tool calls: the client's own
-				// calls surface, the vision calls drop (traced) — the model
-				// re-issues them next round.
-				return finishEmulated(dropUnansweredVision(resp, state, trace,
-					"not answered: mixed with client tool calls; the client answers its own"), synth, usage), nil
+			// A mixed response ends the loop: the client must answer its own
+			// calls, so there is nobody to re-dispatch for the emulated ones.
+			// The emulated calls are still OURS — answer them in wire order and
+			// surface server_tool_use + result blocks. Returning the raw call
+			// would hand the client a `tool_use` named `web_fetch`/`web_search`,
+			// names it never declared (the "No such tool available" failure).
+			// analyze_image keeps its mixed rule: drop it, traced; the model
+			// re-issues it next round.
+			parts, _, roundUsage := e.answerEmulatedRound(ctx, resp.Content, defs, state, req,
+				uses, trace, false,
+				"not answered: mixed with client tool calls; the client answers its own")
+			usage = addUsage(usage, roundUsage)
+			answered := 0
+			for _, part := range resp.Content {
+				if call, ok := part.(ir.ToolCallPart); ok && call.Name != analyzeImageToolName {
+					if _, emulated := defs[call.Name]; emulated {
+						answered++
+					}
+				}
 			}
-			// Mixed emulated + client tool calls: the client must answer
-			// its own; surface the whole response unchanged.
+			if answered > 0 {
+				trace.EmulatedTool("emulation_loop", "",
+					fmt.Sprintf("mixed response: answered %d emulated call(s) without re-dispatch", answered), 0)
+			}
+			resp = respWithContent(resp, parts)
 			return finishEmulated(resp, synth, usage), nil
 		}
 		if round >= maxEmulationRounds {
 			trace.EmulatedTool("emulation_loop", "",
 				fmt.Sprintf("round cap %d reached; returning last upstream response", maxEmulationRounds), 0)
-			return finishEmulated(dropUnansweredVision(resp, state, trace,
+			return finishEmulated(dropUnansweredEmulated(resp, defs, state, trace,
 				"not answered: emulation round cap reached"), synth, usage), nil
 		}
 		// The other half of the safety net: the loop's own deadline (set when the
@@ -150,46 +166,16 @@ func (e *Executor) executeWithEmulation(ctx context.Context, chain []ChainEntry,
 			trace.EmulatedTool("emulation_loop", "",
 				"emulation budget exhausted ("+e.cfg.EmulationTotalBudget.String()+
 					"); returning what the tools answered so far", 0)
-			return finishEmulated(dropUnansweredVision(resp, state, trace,
+			return finishEmulated(dropUnansweredEmulated(resp, defs, state, trace,
 				"not answered: emulation budget exhausted"), synth, usage), nil
 		}
 
 		// Synthesize the client-facing blocks for this round in wire
 		// order: each emulated call becomes server_tool_use + result;
 		// other parts (text, thinking) copy through.
-		var roundParts []ir.Part
-		var results []ir.ToolResultPart
-		for _, part := range resp.Content {
-			call, ok := part.(ir.ToolCallPart)
-			if !ok {
-				roundParts = append(roundParts, part)
-				continue
-			}
-			if call.Name == analyzeImageToolName && state != nil {
-				tr, spent := e.answerAnalyzeImage(ctx, call, callConfig(defs[call.Name]), state, uses, trace)
-				if tr.ToolUseID != "" {
-					results = append(results, tr)
-				}
-				usage = addUsage(usage, spent)
-				// No client-facing blocks: the tool belongs to no client.
-				continue
-			}
-			st := callConfig(defs[call.Name])
-			use, res, tr := e.answerEmulated(ctx, call, st, req, uses, trace)
-			roundParts = append(roundParts, use, res)
-			results = append(results, tr)
-			// Honest accounting: every successful emulated invocation
-			// counts against the request's web-request usage counters —
-			// the client's bill must match the work actually done.
-			if !res.IsError {
-				switch call.Name {
-				case "web_search":
-					usage.WebSearchRequests++
-				case "web_fetch":
-					usage.WebFetchRequests++
-				}
-			}
-		}
+		roundParts, results, roundUsage := e.answerEmulatedRound(ctx, resp.Content, defs, state, req,
+			uses, trace, true, "")
+		usage = addUsage(usage, roundUsage)
 		synth = append(synth, roundParts...)
 
 		// Re-dispatch: the model sees its own tool calls plus the
@@ -349,6 +335,79 @@ func (e *Executor) answerEmulated(ctx context.Context, call ir.ToolCallPart, st 
 	return use, res, tr
 }
 
+// answerEmulatedRound synthesizes one response's emulated calls in the
+// model's wire order. answerVision selects the analyze_image rule: true on a
+// normal round (answer it, never client-facing), false in the mixed corner
+// (drop it, traced — the client answers its own calls and the model re-issues
+// vision next round). Web calls are always answered: once the proxy claimed
+// or converted one, a raw `tool_use` named web_fetch/web_search is a name the
+// client never declared.
+//
+// results is the re-dispatch exchange; the mixed caller discards it because
+// there is no re-dispatch. usage carries vision spend and the web counters.
+func (e *Executor) answerEmulatedRound(
+	ctx context.Context,
+	content []ir.Part,
+	defs map[string]ir.Tool,
+	state *visionToolState,
+	req ir.Request,
+	uses map[string]int,
+	trace *Trace,
+	answerVision bool,
+	dropReason string,
+) (parts []ir.Part, results []ir.ToolResultPart, usage ir.Usage) {
+	for _, part := range content {
+		call, ok := part.(ir.ToolCallPart)
+		if !ok {
+			parts = append(parts, part)
+			continue
+		}
+		if call.Name == analyzeImageToolName {
+			if state == nil {
+				// No vision state means the tool is the client's, not ours.
+				parts = append(parts, part)
+				continue
+			}
+			if _, emulated := defs[analyzeImageToolName]; !emulated {
+				// A client-declared analyze_image is NOT ours.
+				parts = append(parts, part)
+				continue
+			}
+			if !answerVision {
+				trace.AnalyzeImage("", "", dropReason, 0, ir.Usage{})
+				continue
+			}
+			tr, spent := e.answerAnalyzeImage(ctx, call, callConfig(defs[call.Name]), state, uses, trace)
+			if tr.ToolUseID != "" {
+				results = append(results, tr)
+			}
+			usage = addUsage(usage, spent)
+			// No client-facing blocks: the tool belongs to no client.
+			continue
+		}
+		if _, emulated := defs[call.Name]; !emulated {
+			parts = append(parts, part)
+			continue
+		}
+		st := callConfig(defs[call.Name])
+		use, res, tr := e.answerEmulated(ctx, call, st, req, uses, trace)
+		parts = append(parts, use, res)
+		results = append(results, tr)
+		// Honest accounting: every successful emulated invocation counts
+		// against the request's web-request usage counters — the client's
+		// bill must match the work actually done.
+		if !res.IsError {
+			switch call.Name {
+			case "web_search":
+				usage.WebSearchRequests++
+			case "web_fetch":
+				usage.WebFetchRequests++
+			}
+		}
+	}
+	return parts, results, usage
+}
+
 // searchVia and fetchVia call the emulator, using the pool's traced variants
 // when the configured emulator IS a pool. The interface stays two methods (a
 // single emulator has no account walk to report), and the pool records each
@@ -471,20 +530,43 @@ func mapMediaType(mt string) string {
 	return mt
 }
 
-// dropUnansweredVision removes every analyze_image tool_use the response
-// still carries — a call the loop never answered — and traces one decline
-// with `reason` per dropped call. The invariant it enforces lives in the ADR:
-// an unknown tool_use must never reach the client, whatever ended the loop
-// (mixed turn, round cap, emulation deadline). The client's own calls and
-// everything else in the response pass through untouched.
-func dropUnansweredVision(resp ir.Response, state *visionToolState, trace *Trace, reason string) ir.Response {
-	if state == nil {
-		return resp
-	}
+// dropUnansweredEmulated removes every emulated-family tool_use the response
+// still carries — calls the loop never answered — when the round cap or the
+// loop deadline ends the request. The invariant lives in the ADR: an unknown
+// tool_use must never reach the client, whatever ended the loop. analyze_image
+// is dropped outright (it belongs to no client); a web call is converted into
+// the protocol-conform server_tool_use + error result pair, because a raw
+// `tool_use` named web_fetch/web_search is a name the client never declared.
+// The client's own calls and everything else pass through untouched.
+func dropUnansweredEmulated(resp ir.Response, defs map[string]ir.Tool, state *visionToolState, trace *Trace, reason string) ir.Response {
 	var surfaced []ir.Part
 	for _, part := range resp.Content {
-		if call, ok := part.(ir.ToolCallPart); ok && call.Name == analyzeImageToolName {
-			trace.AnalyzeImage("", "", reason, 0, ir.Usage{})
+		call, ok := part.(ir.ToolCallPart)
+		if !ok {
+			surfaced = append(surfaced, part)
+			continue
+		}
+		if call.Name == analyzeImageToolName {
+			if state != nil {
+				if _, emulated := defs[analyzeImageToolName]; emulated {
+					trace.AnalyzeImage("", "", reason, 0, ir.Usage{})
+					continue
+				}
+			}
+			surfaced = append(surfaced, part)
+			continue
+		}
+		if _, emulated := defs[call.Name]; emulated {
+			trace.EmulatedTool(call.Name, "", reason, 0)
+			surfaced = append(surfaced,
+				ir.ServerToolUsePart(call),
+				ir.ServerToolResultPart{
+					ToolUseID: call.ID,
+					ToolName:  call.Name,
+					IsError:   true,
+					ErrorCode: errCodeEmulatorUnavailable,
+				},
+			)
 			continue
 		}
 		surfaced = append(surfaced, part)

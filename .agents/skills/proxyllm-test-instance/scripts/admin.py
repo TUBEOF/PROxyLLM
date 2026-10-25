@@ -261,7 +261,7 @@ def main() -> int:
     parser.add_argument("--home", default=os.environ.get("PROXYLLM_TEST_HOME",
                                                          os.path.expanduser("~/proxyllm-test-instance")))
     parser.add_argument("--base", default=None)
-    parser.add_argument("command", choices=["setup", "validate", "print-config",
+    parser.add_argument("command", choices=["setup", "print-config",
                                             "resolve-models", "dry-run"])
     parser.add_argument("--force-aliases", action="store_true")
     parser.add_argument("--skip-probe", action="store_true")
@@ -312,10 +312,6 @@ def main() -> int:
         for query in (inst["chat_model"], inst["fallback_model"]):
             model = resolve_model(models, query)
             print(f"{query} -> {model['id']}")
-        return 0
-
-    if args.command == "validate":
-        _validate(client, inst, env, args.skip_probe)
         return 0
 
     # setup

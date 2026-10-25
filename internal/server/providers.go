@@ -119,9 +119,9 @@ type NamedEmulator struct {
 const upstreamHeaderTimeoutMSKey = "upstream_response_header_timeout_ms"
 
 // resolveUpstreamHeaderTimeout reads the response-header override. A nil
-// option means the shared 30s default — absent, malformed, and non-positive
-// values all degrade to it (the settings-read contract: store noise never
-// changes how a provider is built).
+// option means the shared five-minute default — absent, malformed, and
+// non-positive values all degrade to it (the settings-read contract: store
+// noise never changes how a provider is built).
 func resolveUpstreamHeaderTimeout(ctx context.Context, store *storage.Store) httpguard.ClientOption {
 	if store == nil {
 		return nil
@@ -150,7 +150,7 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 
 	// ADR-018: the header wall is operator-tunable, read per construction
 	// (the live set is rebuilt on every provider write, so a settings change
-	// applies on the next reload). nil = shared 30s default.
+	// applies on the next reload). nil = shared five-minute default.
 	headerOpts := []httpguard.ClientOption{}
 	if opt := resolveUpstreamHeaderTimeout(ctx, store); opt != nil {
 		headerOpts = append(headerOpts, opt)
