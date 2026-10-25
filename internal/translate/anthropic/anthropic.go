@@ -5,6 +5,7 @@
 package anthropic
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -317,8 +318,40 @@ type wireUserLocation struct {
 	Timezone string `json:"timezone,omitempty"`
 }
 
+// wireCitations accepts the two documented shapes of the `citations` key:
+// the text-citation ARRAY on an assistant text block (Claude Code replays it
+// in later requests), and the source-config OBJECT {"enabled":true} on a
+// document or server-tool definition. The IR does not model text citations,
+// so a decoded text block forwards its text without them; array preserves
+// the shape for a same-wire re-encode instead of failing the request.
 type wireCitations struct {
-	Enabled bool `json:"enabled"`
+	Enabled bool
+	array   json.RawMessage
+}
+
+func (c *wireCitations) UnmarshalJSON(b []byte) error {
+	trimmed := bytes.TrimSpace(b)
+	if len(trimmed) > 0 && trimmed[0] == '[' {
+		c.array = append(c.array[:0], trimmed...)
+		return nil
+	}
+	var obj struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.Unmarshal(trimmed, &obj); err != nil {
+		return err
+	}
+	c.Enabled = obj.Enabled
+	return nil
+}
+
+func (c *wireCitations) MarshalJSON() ([]byte, error) {
+	if c.array != nil {
+		return c.array, nil
+	}
+	return json.Marshal(struct {
+		Enabled bool `json:"enabled"`
+	}{Enabled: c.Enabled})
 }
 
 type wireToolChoice struct {

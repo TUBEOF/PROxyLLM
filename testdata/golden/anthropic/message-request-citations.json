@@ -1,0 +1,29 @@
+{
+  "model": "claude-sonnet-5",
+  "max_tokens": 32,
+  "messages": [
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "The answer is 42.",
+          "citations": [
+            {
+              "type": "char_location",
+              "cited_text": "42",
+              "document_index": 0,
+              "document_title": null,
+              "start_char_index": 14,
+              "end_char_index": 16
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": "And why?"
+    }
+  ]
+}

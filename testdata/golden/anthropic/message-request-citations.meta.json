@@ -1,0 +1,6 @@
+{
+  "fixture": "message-request-citations.json",
+  "source": "https://platform.claude.com/docs/en/api/messages",
+  "accessed": "2026-10-25",
+  "notes": "A replayed assistant text block carrying the documented citations ARRAY (text citation objects). The same `citations` key also appears as the document/server-tool config OBJECT {\"enabled\": true}; both shapes must decode. Derived from the Messages create schema (content blocks / text citations), not from a proxy capture."
+}

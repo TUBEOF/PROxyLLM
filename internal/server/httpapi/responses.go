@@ -27,7 +27,9 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 
 	req, err := openai.ResponsesCodec{}.DecodeRequest(raw)
 	if err != nil {
-		a.writeRouteError(w, openAIErrorWriter(), err)
+		status, msg := a.writeDecodeError(w, ew, err)
+		a.writeRequestLog(r.Context(), auth.ClientKeyIDFromContext(r.Context()),
+			"", "", status, 0, nil, nil, msg)
 		return
 	}
 

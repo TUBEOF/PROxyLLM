@@ -98,6 +98,13 @@ fix lands with its fixture, matrix row, test and this entry's update.
     stays absent, never zero-invented.
 12. **Decision-image without a sniffable media type** — fails the encode with
     a clear error instead of a guessed data URL (see Decision operations).
+13. **Text citations on a replayed assistant block** — the `citations` key
+    carries two shapes: an array on a text block (a client replaying an
+    earlier answer) and the config object `{"enabled":true}` on a document or
+    server-tool definition. Both decode; the array is accepted and the text
+    forwards without it (the IR has no citation field), while the config
+    object still sets `ServerTool.CitationsEnabled`. Pinning the object shape
+    used to fail the whole request with a 500.
 
 ## Request-side mapping
 
