@@ -4,7 +4,7 @@
 
 | Version | Supported |
 |---|---|
-| 1.20.x | ✅ |
+| 1.21.x | ✅ |
 | older | ❌ |
 
 Security fixes land on the current release line. Upgrading is a tag change —
