@@ -8,7 +8,7 @@ import type {
   RulesResponse,
 } from '../types';
 import { EmptyState, ErrorNote, PageHead, useAdminData, useMutation } from '../hooks';
-import { Drawer } from '../components/Overlays';
+import { Drawer, ConfirmDialog } from '../components/Overlays';
 import OAuthSignIn from '../components/OAuthSignIn';
 import { IconCheck, IconClose, IconPlus } from '../icons';
 
@@ -149,6 +149,7 @@ export default function ProviderTypePage() {
   const [usageCookie, setUsageCookie] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
   const [oauthDraftId, setOauthDraftId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Account | null>(null);
   const addAccount = useMutation();
 
   const closeAdd = useCallback(() => {
@@ -276,19 +277,38 @@ export default function ProviderTypePage() {
     return ids;
   }, [rules.data]);
 
+  const head = (
+    <PageHead
+      title={meta?.label ?? type ?? 'Provider'}
+      sub={meta?.description ?? 'Provider type'}
+    />
+  );
   if (catalogError !== null) {
-    return <ErrorNote message={catalogError} />;
+    return (
+      <>
+        {head}
+        <div className="canvas">
+          <div className="w-full"><ErrorNote message={catalogError} /></div>
+        </div>
+      </>
+    );
   }
   if (catalogLoading || meta === null) {
-    return <EmptyState title="Loading provider type" body="Fetching the provider catalog." />;
+    return (
+      <>
+        {head}
+        <div className="canvas">
+          <div className="w-full">
+            <EmptyState title="Loading provider type" body="Fetching the provider catalog." />
+          </div>
+        </div>
+      </>
+    );
   }
 
   return (
     <>
-      <PageHead
-        title={meta.label}
-        sub={meta.description}
-      />
+      {head}
       <div className="canvas">
         <div className="w-full" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           {/* Connection settings — form-based, rendered from the catalog. */}
@@ -356,7 +376,7 @@ export default function ProviderTypePage() {
                           aria-label={`Remove alias ${i + 1}`}
                           onClick={() => setAliasRows((rows) => rows.filter((_, j) => j !== i))}
                         >
-                          ✕
+                          <IconClose width="14" height="14" />
                         </button>
                       </div>
                     ))}
@@ -489,7 +509,7 @@ export default function ProviderTypePage() {
                               <button
                                 type="button"
                                 className="btn btn-danger btn-sm"
-                                onClick={() => void removeAccount(a)}
+                                onClick={() => setConfirmDelete(a)}
                               >
                                 Delete
                               </button>
@@ -726,7 +746,22 @@ export default function ProviderTypePage() {
           )}
         </Drawer>
       )}
-
+      {confirmDelete !== null && (
+        <ConfirmDialog
+          title="Delete account"
+          body={`Delete ${confirmDelete.name} (${confirmDelete.id})?${
+            referencedIds.has(confirmDelete.id)
+              ? ' A routing rule names this account; that chain entry will no longer resolve.'
+              : ''
+          }`}
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => {
+            const account = confirmDelete;
+            setConfirmDelete(null);
+            void removeAccount(account);
+          }}
+        />
+      )}
     </>
   );
 }

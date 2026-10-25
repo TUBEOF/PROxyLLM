@@ -1,6 +1,6 @@
 {
   "name": "PROxyLLM Console Design System",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "The design system of the PROxyLLM console: a dark-only operational interface on a near-black canvas with one green accent for health and action, glass surfaces, Plus Jakarta Sans headings over Inter body text, and JetBrains Mono for numbers. Coupled to DESIGN.md; colors_and_type.css holds the values.",
   "mode": "dark-only",
   "sources": {
@@ -475,6 +475,12 @@
     "Never add tracking or analytics scripts",
     "Never use outline-only charts — encode with fills",
     "Never put a left colour stripe on a card; the sidebar's active indicator is the one permitted left edge",
-    "Never put variable-length text on a flex-wrap line above other content"
+    "Never put variable-length text on a flex-wrap line above other content",
+    "Never interpolate between status hue families — use discrete token tones, softened only by same-hue alpha",
+    "Never drop the page frame while loading, erroring or empty",
+    "Never make an action hover-only — :focus-within must reveal it",
+    "Never open a dialog without a focus trap, initial focus, Escape and focus restoration",
+    "Never delete without a confirmation that names the object",
+    "Never animate decoration — motion carries state"
   ]
 }

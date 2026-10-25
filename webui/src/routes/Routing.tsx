@@ -12,7 +12,7 @@ import type {
 } from '../types';
 import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
-import { Drawer } from '../components/Overlays';
+import { Drawer, ConfirmDialog } from '../components/Overlays';
 import PrioList from '../components/PrioList';
 import AliasEditor from '../components/AliasEditor';
 import { IconPlus } from '../icons';
@@ -337,6 +337,7 @@ export default function Routing() {
 
   const [editing, setEditing] = useState<RoutingRule | null>(null);
   const [creating, setCreating] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<RoutingRule | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState({
     id: '',
@@ -529,7 +530,18 @@ export default function Routing() {
                   </thead>
                   <tbody>
                     {rules.map((rule) => (
-                      <tr key={rule.id} onClick={() => openEdit(rule)}>
+                      <tr
+                        key={rule.id}
+                        onClick={() => openEdit(rule)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            openEdit(rule);
+                          }
+                        }}
+                        tabIndex={0}
+                        aria-label={`Edit rule ${rule.match_model}`}
+                      >
                         <td>
                           <span className="primary">{rule.match_model}</span>
                           <br />
@@ -576,7 +588,7 @@ export default function Routing() {
                               className="btn btn-danger btn-sm"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                void remove(rule);
+                                setConfirmDelete(rule);
                               }}
                             >
                               Delete
@@ -704,6 +716,18 @@ export default function Routing() {
             </fieldset>
           </form>
         </Drawer>
+      )}
+      {confirmDelete !== null && (
+        <ConfirmDialog
+          title="Delete routing rule"
+          body={`Delete the rule "${confirmDelete.match_model}"? Requests that matched it fall back to the implicit route or the model-not-found 404.`}
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => {
+            const rule = confirmDelete;
+            setConfirmDelete(null);
+            void remove(rule);
+          }}
+        />
       )}
     </>
   );

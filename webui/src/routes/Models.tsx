@@ -11,7 +11,7 @@ import type {
 } from '../types';
 import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useAdminData, useLiveData, useMutation, useNow } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
-import { Drawer } from '../components/Overlays';
+import { Drawer, ConfirmDialog } from '../components/Overlays';
 import { relativeAge } from '../time';
 import { IconCheck, IconClock, IconClose, IconDelta, IconPlus, IconRefresh } from '../icons';
 
@@ -120,6 +120,7 @@ export default function Models() {
   );
 
   const [editing, setEditing] = useState<Model | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Model | null>(null);
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -599,8 +600,8 @@ export default function Models() {
                 <details> (native, no JS state — the v1.0.x screenshot lesson
                 favors structural primitives), its models render as widget
                 cards in a grid. Block layout only. */}
-            {groups.map((g) => (
-              <details key={g.type || '__unknown__'} className="fieldset" style={{ marginBottom: 8 }} open={groups.length === 1}>
+            {groups.map((g, index) => (
+              <details key={g.type || '__unknown__'} className="fieldset" style={{ marginBottom: 8 }} open={groups.length === 1 || index === 0}>
                 <summary style={{ cursor: 'pointer', fontWeight: 600, padding: '4px 0' }}>
                   {g.label} ({g.models.length} {g.models.length === 1 ? 'model' : 'models'})
                 </summary>
@@ -699,7 +700,7 @@ export default function Models() {
                             <button
                               type="button"
                               className="btn btn-danger btn-sm"
-                              onClick={() => void remove(m)}
+                              onClick={() => setConfirmDelete(m)}
                               disabled={drawerPending}
                             >
                               Delete
@@ -823,7 +824,10 @@ export default function Models() {
                 <button
                   type="button"
                   className="btn btn-danger"
-                  onClick={() => void remove(editing)}
+                  onClick={() => {
+                    setConfirmDelete(editing);
+                    setEditing(null);
+                  }}
                   disabled={drawerPending}
                 >
                   Delete
@@ -936,6 +940,18 @@ export default function Models() {
 
           </form>
         </Drawer>
+      )}
+      {confirmDelete !== null && (
+        <ConfirmDialog
+          title="Delete model"
+          body={`Delete ${confirmDelete.id}? Rules and aliases that name it stop resolving until a replacement exists.`}
+          onCancel={() => setConfirmDelete(null)}
+          onConfirm={() => {
+            const model = confirmDelete;
+            setConfirmDelete(null);
+            void remove(model);
+          }}
+        />
       )}
     </>
   );

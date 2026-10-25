@@ -16,6 +16,16 @@ same binary as the API, on the same port, at `/`.
 | **Logs** | The request log: rows, the trace timeline, sub-operations, captured bodies, live tail |
 | **Quota** | Per-account usage and limits, with the account's cooldown state |
 
+## Keyboard and safety
+
+Every row that opens a detail — a request log row, a routing rule, a model or
+provider card — is reachable with Tab and opens with Enter or Space. Row
+actions appear on keyboard focus as well as hover. Dialogs and drawers trap
+focus, close on Escape and restore focus to the control that opened them.
+Destructive actions (model, account and routing-rule delete) ask first and name
+the object; the API-key page keeps its own confirmation. The collapsed
+sidebar keeps an accessible name on every link.
+
 ## First run
 
 The first visit offers **bootstrap**: create the admin account. That window

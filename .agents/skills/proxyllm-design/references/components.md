@@ -51,8 +51,9 @@ Working markup: `design/examples/components.html`.
 | `.heat`, `.heat-row`, `.heat-cell`, `.heat-legend` | a density heatmap |
 | `.table thead th`, `.table tbody td`, `.table .mono`, `.table .num`, `.table .primary`, `.row-actions` | the data grid: sticky header, 13px/16px cells, mono right-aligned numbers, em dash for absent values, row actions revealed on hover |
 | `.pagination`, `.selbar` | paging; the bulk-selection bar |
-| `.empty`, `.empty-ic`, `.empty-t`, `.empty-h` | the honest empty state: an icon circle, a short title, one sentence |
+| `.empty`, `.empty-ic`, `.empty-t`, `.empty-h`, `.empty-action` | the honest empty state: an icon circle, a short title, one sentence and a next action; `role="status"` announces it |
 | `.setup-layout`, `.setup-steps`, `.setup-step`, `.setup-step-num`, `.setup-card`, `.setup-presets`, `.setup-key`, `.setup-callout` | the first-run wizard: a 260px step rail (buttons with `aria-current="step"`, completed numbers in `--status-up`), a form card, alias preset checks and the display-once key |
+| `.btn:disabled`, `.table tbody tr:focus-within .row-actions`, `.table tbody tr:focus-visible` | disabled controls dim without a glow; row actions appear on keyboard focus, and a focused row has the accent outline |
 | `.feed`, `.feed-item`, `.f-ic`, `.f-main`, `.f-title`, `.f-meta`, `.sev-*` | the event list behind the routing timeline |
 | `.num` | mono with tabular figures |
 | `.muted`, `.hint`, `.txt-muted`, `.heading`, `.sub` | text helpers |

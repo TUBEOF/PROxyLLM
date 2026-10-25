@@ -75,6 +75,12 @@ do_not:
   - "Never put emoji in the interface — icons are inline SVG."
   - "Never hot-link a remote asset — fonts and images are served from this repository."
   - "Never override a token in a component rule, and never write a colour literal outside the token layer unless no token expresses the nuance."
+  - "Never interpolate between status hue families — green, orange and red are discrete token tones, softened only by same-hue alpha."
+  - "Never drop the page frame while loading, erroring or empty — the title, gutter and next action stay."
+  - "Never make an action hover-only; :focus-within must reveal the same controls."
+  - "Never open a dialog without a focus trap, initial focus, Escape and focus restoration."
+  - "Never delete without a confirmation that names the object."
+  - "Never animate decoration; motion carries state."
 ---
 
 # PROxyLLM — Console Design System
