@@ -66,7 +66,8 @@ test.describe('interaction polish', () => {
       await expect(page.locator('.sidebar')).toHaveClass(/mobile-open/);
       await expect(page.getByRole('link', { name: 'Overview' })).toHaveAccessibleName('Overview');
       await expect(page.getByRole('link', { name: 'Routing' })).toHaveAccessibleName('Routing');
-      await page.getByRole('button', { name: 'Collapse sidebar' }).click();
+      // The open drawer covers the toggle; navigation is what closes it.
+      await page.getByRole('link', { name: 'Routing' }).click();
       await expect(page.locator('.sidebar')).not.toHaveClass(/mobile-open/);
       return;
     }
