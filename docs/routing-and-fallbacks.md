@@ -501,7 +501,10 @@ accounts are read is a property of the provider type, not an operator choice:
 a custom OpenAI-compatible account is read from its `GET /models`, an Ollama
 Cloud account from `GET /v1/models` plus a per-model facts probe
 (`POST /api/show`) that supplies the detected facts, and the ChatGPT/Codex
-backend is read best-effort — its model list has no pinned contract, so an
+backend from `GET /codex/models?client_version=…`. The Codex manifest is
+pinned in `testdata/golden/openai-codex/` (source and access date in its
+`.meta.json`); it supplies the context window, reasoning levels, input
+modalities and the tool signals the sync maps into model capabilities. An
 unexpected answer skips that account with the reason recorded rather than
 failing the run.
 
@@ -511,6 +514,9 @@ Policy:
   console).
 - Operator edits on an existing row — capabilities, compatibility, priority —
   survive every sync; only the wire name refreshes.
+- A sync-authored row that predates a capability fact is repaired once: an
+  existing `false` is upgraded to a detected `true`, a missing key stays
+  unknown, and any pinned capability or manual row is left untouched.
 - Synced rows the upstream dropped are deleted. Rows whose origin is
   `manual` are never touched by detection and never deleted.
 - A console save records the row as `manual`, because saving is operator

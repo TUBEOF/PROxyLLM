@@ -23,7 +23,9 @@ A row carries a capability blob with eight flags: `streaming`, `tools`,
 
 - **Detected.** For a synced row the model sync fills the blob from the
   upstream's own metadata (see [routing and
-  fallbacks](../routing-and-fallbacks.md#model-sync)). `decision` is one of
+  fallbacks](../routing-and-fallbacks.md#model-sync)). A later sync repairs an
+  existing `false` in a sync-authored row to a newly detected `true`; it never
+  invents a missing flag and never touches a pin. `decision` is one of
   those facts: it says whether the *model* declares the decision surface —
   it does not gate decision routing, which is an account capability
   ([decision API](../api/decisions.md#routing)).

@@ -100,7 +100,7 @@ func (s *Syncer) Run(ctx context.Context) (storage.ModelSyncState, error) {
 		if tp, ok := p.(provider.TypedProvider); ok {
 			typ = tp.Type()
 		}
-		ps := s.syncProvider(ctx, p.ID(), typ, prefixes[typ], lister)
+		ps := s.syncProvider(ctx, p.ID(), prefixes[typ], lister)
 		state.Providers = append(state.Providers, ps)
 	}
 
@@ -163,7 +163,7 @@ func validPrefixRune(r rune) bool {
 // into the returned state (skipped=1 + reason), never returned as errors —
 // one dead account must not block the others. prefix is the type's model
 // prefix; empty means unprefixed legacy behavior (row ID = wire name).
-func (s *Syncer) syncProvider(ctx context.Context, providerID, typ, prefix string, lister provider.ModelLister) storage.ModelSyncProviderState {
+func (s *Syncer) syncProvider(ctx context.Context, providerID, prefix string, lister provider.ModelLister) storage.ModelSyncProviderState {
 	ps := storage.ModelSyncProviderState{ProviderID: providerID}
 
 	pctx, cancel := context.WithTimeout(ctx, perProviderTimeout)
@@ -292,9 +292,7 @@ func (s *Syncer) syncProvider(ctx context.Context, providerID, typ, prefix strin
 		return ps
 	}
 	ps.Removed = len(existing) + ps.Added - len(remaining)
-	if ps.Removed < 0 {
-		ps.Removed = 0
-	}
+	ps.Removed = max(ps.Removed, 0)
 	return ps
 }
 
