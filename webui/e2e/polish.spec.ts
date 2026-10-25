@@ -59,6 +59,17 @@ test.describe('interaction polish', () => {
   });
 
   test('the collapsed rail keeps every nav link named', async ({ page }) => {
+    if ((page.viewportSize()?.width ?? 0) <= 768) {
+      // On a phone the sidebar is an off-canvas drawer opened by the same
+      // toggle, not the desktop rail; every link must still be named.
+      await page.getByRole('button', { name: 'Expand sidebar' }).click();
+      await expect(page.locator('.sidebar')).toHaveClass(/mobile-open/);
+      await expect(page.getByRole('link', { name: 'Overview' })).toHaveAccessibleName('Overview');
+      await expect(page.getByRole('link', { name: 'Routing' })).toHaveAccessibleName('Routing');
+      await page.getByRole('button', { name: 'Collapse sidebar' }).click();
+      await expect(page.locator('.sidebar')).not.toHaveClass(/mobile-open/);
+      return;
+    }
     await page.getByRole('button', { name: 'Collapse sidebar' }).click();
     await expect(page.locator('.sidebar')).toHaveClass(/collapsed/);
     await expect(page.getByRole('link', { name: 'Overview' })).toHaveAccessibleName('Overview');
