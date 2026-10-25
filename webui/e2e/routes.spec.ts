@@ -68,13 +68,16 @@ test.describe('signed in', () => {
   // 2026-10-17: the card is addressed by its MODEL ID. The page groups by
   // provider TYPE, two fixture accounts share the custom-openai type, and the
   // account no longer rides the card at all (a model is a property of the
-  // type; which account serves it is routing's business). The group starts
-  // collapsed (several fixture groups), so open it first.
+  // type; which account serves it is routing's business). Models opens the
+  // first group by default, so toggle only when this group is still closed —
+  // an unconditional summary click would close it again.
   test('models test button', async ({ page }) => {
     await page.goto('/models');
     await readyForCapture(page);
     const group = page.locator('details', { hasText: 'Custom OpenAI-compatible' });
-    await group.locator('summary').first().click();
+    if (!(await group.evaluate((el) => (el as HTMLDetailsElement).open))) {
+      await group.locator('summary').first().click();
+    }
     const card = group.locator('.widget', { hasText: 'mdl-test' });
     await card.getByRole('button', { name: 'Test', exact: true }).click();
     // The outcome stays on the card: a check, not a transient note.
