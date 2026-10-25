@@ -482,6 +482,17 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 		}
 	}
 
+	// Seeded runs are configured; the setup wizard is complete and the
+	// Overview card stays hidden. The empty spec (-seed=false) leaves this
+	// absent, which is the first-run state the wizard's empty spec covers.
+	if err := store.PutOnboardingState(ctx, storage.OnboardingState{
+		Version:     storage.OnboardingStateVersion,
+		Completed:   []string{"provider", "web_tools", "fallbacks", "routing", "key", "done"},
+		CompletedAt: now.Unix(),
+	}); err != nil {
+		return fmt.Errorf("seed onboarding state: %w", err)
+	}
+
 	return nil
 }
 

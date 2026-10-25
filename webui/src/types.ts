@@ -108,6 +108,29 @@ export interface CreatedKey {
   key: string;
 }
 
+// First-run onboarding (GET/PUT /api/admin/onboarding): the persisted
+// wizard progress plus the live counts the status is derived from.
+export interface OnboardingState {
+  version: number;
+  completed: string[];
+  dismissed: boolean;
+  completed_at?: number;
+  updated_at?: number;
+}
+export interface OnboardingCounts {
+  providers: number;
+  llm_providers: number;
+  web_tools: number;
+  models: number;
+  routing_rules: number;
+  client_keys: number;
+}
+export interface OnboardingResponse {
+  needs_setup: boolean;
+  state: OnboardingState;
+  counts: OnboardingCounts;
+}
+
 export interface UsageRow {
   day: string;
   client_key_id: string;

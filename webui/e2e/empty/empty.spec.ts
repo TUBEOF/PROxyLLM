@@ -18,6 +18,7 @@ for (const [route, name] of [
   ['/routing', 'routing'],
   ['/logs', 'logs'],
   ['/keys', 'keys'],
+  ['/setup', 'setup'],
 ] as const) {
   test(`empty ${name}`, async ({ page }) => {
     await page.goto(route);

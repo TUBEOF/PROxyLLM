@@ -22,6 +22,19 @@ The first visit offers **bootstrap**: create the admin account. That window
 is open only while no admin exists — afterwards the endpoint answers `409`,
 so an exposed instance cannot be taken over by a second registration.
 
+Bootstrap lands the first admin on **`/setup`**, the guided wizard: connect a
+provider and prove it with a real model test, add a web-search/web-fetch
+account and probe its credential, choose optional fallbacks, set alias
+presets, and create a client key shown once. Every step can be skipped; the
+wizard writes its progress to the `onboarding_state` KV entry and resumes with
+the completed markers intact. "Skip for now" dismisses it without claiming
+completion. Existing admins reach the same page from the Overview "Finish
+setup" card or the Providers action. There is no global redirect gate.
+
+The Overview card is driven by live counts (an LLM provider, a model and a
+client key); deleting one of those later re-opens it even after the wizard
+completed. The detail is in [ADR-020](adr/ADR-020-first-run-onboarding.md).
+
 Sessions last 30 minutes idle and 12 hours absolute. Logging out invalidates
 the session immediately; changing the password invalidates every *other*
 session of that admin.

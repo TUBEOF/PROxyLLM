@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { apiCall } from '../api';
 import type { ProvidersResponse, ProviderTypesResponse } from '../types';
 import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useLiveData } from '../hooks';
@@ -48,7 +48,14 @@ export default function Providers() {
       <PageHead
         title="Providers"
         sub="Every supported provider type. Add accounts per type — routing spreads requests over them."
-        actions={<LiveBadge updatedAt={updatedAt} intervalMs={CONFIG_LIVE_MS} />}
+        actions={
+          <>
+            <LiveBadge updatedAt={updatedAt} intervalMs={CONFIG_LIVE_MS} />
+            <Link className="btn btn-ghost btn-sm" to="/setup">
+              Setup wizard
+            </Link>
+          </>
+        }
       />
       <div className="canvas">
         <div

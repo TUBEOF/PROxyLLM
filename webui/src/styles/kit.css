@@ -271,6 +271,27 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 @media (max-width:720px){.usage-summary{grid-template-columns:1fr}.usage-group-grid{grid-template-columns:1fr}}
 @media (max-width:480px){.usage-meter-head{grid-template-columns:1fr}.usage-meter-value{white-space:normal}}
 
+/* Setup wizard — a lazy page with a stepper and one form card. The sidebar
+   collapses to a wrapped row on phones; every step is a button so an
+   operator can jump back without losing progress. */
+.setup-layout{grid-column:1/-1;display:grid;grid-template-columns:260px minmax(0,1fr);gap:24px;align-items:start}
+.setup-steps{padding:8px}
+.setup-steps ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.setup-step{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;color:var(--muted);padding:8px 10px;border-radius:var(--radius-sm);text-align:left;cursor:pointer;font:inherit}
+.setup-step:hover{background:var(--bg-elev)}
+.setup-step[aria-current="step"]{color:var(--fg);background:var(--bg-elev)}
+.setup-step-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;border:1px solid var(--border);font-family:var(--font-mono);font-size:var(--fs-xs);flex-shrink:0}
+.setup-step-num.is-done{border-color:var(--status-up);color:var(--status-up)}
+.setup-counts{margin:12px 4px 0}
+.setup-card .widget-body{padding:22px}
+.setup-card h2.title{margin:0 0 4px}
+.setup-presets{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:6px 12px;margin:8px 0}
+.setup-key{display:flex;gap:8px;align-items:center}
+.setup-key .input{flex:1;min-width:0}
+.setup-next{margin-top:16px;border-top:1px solid var(--border);padding-top:12px}
+.setup-callout{margin-bottom:16px}
+@media (max-width:720px){.setup-layout{grid-template-columns:1fr}.setup-steps ol{flex-direction:row;flex-wrap:wrap}.setup-step{padding:6px 8px}}
+
 .heat{display:grid;grid-auto-rows:18px;gap:4px}
 .heat-row{display:grid;grid-template-columns:repeat(24,1fr);gap:4px}
 .heat-cell{border-radius:3px;background:oklch(14% 0.013 250 / 80%)}

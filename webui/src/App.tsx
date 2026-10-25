@@ -15,6 +15,7 @@ const Routing = lazy(() => import('./routes/Routing'));
 const Logs = lazy(() => import('./routes/Logs'));
 const Quota = lazy(() => import('./routes/Quota'));
 const Keys = lazy(() => import('./routes/Keys'));
+const Setup = lazy(() => import('./routes/Setup'));
 
 export default function App() {
   return (
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="routing" element={<Routing />} />
           <Route path="logs" element={<Logs />} />
           <Route path="keys" element={<Keys />} />
+          <Route path="setup" element={<Setup />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -256,6 +256,11 @@ login card, and overrides nothing.
 - **Controls** — `.check` + `.cbox`, `.toggle` + `.tswitch`, `.radio` + `.rdot`,
   `.rpills` + `.rpill`. Each hides a real input and styles the sibling, so
   keyboard and assistive technology see a normal control.
+- **Setup wizard** — `.setup-layout` (a 260px step rail plus the form card),
+  `.setup-steps`/`.setup-step` with `aria-current="step"`, `.setup-step-num`
+  (a completed step uses `--status-up`), `.setup-presets` and `.setup-key`.
+  Steps are buttons, so an operator can jump back without losing progress; the
+  wizard is a lazy page, never a modal.
 - **Tabs and breadcrumb** — `.tabs`/`.tab`, `.breadcrumb`.
 - **Overlays** — `.modal-backdrop` + `.modal` (centred, `--z-modal`), `.drawer`,
   `.user-menu`, `.toast`, `.tooltip`. The tooltip shows on hover **and on

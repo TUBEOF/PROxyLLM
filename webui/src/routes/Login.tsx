@@ -33,9 +33,12 @@ export default function Login() {
       try {
         if (setupMode) {
           await createFirstAdmin(username, password);
-        } else {
-          await signIn(username, password);
+          // The first admin lands in the setup wizard; existing operators
+          // keep the normal redirect.
+          navigate('/setup', { replace: true });
+          return;
         }
+        await signIn(username, password);
         // Back to where the user was headed (RequireAuth stashed `from`),
         // or the overview.
         const from = (location.state as { from?: { pathname?: string } } | null)?.from?.pathname;
