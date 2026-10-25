@@ -1,49 +1,77 @@
 {
   "models": [
     {
-      "slug": "gpt-5.6-codex",
-      "display_name": "GPT-5.6 Codex",
-      "description": "Frontier coding model for agentic work.",
-      "default_reasoning_level": "medium",
+      "slug": "gpt-6-astra",
+      "display_name": "GPT-6-Astra",
+      "description": "Frontier intelligence for the most demanding work.",
+      "default_reasoning_level": "low",
       "supported_reasoning_levels": [
-        { "effort": "low", "description": "Quick" },
-        { "effort": "medium", "description": "Balanced" },
-        { "effort": "high", "description": "Deep" }
+        { "effort": "low", "description": "Fast responses with lighter reasoning" },
+        { "effort": "medium", "description": "Balances speed and reasoning depth for everyday tasks" },
+        { "effort": "high", "description": "Greater reasoning depth for complex problems" },
+        { "effort": "xhigh", "description": "Extra high reasoning depth for complex problems" },
+        { "effort": "max", "description": "Maximum reasoning depth for the hardest problems" },
+        { "effort": "ultra", "description": "Maximum reasoning with automatic task delegation" }
       ],
-      "shell_type": "unified_exec",
+      "shell_type": "shell_command",
       "visibility": "list",
       "supported_in_api": true,
-      "priority": 1,
-      "context_window": 272000
+      "priority": 2,
+      "context_window": 272000,
+      "max_context_window": 872000,
+      "experimental_supported_tools": ["send_user_message_async", "clock"],
+      "input_modalities": ["text", "image"],
+      "supports_search_tool": true,
+      "tool_mode": "code_mode_only",
+      "web_search_tool_type": "text_and_image"
+    },
+    {
+      "slug": "gpt-5.6-sol",
+      "display_name": "GPT-5.6-Sol",
+      "description": "Older generation workhorse model.",
+      "default_reasoning_level": "low",
+      "supported_reasoning_levels": [
+        { "effort": "low", "description": "Fast responses with lighter reasoning" },
+        { "effort": "medium", "description": "Balances speed and reasoning depth for everyday tasks" },
+        { "effort": "high", "description": "Greater reasoning depth for complex problems" },
+        { "effort": "xhigh", "description": "Extra high reasoning depth for complex problems" },
+        { "effort": "max", "description": "Maximum reasoning depth for the hardest problems" },
+        { "effort": "ultra", "description": "Maximum reasoning with automatic task delegation" }
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "supported_in_api": true,
+      "priority": 5,
+      "context_window": 272000,
+      "max_context_window": 872000,
+      "experimental_supported_tools": [],
+      "input_modalities": ["text", "image"],
+      "supports_search_tool": true,
+      "tool_mode": "code_mode_only",
+      "web_search_tool_type": "text_and_image"
     },
     {
       "slug": "gpt-5.5",
       "display_name": "GPT-5.5",
-      "description": "Frontier reasoning model.",
+      "description": "Legacy coding model.",
       "default_reasoning_level": "medium",
       "supported_reasoning_levels": [
-        { "effort": "medium", "description": "Balanced" },
-        { "effort": "high", "description": "Deep" }
+        { "effort": "low", "description": "Fast responses with lighter reasoning" },
+        { "effort": "medium", "description": "Balances speed and reasoning depth for everyday tasks" },
+        { "effort": "high", "description": "Greater reasoning depth for complex problems" },
+        { "effort": "xhigh", "description": "Extra high reasoning depth for complex problems" }
       ],
-      "shell_type": "unified_exec",
+      "shell_type": "shell_command",
       "visibility": "list",
       "supported_in_api": true,
-      "priority": 2,
-      "context_window": 272000
-    },
-    {
-      "slug": "gpt-5.4-mini",
-      "display_name": "GPT-5.4 mini",
-      "description": "Small, fast model for simpler tasks.",
-      "default_reasoning_level": "low",
-      "supported_reasoning_levels": [
-        { "effort": "low", "description": "Quick" }
-      ],
-      "shell_type": "disabled",
-      "visibility": "list",
-      "supported_in_api": true,
-      "priority": 3,
-      "context_window": 128000
+      "priority": 13,
+      "context_window": 272000,
+      "max_context_window": 872000,
+      "experimental_supported_tools": [],
+      "input_modalities": ["text", "image"],
+      "supports_search_tool": true,
+      "tool_mode": null,
+      "web_search_tool_type": "text_and_image"
     }
   ]
 }

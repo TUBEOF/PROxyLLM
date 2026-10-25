@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 
 	"github.com/tubeof/proxyllm/internal/httpguard"
 	"github.com/tubeof/proxyllm/internal/provider"
@@ -213,7 +214,16 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error)
 	}
 	var manifest struct {
 		Models []struct {
-			Slug string `json:"slug"`
+			Slug                       string            `json:"slug"`
+			ContextWindow              *int64            `json:"context_window"`
+			MaxContextWindow           *int64            `json:"max_context_window"`
+			SupportedReasoningLevels   []json.RawMessage `json:"supported_reasoning_levels"`
+			InputModalities            []string          `json:"input_modalities"`
+			ExperimentalSupportedTools []string          `json:"experimental_supported_tools"`
+			SupportsSearchTool         bool              `json:"supports_search_tool"`
+			ShellType                  string            `json:"shell_type"`
+			ToolMode                   *string           `json:"tool_mode"`
+			SupportedInAPI             bool              `json:"supported_in_api"`
 		} `json:"models"`
 	}
 	if err := json.Unmarshal(raw, &manifest); err != nil {
@@ -232,9 +242,44 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.ModelInfo, error)
 			continue
 		}
 		seen[m.Slug] = struct{}{}
-		out = append(out, provider.ModelInfo{Name: m.Slug})
+		out = append(out, provider.ModelInfo{
+			Name:          m.Slug,
+			ContextLength: codexContextLength(m.ContextWindow, m.MaxContextWindow),
+			Thinking:      len(m.SupportedReasoningLevels) > 0,
+			// The manifest has no single "function calling" boolean. A
+			// model is tool-capable when the backend exposes it through the
+			// API and advertises a shell, a search tool, an experimental
+			// tool, or a tool mode. shell_type is the strongest signal for
+			// the agentic Codex models.
+			Tools: m.SupportedInAPI && (m.ShellType != "" && m.ShellType != "disabled" ||
+				m.SupportsSearchTool || len(m.ExperimentalSupportedTools) > 0 ||
+				m.ToolMode != nil),
+			Vision: codexVision(m.InputModalities),
+		})
 	}
 	return out, nil
+}
+
+// codexContextLength prefers context_window, then max_context_window —
+// the same fallback codex-rs's resolved_context_window uses.
+func codexContextLength(primary, fallback *int64) int {
+	if primary != nil && *primary > 0 {
+		return int(*primary)
+	}
+	if fallback != nil && *fallback > 0 {
+		return int(*fallback)
+	}
+	return 0
+}
+
+// codexVision follows codex-rs's default_input_modalities: an omitted
+// input_modalities field means text+image; an explicit list is authoritative
+// (an explicit empty list means text only).
+func codexVision(modalities []string) bool {
+	if modalities == nil {
+		return true
+	}
+	return slices.Contains(modalities, "image")
 }
 
 // PreviewRequest encodes the request exactly as Complete/Stream would send

@@ -413,6 +413,78 @@ func TestSync_BackfillsDecisionIntoPreFixRow(t *testing.T) {
 	}
 }
 
+// A sync-authored row that predates a provider's capability detection (the
+// Codex case: the old lister wrote tools/vision/thinking false) is repaired
+// on the next run. The backfill upgrades only existing false facts, never
+// invents a missing key, and is idempotent.
+func TestSync_BackfillsDetectedCapabilitiesIntoStaleRow(t *testing.T) {
+	s := openStore(t, "acc-a")
+	old := `{"code_execution":false,"decision":false,"streaming":true,"thinking":false,` +
+		`"tools":false,"vision":false,"web_fetch":false,"web_search":false}`
+	if err := s.PutModel(context.Background(), storage.Model{
+		ID: "custom-openai/model-x", ProviderID: "acc-a", Name: "model-x",
+		Capabilities: []byte(old),
+		Compat:       []byte(`{}`),
+		Origin:       storage.ModelSyncedOrigin,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reg := &fakeRegistry{}
+	reg.Register((&stubProvider{id: "acc-a", list: []provider.ModelInfo{{
+		Name: "model-x", ContextLength: 272000, Tools: true, Vision: true, Thinking: true,
+	}}}).asLister())
+	syncer := New(s, reg, testLogger())
+
+	state, err := syncer.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if state.Providers[0].Updated != 1 {
+		t.Errorf("capability backfill did not count as an update: %+v", state.Providers[0])
+	}
+	m := mustGet(t, s, "custom-openai/model-x")
+	assertBlob(t, "capabilities", string(m.Capabilities), map[string]any{
+		"streaming": true, "tools": true, "vision": true, "thinking": true,
+		"decision": false, "web_search": false, "web_fetch": false, "code_execution": false,
+	})
+	assertBlob(t, "compat", string(m.Compat), map[string]any{"context_window": 272000})
+
+	state, err = syncer.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run 2: %v", err)
+	}
+	if state.Providers[0].Updated != 0 {
+		t.Errorf("capability backfill is not idempotent: Updated=%d", state.Providers[0].Updated)
+	}
+}
+
+// A pin reserves a capability for the operator; the backfill skips it while
+// still repairing the unpinned siblings.
+func TestSync_BackfillRespectsCapabilityPins(t *testing.T) {
+	s := openStore(t, "acc-a")
+	if err := s.PutModel(context.Background(), storage.Model{
+		ID: "custom-openai/model-x", ProviderID: "acc-a", Name: "model-x",
+		Capabilities: []byte(`{"streaming":true,"tools":false,"vision":false,` +
+			`"thinking":false,"pinned":{"tools":true}}`),
+		Origin: storage.ModelSyncedOrigin,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	reg := &fakeRegistry{}
+	reg.Register((&stubProvider{id: "acc-a", list: []provider.ModelInfo{{
+		Name: "model-x", Tools: true, Vision: true, Thinking: true,
+	}}}).asLister())
+
+	if _, err := New(s, reg, testLogger()).Run(context.Background()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	m := mustGet(t, s, "custom-openai/model-x")
+	assertBlob(t, "capabilities", string(m.Capabilities), map[string]any{
+		"streaming": true, "tools": false, "vision": true, "thinking": true,
+		"decision": false, "pinned": map[string]any{"tools": true},
+	})
+}
+
 // Operator statements about the decision flag survive: a WebUI save (all
 // eight keys plus the pin map) and a hand-written partial blob (no
 // "streaming" — not the sync's authorship) are both left alone.

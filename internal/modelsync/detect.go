@@ -69,22 +69,17 @@ func mergeDetectedNewRow(row storage.Model, info provider.ModelInfo) storage.Mod
 	return row
 }
 
-// backfillDecision writes the one capability key that postdates the
-// detection vocabulary into the rows the sync itself imported before it
-// existed. Every blob detectedCaps has ever written carries "streaming",
-// so a blob that carries that fact but says nothing about "decision" is a
-// pre-decision-vocabulary sync blob: it gets the detected value, and the
-// write is idempotent (the key's presence ends it).
-//
-// The rule is deliberately narrow in both directions. A blob WITHOUT
-// "streaming" was not written by the sync's detection — the WebUI editor
-// writes all eight keys, learning adds single facts — so it is operator
-// authorship and stays untouched (ADR-010). And no other capability is
-// backfilled: writing an absent "vision" would flip the router's
-// modelCapabilityFlag from unknown to a known false and switch its vision
-// gate on for rows that were never classified, which is exactly what the
-// empty-blob-only rule exists to prevent.
-func backfillDecision(raw json.RawMessage, detected bool) (json.RawMessage, bool) {
+// backfillDetected repairs rows the sync itself imported before a capability
+// fact existed, or before a provider's lister learned to report it. It is
+// deliberately narrow in both directions: a blob WITHOUT "streaming" was not
+// written by the sync's detection (the WebUI editor writes all eight keys,
+// learning adds single facts), so it is operator authorship and stays
+// untouched (ADR-010). A missing tools/vision/thinking key means "unknown"
+// and is never invented — writing a known false there would switch the
+// router's vision gate on for rows that were never classified. Existing
+// false facts are upgraded to true when the new detection reports true and
+// the operator did not pin the key; true facts are never downgraded.
+func backfillDetected(raw json.RawMessage, info provider.ModelInfo) (json.RawMessage, bool) {
 	var blob map[string]any
 	if err := json.Unmarshal(raw, &blob); err != nil {
 		return raw, false // malformed: store noise, never a rewrite target
@@ -92,15 +87,38 @@ func backfillDecision(raw json.RawMessage, detected bool) (json.RawMessage, bool
 	if _, ok := blob["streaming"]; !ok {
 		return raw, false
 	}
-	if _, stated := blob["decision"]; stated {
+	pinned, _ := blob["pinned"].(map[string]any)
+	isPinned := func(key string) bool {
+		_, ok := pinned[key]
+		return ok
+	}
+	changed := false
+	// Decision predates the eight-key vocabulary: an absent key is filled
+	// once (the historical backfill), because routing does not gate on the
+	// model flag (ADR-017).
+	if _, stated := blob["decision"]; !stated && !isPinned("decision") {
+		blob["decision"] = info.Decision
+		changed = true
+	}
+	// Capabilities the row already classifies: upgrade a stale false to a
+	// detected true. Missing keys stay unknown; true stays true.
+	for key, detected := range map[string]bool{
+		"tools":    info.Tools,
+		"vision":   info.Vision,
+		"thinking": info.Thinking,
+		"decision": info.Decision,
+	} {
+		if !detected || isPinned(key) {
+			continue
+		}
+		if current, ok := blob[key].(bool); ok && !current {
+			blob[key] = true
+			changed = true
+		}
+	}
+	if !changed {
 		return raw, false
 	}
-	// A pin without a value is still a statement (the operator reserved
-	// the flag for themselves); learning and detection both honor it.
-	if pinned, ok := blob["pinned"].(map[string]any); ok && pinned["decision"] == true {
-		return raw, false
-	}
-	blob["decision"] = detected
 	merged, err := json.Marshal(blob)
 	if err != nil {
 		return raw, false
@@ -109,17 +127,17 @@ func backfillDecision(raw json.RawMessage, detected bool) (json.RawMessage, bool
 }
 
 // mergeDetected merges detected facts into an EXISTING synced row:
-// capabilities only when the row's blob is empty — plus the one decision
-// backfill below — context_window only when the compat blob is empty or
-// carries no non-zero pin. Operator edits always win (ADR-010). Returns
-// the merged row and whether anything changed.
+// capabilities only when the row's blob is empty — plus the narrow
+// detected-fact backfill below — context_window only when the compat blob is
+// empty or carries no non-zero pin. Operator edits always win (ADR-010).
+// Returns the merged row and whether anything changed.
 func mergeDetected(row storage.Model, info provider.ModelInfo) (storage.Model, bool) {
 	emptyCaps := blobIsEmpty(row.Capabilities)
 	changed := false
 	if emptyCaps {
 		row.Capabilities = detectedCaps(info)
 		changed = true
-	} else if merged, wrote := backfillDecision(row.Capabilities, info.Decision); wrote {
+	} else if merged, wrote := backfillDetected(row.Capabilities, info); wrote {
 		row.Capabilities = merged
 		changed = true
 	}

@@ -821,13 +821,13 @@ func TestListModels_CodexCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	var names []string
-	for _, m := range models {
-		names = append(names, m.Name)
+	want := []provider.ModelInfo{
+		{Name: "gpt-6-astra", ContextLength: 272000, Thinking: true, Tools: true, Vision: true},
+		{Name: "gpt-5.6-sol", ContextLength: 272000, Thinking: true, Tools: true, Vision: true},
+		{Name: "gpt-5.5", ContextLength: 272000, Thinking: true, Tools: true, Vision: true},
 	}
-	want := []string{"gpt-5.6-codex", "gpt-5.5", "gpt-5.4-mini"}
-	if !reflect.DeepEqual(names, want) {
-		t.Errorf("ListModels = %v, want the catalog's slugs in order %v", names, want)
+	if !reflect.DeepEqual(models, want) {
+		t.Errorf("ListModels = %+v, want the catalog's slugs with detected facts %+v", models, want)
 	}
 
 	if got.path != "/codex/models" {
@@ -844,6 +844,47 @@ func TestListModels_CodexCatalog(t *testing.T) {
 	}
 	if !strings.HasPrefix(got.ua, "codex_cli_rs/proxyllm/") {
 		t.Errorf("User-Agent = %q, want the codex_cli_rs/proxyllm prefix", got.ua)
+	}
+}
+
+// The manifest carries no single function-calling boolean, so the lister
+// derives facts from the fields codex-rs documents: input_modalities
+// (omitted = text+image), shell_type, search/tool flags, and supported_in_api.
+// context_window falls back to max_context_window.
+func TestListModels_MapsCapabilityFields(t *testing.T) {
+	body := `{"models":[
+		{"slug":"text-only","input_modalities":["text"],"shell_type":"disabled","supported_in_api":true},
+		{"slug":"default-modalities","shell_type":"shell_command","supported_in_api":true},
+		{"slug":"not-in-api","input_modalities":["text","image"],"shell_type":"shell_command","supported_in_api":false},
+		{"slug":"max-only","max_context_window":128000,"shell_type":"disabled","supported_in_api":true}
+	]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		mustWriteString(t, w, body)
+	}))
+	defer srv.Close()
+
+	store := newMemStore()
+	seedTokens(t, store, "a1", farFuture())
+	auth := codex.NewAuthClient(codex.AuthConfig{Issuer: srv.URL, HTTP: srv.Client(), Store: store, ProviderID: providerID})
+	p := codex.New(codex.ProviderConfig{
+		ID: providerID, BaseURL: srv.URL,
+		Capabilities: provider.Capabilities{Streaming: true, Tools: true},
+		Auth:         auth, HTTP: srv.Client(),
+	})
+
+	models, err := p.ListModels(context.Background())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	want := []provider.ModelInfo{
+		{Name: "text-only"},
+		{Name: "default-modalities", Tools: true, Vision: true},
+		{Name: "not-in-api", Vision: true},
+		{Name: "max-only", ContextLength: 128000, Vision: true},
+	}
+	if !reflect.DeepEqual(models, want) {
+		t.Errorf("ListModels = %+v, want %+v", models, want)
 	}
 }
 
