@@ -44,6 +44,10 @@ type Provider struct {
 
 	// clientVersion rides the discovery request's client_version query.
 	clientVersion string
+
+	// rateLimitTap parses codex.rate_limits SSE events off the response
+	// stream; nil when no sink is wired.
+	rateLimitTap *sseRateLimitTap
 }
 
 // ProviderConfig wires the provider at construction time.
@@ -94,14 +98,15 @@ func New(cfg ProviderConfig) *Provider {
 		clientVersion: clientVersion,
 	}
 	if cfg.RateLimitSink != nil {
-		// The sink runs on the dispatch path: parse here, hand the snapshot
-		// over, and let the wiring layer decide what to persist — the
-		// provider never touches storage itself.
+		// The sink runs on the dispatch path: parse headers here, tap the
+		// stream for codex.rate_limits, and let the wiring layer decide what
+		// to persist — the provider never touches storage itself.
 		client.ResponseHeaderHook = func(h http.Header) {
 			if rl, ok := rateLimitFromHeaders(h); ok {
 				cfg.RateLimitSink(rl)
 			}
 		}
+		p.rateLimitTap = newSSERateLimitTap(cfg.RateLimitSink)
 	}
 	client.HeaderHook = p.headers
 	return p
@@ -170,6 +175,9 @@ func (p *Provider) Complete(ctx context.Context, req ir.Request) (ir.Response, e
 // semantics, and the transport itself never retries.
 func (p *Provider) Stream(ctx context.Context, req ir.Request) (<-chan ir.StreamEvent, func(), error) {
 	return p.client.Stream(ctx, req, p.encode, func(r io.Reader) translate.StreamDecoder {
+		if p.rateLimitTap != nil {
+			r = io.TeeReader(r, p.rateLimitTap)
+		}
 		return openai.NewResponsesStreamDecoder(r)
 	})
 }

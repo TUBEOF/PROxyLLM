@@ -152,31 +152,36 @@ admin session warm.
 
 ## Quota
 
-One card per account that reports a usage window — chat accounts, plus the
-probe-supported web-tool accounts (Firecrawl credits, Ollama Cloud Web
-Tools) — carrying the account's **own** limits, nothing the proxy measured
-itself (local usage lives on the Overview page). Each window is a strip:
-the remaining percentage in the middle of a ring, the remaining value on the
-left (`… left`), and the reset timer on the right. For Ollama Cloud accounts
-with a stored session cookie the rings are the account's session and weekly
-windows from its settings page; hovering (or focusing) the timer shows the
-exact reset instant in the reader's own timezone. Firecrawl accounts show
-their team credits (`remaining / plan`) from the documented credit-usage
-endpoint, reset at the billing-period end; the probe uses the same API key as
-the emulator. **ChatGPT / Codex accounts** have no usage endpoint at all:
-their card fills from the rate-limit headers of the account's own live
-traffic (the primary window reads as the session strip, the secondary as
-the weekly one) — a fresh account starts empty until its first request
-answers. Custom OpenAI-compatible accounts carry no probe: the wire has no
-usage surface to read, so their card shows health and the in-the-pool
-switch, nothing else. Without a reported window the card shows the empty
-state (and the scrape error, when there is one). Percentages that are unknown
-render as
-`—`, never as zero. A cooldown — the account is out of quota, or its breaker
-is open — is named on the card, which is the fastest way to explain a wave
-of failures. Each card carries the account's **in the pool** switch, and a
-card whose account is switched off says so instead of showing a cooldown it
-cannot earn.
+One card per account, grouped by provider type (chat before web tools, live
+groups before empty ones), carrying the account's **own** limits and nothing
+the proxy measured itself (local usage lives on the Overview page). Each
+window is a horizontal **remaining** bar: green while there is room, orange in
+the last half, red under 20%; the remaining reading and the reset countdown
+sit beside it, and an unknown value is `—`, never zero. The page keeps one
+30 s clock for every countdown, so a failing poll cannot freeze them.
+
+Ollama Cloud and Ollama Cloud Web Tools read the documented
+`GET /api/balance` endpoint with the account's API key first (session/weekly
+remaining percentages and reset instants, or a monthly USD balance and
+period); an account configured only with a browser session cookie falls back
+to the settings-page scrape. Firecrawl reads its team credits
+(`remaining / plan`) from the documented credit-usage endpoint, reset at the
+billing-period end. **ChatGPT / Codex accounts** have no usage endpoint: their
+card fills from the rate-limit headers and the `codex.rate_limits` stream event
+of the account's own live traffic (window lengths, extra limit families and
+credits included) — a fresh account starts empty until its first request
+answers. Custom OpenAI-compatible accounts have no usage surface; their card
+says so and shows the health and pool state.
+
+A cooldown — the account is out of quota, or its breaker is open — is named on
+the card with its deadline (`quota · resets in 2h 10m`, `cooling · 45s`). The
+server keeps that state in memory: a restart clears the badge, while the
+provider's own reset instant stays on the window. Each card carries the
+account's **in the pool** switch and its last-refresh age (`Updated 3m ago`);
+a refresh that the server throttles answers "Refreshed recently — cached
+reading is current" instead of firing another upstream call. Without a
+reported window the card shows the empty state (and the scrape error, when
+there is one).
 
 ### The session cookie
 
@@ -201,8 +206,9 @@ session does — the card's error will say the scrape came back empty, and
 the fix is to copy a fresh value.
 
 The same field exists for **Ollama Cloud (Web Tools)** accounts, which sign
-in to ollama.com the same way. The Quota page lists chat accounts only, so
-that account has no card of its own yet.
+in to ollama.com the same way. It is only the fallback: an account with an API
+key reads the balance API without a cookie. Both chat and probe-supported
+web-tool accounts have a Quota card, grouped by provider type.
 
 ## Troubleshooting
 

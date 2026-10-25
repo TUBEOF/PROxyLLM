@@ -15,7 +15,8 @@ export interface DataState<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
-  reload: () => void;
+  /** Reload now; `quiet` keeps the current cards mounted instead of showing the loading state. */
+  reload: (opts?: { quiet?: boolean }) => void;
 }
 
 export function useAdminData<T>(fetcher: Refetch<T>, deps: unknown[] = []): DataState<T> {
@@ -173,6 +174,7 @@ export function useLiveData<T>(fetcher: Refetch<T>, intervalMs: number, deps: un
   const [error, setError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<number | null>(null);
   const [tick, setTick] = useState(0);
+  const quietReload = useRef(false);
   const fetcherRef = useRef(fetcher);
   fetcherRef.current = fetcher;
   const sessionLostRef = useRef(onSessionLost);
@@ -189,7 +191,10 @@ export function useLiveData<T>(fetcher: Refetch<T>, intervalMs: number, deps: un
   useEffect(() => {
     const controller = new AbortController();
     let cancelled = false;
-    setLoading(true);
+    // A quiet reload keeps the page frame and cards mounted (the Quota
+    // refresh path); a normal reload shows the loading state.
+    if (!quietReload.current) setLoading(true);
+    quietReload.current = false;
     setError(null);
     fetcherRef.current(controller.signal)
       .then((result) => {
@@ -261,7 +266,10 @@ export function useLiveData<T>(fetcher: Refetch<T>, intervalMs: number, deps: un
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [intervalMs, apply, ...deps, tick]);
 
-  const reload = useCallback(() => setTick((t) => t + 1), []);
+  const reload = useCallback((opts?: { quiet?: boolean }) => {
+    quietReload.current = Boolean(opts?.quiet);
+    setTick((t) => t + 1);
+  }, []);
   return { data, loading, error, reload, updatedAt };
 }
 

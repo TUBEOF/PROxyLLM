@@ -130,7 +130,7 @@ export default function Overview() {
         actions={
           <>
             <LiveBadge updatedAt={updatedAt} intervalMs={POLL_MS} />
-            <button type="button" className="btn btn-ghost btn-sm" onClick={reload}>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={() => reload()}>
               Refresh
             </button>
           </>

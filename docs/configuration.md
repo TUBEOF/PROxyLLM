@@ -154,7 +154,7 @@ these keys means the default.
 | `provider_type_settings` | JSON object keyed by provider type | [Operating: providers and accounts](operating.md#providers-and-accounts) |
 | `request_logging_enabled` | `1` (default) / `0` | [Operating: logs](operating.md#logs) |
 | `request_payload_retention_days` | integer ≥ 1 (default `7`) | [Operating: logs](operating.md#logs) |
-| `account_usage:<provider-id>` | JSON, written by the usage prober (read-only) | [Operating: quota](operating.md#quota) |
+| `account_usage:<provider-id>` | JSON schema v2 (`windows[]` plus legacy mirrors), written by the usage prober and the Codex rate-limit sink (read-only) | [Operating: quota](operating.md#quota) |
 
 The per-model compatibility settings (`thinking_handling`,
 `server_tool_emulation`, `max_tokens_clamp`, `context_window`,

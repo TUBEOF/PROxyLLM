@@ -44,7 +44,10 @@ Working markup: `design/examples/components.html`.
 | `.spark`, `.spark-area`, `.spark-line`, `.spark-pt` | a sparkline: filled area, accent line, last point |
 | `.bars`, `.bar-row`, `.bar-lab`, `.bar-val`, `.bar-track`, `.bar-fill`, `.bar-fill.alt` | horizontal bars; `.alt` is the neutral comparison series |
 | `.ring`, `.ring-track`, `.ring-seg` | a donut |
-| `.usage-window`, `.usage-window-copy`, `.usage-window-label`, `.usage-left`, `.usage-ring`, `.usage-ring-track`, `.usage-ring-seg`, `.usage-ring-num`, `.usage-reset` | one Quota limit window: label + remaining value on the left, a centered ring with the remaining percent, the reset timer on the right (three grid columns, so the timer never wraps into the content) |
+| `.usage-summary`, `.usage-summary-tile`, `.usage-summary-foot` | the Quota page's three honest totals (accounts, reporting, cooling) |
+| `.usage-group`, `.usage-group-head`, `.usage-group-title`, `.usage-group-note`, `.usage-group-grid` | provider-type grouping with a live/source note and a responsive card grid |
+| `.usage-card`, `.usage-card-head`, `.usage-card-title`, `.usage-card-meta`, `.usage-card-actions` | one Quota account card: name/type/health badges, pool switch, "updated …" meta, actions |
+| `.usage-meter`, `.usage-meter-head`, `.usage-meter-label`, `.usage-meter-value`, `.usage-meter-track`, `.usage-meter-fill`, `.usage-meter-note`, `.usage-meter-reset`, `.usage-meter-unlimited` | one limit window as a horizontal **remaining** bar: green while there is room, orange in the last half, red under 20%; the reading and reset countdown are text, and `role="meter"` carries `aria-valuenow`/`aria-valuetext` |
 | `.heat`, `.heat-row`, `.heat-cell`, `.heat-legend` | a density heatmap |
 | `.table thead th`, `.table tbody td`, `.table .mono`, `.table .num`, `.table .primary`, `.row-actions` | the data grid: sticky header, 13px/16px cells, mono right-aligned numbers, em dash for absent values, row actions revealed on hover |
 | `.pagination`, `.selbar` | paging; the bulk-selection bar |

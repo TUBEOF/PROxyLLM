@@ -35,6 +35,8 @@ const (
 	seedAdminPass = "proxyllm-e2e" //nolint:gosec // fixture seed for the disposable test store, not a real credential
 )
 
+func pctPtr(v float64) *float64 { return &v }
+
 func main() {
 	addr := flag.String("addr", "127.0.0.1:4173", "listen address")
 	dbPath := flag.String("db", "", "SQLite path (default: temp dir, fresh seed per run)")
@@ -270,34 +272,66 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 		}
 	}
 
-	// ADR-012 Quota-page cards: one LIVE blob (the ollama settings shape,
-	// frozen reset times near the clock) and one account without any blob
-	// (the no-live empty state). The blobs are seeded straight into the KV —
-	// the fixturesrv never scrapes (the no-live-upstream-calls doctrine).
+	// ADR-012 Quota-page cards: live blobs in the uniform window shape (the
+	// provider-neutral reading the card renders), plus one account without a
+	// blob (the no-live empty state). The blobs are seeded straight into the
+	// KV — the fixturesrv never scrapes (the no-live-upstream-calls doctrine).
 	sessionPct := 28.8
 	weeklyPct := 71.2
+	sessionReset := now.Add(4 * time.Hour).Add(59 * time.Minute).Unix()
+	weeklyReset := now.Add(5 * time.Hour).Add(11 * time.Minute).Unix()
 	if err := store.PutAccountUsage(ctx, "prv-ollama", storage.AccountUsageBlob{
-		FetchedAt:    now.Unix(),
-		SessionPct:   &sessionPct,
-		SessionReset: now.Add(4 * time.Hour).Add(59 * time.Minute).Unix(),
-		WeeklyPct:    &weeklyPct,
-		WeeklyReset:  now.Add(5 * time.Hour).Add(11 * time.Minute).Unix(),
+		FetchedAt: now.Unix(),
+		Windows: []storage.UsageWindow{
+			{Key: "session", Label: "Session", Kind: "percent",
+				UsedPct: &sessionPct, RemainingPct: pctPtr(100 - sessionPct),
+				ResetAt: sessionReset, Source: "ollama_balance"},
+			{Key: "weekly", Label: "Weekly", Kind: "percent",
+				UsedPct: &weeklyPct, RemainingPct: pctPtr(100 - weeklyPct),
+				ResetAt: weeklyReset, Source: "ollama_balance"},
+		},
 	}); err != nil {
 		return fmt.Errorf("seed ollama usage blob: %w", err)
 	}
 
 	// Firecrawl credits (the documented team/credit-usage shape): a live
-	// window so the Quota page renders the credits ring and the billing
-	// reset alongside the ollama session/weekly windows.
+	// window so the Quota page renders the credit bar and the billing reset
+	// alongside the ollama session/weekly windows.
 	remainingCredits := 850.0
 	planCredits := 1000.0
+	creditsReset := now.Add(24 * time.Hour).Unix()
 	if err := store.PutAccountUsage(ctx, "prv-firecrawl", storage.AccountUsageBlob{
-		FetchedAt:        now.Unix(),
-		RemainingCredits: &remainingCredits,
-		PlanCredits:      &planCredits,
-		CreditsReset:     now.Add(24 * time.Hour).Unix(),
+		FetchedAt: now.Unix(),
+		Windows: []storage.UsageWindow{{
+			Key: "credits", Label: "Credits", Kind: "credits", Unit: "credits",
+			Remaining: &remainingCredits, Limit: &planCredits,
+			ResetAt: creditsReset, Source: "firecrawl_credit_usage",
+		}},
 	}); err != nil {
 		return fmt.Errorf("seed firecrawl usage blob: %w", err)
+	}
+
+	// Codex header-derived windows + credits: the third provider group on the
+	// Quota page, with the window labels the header lengths produce.
+	codexPrimary := 12.5
+	codexSecondary := 40.0
+	codexCredits := 12.5
+	if err := store.PutAccountUsage(ctx, "prv-codex", storage.AccountUsageBlob{
+		FetchedAt: now.Unix(),
+		Windows: []storage.UsageWindow{
+			{Key: "codex.primary", Label: "5-hour", Kind: "percent",
+				UsedPct: &codexPrimary, RemainingPct: pctPtr(100 - codexPrimary),
+				ResetAt: now.Add(2 * time.Hour).Unix(), WindowSeconds: 300 * 60,
+				Source: "codex_headers"},
+			{Key: "codex.secondary", Label: "Weekly", Kind: "percent",
+				UsedPct: &codexSecondary, RemainingPct: pctPtr(100 - codexSecondary),
+				ResetAt: now.Add(6 * 24 * time.Hour).Unix(), WindowSeconds: 10080 * 60,
+				Source: "codex_headers"},
+			{Key: "codex.credits", Label: "Credits", Kind: "credits", Unit: "credits",
+				Remaining: &codexCredits, Source: "codex_headers"},
+		},
+	}); err != nil {
+		return fmt.Errorf("seed codex usage blob: %w", err)
 	}
 
 	// ADR-010 model-sync state: a deterministic last run, two hours before the

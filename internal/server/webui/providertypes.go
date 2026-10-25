@@ -169,3 +169,14 @@ func providerTypeByID(typ string) (providerTypeDesc, bool) {
 	}
 	return providerTypeDesc{}, false
 }
+
+// providerTypeOrder returns the catalog position (the Providers card order)
+// used to group the Quota page. Unknown types sort last.
+func providerTypeOrder(typ string) int {
+	for i, pt := range providerTypes {
+		if pt.Type == typ {
+			return i
+		}
+	}
+	return len(providerTypes)
+}
