@@ -66,6 +66,11 @@ measurement asks for them.**
 - **Transport**: `MaxIdleConnsPerHost` 32, `MaxIdleConns` 200, an explicit dial
   timeout, `ResponseHeaderTimeout` 30 s, `IdleConnTimeout` 90 s. Accounts of one
   emulator pool share a single client (ADR-015).
+
+  **2026-10-25 addendum:** the chat transports' `ResponseHeaderTimeout` is now
+  five minutes. The original 30 s equals the firecrawl/ollamaweb *total*
+  budget and was not meant to bound a model generation; on the complete
+  emulation path it killed healthy reasoning answers (ADR-018 addendum).
 - **Locks**: the log hub uses two locks and a per-subscriber lock with a closed
   flag, so the fan-out never holds a global lock; the provider registry's reads
   take a reader lock; the round-robin counter is atomic per rule; the health

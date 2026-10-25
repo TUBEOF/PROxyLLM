@@ -4,7 +4,7 @@ package server
 // `upstream_response_header_timeout_ms` settings KV (ADR-018): an upstream
 // that accepts the connection and then says nothing stops holding the
 // request when the configured timeout elapses, instead of burning the
-// shared 30s default. Absent or malformed keeps the 30s default — the same
+// shared five-minute default. Absent or malformed keeps that default — the same
 // settings-read contract as every other KV here.
 
 import (
@@ -67,7 +67,7 @@ func TestServer_ProviderLoadHonorsUpstreamHeaderTimeoutKV(t *testing.T) {
 		t.Errorf("Complete returned after %v, want the ~300ms configured wall, not the 1.2s upstream delay", elapsed)
 	}
 
-	// Without a KV the shared 30s default applies and the same upstream
+	// Without a KV the shared five-minute default applies and the same upstream
 	// (headers after 1.2s < 30s) answers successfully.
 	if err := st.DeleteConfigValue(ctx, "upstream_response_header_timeout_ms"); err != nil {
 		t.Fatalf("delete KV: %v", err)
@@ -79,7 +79,7 @@ func TestServer_ProviderLoadHonorsUpstreamHeaderTimeoutKV(t *testing.T) {
 	}
 	resp, err := provs[0].Complete(ctx, ir.Request{Model: "m", Messages: []ir.Message{{Role: ir.RoleUser, Parts: []ir.Part{ir.TextPart{Text: "hi"}}}}})
 	if err != nil {
-		t.Fatalf("Complete with default 30s wall: %v (upstream answers after 1.2s)", err)
+		t.Fatalf("Complete with the default wall: %v (upstream answers after 1.2s)", err)
 	}
 	if len(resp.Content) == 0 {
 		t.Error("empty response from delayed upstream")

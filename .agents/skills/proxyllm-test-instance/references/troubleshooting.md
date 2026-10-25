@@ -12,7 +12,10 @@ upstream refusal need different actions.
 | Vision request returns 500 | `upstream` | real PNG, not 1×1; vision model availability |
 | `capability_fallback` missing | `proxy` / config | model row `vision:false`, `pinned.vision`, live `capability-fallbacks` list |
 | Model does not call `analyze_image` | `model_behavior` | tool was injected; trace `vision_tool`; try an explicit prompt |
-| `emulated_tool` child missing | `proxy` / `model_behavior` | `client_web_tools`, `compat_policy` trace, web-tool account and fallback list |
+| `emulated_tool` child missing | `model_behavior` / `proxy` | claim + no child + no error = the CLI's ToolSearch ran its own web tool; claim + no child + a client `tool_use` named lowercase `web_fetch`/`web_search` = the proxy leak, and the phase fails |
+| CLI reports `No such tool available: web_fetch`/`web_search` | `proxy` | the emulation loop leaked an emulated family name; check the mixed-response and round-cap paths in `internal/routing/emulation.go` |
+| 500 with `http2: timeout awaiting response headers` | `proxy` (mapping) | a transport timeout must be 504, not 500; check `mapRouteError` and `upstream_response_header_timeout_ms` |
+| 529 `all providers in health cooldown` | `proxy` state | breaker after 3 counted failures or a 429/quota cooldown; the body names the reason and sets `Retry-After`; inspect the provider health state |
 | Web fetch returns 202/403/0 bytes | `upstream` | child detail has URL/status/bytes; bot protection is not a proxy bug |
 | Balance refresh 429 | `upstream` | Ollama allows 10 req/min; back off and retry |
 | `setup` persists `vision_fallback` but live list is empty | config | never use `PUT /settings`; use `PUT /capability-fallbacks` |

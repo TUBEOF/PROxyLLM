@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/tubeof/proxyllm/internal/provider"
 )
@@ -375,6 +376,11 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 	// gap (ErrNoRoute → the surfaces answer the non-retryable 404).
 	healthSkipped := false
 	nonHealthSkipped := false
+	// The earliest cooldown deadline is the actionable retry time: once one
+	// provider recovers the chain can serve again. Its reason names the window
+	// the surfaces report (breaker vs an upstream quota/rate-limit window).
+	cooldownReason := ""
+	var cooldownUntil time.Time
 	for _, entry := range entries {
 		p, ok := r.lookup(entry)
 		if !ok {
@@ -390,6 +396,15 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 		if r.health != nil && r.health.Cooldown(entry) {
 			trace.add(Event{Type: EventSkipped, ProviderID: entry, Reason: "health cooldown"})
 			healthSkipped = true
+			st := r.health.State(entry)
+			until := st.BreakerUntil
+			if st.Reason == "quota_exhausted" {
+				until = st.QuotaUntil
+			}
+			if !until.IsZero() && (cooldownUntil.IsZero() || until.Before(cooldownUntil)) {
+				cooldownUntil = until
+				cooldownReason = st.Reason
+			}
 			continue
 		}
 		out = append(out, ChainEntry{ProviderID: entry, Model: model})
@@ -432,10 +447,21 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 		if healthSkipped && !nonHealthSkipped {
 			// Every candidate was reachable-in-principle but cooled down:
 			// the model exists and is routed, the providers are merely
-			// pausing (circuit breaker). Surfaces answer 529/503 so
-			// clients retry instead of switching models.
-			trace.add(Event{Type: EventRejected, Reason: "all providers in health cooldown", Model: model})
-			return nil, trace, ErrChainOverloaded
+			// pausing (circuit breaker or an upstream quota/rate-limit
+			// window). Surfaces answer 529/503 so clients retry instead of
+			// switching models; the typed error carries the reason and
+			// deadline for the message and Retry-After.
+			reason := cooldownReason
+			if reason == "" {
+				reason = "breaker"
+			}
+			trace.add(Event{Type: EventRejected,
+				Reason: "all providers in health cooldown (" + reason + ")", Model: model})
+			return nil, trace, &ChainOverloadedError{
+				Reason: reason,
+				Until:  cooldownUntil,
+				Model:  model,
+			}
 		}
 		trace.add(Event{Type: EventRejected, Reason: "chain empty after capability/health filtering", Model: model})
 		return nil, trace, noRoute(model)
@@ -704,3 +730,19 @@ func noRoute(model string) error { return &NoRouteError{Model: model} }
 // 529 (Anthropic) / 503 (OpenAI) so clients back off and retry instead
 // of treating the model as nonexistent.
 var ErrChainOverloaded = errors.New("routing: all chain providers in health cooldown")
+
+// ChainOverloadedError carries the cooldown facts behind ErrChainOverloaded.
+// The surface needs them to name the actual reason (circuit breaker vs an
+// upstream quota/rate-limit window) and to set Retry-After. Is keeps every
+// errors.Is(err, ErrChainOverloaded) check true.
+type ChainOverloadedError struct {
+	Reason string    // "breaker" | "quota_exhausted"
+	Until  time.Time // zero when the tracker named no deadline
+	Model  string
+}
+
+func (e *ChainOverloadedError) Error() string { return ErrChainOverloaded.Error() }
+
+// Is keeps the sentinel identity for callers that branch on
+// errors.Is(err, ErrChainOverloaded).
+func (e *ChainOverloadedError) Is(target error) bool { return target == ErrChainOverloaded }

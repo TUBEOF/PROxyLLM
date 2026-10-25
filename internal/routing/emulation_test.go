@@ -272,3 +272,92 @@ func TestApplyCompat_ClientWebToolClaimSkipsAPresentFamily(t *testing.T) {
 		t.Errorf("the client tool must ride untouched when the family is already present: %+v", got.Tools)
 	}
 }
+
+// A forced tool_choice must follow the tool the proxy actually sends. If the
+// claim renames WebFetch → web_fetch and the choice keeps the old name, a
+// strict upstream answers a tool-not-found 400 (the client sees a failure
+// even though the claim itself worked).
+func TestApplyCompat_ClaimedClientToolRewritesToolChoice(t *testing.T) {
+	req := ir.Request{
+		Model:      "m",
+		MaxTokens:  1024,
+		ToolChoice: &ir.ToolChoice{Type: ir.ToolChoiceTool, Name: "WebFetch"},
+		Tools: []ir.Tool{{
+			Name:        "WebFetch",
+			Description: "fetch a page",
+			InputSchema: []byte(`{"type":"object"}`),
+		}},
+		Messages: []ir.Message{{Role: ir.RoleUser, Parts: []ir.Part{ir.TextPart{Text: "fetch"}}}},
+	}
+	got, trace, err := routing.ApplyCompat(routing.Compat{
+		ServerToolEmulation: routing.EmulationEmulateFirecrawl,
+		ClientWebTools:      map[string]string{"WebFetch": "web_fetch"},
+	}, req)
+	if err != nil {
+		t.Fatalf("ApplyCompat: %v", err)
+	}
+	if len(got.Tools) != 1 || got.Tools[0].Name != "web_fetch" || !got.Tools[0].Emulated {
+		t.Fatalf("tools = %+v, want the claimed web_fetch def", got.Tools)
+	}
+	if got.ToolChoice == nil || got.ToolChoice.Type != ir.ToolChoiceTool || got.ToolChoice.Name != "web_fetch" {
+		t.Fatalf("tool_choice = %+v, want tool:web_fetch", got.ToolChoice)
+	}
+	found := false
+	for _, ev := range trace.Events() {
+		if ev.Type == routing.EventCompatPolicy && strings.Contains(ev.Reason, "tool_choice followed") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the rewrite was not traced: %+v", trace.Events())
+	}
+}
+
+// When emulation is off the server-tool def is removed. A forced choice that
+// still names it would dangle; it degrades to auto instead.
+func TestApplyCompat_EmulationOffDropsDanglingToolChoice(t *testing.T) {
+	req := emulationReq()
+	req.ToolChoice = &ir.ToolChoice{Type: ir.ToolChoiceTool, Name: "web_search"}
+	got, trace, err := routing.ApplyCompat(routing.Compat{ServerToolEmulation: routing.EmulationOff}, req)
+	if err != nil {
+		t.Fatalf("ApplyCompat: %v", err)
+	}
+	for _, tool := range got.Tools {
+		if tool.Name == "web_search" {
+			t.Fatalf("web_search survived the off policy: %+v", got.Tools)
+		}
+	}
+	if got.ToolChoice == nil || got.ToolChoice.Type != ir.ToolChoiceAuto || got.ToolChoice.Name != "" {
+		t.Fatalf("tool_choice = %+v, want auto with no name", got.ToolChoice)
+	}
+	found := false
+	for _, ev := range trace.Events() {
+		if ev.Type == routing.EventCompatPolicy && strings.Contains(ev.Reason, "tool_choice followed") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("the cleared choice was not traced: %+v", trace.Events())
+	}
+}
+
+// A server-tool def whose name differs from its family is renamed on
+// conversion; the forced choice follows the family.
+func TestApplyCompat_ConvertedServerToolRewritesToolChoice(t *testing.T) {
+	req := emulationReq()
+	req.Tools = []ir.Tool{{
+		Name: "custom_search", Type: "web_search_20250305",
+		ServerTool: &ir.ServerToolConfig{MaxUses: 2},
+	}}
+	req.ToolChoice = &ir.ToolChoice{Type: ir.ToolChoiceTool, Name: "custom_search"}
+	got, _, err := routing.ApplyCompat(routing.Compat{ServerToolEmulation: routing.EmulationEmulateFirecrawl}, req)
+	if err != nil {
+		t.Fatalf("ApplyCompat: %v", err)
+	}
+	if len(got.Tools) != 1 || got.Tools[0].Name != "web_search" {
+		t.Fatalf("tools = %+v, want the converted web_search def", got.Tools)
+	}
+	if got.ToolChoice == nil || got.ToolChoice.Name != "web_search" {
+		t.Fatalf("tool_choice = %+v, want web_search", got.ToolChoice)
+	}
+}

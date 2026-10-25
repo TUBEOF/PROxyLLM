@@ -2,7 +2,7 @@
 # PROxyLLM local test instance — one entry point for the whole harness.
 #
 #   test-instance.sh init|start|stop|restart|status|logs|setup|dry-run|
-#                    validate|test|report|clients|config|doctor|teardown
+#                    test|report|clients|config|doctor|teardown
 #
 # Runtime state lives outside the repo (default ~/proxyllm-test-instance).
 # Secrets live in <home>/.env (0600) and are never printed.
@@ -22,16 +22,14 @@ usage: test-instance.sh <command> [options] [--home PATH]
   $PROXYLLM_TEST_HOME).
 
   init       [--home PATH] [--key-file PATH | --prompt-key] [--port N]
-             [--chat-model NAME] [--fallback-model NAME]
-             [--allow-private-provider-urls] [--force]
+             [--chat-model NAME] [--fallback-model NAME] [--force]
   start      [--build] [--no-build] [--binary PATH]
   stop | restart | status
   logs       [N]
   setup      [--skip-probe] [--force-aliases]
   dry-run
-  validate   [--skip-probe]
-  test       [--phases 0,1,2,3,4,5,6] [--clients LIST] [--strict-upstream]
-             [--timeout SECONDS] [--run-id ID] [--no-failover-injection]
+  test       [--phases 0,1,2,3,4,5,6,7,8] [--clients LIST|all]
+             [--strict-upstream] [--timeout SECONDS] [--run-id ID]
   report     [--run-id ID]
   clients    list | probe NAME | install NAME --yes-install
   config     print
@@ -91,10 +89,6 @@ case "$cmd" in
   dry-run)
     require_instance
     python3 -I "$SCRIPTS_DIR/admin.py" --home "$INSTANCE_HOME" dry-run
-    ;;
-  validate)
-    require_instance
-    python3 -I "$SCRIPTS_DIR/admin.py" --home "$INSTANCE_HOME" validate "$@"
     ;;
   test)
     require_instance

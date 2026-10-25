@@ -15,9 +15,17 @@ production.
 - An Ollama Cloud API key. The key is written to `<instance>/.env` (0600) and is
   never printed. `init --key-file ~/.config/proxyllm/keys.env` reads only
   `OLLAMA_CLOUD_API_KEY` from an existing dotenv file.
-- Optional: the client CLIs you want to exercise. The harness never installs
-  one without an explicit `--yes-install`; missing CLIs are reported with their
-  install command and skipped.
+- The client CLIs you want to exercise. `clients install NAME --yes-install`
+  installs one; `test --clients all` (the default) runs every adapter. Missing
+  CLIs are reported with their install command and skipped. The current
+  verified set is Claude Code, Codex, OpenCode, Goose, Kimi, Aider, Qwen,
+  Continue and Cline (OpenAI-compatible provider); Factory Droid needs
+  `FACTORY_API_KEY`.
+- Codex tool runs use `--sandbox danger-full-access` in the disposable test
+  work dir. The `read-only` sandbox needs user namespaces (`bwrap`) that many
+  hosts do not allow, and the full-access mode means the CLI has the invoking
+  user's shell privileges. Run the harness only against a disposable instance
+  and a scratch work dir.
 
 ## Instance layout
 
@@ -112,26 +120,30 @@ rewrites the fallback lists to force the live reload.
 
 | Phase | What it proves |
 |---|---|
-| 0 | Health, permissions, provider inventory, client key, fallback state, CLI inventory |
-| 1 | “Hallo” through each selected CLI, with a 200 request and the expected protocol |
+| 0 | Preflight: health, permissions, provider/key/fallback inventory, CLI inventory |
+| 1 | “Sag nur Hallo.” through each selected CLI, with a 200 request and the expected protocol |
 | 2 | Watermark-scoped log/DB scan and the console log read path |
-| 3 | Alias resolution, vision fallback with a real PNG, and failover injection |
-| 4 | Protocol-level `web_search`/`web_fetch` and Claude Code web tools |
-| 5 | Three vision runs on the blind model |
-| 6 | The full Neon-UX prompt through Claude Code (or the protocol fallback) |
+| 3 | A file-read tool prompt through every CLI whose non-interactive mode has agent tools; the answer must contain the canary |
+| 4 | Claude Code web tools: 3× search+fetch and 6× mixed web+file prompts; no leaked `web_fetch`/`web_search` name |
+| 5 | The full Neon-UX session through Claude Code with a 900 s budget; no 5xx/529 in the window |
+| 6 | Failover through a real CLI, with the first provider pointed at a real public endpoint that refuses connections |
+| 7 | Vision through `codex exec -i` on the known-blind fallback model |
+| 8 | Transport-timeout mapping with a lowered header wall: 504, never 500, then recovery after restore (runs last) |
 
 Reports land in `artifacts/<run-id>/report.json` and `report.md`. Statuses are
-`pass`, `fail`, `warn`, `skipped`, `skipped_missing`, `skipped_unsupported`,
-`upstream`, `model_behavior` and `client_config`. A fetch blocked upstream
-(202/403/0 bytes) is reported as `upstream` with its URL and status; it is not
-hidden and does not become a proxy bug.
+`pass`, `fail`, `warn`, `skipped_missing`, `skipped_unsupported`,
+`model_behavior` and `client_config`. `model_behavior` is used when Claude
+Code's on-demand ToolSearch executes its own `WebSearch`/`WebFetch` client-side
+(no proxy child row, no error) or the model chooses not to call a tool; it is
+not a proxy failure. A client `tool_use` named lowercase `web_fetch` or
+`web_search` is the leak this suite exists to catch and is a `fail`.
 
-The failover-injection part of phase 3 starts a local HTTP server that returns
-500, so the instance must be started with private provider URLs enabled. Pass
-`--allow-private-provider-urls` to `init` (or set
-`"allow_private_provider_urls": true` in `instance.json` and restart); without
-it the phase is reported `skipped` with that reason. The opt-out only affects a
-disposable loopback instance.
+Phase 6 uses no stub: the first provider's base URL is a real public endpoint
+(`example.com:1`) that refuses the connection, and the CLI must still receive a
+200 from the healthy account with a traced `failover`. Phase 7 requires Codex's
+`exec -i`; phase 8 lowers `upstream_response_header_timeout_ms`, re-applies the
+provider (a settings write alone does not rebuild the live clients), and
+restores it before the warm-up call.
 
 ## Inspect and stop
 
@@ -149,8 +161,9 @@ home.
 
 ## Client safety
 
-Each CLI runs with `env -i`, a fresh HOME/XDG/config directory under
-`clients/`, and a canary snapshot of its real config paths. A change to
+Each CLI runs with a freshly constructed environment from an explicit
+keep-list (not the caller's environment), a fresh HOME/XDG/config directory
+under `clients/`, and a canary snapshot of its real config paths. A change to
 `~/.codex`, `~/.config/opencode` or any other real config path is a hard
 `client_config` failure. Claude Code skips the canary when the harness runs
 inside Claude Code itself (the parent session writes `~/.claude` and

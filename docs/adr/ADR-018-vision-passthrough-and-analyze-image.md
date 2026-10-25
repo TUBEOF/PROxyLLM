@@ -128,6 +128,15 @@ instead of failing into a transport class — and proactive substitution on an
 all-blind chain means the image never reaches a blind model to hang on
 either way.
 
+**2026-10-25 addendum — the default is now `300000` (five minutes).** The
+complete emulation path (an injected `analyze_image`, or claimed client web
+tools) is non-streaming, so the wall covers the whole generation. A live
+Claude Code session with the repository's own Neon-UX prompt produced two
+HTTP 500s at 30.0 s (`failed class=transport`); three such failures in a row
+open the account breaker and turn subsequent requests into 529s. The new
+default matches `defaultEmulationTotalBudget`, so a still-running dispatch
+ends as the documented 504 rather than as a provider-health failure.
+
 ## Trace
 
 `route_trace` v9 adds the `analyze_image` event (answering provider + model,

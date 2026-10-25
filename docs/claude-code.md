@@ -127,6 +127,20 @@ the conversation (or in earlier search results), a definition's
 the call comes back as the documented `unavailable` error result instead of
 silently doing nothing.
 
+The proxy answers an emulated call even when the model's response also carries
+calls the client must answer (a mixed turn), and the round-cap/budget exits
+synthesize an `unavailable` result. A claimed family name is never handed back
+as a client `tool_use`: Claude Code does not know `web_fetch`/`web_search` and
+would report `No such tool available`, so a leaked lowercase name is a proxy
+bug, not a client configuration issue. A forced `tool_choice` follows the
+rename (and degrades to `auto` when `server_tool_emulation=off` removes the
+definition).
+
+Claude Code 2.1.x loads tool schemas on demand (`ToolSearch`). In some turns it
+executes its own `WebSearch`/`WebFetch` client-side even when the proxy already
+claimed the definition; that is not a proxy failure — the live test reports it
+as `model_behavior`.
+
 ## Images (paste and screenshots)
 
 Anthropic-native behavior first: a pasted image, or a Playwright MCP

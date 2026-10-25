@@ -24,6 +24,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tubeof/proxyllm/internal/provider"
 	"github.com/tubeof/proxyllm/internal/routing"
@@ -250,6 +251,21 @@ func TestImplicitRoute_HealthGate(t *testing.T) {
 	}
 	if errors.Is(err, routing.ErrNoRoute) {
 		t.Errorf("err = %v, must not be ErrNoRoute (404 implies the model does not exist)", err)
+	}
+	// The typed facts drive the surface message and Retry-After: a breaker
+	// trip names the breaker and carries the first recovery deadline.
+	var overload *routing.ChainOverloadedError
+	if !errors.As(err, &overload) {
+		t.Errorf("err = %T, want *routing.ChainOverloadedError", err)
+	} else {
+		if overload.Reason != "breaker" {
+			t.Errorf("reason = %q, want breaker", overload.Reason)
+		}
+		if overload.Until.IsZero() {
+			t.Error("Until is zero, want the breaker deadline")
+		} else if d := time.Until(overload.Until); d <= 0 || d > 10*time.Second {
+			t.Errorf("Until is %v away, want within the first 5s cooldown", d)
+		}
 	}
 	// The rejection reason names the cause: all providers cooled down.
 	rejected := false

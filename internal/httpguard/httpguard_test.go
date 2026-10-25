@@ -296,8 +296,8 @@ func TestNewClient_NoOptionKeepsDefaultHeaderTimeout(t *testing.T) {
 		if !ok {
 			t.Fatalf("transport is %T, want *http.Transport", c.Transport)
 		}
-		if tr.ResponseHeaderTimeout != 30*time.Second {
-			t.Errorf("ResponseHeaderTimeout = %v, want the 30s default", tr.ResponseHeaderTimeout)
+		if tr.ResponseHeaderTimeout != 5*time.Minute {
+			t.Errorf("ResponseHeaderTimeout = %v, want the 5m default", tr.ResponseHeaderTimeout)
 		}
 	}
 }

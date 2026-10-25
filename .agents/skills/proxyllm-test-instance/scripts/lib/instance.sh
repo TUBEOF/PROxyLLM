@@ -3,7 +3,7 @@
 # Sourced by test-instance.sh after common.sh.
 
 instance_init() {
-  local key_file="" prompt_key=0 chat_model="" fallback_model="" force=0 allow_private=0
+  local key_file="" prompt_key=0 chat_model="" fallback_model="" force=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --home) INSTANCE_HOME="$2"; shift 2 ;;
@@ -14,7 +14,6 @@ instance_init() {
       --chat-model) chat_model="$2"; shift 2 ;;
       --fallback-model) fallback_model="$2"; shift 2 ;;
       --web-tools) shift 2 ;;
-      --allow-private-provider-urls) allow_private=1; shift ;;
       --force) force=1; shift ;;
       *) die "init: unknown option $1" ;;
     esac
@@ -86,9 +85,9 @@ PY
 
   if [ ! -f "$INSTANCE_JSON" ] || [ "$force" -eq 1 ]; then
     python3 -I - "$INSTANCE_JSON" "$REPO" "$INSTANCE_HOME" "$PORT" \
-      "$chat_model" "$fallback_model" "$allow_private" <<'PY'
+      "$chat_model" "$fallback_model" <<'PY'
 import json, sys, time
-path, repo, home, port, chat, fallback, allow_private = sys.argv[1:8]
+path, repo, home, port, chat, fallback = sys.argv[1:7]
 data = {
     "schema": 1,
     "repo": repo,
@@ -97,7 +96,6 @@ data = {
     "chat_model": chat or "deepseek-v4.1-flash:1017",
     "fallback_model": fallback or "nemotron-3-ultra",
     "web_tools": "ollama-cloud-web",
-    "allow_private_provider_urls": allow_private == "1",
     "created_at": int(time.time()),
     "resolved": {},
 }
@@ -106,18 +104,6 @@ with open(path, "w", encoding="utf-8") as f:
     f.write("\n")
 PY
     chmod 644 "$INSTANCE_JSON"
-  fi
-  if [ "$allow_private" -eq 1 ]; then
-    python3 -I - "$INSTANCE_JSON" <<'PY'
-import json, sys
-path = sys.argv[1]
-with open(path, encoding="utf-8") as f:
-    data = json.load(f)
-data["allow_private_provider_urls"] = True
-with open(path, "w", encoding="utf-8") as f:
-    json.dump(data, f, indent=2, sort_keys=True)
-    f.write("\n")
-PY
   fi
   python3 -I - "$MARKER" "$INSTANCE_HOME" <<'PY'
 import json, sys
@@ -174,6 +160,9 @@ instance_start() {
   require_instance
   if instance_running; then
     log_info "already running (pid $(cat "$PID_FILE")) on $BASE_URL"
+    if [ "$build" -eq 1 ]; then
+      log_warn "start --build was requested but the process keeps its current binary; use restart --build"
+    fi
     return 0
   fi
   if [ "$build" -eq 1 ] || [ ! -x "$BIN" ]; then
@@ -183,19 +172,12 @@ instance_start() {
     die "port $PORT is in use; choose another with --port or init --port"
   fi
   mkdir -p "$(dirname "$PID_FILE")" "$(dirname "$PROXY_LOG")"
-  local allow_private
-  allow_private="$(python3 -I -c 'import json,sys
-try:
-    print("1" if json.load(open(sys.argv[1])).get("allow_private_provider_urls") else "")
-except Exception:
-    print("")' "$INSTANCE_JSON")"
   ( cd "$REPO" && \
       PROXYLLM_SERVER_ADDR="127.0.0.1:$PORT" \
       PROXYLLM_STORAGE_PATH="$DB" \
       PROXYLLM_MASTER_KEY_PATH="$MASTER_KEY" \
       PROXYLLM_LOG_FORMAT=text \
       PROXYLLM_LOG_LEVEL="${PROXYLLM_LOG_LEVEL:-info}" \
-      PROXYLLM_ALLOW_PRIVATE_PROVIDER_URLS="$allow_private" \
       setsid sh -c 'echo $$ > "$0"; exec "$1"' "$PID_FILE" "$BIN" \
       >>"$PROXY_LOG" 2>&1 </dev/null & )
   if wait_health 80; then

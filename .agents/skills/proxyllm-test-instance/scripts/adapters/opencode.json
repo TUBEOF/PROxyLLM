@@ -12,6 +12,6 @@
     "OPENCODE_CONFIG_CONTENT": "{\"$schema\":\"https://opencode.ai/config.json\",\"provider\":{\"proxyllm\":{\"npm\":\"@ai-sdk/openai-compatible\",\"name\":\"PROxyLLM\",\"options\":{\"baseURL\":\"{{BASE_URL}}/v1\",\"apiKey\":\"{{CLIENT_KEY}}\"},\"models\":{\"proxy-chat\":{\"name\":\"PROxyLLM\"}}}},\"model\":\"proxyllm/proxy-chat\"}",
     "OPENCODE_DISABLE_PROJECT_CONFIG": "1"
   },
-  "args": ["run", "-m", "proxyllm/proxy-chat", "--format", "json", "{{PROMPT}}"],
+  "args": ["run", "-m", "proxyllm/proxy-chat", "--format", "json", "--auto", "{{PROMPT}}"],
   "canary": ["~/.config/opencode", "~/.local/share/opencode"]
 }

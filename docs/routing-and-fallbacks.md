@@ -293,17 +293,29 @@ Both are permissive about rows with no opinion, and neither may empty a chain.
 
 Every chat upstream rides one guarded transport. Two walls bound a dispatch:
 `upstream_response_header_timeout_ms` bounds how long an upstream may accept
-the connection and produce **no** response headers (default `30000`), and
-`vision_caption_timeout_ms` bounds one `vision_fallback` describe call
-([the vision rescue](#the-vision-rescue)) on the same transport. A hung
-upstream becomes a transport-class failure either way — and a transport-class
-attempt is not a capability gap, so it **does not trigger the vision rescue**
-([ADR-018](adr/ADR-018-vision-passthrough-and-analyze-image.md)). A provider
-that is slow or hangs on multimodal requests therefore needs BOTH settings
-raised together: the header wall on the provider type's live set (a provider
-write re-applies it), the caption budget on the settings KV. Lower values are
-also legal: a faster wall stops a stuck upstream from holding requests before
-the health tracker cools it down.
+the connection and produce **no** response headers (default `300000`, five
+minutes), and `vision_caption_timeout_ms` bounds one `vision_fallback`
+describe call ([the vision rescue](#the-vision-rescue)) on the same transport.
+
+The five-minute default is deliberate. A request that carries claimed client
+web tools or an injected `analyze_image` rides the complete (non-streaming)
+emulation loop, so the upstream produces no streamed bytes and the header wall
+covers the **whole generation**, not time to first token. Reasoning models
+routinely exceed thirty seconds there; the old thirty-second wall turned
+healthy answers into transport failures. The default matches the emulation
+loop's own total budget (`defaultEmulationTotalBudget`): a re-dispatch still
+running at that point ends as the documented 504, not as a provider-health
+failure.
+
+A hung upstream becomes a transport-class failure either way — and a
+transport-class attempt is not a capability gap, so it **does not trigger the
+vision rescue** ([ADR-018](adr/ADR-018-vision-passthrough-and-analyze-image.md)).
+A provider that is slow or hangs on multimodal requests therefore needs BOTH
+settings raised together: the header wall on the provider type's live set (a
+provider write re-applies it; a settings write alone does not rebuild the live
+clients), the caption budget on the settings KV. Lower values are also legal:
+a faster wall stops a stuck upstream from holding requests before the health
+tracker cools it down.
 
 ## Context-window rejections fail over
 
@@ -458,6 +470,12 @@ recovery; cooled-down accounts are skipped with a traced reason, and a
 successful request resets the state. A rate-limit open doubles its own
 cooldown, because an account that answered 429 was serving other traffic and
 will keep doing so for a while.
+
+When every candidate is cooling down, the surfaces answer the retryable
+overload signal (529 on Anthropic, 503 on OpenAI). The message names the
+actual state — circuit breaker or an upstream quota/rate-limit window — and
+`Retry-After` carries the seconds until the earliest provider recovers
+([errors](api/errors.md#all-providers-unavailable-retryable)).
 
 **Not every failure is evidence about the provider**, and counting them all
 is how one bad request becomes an outage. Opening the breaker is reserved for
