@@ -145,18 +145,9 @@ func run() error {
 	// the envelope — a store with neither is a store that cannot create keys.
 	store.SetKeyHasher(storage.NewKeyHasher(masterKey))
 
-	// Web-tool emulation state (ADR-010) is loud in both
-	// directions: emulation itself is always on (a server-tool definition is
-	// converted and served by the proxy — that is what keeps such a request
-	// routable), but WITHOUT a backend every call degrades to the documented
-	// "unavailable" error result. The ENV key is the legacy configuration path
-	// (a web-tool account in the DB wins); this warning covers the ENV-absent
-	// case only — a DB account (of ANY web-tool family, not just Firecrawl)
-	// needs no ENV.
-	if _, ok := config.FirecrawlAPIKeyFromEnv(); !ok {
-		logger.Warn("PROxyLLM: no web-tool backend is configured in this process (WebUI Providers → Firecrawl or Ollama Cloud (Web Tools), or PROXYLLM_FIRECRAWL_API_KEY); web_search/web_fetch definitions are still emulated, but every call is answered with the documented \"unavailable\" error result")
-	}
-
+	// The no-web-tool-backend warning lives in server.New, after the stored
+	// provider rows load: an ENV-only check here cannot see a WebUI-configured
+	// account and would tell the operator the opposite of the truth.
 	srv, err := server.New(cfg, store, logger, append(serverOptions(cfg, masterKey), server.WithModelSync())...)
 	if err != nil {
 		return err
