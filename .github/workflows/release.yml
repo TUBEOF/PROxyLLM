@@ -1,11 +1,10 @@
 name: Release
 
-# Tag-triggered release pipeline (phase 3, research R-1..R-4):
-#   1. npm run build (real SPA bundle, embedded into the binary)
-#   2. GoReleaser: per-OS/arch binary archives as GitHub Release assets +
-#      multi-arch Docker images pushed to GHCR (amd64 + arm64 manifest list)
-# GoReleaser needs contents: write for the GitHub Release; the GHCR push
-# needs packages: write (R-4).
+# Tag-triggered release pipeline:
+#   1. real-CLI suite (inline composite action; logs stream in this job)
+#   2. perf-budget gate
+#   3. GoReleaser: archives + multi-arch GHCR images
+#   4. append the per-CLI table to the release notes
 
 on:
   push:
@@ -15,15 +14,13 @@ permissions:
   contents: write
   packages: write
 
-jobs:
-  # Every release runs the real-CLI suite on the tagged commit. The release
-  # job downloads its report and appends the per-CLI table (with the exact
-  # tested versions) to the release notes. A failing CLI phase blocks the
-  # release.
-  live-cli:
-    uses: ./.github/workflows/live-cli.yml
-    secrets: inherit
+env:
+  PROXYLLM_TEST_HOME: ${{ github.workspace }}/.live-cli
+  PYTHONUNBUFFERED: "1"
+  CHAT_MODEL: deepseek-v4.1-flash:1017
+  FALLBACK_MODEL: nemotron-3-ultra
 
+jobs:
   # Hard release gate: the perf budgets block release. The CI
   # benchmark job runs the same tests on main non-blocking; here the budget
   # assertions in TestPerfBudgets fail the tag build loudly.
@@ -38,26 +35,23 @@ jobs:
       - run: go test ./internal/e2e -run TestPerfBudgets -v -count=1
 
   release:
-    needs: [live-cli, perf-budgets]
+    needs: [perf-budgets]
     runs-on: ubuntu-24.04
+    environment: live-cli
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v7
+      # Inline the live suite so its steps appear in this job's log. The
+      # action installs Go/Node and returns the Markdown table as an output.
+      - uses: ./.github/actions/live-cli
+        id: live
         with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
+          ollama-cloud-api-key: ${{ secrets.OLLAMA_CLOUD_API_KEY }}
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 26
-          cache: npm
-          cache-dependency-path: webui/package-lock.json
-
-      # QEMU + buildx for the arm64 image leg (research R-2); login before
-      # GoReleaser because its publish phase pushes during the run.
+      # QEMU + buildx for the arm64 image leg; login before GoReleaser
+      # because its publish phase pushes during the run.
       - uses: docker/setup-qemu-action@v4
       - uses: docker/setup-buildx-action@v4
 
@@ -67,9 +61,6 @@ jobs:
         working-directory: webui
         run: npm ci && npm run build
 
-      # GHCR login BEFORE GoReleaser: the dockers/docker_manifests publish
-      # phase pushes during the GoReleaser run and needs the credentials
-      # already present.
       - name: Log in to GHCR
         uses: docker/login-action@v4
         with:
@@ -77,33 +68,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The live-CLI reusable workflow returns the Markdown table as a job
-      # output. Using an output instead of an artifact keeps the release
-      # independent of the account's artifact egress quota.
+      # Verify the report BEFORE GoReleaser: once a release is published,
+      # a missing report can no longer block it.
       - name: Write live CLI report
         env:
-          REPORT: ${{ needs.live-cli.outputs.report }}
+          REPORT: ${{ steps.live.outputs.report }}
         run: |
           test -n "$REPORT"
           printf '%s\n' "$REPORT" > /tmp/cli-report.md
           grep -q '^| CLI ' /tmp/cli-report.md
 
-      # go:embed reads webui/dist at compile time; GoReleaser's build step
-      # must see the real assets. (The committed dist/index.html placeholder
-      # is replaced in the working tree only — it stays committed for
-      # fresh-clone compiles.) GoReleaser requires a clean git state and has
-      # no allowlist for dirty files, so tell git to ignore changes to
-      # exactly that placeholder: the working tree keeps the real bundle
-      # for go:embed, while any OTHER modified file still fails GoReleaser.
+      # go:embed reads webui/dist at compile time; GoReleaser requires a
+      # clean git state and has no allowlist for dirty files, so tell git to
+      # ignore changes to exactly that placeholder.
       - name: ignore dist placeholder churn
         run: git update-index --assume-unchanged webui/dist/index.html
+
       - name: run GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
-          # Pinned, not `latest`: a release must be reproducible, and a GoReleaser
-          # released between the tag and the run would otherwise change the build
-          # under it. Bump deliberately.
+          # Pinned, not `latest`: a release must be reproducible.
           version: v2.19.0
           args: release --clean
         env:
