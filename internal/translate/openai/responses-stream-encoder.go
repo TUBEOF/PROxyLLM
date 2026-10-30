@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/translate"
@@ -68,7 +69,11 @@ import (
 // responsesStreamEncoderState is the state machine for the encoder. It is
 // split out so the state is visible in the type (and testable in isolation).
 type responsesStreamEncoder struct {
-	w io.Writer
+	sink EventSink
+
+	// idFixed keeps a transport-minted response id (WebSocket) instead of
+	// taking the upstream response id from the Start event.
+	idFixed bool
 
 	// Response id/model captured from Start; appear on every snapshot.
 	id    string
@@ -90,6 +95,10 @@ type responsesStreamEncoder struct {
 
 	// itemCounter mints unique wire item ids (msg_0, fc_0, rs_0, ...).
 	itemCounter int
+
+	// seq is the Responses stream sequence_number. Every event carries the
+	// next value; clients use it to order/replay the stream.
+	seq int
 }
 
 // responsesEncItem is one tracked output item on the encoder side.
@@ -105,8 +114,33 @@ type responsesEncItem struct {
 // NewResponsesStreamEncoder returns the OpenAI Responses-API SSE stream
 // encoder for w.
 func NewResponsesStreamEncoder(w io.Writer) translate.StreamEncoder {
-	return &responsesStreamEncoder{w: w}
+	return &responsesStreamEncoder{sink: sseEventSink{w: w}}
 }
+
+// EventSink receives one serialized Responses event. The SSE transport writes
+// "event:" + "data:" frames; the WebSocket transport writes the data payload
+// as one text frame (the payload already carries its "type").
+type EventSink interface {
+	Event(name, data string) error
+	Comment(text string) error
+}
+
+// StreamEncoderWithID is a Responses stream encoder that exposes the response
+// id stamped on the wire — the WebSocket state machine keys per-connection
+// conversation history by it.
+type StreamEncoderWithID interface {
+	translate.StreamEncoder
+	ResponseID() string
+}
+
+// NewResponsesStreamEncoderWithID returns the encoder for a non-SSE sink
+// (WebSocket) with a fixed response id.
+func NewResponsesStreamEncoderWithID(sink EventSink, id string) StreamEncoderWithID {
+	return &responsesStreamEncoder{sink: sink, id: id, idFixed: true}
+}
+
+// ResponseID returns the id stamped on the wire.
+func (e *responsesStreamEncoder) ResponseID() string { return e.id }
 
 // Write encodes one canonical event onto the wire.
 func (e *responsesStreamEncoder) Write(ctx context.Context, ev ir.StreamEvent) error {
@@ -116,7 +150,9 @@ func (e *responsesStreamEncoder) Write(ctx context.Context, ev ir.StreamEvent) e
 	switch ev.Type {
 	case ir.Start:
 		if ev.Response != nil {
-			e.id = ev.Response.ID
+			if !e.idFixed {
+				e.id = ev.Response.ID
+			}
 			e.model = ev.Response.Model
 		}
 		if e.createdAt == 0 {
@@ -557,27 +593,44 @@ func (e *responsesStreamEncoder) emitError(ev ir.StreamEvent) error {
 
 // ---- wire I/O ----
 
-// emitEvent writes one named SSE event: `event:` + `data:` + blank line,
-// flushing. Follows the chat stream-encoder's writeRaw pattern.
+// emitEvent writes one named event through the transport sink, stamping the
+// Responses sequence_number without each payload builder having to know it.
 func (e *responsesStreamEncoder) emitEvent(name, data string) error {
-	frame := "event: " + name + "\ndata: " + data + "\n\n"
-	return e.writeRaw(frame)
+	var m map[string]json.RawMessage
+	if json.Unmarshal([]byte(data), &m) == nil {
+		m["sequence_number"] = json.RawMessage(strconv.Itoa(e.seq))
+		e.seq++
+		if encoded, err := json.Marshal(m); err == nil {
+			data = string(encoded)
+		}
+	}
+	return e.sink.Event(name, data)
 }
 
-// emitComment writes a wire comment line.
+// emitComment writes one wire comment through the transport sink.
 func (e *responsesStreamEncoder) emitComment(text string) error {
+	return e.sink.Comment(text)
+}
+
+// sseEventSink writes the Responses SSE wire frames.
+type sseEventSink struct{ w io.Writer }
+
+func (s sseEventSink) Event(name, data string) error {
+	return s.writeRaw("event: " + name + "\ndata: " + data + "\n\n")
+}
+
+func (s sseEventSink) Comment(text string) error {
 	if text != "" {
 		text = " " + text
 	}
-	return e.writeRaw(":" + text + "\n\n")
+	return s.writeRaw(":" + text + "\n\n")
 }
 
-// writeRaw writes one wire frame and flushes.
-func (e *responsesStreamEncoder) writeRaw(s string) error {
-	if _, err := io.WriteString(e.w, s); err != nil {
+func (s sseEventSink) writeRaw(raw string) error {
+	if _, err := io.WriteString(s.w, raw); err != nil {
 		return fmt.Errorf("openai/responses: encode stream: %w", err)
 	}
-	if f, ok := e.w.(http.Flusher); ok {
+	if f, ok := s.w.(http.Flusher); ok {
 		f.Flush()
 	}
 	return nil

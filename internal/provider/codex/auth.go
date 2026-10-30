@@ -378,14 +378,26 @@ func (a *authClient) Refresh(ctx context.Context) error {
 	if a.flight != nil {
 		f := a.flight
 		a.mu.Unlock()
-		<-f.done
-		return f.err
+		select {
+		case <-f.done:
+			return f.err
+		case <-ctx.Done():
+			// The waiter's own request may disappear while the shared
+			// rotation continues for everyone else.
+			return ctx.Err()
+		}
 	}
 	f := &refreshFlight{done: make(chan struct{})}
 	a.flight = f
 	a.mu.Unlock()
 
-	f.err = a.doRefresh(ctx)
+	// The rotation is shared: it must outlive the first caller's request.
+	// A client disconnect otherwise aborts it for every waiter AND can burn
+	// the single-use refresh token (the issuer rotated it, the response was
+	// lost to the cancellation).
+	refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	f.err = a.doRefresh(refreshCtx)
+	cancel()
 	if f.err == nil {
 		a.mu.Lock()
 		a.lastRefresh = time.Now()
@@ -399,6 +411,17 @@ func (a *authClient) Refresh(ctx context.Context) error {
 	}
 	a.mu.Unlock()
 	return f.err
+}
+
+// HasToken reports whether a credential row exists without refreshing it.
+// Routing's HasCredential uses it so a candidate check is one cheap store
+// read, never an issuer round trip.
+func (a *authClient) HasToken(ctx context.Context) bool {
+	if _, err := a.store.GetProviderToken(ctx, a.providerID, KindAccessToken); err == nil {
+		return true
+	}
+	_, err := a.store.GetProviderToken(ctx, a.providerID, KindRefreshToken)
+	return err == nil
 }
 
 // AccessToken returns the per-request bearer material. The store is read

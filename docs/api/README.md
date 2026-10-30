@@ -1,13 +1,14 @@
 # Client API
 
-PROxyLLM serves three client-facing surfaces from one endpoint. They share
+PROxyLLM serves four client-facing surfaces from one endpoint. They share
 authentication, request limits and error conventions; each speaks its own
 protocol family on the wire.
 
 | Surface | Paths | Streaming | Auth header |
 |---|---|---|---|
-| OpenAI-compatible | `POST /v1/chat/completions`, `POST /v1/responses`, `GET /v1/models` | yes | `Authorization: Bearer pk_…` |
+| OpenAI-compatible | `POST /v1/chat/completions`, `POST /v1/responses` (HTTP or WebSocket upgrade), `GET /v1/models` | yes | `Authorization: Bearer pk_…` |
 | Anthropic-compatible | `POST /v1/messages`, `POST /v1/messages/count_tokens`, `GET /v1/models` | yes | `x-api-key: pk_…` and/or `Authorization: Bearer pk_…` |
+| Ollama native | `POST /api/chat`, `GET /api/tags` | yes (NDJSON) | `Authorization: Bearer pk_…` and/or `x-api-key: pk_…` |
 | Decision | `POST /v1/systemone`, `POST /v1/decisions` | no — by contract | either family above |
 
 Per-surface detail lives on its own page: [OpenAI](openai.md),
@@ -20,10 +21,10 @@ different audience and has its own page: [admin.md](admin.md).
 
 ## Authentication
 
-Every `/v1/*` request carries an **API key** (`pk_<prefix>_<secret>`),
-created in the console (**API keys**) and shown exactly once. The key is
-stored as a one-way keyed hash, not as a recoverable secret — a lost key is
-regenerated or deleted, never re-read.
+Every client request on these surfaces carries an **API key**
+(`pk_<prefix>_<secret>`), created in the console (**API keys**) and shown
+exactly once. The key is stored as a one-way keyed hash, not as a recoverable
+secret — a lost key is regenerated or deleted, never re-read.
 
 The Anthropic surface accepts both header families: `Authorization: Bearer`
 wins when it carries a well-formed key, otherwise `x-api-key` is read. The
@@ -78,9 +79,12 @@ that does not know a newer event can ignore it.
 |---|---|---|
 | `POST` | `/v1/chat/completions` | [OpenAI](openai.md#post-v1chatcompletions) |
 | `POST` | `/v1/responses` | [OpenAI](openai.md#post-v1responses) |
+| `GET` | `/v1/responses` | WebSocket upgrade for the Responses transport |
 | `GET` | `/v1/models` | [OpenAI](openai.md#get-v1models) / [Anthropic](anthropic.md#get-v1models) |
 | `POST` | `/v1/messages` | [Anthropic](anthropic.md#post-v1messages) |
 | `POST` | `/v1/messages/count_tokens` | [Anthropic](anthropic.md#post-v1messagescount_tokens) |
+| `POST` | `/api/chat` | Native Ollama chat (JSON or NDJSON) |
+| `GET` | `/api/tags` | Native Ollama model list |
 | `POST` | `/v1/systemone` | [Decisions](decisions.md#post-v1systemone) |
 | `POST` | `/v1/decisions` | [Decisions](decisions.md#post-v1decisions) |
 | `GET` | `/healthz` | [Deployment](../deployment.md) |

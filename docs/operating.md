@@ -169,6 +169,11 @@ stored beside the row, redacted and capped, and retained for a configurable
 number of days. Turning capture off keeps every metadata row and only stops
 the bodies. Images are recorded by type and size, never by bytes.
 
+Metadata rows and their sub-operations are retained for
+`request_log_retention_days` (default 30); captured bodies for
+`request_payload_retention_days` (default 7). The hourly sweep also removes
+expired admin sessions.
+
 The **live tail** streams new rows as they finish. It is a plain SSE
 connection, so it reconnects by itself; an open Logs tab also keeps the
 admin session warm.

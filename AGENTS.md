@@ -1,11 +1,17 @@
 # AGENTS.md
 
-PROxyLLM is a single-binary LLM proxy in Go. One process serves three client
-surfaces — OpenAI-compatible (`/v1/chat/completions`, `/v1/responses`,
+PROxyLLM is a single-binary, multi-protocol LLM proxy in Go, in **early,
+pre-production development**. It is not a Claude-Code-only adapter: one
+process serves OpenAI-compatible (`/v1/chat/completions`, `/v1/responses`,
 `/v1/models`), Anthropic-compatible (`/v1/messages`,
-`/v1/messages/count_tokens`) and decision models (`/v1/systemone`,
-`/v1/decisions`) — with a canonical IR between the protocol families, so
-Claude Code can run against non-Claude models.
+`/v1/messages/count_tokens`), native Ollama (`/api/chat`, `/api/tags`) and
+decision surfaces (`/v1/systemone`, `/v1/decisions`), with a canonical IR
+between the protocol families. Any supported client protocol can reach any
+supported upstream protocol; Claude Code is one supported client, not the
+product's scope.
+
+Early state means wire shapes, provider types and console pages can still
+move. The golden fixtures and `docs/` are the reference — not this file.
 
 Depth lives in `docs/`, indexed by `docs/README.md`. Read the page a change
 touches; do not restate it here.
@@ -47,8 +53,9 @@ assertion suite has no baselines and runs anywhere. Rebuild the fixture
     cd webui && npx playwright test -c playwright.config.ts \
       e2e/design-rules.spec.ts e2e/log-childops.spec.ts e2e/provider-type-form.spec.ts
 
-Live smoke tests exist and never run in CI: `PROXYLLM_SMOKE=1 go test
-./internal/smoke/...`.
+Live smoke tests (`PROXYLLM_SMOKE=1 go test ./internal/smoke/...`) never run in
+default CI. The real-CLI suite runs as `.github/workflows/live-cli.yml`
+against an ephemeral instance; procedure in `docs/test-instance.md`.
 
 ## Layout
 
@@ -63,8 +70,9 @@ Live smoke tests exist and never run in CI: `PROXYLLM_SMOKE=1 go test
   whose schema is therefore versioned.
 - `internal/storage` — SQLite (`modernc.org/sqlite`, CGO-free), with migrations
   as an append-only list.
-- `internal/provider`, `internal/tools` — upstream providers and the web-tool
-  backends.
+- `internal/provider`, `internal/tools` — upstream providers (OpenAI Chat,
+  Responses, Anthropic Messages, native Ollama, Codex OAuth, decisions) and
+  the web-tool backends.
 - `internal/server`, `internal/server/httpapi`, `internal/server/webui` —
   wiring, the API surfaces, the admin API and the embedded SPA.
 - `testdata/golden/` — wire fixtures. Each `.meta.json` carries the URL it was
@@ -82,15 +90,14 @@ Live smoke tests exist and never run in CI: `PROXYLLM_SMOKE=1 go test
 Agent Skills live in `.agents/skills/` in the open `SKILL.md` format
 (`agentskills.io`): `proxyllm-core` is the entry map, then
 `proxyllm-protocol`, `proxyllm-provider`, `proxyllm-routing`,
-`proxyllm-webui`, `proxyllm-ops`, `proxyllm-test-instance`, plus
-`proxyllm-design`. Codex, Gemini CLI,
+`proxyllm-webui`, `proxyllm-ops`, plus `proxyllm-design`. Codex, Gemini CLI,
 Cursor, Antigravity, Copilot, Zed and others read that path directly;
 `.claude/skills/` holds only symlinks to the same directories so Claude Code
 discovers them too. Skills are the map — `docs/` stays the truth.
 
-`proxyllm-test-instance/scripts/` is the repo's first skill-owned script
-directory: dependency-free bash + `python3 -I`, idempotent, secret-safe and
-runnable from a fresh checkout. Keep that contract for anything added there.
+`.github/live-cli/` holds the live-CLI harness: dependency-free `python3 -I`,
+idempotent, secret-safe and runnable from a fresh checkout. The workflow
+`.github/workflows/live-cli.yml` owns the phases. Keep that contract.
 
 ## Conventions that differ from the default
 
@@ -157,6 +164,6 @@ runnable from a fresh checkout. Keep that contract for anything added there.
 | The console's pages | `docs/operating.md` |
 | Routing, fallbacks, health | `docs/routing-and-fallbacks.md` |
 | Building, testing, releasing | `docs/development.md` |
-| Claude Code against non-Claude models | `docs/claude-code.md` |
+| Running Claude Code (one supported client) | `docs/claude-code.md` |
 | Security posture and threat model | `docs/security.md`, `SECURITY.md` |
 | Deployment, container, sizing | `docs/deployment.md` |

@@ -20,13 +20,15 @@ Packages are always `./cmd/... ./internal/... ./webui` — never `./...`
 (descends into `webui/node_modules`). `golangci-lint` is pinned in the
 Makefile AND `ci.yml`; bump both together.
 
-## Tests that never run in CI
+## Live tests
 
-- Live smoke: `PROXYLLM_SMOKE=1 go test ./internal/smoke/...`
+- Live smoke: `PROXYLLM_SMOKE=1 go test ./internal/smoke/...` — never in
+  default CI.
 - Playwright screenshot baselines: rendered in CI only; the assertion suite
   runs locally with `--project=desktop-chrome`.
-- Live multi-CLI test: the `proxyllm-test-instance` skill
-  (`scripts/test-instance.sh test`), procedure in `docs/test-instance.md`.
+- Live CLI workflow: `.github/workflows/live-cli.yml` runs on path-filtered
+  pushes/PRs against the protected `live-cli` environment; procedure in
+  `docs/test-instance.md`.
 
 ## Pull requests
 

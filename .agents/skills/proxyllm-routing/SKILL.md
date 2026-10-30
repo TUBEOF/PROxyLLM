@@ -49,7 +49,9 @@ go test ./internal/routing/...          # includes emulation + caption tests
 make test-race                          # routing is streaming-adjacent
 ```
 
-Live, against the local instance (127.0.0.1:18080): the `proxyllm-test-instance`
-skill owns the harness — `scripts/test-instance.sh start --build`, `setup`, then
-`test` — and its `scripts/db.py` inspects `request_logs` / trace rows read-only.
-Procedure and invariants: `docs/test-instance.md`.
+Live, against an ephemeral instance: `.github/workflows/live-cli.yml` owns the
+harness; the reusable pieces live under `.github/live-cli/`, and its `db.py`
+inspects `request_logs` / trace rows read-only. The hard assertions are the
+`capability_fallback` + `image_caption` pair for the image phase and
+`emulated_tool`/`emulated_tool_attempt` for the web phases. Procedure and
+invariants: `docs/test-instance.md`.

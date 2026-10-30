@@ -13,23 +13,28 @@ internet-scale multi-tenant exposure (documented hardening guidance only).
 ## Decision
 
 1. **AuthN default-ON**: WebUI login (Argon2id) + client API keys (256-bit,
-   display-once, Argon2id hash) on both surfaces. Opt-out only via explicit
-   ENV (`PROXYLLM_AUTH_DISABLED=1`, with a loud startup warning) — never
+   display-once, keyed-MAC hash; legacy Argon2id rows upgrade on verify) on
+   every client surface. Opt-out only via explicit ENV
+   (`PROXYLLM_AUTH_DISABLED=1`, with a loud startup warning) — never
    default-off.
 2. **Secret storage**: AES-256-GCM envelope per secret; master key from
-   `PROXYLLM_MASTER_KEY` (ENV) or generated keyfile (0600); rotation
-   re-encrypts rows; secrets never appear in config exports (placeholders).
+   `PROXYLLM_MASTER_KEY` (ENV) or generated keyfile (0600); secrets never
+   appear in config exports (placeholders). **Master-key rotation /
+   re-encryption is not implemented** — changing the key requires a
+   re-encryption migration that does not exist yet (documented limitation).
 3. **Redaction as a tested layer, built FIRST**: all logging through
-   `internal/observability/redact` — masks Bearer tokens, `sk-`/`fc-`/`pk-`
+   `internal/observability/redact` — masks Bearer tokens, `sk-`/`fc-`/`pk_`
    keys, JWTs, oversized base64. Adversarial tests (secrets in URLs, headers,
    JSON error bodies). No log call site may bypass the redactor.
-4. **Header policy**: strict WebUI security headers; API surface forwards
-   only documented header families; upstream credentials never echoed
-   downstream.
+4. **Header policy**: strict WebUI security headers; the client surfaces
+   forward only the allow-listed protocol headers (`anthropic-version`,
+   `anthropic-beta`, `openai-beta`, `x-stainless-*`) to same-family
+   upstreams; credentials and cookies are never forwarded.
 5. **Input validation**: JSON body size limits, per-protocol schema
-   validation before routing, per-client rate limiting + concurrency caps,
-   custom-provider base-URL validation (scheme/host allowlist, private-
-   address SSRF guard).
+   validation before routing, custom-provider base-URL validation
+   (scheme/host allowlist, private-address SSRF guard). **Per-client rate
+   limiting and concurrency caps are not implemented** (documented in
+   `docs/api/README.md` and `docs/security.md`).
 6. **Container hardening**: distroless-style image, non-root UID, read-only
    rootfs (data bind mount is the only writable path), dropped capabilities,
    built-in healthcheck.

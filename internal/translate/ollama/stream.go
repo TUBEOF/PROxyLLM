@@ -40,8 +40,30 @@ type streamDecoder struct {
 	done      bool
 }
 
+// maxStreamLineBytes bounds one NDJSON line. The SSE reader has the same
+// bound; an Ollama upstream that never sends a newline must not grow the
+// decoder without limit.
+const maxStreamLineBytes = 8 << 20
+
+// readLineLimited reads one newline-terminated line, failing once the line
+// exceeds limit bytes.
+func readLineLimited(br *bufio.Reader, limit int) ([]byte, error) {
+	var line []byte
+	for {
+		chunk, err := br.ReadSlice('\n')
+		line = append(line, chunk...)
+		if len(line) > limit {
+			return nil, fmt.Errorf("ollama: stream line exceeds %d bytes", limit)
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		return line, err
+	}
+}
+
 func newStreamDecoder(r io.Reader) translate.StreamDecoder {
-	return &streamDecoder{br: bufio.NewReader(r)}
+	return &streamDecoder{br: bufio.NewReaderSize(r, 64*1024)}
 }
 
 // Read returns the next canonical event. It returns io.EOF after Done (or
@@ -62,7 +84,7 @@ func (d *streamDecoder) next() (ir.StreamEvent, error) {
 		if d.done {
 			return ir.StreamEvent{}, io.EOF
 		}
-		line, err := d.br.ReadBytes('\n')
+		line, err := readLineLimited(d.br, maxStreamLineBytes)
 		if len(line) == 0 && err == nil {
 			continue // blank line, no events queued
 		}
@@ -82,6 +104,20 @@ func (d *streamDecoder) next() (ir.StreamEvent, error) {
 
 // mapChunk appends the canonical events for one NDJSON line to the queue.
 func (d *streamDecoder) mapChunk(w *wireResponse) {
+	if w.Error != "" {
+		if !d.started {
+			d.started = true
+			d.queue = append(d.queue, ir.StreamEvent{
+				Type: ir.Start, Response: &ir.Response{Model: w.Model},
+			})
+		}
+		d.closeBlock()
+		d.queue = append(d.queue, ir.StreamEvent{Type: ir.Error, Error: &ir.UpstreamError{
+			Type: "upstream_error", Message: w.Error,
+		}})
+		d.done = true
+		return
+	}
 	if !d.started {
 		d.started = true
 		d.queue = append(d.queue,

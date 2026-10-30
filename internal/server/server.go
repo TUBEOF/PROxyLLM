@@ -240,6 +240,9 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 	// client key — the WebUI session is the WebUI's auth, not the client
 	// key's.
 	s.mux.Handle("/v1/", authMiddleware.Wrap(handler))
+	// Native Ollama surface: the client key rides the same middleware.
+	s.mux.Handle("/api/chat", authMiddleware.Wrap(handler))
+	s.mux.Handle("/api/tags", authMiddleware.Wrap(handler))
 
 	// Reverse-proxy trust (docs/deployment.md): the configured CIDRs are
 	// the peers whose X-Forwarded-* headers the WebUI origin check honors.
@@ -380,15 +383,18 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 	// that is never called would leak one goroutine per server instance —
 	// New always stores it, and tests calling New on many servers without
 	// Close is the existing pattern (test servers are process-local).
-	if o.masterKey != nil && o.modelSync {
+	if o.masterKey != nil {
 		ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // cancel stored on the server (syncCancel); called on shutdown
 		s.syncCancel = cancel
-		syncer := modelsync.New(store, reg, logger)
-		go modelsync.NewScheduler(syncer, store, logger).Run(ctx)
-		// Captured payloads ride the same opt-in: their retention sweep is
-		// wall-clock work, and a deterministic test/fixture assembly must not
-		// start background timers any more than it must make live calls.
-		go runPayloadRetention(ctx, store, logger)
+		if o.modelSync {
+			syncer := modelsync.New(store, reg, logger)
+			go modelsync.NewScheduler(syncer, store, logger).Run(ctx)
+		}
+		// Retention (payloads, request/child rows, expired sessions) runs
+		// whenever the admin-backed server is assembled, even if model sync
+		// is off: a library embedding with a master key still needs bounded
+		// tables.
+		go runRetention(ctx, store, logger)
 	}
 
 	return s, nil
@@ -588,9 +594,18 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.mux.ServeHTTP(w, r)
 }
 
-// handleHealth serves GET /healthz, the endpoint the container healthcheck probes.
-func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+// handleHealth serves GET /healthz, the endpoint the container healthcheck
+// probes. It touches the store: a process whose database is gone is not a
+// healthy process, even if its HTTP listener still answers.
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+	defer cancel()
 	w.Header().Set("Content-Type", "application/json")
+	if err := s.store.Ping(ctx); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"unavailable"}`))
+		return
+	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }

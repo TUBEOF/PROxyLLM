@@ -157,6 +157,10 @@ func applyThinking(c Compat, req ir.Request, trace *Trace) (ir.Request, error) {
 			req.Thinking = nil
 			trace.CompatPolicy("thinking_handling", ThinkingStrip, "thinking param removed for non-thinking target")
 		}
+		// A client-sent reasoning_effort is a thinking request on the chat
+		// wire; the strip policy must remove it with the parameter, or the
+		// non-thinking target still receives a reasoning hint.
+		req.ReasoningEffort = ""
 		req = stripThinkingBlocks(req)
 		return req, nil
 	}

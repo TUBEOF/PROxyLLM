@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/tubeof/proxyllm/internal/auth"
 	"github.com/tubeof/proxyllm/internal/reqlog"
 	"github.com/tubeof/proxyllm/internal/storage"
 	"github.com/tubeof/proxyllm/internal/translate/sse"
@@ -27,6 +28,25 @@ const (
 	logStreamHeartbeatDefault = 15 * time.Second
 	logStreamBackfill         = 200 // rows per cursor drain batch
 )
+
+// sessionAlive re-checks the admin session on a heartbeat. A missing row
+// (logout, password-change revocation) or an expired window closes the
+// stream; a store error fails closed.
+func (a *AdminAPI) sessionAlive(r *http.Request) bool {
+	idHash := auth.SessionIDHashFromContext(r.Context())
+	if idHash == "" {
+		// No session in context: auth-disabled wiring or a direct handler
+		// test. The middleware has already gated the route in production.
+		return true
+	}
+	sess, err := a.store.GetSession(r.Context(), idHash)
+	if err != nil {
+		return false
+	}
+	// Use the API's clock: tests pin it, and production's default is the
+	// same Unix-seconds source the middleware uses.
+	return !auth.SessionExpired(sess, a.now())
+}
 
 // streamLogs serves the live log SSE stream.
 func (a *AdminAPI) streamLogs(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +92,12 @@ func (a *AdminAPI) streamLogs(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-ticker.C:
+			// Revocation must reach an already-open stream: logout deletes
+			// the session row, expiry and password changes invalidate it.
+			// The middleware checked only at connect time.
+			if !a.sessionAlive(r) {
+				return
+			}
 			if err := swr.Comment("ping"); err != nil {
 				return
 			}

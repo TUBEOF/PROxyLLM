@@ -109,6 +109,7 @@ func New(p Params) *API {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/chat/completions", a.handleChat)
 	mux.HandleFunc("POST /v1/responses", a.handleResponses)
+	mux.HandleFunc("GET /v1/responses", a.handleResponsesWS)
 	mux.HandleFunc("POST /v1/messages", a.handleMessages)
 	mux.HandleFunc("POST /v1/messages/count_tokens", a.handleCountTokens)
 	// Decision surfaces (decision models): the systemone (Jev) and the
@@ -116,6 +117,9 @@ func New(p Params) *API {
 	mux.HandleFunc("POST /v1/systemone", a.handleSystemOne)
 	mux.HandleFunc("POST /v1/decisions", a.handleDecisions)
 	mux.HandleFunc("GET /v1/models", a.handleModels)
+	// Native Ollama client surface (mounted outside /v1 by the server).
+	mux.HandleFunc("POST /api/chat", a.handleOllamaChat)
+	mux.HandleFunc("GET /api/tags", a.handleOllamaTags)
 	return &API{Handler: mux, a: a}
 }
 

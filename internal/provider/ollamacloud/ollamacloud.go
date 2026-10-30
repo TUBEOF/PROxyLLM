@@ -79,6 +79,9 @@ func NewWithLogger(id, baseURL, apiKey string, caps provider.Capabilities, logge
 			// private-address SSRF guard — the Bearer header would ride a
 			// followed redirect.
 			HTTP: httpguard.NewStreamingClient(opts...),
+			HeaderHook: func(ctx context.Context, _ bool) (http.Header, error) {
+				return provider.MergeForwarded(ctx, make(http.Header)), nil
+			},
 		},
 		id:      id,
 		caps:    caps,

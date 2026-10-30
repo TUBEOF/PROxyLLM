@@ -242,6 +242,14 @@ var serverToolFamilyPrefixes = []string{"web_search_", "web_fetch_"}
 // server-tool type string ("web_search" / "web_fetch"), or "" when the
 // tool is a regular client tool or an unrecognized server tool.
 func (t Tool) ServerToolName() string {
+	// The OpenAI Responses wire uses the undated family names
+	// ("web_search", "web_fetch") while Anthropic uses dated type strings.
+	switch t.Type {
+	case "web_search":
+		return "web_search"
+	case "web_fetch":
+		return "web_fetch"
+	}
 	for _, prefix := range serverToolFamilyPrefixes {
 		if strings.HasPrefix(t.Type, prefix) {
 			return strings.TrimSuffix(prefix, "_")
@@ -328,6 +336,38 @@ type Request struct {
 	// the first content block as text — Claude Code's web_fetch helper
 	// answers "No response from model" when it is a thinking block instead.
 	ThinkingRequested bool
+
+	// Cross-protocol request controls. These are explicit (not Passthrough)
+	// because at least two wire families understand them; each encoder maps
+	// what its protocol supports and leaves the rest to the trace.
+	Metadata           map[string]string `json:"-"`
+	Store              *bool             `json:"-"`
+	PreviousResponseID string            `json:"-"`
+	ServiceTier        string            `json:"-"`
+	Include            []string          `json:"-"`
+	ResponseFormat     json.RawMessage   `json:"-"` // chat response_format / responses text.format
+	TextVerbosity      string            `json:"-"`
+	ReasoningSummary   json.RawMessage   `json:"-"`
+	ParallelToolCalls  *bool             `json:"-"`
+	ClientMetadata     map[string]string `json:"-"`
+	PromptCacheKey     string            `json:"-"`
+	StreamOptions      json.RawMessage   `json:"-"`
+	KeepAlive          json.RawMessage   `json:"-"`
+	TopK               *int              `json:"-"`
+	Seed               *int              `json:"-"`
+	N                  *int              `json:"-"`
+	User               string            `json:"-"`
+
+	// OllamaOptions carries the raw /api/chat options object. Known keys are
+	// decoded into the typed fields above; unknown keys are merged back on a
+	// same-protocol re-encode so Ollama-specific knobs (num_ctx,
+	// repeat_penalty, mirostat, ...) survive.
+	OllamaOptions map[string]json.RawMessage `json:"-"`
+
+	// SourceProtocol names the codec family that decoded this request
+	// ("openai", "openai-responses", "anthropic", "ollama"). A same-protocol
+	// encoder re-emits Passthrough; a crossing encoder drops it.
+	SourceProtocol string
 
 	// Passthrough carries wire fields with no IR equivalent, keyed by
 	// top-level field name (nested unknowns live in the codec wire

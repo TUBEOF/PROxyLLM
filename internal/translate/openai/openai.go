@@ -5,6 +5,7 @@
 package openai
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,11 +25,28 @@ func (Codec) DecodeRequest(raw []byte) (ir.Request, error) {
 		return ir.Request{}, fmt.Errorf("openai: decode request: %w", err)
 	}
 	req := ir.Request{
-		Model:       w.Model,
-		MaxTokens:   w.MaxCompletionTokens,
-		Temperature: w.Temperature,
-		TopP:        w.TopP,
-		Stream:      w.Stream,
+		Model:             w.Model,
+		MaxTokens:         w.MaxCompletionTokens,
+		Temperature:       w.Temperature,
+		TopP:              w.TopP,
+		Stream:            w.Stream,
+		StopSequences:     w.Stop,
+		ResponseFormat:    w.ResponseFormat,
+		Seed:              w.Seed,
+		N:                 w.N,
+		ParallelToolCalls: w.ParallelToolCalls,
+		ServiceTier:       w.ServiceTier,
+		PromptCacheKey:    w.PromptCacheKey,
+		ReasoningEffort:   w.ReasoningEffort,
+		User:              w.User,
+		SourceProtocol:    "openai",
+		Passthrough:       ir.UnknownFields(raw, chatRequestFields),
+	}
+	if req.ReasoningEffort != "" && req.Thinking == nil {
+		req.Thinking = &ir.ThinkingConfig{Enabled: true}
+	}
+	if w.StreamOptions != nil {
+		req.StreamOptions, _ = json.Marshal(w.StreamOptions)
 	}
 	if req.MaxTokens == 0 {
 		req.MaxTokens = w.MaxTokens // legacy field name
@@ -82,6 +100,17 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 		Temperature:         req.Temperature,
 		TopP:                req.TopP,
 		Stream:              req.Stream,
+		Stop:                req.StopSequences,
+		ResponseFormat:      chatResponseFormat(req.ResponseFormat),
+		Seed:                req.Seed,
+		// n is deliberately not forwarded: the response codecs relay only
+		// choice 0, so asking the upstream for more choices would bill the
+		// operator and silently discard all but the first.
+		ParallelToolCalls: req.ParallelToolCalls,
+		ServiceTier:       req.ServiceTier,
+		PromptCacheKey:    req.PromptCacheKey,
+		ReasoningEffort:   req.ReasoningEffort,
+		User:              req.User,
 	}
 	// Ask the upstream to close a streamed response with a usage chunk.
 	// Without it an OpenAI-compatible upstream reports no token counts at
@@ -91,6 +120,12 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 	// non-streaming request), so it rides the Stream flag.
 	if req.Stream {
 		w.StreamOptions = &wireStreamOptions{IncludeUsage: true}
+		if len(req.StreamOptions) > 0 {
+			var so wireStreamOptions
+			if json.Unmarshal(req.StreamOptions, &so) == nil {
+				w.StreamOptions = &so
+			}
+		}
 	}
 	for _, sys := range req.System {
 		w.Messages = append(w.Messages, wireMessage{Role: "system", Content: wireContent{Str: &sys.Text}})
@@ -158,7 +193,64 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("openai: encode request: %w", err)
 	}
-	return raw, nil
+	return ir.MergePassthrough(raw, ir.PassthroughFor(req, "openai"))
+}
+
+// chatResponseFormat normalizes the IR response_format for the chat wire.
+// A Responses text.format ({type, name, schema}) is wrapped into the chat
+// {type:"json_schema", json_schema:{...}} shape; a text format is omitted.
+func chatResponseFormat(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) > 0 && trimmed[0] == '"' {
+		var s string
+		if json.Unmarshal(trimmed, &s) == nil && s == "json" {
+			return json.RawMessage(`{"type":"json_object"}`)
+		}
+		return raw
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(raw, &m) != nil {
+		return raw
+	}
+	if _, ok := m["json_schema"]; ok {
+		return raw // already chat-shaped
+	}
+	var typ string
+	_ = json.Unmarshal(m["type"], &typ)
+	if typ == "" || typ == "object" {
+		// A bare JSON schema (Ollama format) becomes a chat json_schema.
+		wrapped, err := json.Marshal(map[string]any{
+			"type":        "json_schema",
+			"json_schema": map[string]any{"name": "response", "schema": raw},
+		})
+		if err == nil {
+			return wrapped
+		}
+		return raw
+	}
+	if typ == "text" {
+		return nil
+	}
+	if typ != "json_schema" {
+		return raw
+	}
+	inner := make(map[string]json.RawMessage)
+	for _, k := range []string{"name", "schema", "strict", "description"} {
+		if v, ok := m[k]; ok {
+			inner[k] = v
+		}
+	}
+	wrapped, err := json.Marshal(map[string]any{
+		"type":        "json_schema",
+		"json_schema": inner,
+	})
+	if err != nil {
+		return raw
+	}
+	return wrapped
 }
 
 // DecodeResponse decodes an OpenAI chat-completions response body into the IR.
@@ -380,6 +472,49 @@ type wireRequest struct {
 	TopP                *float64           `json:"top_p,omitempty"`
 	Stream              bool               `json:"stream,omitempty"`
 	StreamOptions       *wireStreamOptions `json:"stream_options,omitempty"`
+	Stop                stringOrArray      `json:"stop,omitempty"`
+	ResponseFormat      json.RawMessage    `json:"response_format,omitempty"`
+	Seed                *int               `json:"seed,omitempty"`
+	N                   *int               `json:"n,omitempty"`
+	ParallelToolCalls   *bool              `json:"parallel_tool_calls,omitempty"`
+	ServiceTier         string             `json:"service_tier,omitempty"`
+	PromptCacheKey      string             `json:"prompt_cache_key,omitempty"`
+	ReasoningEffort     string             `json:"reasoning_effort,omitempty"`
+	User                string             `json:"user,omitempty"`
+}
+
+// stringOrArray accepts the chat API's `string | string[] | null` stop field.
+// The reference allows a single string; unmarshalling it into []string
+// outright would reject a legal client request.
+type stringOrArray []string
+
+func (s *stringOrArray) UnmarshalJSON(b []byte) error {
+	trimmed := bytes.TrimSpace(b)
+	if len(trimmed) > 0 && trimmed[0] == '"' {
+		var v string
+		if err := json.Unmarshal(trimmed, &v); err != nil {
+			return err
+		}
+		*s = []string{v}
+		return nil
+	}
+	var v []string
+	if err := json.Unmarshal(trimmed, &v); err != nil {
+		return err
+	}
+	*s = v
+	return nil
+}
+
+// chatRequestFields is the set of top-level members the codec translates.
+// Everything else rides ir.Request.Passthrough for same-protocol re-encodes.
+var chatRequestFields = map[string]bool{
+	"model": true, "messages": true, "tools": true, "tool_choice": true,
+	"max_completion_tokens": true, "max_tokens": true, "temperature": true,
+	"top_p": true, "stream": true, "stream_options": true, "stop": true,
+	"response_format": true, "seed": true, "n": true,
+	"parallel_tool_calls": true, "service_tier": true,
+	"prompt_cache_key": true, "reasoning_effort": true, "user": true,
 }
 
 // wireStreamOptions carries the OpenAI stream_options object. include_usage

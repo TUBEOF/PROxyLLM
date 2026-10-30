@@ -217,11 +217,22 @@ func (s *Store) migrate() error {
 		if v <= current {
 			continue
 		}
-		if _, err := s.db.Exec(m); err != nil {
+		// The DDL and its version row commit together: a crash between them
+		// must not re-run a non-idempotent ALTER on the next start.
+		tx, err := s.db.Begin()
+		if err != nil {
+			return fmt.Errorf("storage: begin migration %d: %w", v, err)
+		}
+		if _, err := tx.Exec(m); err != nil {
+			_ = tx.Rollback()
 			return fmt.Errorf("storage: apply migration %d: %w", v, err)
 		}
-		if _, err := s.db.Exec(`INSERT INTO schema_migrations (version, applied_at) VALUES (?, strftime('%s','now'))`, v); err != nil {
+		if _, err := tx.Exec(`INSERT INTO schema_migrations (version, applied_at) VALUES (?, strftime('%s','now'))`, v); err != nil {
+			_ = tx.Rollback()
 			return fmt.Errorf("storage: record migration %d: %w", v, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("storage: commit migration %d: %w", v, err)
 		}
 	}
 	return nil

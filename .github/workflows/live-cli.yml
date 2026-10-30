@@ -1,0 +1,163 @@
+name: live-cli
+
+# Real-CLI verification against an ephemeral PROxyLLM instance. Every phase
+# uses the real upstream key from the protected `live-cli` environment; the
+# proxy's own admin/client keys are generated in the runner.
+
+on:
+  push:
+    paths:
+      - "internal/translate/**"
+      - "internal/provider/**"
+      - "internal/routing/**"
+      - "internal/server/**"
+      - "internal/auth/**"
+      - "internal/storage/**"
+      - "internal/smoke/**"
+      - "internal/tools/**"
+      - "internal/config/**"
+      - "internal/httpguard/**"
+      - "cmd/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/live-cli/**"
+      - ".github/workflows/live-cli.yml"
+  pull_request:
+    paths:
+      - "internal/translate/**"
+      - "internal/provider/**"
+      - "internal/routing/**"
+      - "internal/server/**"
+      - "internal/auth/**"
+      - "internal/storage/**"
+      - "internal/smoke/**"
+      - "internal/tools/**"
+      - "internal/config/**"
+      - "internal/httpguard/**"
+      - "cmd/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/live-cli/**"
+      - ".github/workflows/live-cli.yml"
+  workflow_dispatch:
+  # Called by the release workflow so every release carries the per-CLI
+  # result table (and the exact tested versions) in its notes.
+  workflow_call:
+    secrets:
+      OLLAMA_CLOUD_API_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-cli-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PROXYLLM_TEST_HOME: ${{ github.workspace }}/.live-cli
+  # The blind test model (no vision); the vision fallback is deepseek-flash.
+  CHAT_MODEL: nemotron-3-ultra
+  FALLBACK_MODEL: deepseek-v4.1-flash:1017
+
+jobs:
+  live:
+    # Fork PRs never receive the upstream secret.
+    if: >-
+      github.event_name == 'workflow_call' ||
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    environment: live-cli
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26.13.0
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Install CLIs (latest release, never pinned)
+        run: |
+          npm install -g \
+            @anthropic-ai/claude-code \
+            @openai/codex \
+            opencode-ai \
+            @moonshot-ai/kimi-code \
+            @qwen-code/qwen-code \
+            @continuedev/cli \
+            cline
+          python3 -m pip install --user uv
+          "$HOME/.local/bin/uv" tool install aider-chat --python 3.12
+          curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/download_cli.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Verify CLI versions
+        run: |
+          python3 -I .github/live-cli/clients.py list | python3 -I -c '
+          import json, sys
+          rows = json.load(sys.stdin)
+          missing = [r["name"] for r in rows if r["runnable"] and not r["installed"]]
+          print("missing CLIs:", missing)
+          sys.exit(1 if missing else 0)
+          '
+
+      - name: Build
+        run: make build
+
+      - name: Bootstrap instance
+        env:
+          OLLAMA_CLOUD_API_KEY: ${{ secrets.OLLAMA_CLOUD_API_KEY }}
+        run: |
+          python3 -I .github/live-cli/bootstrap.py \
+            --home "$PROXYLLM_TEST_HOME" \
+            --chat-model "$CHAT_MODEL" \
+            --fallback-model "$FALLBACK_MODEL"
+
+      - name: Start instance
+        run: |
+          mkdir -p "$PROXYLLM_TEST_HOME/logs" "$PROXYLLM_TEST_HOME/run"
+          PROXYLLM_SERVER_ADDR=127.0.0.1:18080 \
+          PROXYLLM_STORAGE_PATH="$PROXYLLM_TEST_HOME/data/proxyllm.db" \
+          PROXYLLM_MASTER_KEY_PATH="$PROXYLLM_TEST_HOME/data/master.key" \
+          PROXYLLM_LOG_FORMAT=json \
+          PROXYLLM_LOG_LEVEL=info \
+          ./proxyllm >"$PROXYLLM_TEST_HOME/logs/proxyllm.log" 2>&1 &
+          echo $! > "$PROXYLLM_TEST_HOME/run/proxyllm.pid"
+          for _ in $(seq 1 80); do
+            if curl -fsS http://127.0.0.1:18080/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+          cat "$PROXYLLM_TEST_HOME/logs/proxyllm.log"
+          exit 1
+
+      - name: Configure instance
+        run: python3 -I .github/live-cli/admin.py --home "$PROXYLLM_TEST_HOME" setup
+
+      - name: Run live CLI phases
+        run: python3 -I .github/live-cli/live_cli.py --home "$PROXYLLM_TEST_HOME"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-cli-report
+          path: ${{ env.PROXYLLM_TEST_HOME }}/artifacts/**
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Stop instance
+        if: always()
+        run: |
+          if [ -f "$PROXYLLM_TEST_HOME/run/proxyllm.pid" ]; then
+            kill "$(cat "$PROXYLLM_TEST_HOME/run/proxyllm.pid")" 2>/dev/null || true
+          fi

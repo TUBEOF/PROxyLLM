@@ -29,6 +29,24 @@ import (
 // slow instead of buffering the whole stream in memory.
 const streamChanBuffer = 16
 
+// maxResponseBodyBytes caps a non-streaming upstream body. A model answer is
+// bounded; an unbounded ReadAll lets one hostile or broken provider OOM the
+// proxy (the container is sized for hundreds of streams, not one multi-GB
+// body).
+const maxResponseBodyBytes = 16 << 20
+
+// readAllLimited reads at most limit bytes and fails when the body is larger.
+func readAllLimited(r io.Reader, limit int64) ([]byte, error) {
+	b, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(b)) > limit {
+		return nil, fmt.Errorf("httpx: response body exceeds %d bytes", limit)
+	}
+	return b, nil
+}
+
 // Client is one provider's HTTP transport configuration.
 type Client struct {
 	// BaseURL is the API root, e.g. "https://api.example.com/v1". ChatPath
@@ -321,7 +339,7 @@ func (c *Client) post(ctx context.Context, stream bool, raw []byte) ([]byte, err
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, c.mapError(resp)
 	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := readAllLimited(resp.Body, maxResponseBodyBytes)
 	if err != nil {
 		return nil, fmt.Errorf("httpx: read response body: %w", err)
 	}
@@ -356,7 +374,7 @@ func (c *Client) Get(ctx context.Context, path string) ([]byte, error) {
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, c.mapError(resp)
 	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := readAllLimited(resp.Body, maxResponseBodyBytes)
 	if err != nil {
 		return nil, fmt.Errorf("httpx: read response body: %w", err)
 	}
@@ -382,7 +400,7 @@ func (c *Client) PostJSON(ctx context.Context, path string, body []byte) ([]byte
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, c.mapError(resp)
 	}
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := readAllLimited(resp.Body, maxResponseBodyBytes)
 	if err != nil {
 		return nil, fmt.Errorf("httpx: read response body: %w", err)
 	}
@@ -405,7 +423,9 @@ func (c *Client) newRequestTo(ctx context.Context, path string, stream bool, raw
 		return nil, fmt.Errorf("httpx: build request: %w", err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
+	if c.APIKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
+	}
 	httpReq.Header.Set("Accept", "application/json")
 	if c.HeaderHook != nil {
 		extra, err := c.HeaderHook(ctx, stream)

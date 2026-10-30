@@ -20,6 +20,7 @@
 package openai
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -39,12 +40,26 @@ func (ResponsesCodec) DecodeRequest(raw []byte) (ir.Request, error) {
 		return ir.Request{}, fmt.Errorf("openai/responses: decode request: %w", err)
 	}
 	req := ir.Request{
-		Model:       w.Model,
-		MaxTokens:   w.MaxOutputTokens,
-		Temperature: w.Temperature,
-		TopP:        w.TopP,
-		Stream:      w.Stream,
-		ToolChoice:  responsesToolChoiceFromWire(w.ToolChoice),
+		Model:              w.Model,
+		MaxTokens:          w.MaxOutputTokens,
+		Temperature:        w.Temperature,
+		TopP:               w.TopP,
+		Stream:             w.Stream,
+		ToolChoice:         responsesToolChoiceFromWire(w.ToolChoice),
+		PreviousResponseID: w.PreviousResponseID,
+		ParallelToolCalls:  w.ParallelToolCalls,
+		ServiceTier:        w.ServiceTier,
+		Include:            w.Include,
+		Metadata:           w.Metadata,
+		ClientMetadata:     w.ClientMetadata,
+		PromptCacheKey:     w.PromptCacheKey,
+		StreamOptions:      w.StreamOptions,
+		SourceProtocol:     "openai-responses",
+		Passthrough:        ir.UnknownFields(raw, responsesRequestFields),
+	}
+	if w.Text != nil {
+		req.ResponseFormat = w.Text.Format
+		req.TextVerbosity = w.Text.Verbosity
 	}
 	if w.Instructions != "" {
 		// instructions is the Responses system prompt.
@@ -68,13 +83,31 @@ func (ResponsesCodec) DecodeRequest(raw []byte) (ir.Request, error) {
 				Description: wt.Description,
 				InputSchema: wt.Parameters,
 			})
+			continue
 		}
+		// A built-in server tool (web_search / web_search_preview /
+		// web_fetch): the compat layer converts it into an emulated client
+		// tool when the target cannot serve it natively.
+		family := ir.Tool{Type: wt.Type}.ServerToolName()
+		if family == "" {
+			continue
+		}
+		req.Tools = append(req.Tools, ir.Tool{
+			Name:        family,
+			Type:        wt.Type,
+			Description: wt.Description,
+			ServerTool:  &ir.ServerToolConfig{},
+		})
 	}
 	if w.Reasoning != nil && w.Reasoning.Effort != "" {
-		// reasoning.effort marks enabled thinking; the budget is not on the
-		// wire, so BudgetTokens stays 0 — the effort level rides in
-		// Passthrough-free form and is reconstructed on encode.
+		// reasoning.effort marks enabled thinking AND carries the effort:
+		// the compat layer may later nil Thinking, so the level must ride
+		// ReasoningEffort rather than being reconstructed from a bool.
 		req.Thinking = &ir.ThinkingConfig{Enabled: true}
+		req.ReasoningEffort = w.Reasoning.Effort
+	}
+	if w.Reasoning != nil {
+		req.ReasoningSummary = w.Reasoning.Summary
 	}
 	return req, nil
 }
@@ -92,6 +125,21 @@ func (ResponsesCodec) EncodeRequest(req ir.Request) ([]byte, error) {
 		// backend rejects a body that leaves the field unset (see the field
 		// comment on responsesWireRequest.Store).
 		Store: false,
+
+		PreviousResponseID: req.PreviousResponseID,
+		ParallelToolCalls:  req.ParallelToolCalls,
+		ServiceTier:        req.ServiceTier,
+		Include:            req.Include,
+		Metadata:           req.Metadata,
+		ClientMetadata:     req.ClientMetadata,
+		PromptCacheKey:     req.PromptCacheKey,
+		StreamOptions:      req.StreamOptions,
+	}
+	if len(req.ResponseFormat) > 0 || req.TextVerbosity != "" {
+		w.Text = &responsesWireText{
+			Format:    responsesTextFormat(req.ResponseFormat),
+			Verbosity: req.TextVerbosity,
+		}
 	}
 	if len(req.System) > 0 {
 		texts := make([]string, 0, len(req.System))
@@ -106,6 +154,12 @@ func (ResponsesCodec) EncodeRequest(req ir.Request) ([]byte, error) {
 	}
 	w.Input = input
 	for _, t := range req.Tools {
+		if t.Type != "" && !t.Emulated {
+			// A native built-in server tool keeps only its wire type; the
+			// built-in object has no name/description/parameters.
+			w.Tools = append(w.Tools, responsesWireTool{Type: t.Type})
+			continue
+		}
 		w.Tools = append(w.Tools, responsesWireTool{
 			Type:        "function",
 			Name:        t.Name,
@@ -113,14 +167,70 @@ func (ResponsesCodec) EncodeRequest(req ir.Request) ([]byte, error) {
 			Parameters:  t.InputSchema,
 		})
 	}
-	if req.Thinking != nil && req.Thinking.Enabled {
-		w.Reasoning = &responsesWireReasoning{Effort: effortFor(req)}
+	if req.ReasoningEffort != "" {
+		w.Reasoning = &responsesWireReasoning{Effort: req.ReasoningEffort, Summary: req.ReasoningSummary}
+	} else if req.Thinking != nil && req.Thinking.Enabled {
+		w.Reasoning = &responsesWireReasoning{Effort: effortFor(req), Summary: req.ReasoningSummary}
+	} else if len(req.ReasoningSummary) > 0 {
+		w.Reasoning = &responsesWireReasoning{Summary: req.ReasoningSummary}
 	}
 	raw, err := json.Marshal(w)
 	if err != nil {
 		return nil, fmt.Errorf("openai/responses: encode request: %w", err)
 	}
-	return raw, nil
+	return ir.MergePassthrough(raw, ir.PassthroughFor(req, "openai-responses"))
+}
+
+// responsesTextFormat normalizes the IR response_format for the Responses
+// wire. A chat response_format ({type:"json_schema", json_schema:{...}}) is
+// unwrapped into the Responses text.format shape; simple types pass through.
+func responsesTextFormat(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) > 0 && trimmed[0] == '"' {
+		var s string
+		if json.Unmarshal(trimmed, &s) == nil && s == "json" {
+			return json.RawMessage(`{"type":"json_object"}`)
+		}
+		return raw
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(raw, &m) != nil {
+		return raw
+	}
+	innerRaw, ok := m["json_schema"]
+	if !ok {
+		var typ string
+		_ = json.Unmarshal(m["type"], &typ)
+		if typ == "" || typ == "object" {
+			// A bare JSON schema (Ollama format) becomes a Responses
+			// text.format json_schema.
+			wrapped, err := json.Marshal(map[string]any{
+				"type": "json_schema", "name": "response", "schema": raw,
+			})
+			if err == nil {
+				return wrapped
+			}
+		}
+		return raw // already Responses-shaped (or a simple type)
+	}
+	var inner map[string]json.RawMessage
+	if json.Unmarshal(innerRaw, &inner) != nil {
+		return raw
+	}
+	out := map[string]json.RawMessage{"type": json.RawMessage(`"json_schema"`)}
+	for k, v := range inner {
+		if k != "type" {
+			out[k] = v
+		}
+	}
+	merged, err := json.Marshal(out)
+	if err != nil {
+		return raw
+	}
+	return merged
 }
 
 // DecodeResponse decodes a Responses-API response body into the IR.
@@ -359,6 +469,11 @@ type responsesWireReasoning struct {
 	Summary json.RawMessage `json:"summary,omitempty"`
 }
 
+type responsesWireText struct {
+	Format    json.RawMessage `json:"format,omitempty"`
+	Verbosity string          `json:"verbosity,omitempty"`
+}
+
 type responsesWireRequest struct {
 	Model           string                  `json:"model"`
 	Input           *responsesWireInput     `json:"input"`
@@ -370,6 +485,17 @@ type responsesWireRequest struct {
 	TopP            *float64                `json:"top_p,omitempty"`
 	Reasoning       *responsesWireReasoning `json:"reasoning,omitempty"`
 	Stream          bool                    `json:"stream,omitempty"`
+
+	PreviousResponseID string             `json:"previous_response_id,omitempty"`
+	ParallelToolCalls  *bool              `json:"parallel_tool_calls,omitempty"`
+	ServiceTier        string             `json:"service_tier,omitempty"`
+	Include            []string           `json:"include,omitempty"`
+	Metadata           map[string]string  `json:"metadata,omitempty"`
+	ClientMetadata     map[string]string  `json:"client_metadata,omitempty"`
+	PromptCacheKey     string             `json:"prompt_cache_key,omitempty"`
+	StreamOptions      json.RawMessage    `json:"stream_options,omitempty"`
+	Text               *responsesWireText `json:"text,omitempty"`
+
 	// Store is the Responses API's request-retention flag. Always false, and
 	// deliberately NOT omitempty: (i) the proxy never asks an upstream to
 	// retain a request, and (ii) the ChatGPT/Codex backend REQUIRES the field
@@ -381,6 +507,20 @@ type responsesWireRequest struct {
 	// a *bool here would silently reopen that 400 — the contract test
 	// TestResponsesEncodeRequest_StoreIsFalse pins it.
 	Store bool `json:"store"`
+}
+
+// responsesRequestFields is the set of top-level members the codec translates.
+var responsesRequestFields = map[string]bool{
+	"model": true, "input": true, "instructions": true, "tools": true,
+	"tool_choice": true, "max_output_tokens": true, "temperature": true,
+	"top_p": true, "reasoning": true, "stream": true,
+	"previous_response_id": true, "parallel_tool_calls": true,
+	"service_tier": true, "include": true, "metadata": true,
+	"client_metadata": true, "prompt_cache_key": true,
+	"stream_options": true, "text": true, "store": true,
+	// The WebSocket envelope adds type:"response.create"; it is not a
+	// Responses body field and must never ride the upstream request.
+	"type": true,
 }
 
 type responsesWireUsageDetails struct {

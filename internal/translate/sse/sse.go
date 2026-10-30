@@ -18,11 +18,19 @@ package sse
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"strings"
 )
 
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
+// Bounds on one line / one event. A hostile or broken upstream that never
+// sends a newline must not grow the reader without limit.
+const (
+	maxLineBytes  = 8 << 20
+	maxEventBytes = 8 << 20
+)
 
 // Event is one dispatched SSE event or a comment line.
 type Event struct {
@@ -48,6 +56,9 @@ type Reader struct {
 	name    string
 	data    []string
 	hasData bool
+	// dataBytes tracks the concatenated data so one event cannot grow
+	// without bound across many data lines.
+	dataBytes int
 }
 
 // NewReader returns a Reader consuming r. Reading is incremental — events
@@ -98,6 +109,11 @@ func (r *Reader) Next() (Event, error) {
 		case "event":
 			r.name = value
 		case "data":
+			r.dataBytes += len(value)
+			if r.dataBytes > maxEventBytes {
+				r.reset()
+				return Event{}, fmt.Errorf("sse: event data exceeds %d bytes", maxEventBytes)
+			}
 			r.data = append(r.data, value)
 			r.hasData = true
 		default:
@@ -112,6 +128,7 @@ func (r *Reader) reset() {
 	r.name = ""
 	r.data = nil
 	r.hasData = false
+	r.dataBytes = 0
 }
 
 // splitField splits a field line at the first colon, stripping one leading
@@ -151,6 +168,9 @@ func (r *Reader) readLine() ([]byte, error) {
 			}
 			return line, nil
 		default:
+			if len(line) >= maxLineBytes {
+				return nil, fmt.Errorf("sse: line exceeds %d bytes", maxLineBytes)
+			}
 			line = append(line, b)
 		}
 	}

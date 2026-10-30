@@ -15,6 +15,10 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
 
+// defaultMaxTokens is the fallback for cross-protocol requests that did not
+// carry a max_tokens (the Anthropic wire requires the field and rejects 0).
+const defaultMaxTokens = 4096
+
 // Codec decodes and encodes Anthropic Messages wire bodies.
 type Codec struct{}
 
@@ -25,12 +29,17 @@ func (Codec) DecodeRequest(raw []byte) (ir.Request, error) {
 		return ir.Request{}, fmt.Errorf("anthropic: decode request: %w", err)
 	}
 	req := ir.Request{
-		Model:         w.Model,
-		MaxTokens:     w.MaxTokens,
-		Temperature:   w.Temperature,
-		TopP:          w.TopP,
-		StopSequences: w.StopSequences,
-		Stream:        w.Stream,
+		Model:          w.Model,
+		MaxTokens:      w.MaxTokens,
+		Temperature:    w.Temperature,
+		TopP:           w.TopP,
+		TopK:           w.TopK,
+		StopSequences:  w.StopSequences,
+		Stream:         w.Stream,
+		Metadata:       w.Metadata,
+		ServiceTier:    w.ServiceTier,
+		SourceProtocol: "anthropic",
+		Passthrough:    ir.UnknownFields(raw, anthropicRequestFields),
 	}
 	if w.Thinking != nil {
 		req.Thinking = &ir.ThinkingConfig{
@@ -77,13 +86,28 @@ func (Codec) DecodeRequest(raw []byte) (ir.Request, error) {
 
 // EncodeRequest encodes an IR request into an Anthropic Messages body.
 func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
+	maxTokens := req.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = defaultMaxTokens
+	}
 	w := wireRequest{
 		Model:         req.Model,
-		MaxTokens:     req.MaxTokens,
+		MaxTokens:     maxTokens,
 		Temperature:   req.Temperature,
 		TopP:          req.TopP,
+		TopK:          req.TopK,
 		StopSequences: req.StopSequences,
 		Stream:        req.Stream,
+	}
+	// Anthropic's metadata object only accepts user_id; forwarding arbitrary
+	// OpenAI/Responses metadata would be a 400.
+	if v, ok := req.Metadata["user_id"]; ok {
+		w.Metadata = map[string]string{"user_id": v}
+	}
+	// service_tier is a closed enum on this wire.
+	switch req.ServiceTier {
+	case "auto", "standard_only":
+		w.ServiceTier = req.ServiceTier
 	}
 	if len(req.System) > 0 {
 		sys := &wireContent{}
@@ -115,19 +139,37 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 	if req.ToolChoice != nil {
 		w.ToolChoice = toolChoiceToWire(req.ToolChoice)
 	}
+	budget := 0
 	if req.Thinking != nil {
 		switch {
 		case req.Thinking.Adaptive:
 			w.Thinking = &wireThinking{Type: "adaptive"}
 		case req.Thinking.Enabled:
-			w.Thinking = &wireThinking{Type: "enabled", BudgetTokens: req.Thinking.BudgetTokens}
+			budget = req.Thinking.BudgetTokens
+			if budget <= 0 {
+				budget = budgetFromEffort(req.ReasoningEffort)
+			}
+			if budget <= 0 {
+				budget = 2048
+			}
+		}
+	} else if req.ReasoningEffort != "" {
+		budget = budgetFromEffort(req.ReasoningEffort)
+	}
+	if budget > 0 {
+		// Anthropic requires budget_tokens < max_tokens.
+		if budget >= maxTokens {
+			budget = maxTokens - 1
+		}
+		if budget > 0 {
+			w.Thinking = &wireThinking{Type: "enabled", BudgetTokens: budget}
 		}
 	}
 	raw, err := json.Marshal(w)
 	if err != nil {
 		return nil, fmt.Errorf("anthropic: encode request: %w", err)
 	}
-	return raw, nil
+	return ir.MergePassthrough(raw, ir.PassthroughFor(req, "anthropic"))
 }
 
 // DecodeResponse decodes an Anthropic Messages response body into the IR.
@@ -365,17 +407,49 @@ type wireThinking struct {
 }
 
 type wireRequest struct {
-	Model         string          `json:"model"`
-	MaxTokens     int             `json:"max_tokens"`
-	Temperature   *float64        `json:"temperature,omitempty"`
-	TopP          *float64        `json:"top_p,omitempty"`
-	StopSequences []string        `json:"stop_sequences,omitempty"`
-	Stream        bool            `json:"stream,omitempty"`
-	Thinking      *wireThinking   `json:"thinking,omitempty"`
-	System        *wireContent    `json:"system,omitempty"`
-	Messages      []wireMessage   `json:"messages"`
-	Tools         []wireTool      `json:"tools,omitempty"`
-	ToolChoice    *wireToolChoice `json:"tool_choice,omitempty"`
+	Model         string            `json:"model"`
+	MaxTokens     int               `json:"max_tokens"`
+	Temperature   *float64          `json:"temperature,omitempty"`
+	TopP          *float64          `json:"top_p,omitempty"`
+	TopK          *int              `json:"top_k,omitempty"`
+	StopSequences []string          `json:"stop_sequences,omitempty"`
+	Stream        bool              `json:"stream,omitempty"`
+	Thinking      *wireThinking     `json:"thinking,omitempty"`
+	System        *wireContent      `json:"system,omitempty"`
+	Messages      []wireMessage     `json:"messages"`
+	Tools         []wireTool        `json:"tools,omitempty"`
+	ToolChoice    *wireToolChoice   `json:"tool_choice,omitempty"`
+	Metadata      map[string]string `json:"metadata,omitempty"`
+	ServiceTier   string            `json:"service_tier,omitempty"`
+}
+
+// anthropicRequestFields is the set of top-level members the codec
+// translates. Everything else rides ir.Request.Passthrough.
+var anthropicRequestFields = map[string]bool{
+	"model": true, "max_tokens": true, "temperature": true, "top_p": true,
+	"top_k": true, "stop_sequences": true, "stream": true, "thinking": true,
+	"system": true, "messages": true, "tools": true, "tool_choice": true,
+	"metadata": true, "service_tier": true,
+}
+
+// budgetFromEffort maps a reasoning-effort level onto an Anthropic
+// thinking budget. The wire has no effort vocabulary; the mapping is the
+// documented heuristic tiering.
+func budgetFromEffort(effort string) int {
+	switch effort {
+	case "minimal":
+		return 1024
+	case "low":
+		return 2048
+	case "medium":
+		return 4096
+	case "high":
+		return 8192
+	case "max":
+		return 16384
+	default:
+		return 0
+	}
 }
 
 type wireResponse struct {

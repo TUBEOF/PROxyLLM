@@ -267,6 +267,10 @@ func WriteUnauthorized(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"type":"error","error":{"type":"authentication_error","message":"invalid or missing API key"}}`))
 		return
 	}
+	if isOllamaSurface(r.URL.Path) {
+		_, _ = w.Write([]byte(`{"error":"invalid or missing API key"}`))
+		return
+	}
 	_, _ = w.Write([]byte(`{"error":{"message":"Incorrect API key provided","type":"invalid_request_error","code":"invalid_api_key"}}`))
 }
 
@@ -275,4 +279,9 @@ func WriteUnauthorized(w http.ResponseWriter, r *http.Request) {
 // future endpoints like /v1/messages-batch into the Anthropic body.
 func isAnthropicSurface(path string) bool {
 	return path == "/v1/messages" || strings.HasPrefix(path, "/v1/messages/")
+}
+
+// isOllamaSurface routes the 401 body shape for the native Ollama surface.
+func isOllamaSurface(path string) bool {
+	return path == "/api/chat" || path == "/api/tags"
 }

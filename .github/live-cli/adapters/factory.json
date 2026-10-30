@@ -1,0 +1,44 @@
+{
+  "name": "factory",
+  "label": "Factory Droid",
+  "tier": "optional",
+  "command": "droid",
+  "install": "npm install -g droid",
+  "tested": "latest",
+  "runnable": false,
+  "requires_env": [
+    "FACTORY_API_KEY"
+  ],
+  "env_keep": [
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "TERM",
+    "TMPDIR",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NODE_EXTRA_CA_CERTS",
+    "FACTORY_API_KEY"
+  ],
+  "scrub_env": [
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL"
+  ],
+  "env": {},
+  "args": [
+    "exec",
+    "-m",
+    "custom:PROxyLLM-0",
+    "--auto",
+    "low",
+    "-o",
+    "json",
+    "{{PROMPT}}"
+  ],
+  "canary": [
+    "~/.factory"
+  ]
+}

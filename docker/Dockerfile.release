@@ -9,7 +9,7 @@
 
 # /data must pre-exist owned by the nonroot UID (distroless has no shell):
 # a tiny prep stage creates it, ownership applied on COPY.
-FROM alpine:3.24 AS prep
+FROM alpine:3.24.3 AS prep
 RUN mkdir -p /data
 
 FROM gcr.io/distroless/static-debian12:nonroot

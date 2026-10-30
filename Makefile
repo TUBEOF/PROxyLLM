@@ -12,7 +12,7 @@ GO_PKGS := ./cmd/... ./internal/... ./webui
 # reports findings CI does not have, which is worse than no local lint at all —
 # this repo has already been bitten by a locally-installed 2.6.2 that refused to
 # load the module entirely.
-GOLANGCI_VERSION := v2.14.0
+GOLANGCI_VERSION := v2.15.0
 
 build:
 	go build -trimpath -o $(BINARY) ./cmd/proxyllm

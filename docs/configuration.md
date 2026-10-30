@@ -154,6 +154,7 @@ these keys means the default.
 | `provider_type_settings` | JSON object keyed by provider type | [Operating: providers and accounts](operating.md#providers-and-accounts) |
 | `request_logging_enabled` | `1` (default) / `0` | [Operating: logs](operating.md#logs) |
 | `request_payload_retention_days` | integer ≥ 1 (default `7`) | [Operating: logs](operating.md#logs) |
+| `request_log_retention_days` | integer ≥ 1 (default `30`) — old `request_logs` and child rows | [Operating: logs](operating.md#logs) |
 | `account_usage:<provider-id>` | JSON schema v2 (`windows[]` plus legacy mirrors), written by the usage prober and the Codex rate-limit sink (read-only) | [Operating: quota](operating.md#quota) |
 | `onboarding_state` | JSON wizard progress (`version`, `completed[]`, `dismissed`, timestamps); written through `PUT /api/admin/onboarding` | [Operating: first run](operating.md#first-run) |
 

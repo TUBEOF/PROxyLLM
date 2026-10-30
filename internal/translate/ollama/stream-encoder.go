@@ -48,8 +48,9 @@ import (
 //   - Done → the done line if MessageDelta did not arrive (the wire requires
 //     a terminal done:true line; without it a downstream decoder hangs until
 //     EOF), with done_reason defaulted per stopReasonToWire
-//   - Error/Ping/Comment/unknown → nothing (no NDJSON wire channel; the
-//     degradation is relay-layer concern, never a stream failure)
+//   - Error → {"error":<message>, "done":true}; Ping/Comment/unknown → nothing
+//     (no NDJSON wire channel for keepalives; the degradation is a
+//     relay-layer concern, never a stream failure)
 //
 // Tool-call losses on this wire (by design, mirroring the non-stream wire):
 // no tool IDs (the wire format has no id field) and no fragment boundaries
@@ -159,10 +160,14 @@ func (e *streamEncoder) Write(ctx context.Context, ev ir.StreamEvent) error {
 			return nil
 		}
 		return e.writeDone(nil)
-	case ir.Error, ir.Ping, ir.Comment:
-		// No NDJSON wire channel for errors or keepalives (the wire format
-		// has no error event); the stream stays valid. Downstream
-		// consumers see the stream end at the next terminal event.
+	case ir.Error:
+		msg := "upstream error"
+		if ev.Error != nil && ev.Error.Message != "" {
+			msg = ev.Error.Message
+		}
+		return e.writeLine(wireResponse{Model: e.model, Error: msg, Done: true})
+	case ir.Ping, ir.Comment:
+		// No NDJSON wire channel for keepalives; the stream stays valid.
 		return nil
 	default:
 		// Unknown event kinds stay off the wire.

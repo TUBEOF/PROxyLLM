@@ -29,11 +29,25 @@ cannot carry all four is not added.
 
 Status of each operation class on the wires the shipped provider types
 speak — every client surface funnels through the IR, so the target wire is
-the axis: **`custom-openai` and `ollama-cloud` talk OpenAI Chat Completions**
-(`ollama-cloud` at `https://ollama.com/v1`), **`codex-oauth` talks the
-Responses wire**. No shipped upstream speaks the Anthropic or Ollama-native
-wires (see Known degradations) — those codecs serve the client surfaces, so
-an Anthropic→Anthropic route exists only as decode-encode against the IR.
+the axis. The shipped upstreams now cover all six wires: **`custom-openai`
+and `ollama-cloud` talk OpenAI Chat Completions**, **`openai-responses` and
+`codex-oauth` talk the Responses wire**, **`anthropic` talks the Messages
+wire**, **`ollama-native` talks `/api/chat`**, **`ollama-cloud` also serves
+System One**, and **`openai-decisions` serves `/v1/decisions`**. Client
+surfaces are Anthropic Messages, OpenAI Chat, OpenAI Responses (HTTP and
+WebSocket), Ollama native, System One and OpenAI Decisions.
+
+Protocol directions:
+
+| Client \ Provider | Chat | Responses | Anthropic | Ollama native | System One | Decisions |
+|---|---|---|---|---|---|---|
+| Anthropic Messages | translated | translated | native | translated | N/A | N/A |
+| OpenAI Chat | native | translated | translated | translated | N/A | N/A |
+| OpenAI Responses | translated | native | translated | translated | N/A | N/A |
+| Ollama native | translated | translated | translated | native | N/A | N/A |
+| System One | N/A | N/A | N/A | N/A | native | translated |
+| OpenAI Decisions | N/A | N/A | N/A | N/A | translated | native |
+
 Statuses: **native** (same-protocol, carried as-is), **translated** (codec
 pair + IR), **degraded** (translated with a recorded loss), **emulated**
 (routing supplies it against a target that lacks it), **not supported**
@@ -60,12 +74,10 @@ Numbered, each with the behaviour a request actually gets. Entries the codecs
 already handle cite the handling; gaps carry **known gap** until fixed — the
 fix lands with its fixture, matrix row, test and this entry's update.
 
-1. **Images in tool results → Ollama-native target** — known gap: the
-   `role: "tool"` encode carries text content only; `ImagePart`s are dropped
-   silently (`internal/translate/ollama/ollama.go`, the RoleTool branch), so a
-   sighted Ollama chain loses an image a tool returned without a trace event.
-   Blind chains are unaffected — the caption substitution replaces tool-result
-   images before encode (ADR-018).
+1. **Images in tool results → Ollama-native target** — supported: the
+   `role: "tool"` encode carries text content and base64 image parts
+   (`internal/translate/ollama/ollama.go`, the RoleTool branch). Blind chains
+   still use the caption substitution before encode (ADR-018).
 2. **Anthropic image blocks with `source.type: "file"`** — known gap: the IR
    image part has no file-id role and `wireImageSource` has no `file_id`
    field, so the id decodes away. Cross-protocol the image drops; Anthropic→
@@ -84,9 +96,10 @@ fix lands with its fixture, matrix row, test and this entry's update.
    message, never `content: null` (same 400 as №5).
 7. **Unrequested thinking in a response** — dropped on every wire, streamed
    blocks renumbered so the client sees no gap; recorded in the trace.
-8. **Interleaved thinking/content fragments (Ollama-native)** — buffered and
-   emitted as one thinking block once content completes, so text never
-   fragments.
+8. **Interleaved thinking/content fragments (Ollama-native)** — decoded as
+   separate content blocks at each kind change (BlockStop + BlockStart), not
+   buffered; strict clients may render alternating text/thinking blocks. The
+   OpenAI-compatible Ollama Cloud path buffers reasoning into one block.
 9. **`cache_control`** — survives an Anthropic→Anthropic route only; every
    other crossing drops it by construction and records the loss.
 10. **Guarded image URLs in captioning** — a remote image URL the caption
@@ -199,11 +212,10 @@ signature cannot become a data URL and fails the encode with a clear error.
   (OpenAI list shape) and may differ from the native `/api/tags` names. Server
   tools cannot ride to this target and fall to web-tool emulation like any other
   OpenAI-compatible target.
-- **Ollama native wire** (`/api/chat`) is still decoded and encoded for local
-  servers, which attach through the `custom-openai` provider type, and is
-  exercised by the codec contracts; no shipped provider uses it. Its limitation
-  stands: interleaved thinking and content fragments decode as separate content
-  blocks.
+- **Ollama native wire** (`/api/chat`) is a shipped upstream (`ollama-native`)
+  and a client surface (`POST /api/chat`, `GET /api/tags`). Its limitation
+  stands: interleaved thinking and content fragments decode as separate
+  content blocks at each kind change.
 - **Cache markers** (`cache_control`) survive an Anthropic→Anthropic route only.
   No other wire shape has the field, so the marker is dropped by construction;
   an explicit `drop` policy also removes it and records the loss in the trace.

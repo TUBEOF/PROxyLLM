@@ -4,7 +4,7 @@
 # not the committed dist placeholder. Pinned to the same node major CI and
 # the workflows use (26); deps from the lockfile only (npm ci, never npm
 # install).
-FROM node:26-alpine AS webui
+FROM node:26.13.0-alpine AS webui
 
 WORKDIR /src/webui
 COPY webui/package.json webui/package-lock.json ./
@@ -18,7 +18,7 @@ RUN npm run build
 # vite build emits dist/ under /src/webui/dist
 
 # Build stage: compile the static CGO-free binary with the WebUI embedded.
-FROM golang:1.27-alpine AS build
+FROM golang:1.27.3-alpine AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./

@@ -43,8 +43,10 @@ func TestProviderTypes_Catalog(t *testing.T) {
 	// ADR-010: firecrawl joined the catalog as the first web_tool kind;
 	// ollama-cloud-web is the second (ADR-015 — the same vendor's hosted
 	// web-tool API, a distinct account type from its chat endpoint).
-	if len(resp.Types) != 5 {
-		t.Fatalf("catalog has %d types, want 5 (custom-openai, ollama-cloud, codex-oauth, firecrawl, ollama-cloud-web)", len(resp.Types))
+	// anthropic, openai-responses, ollama-native and openai-decisions are
+	// native upstream protocols.
+	if len(resp.Types) != 9 {
+		t.Fatalf("catalog has %d types, want 9 (custom-openai, anthropic, openai-responses, ollama-cloud, ollama-native, openai-decisions, codex-oauth, firecrawl, ollama-cloud-web)", len(resp.Types))
 	}
 	kinds := map[string]string{}
 	for _, pt := range resp.Types {

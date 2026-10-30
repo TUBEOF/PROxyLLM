@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 
 	"github.com/tubeof/proxyllm/internal/httpguard"
 	"github.com/tubeof/proxyllm/internal/provider"
@@ -45,6 +46,9 @@ func New(id, baseURL, apiKey string, caps provider.Capabilities, opts ...httpgua
 			// re-validated against the private-address SSRF guard — Go
 			// re-sends the Bearer header to redirect targets.
 			HTTP: httpguard.NewStreamingClient(opts...),
+			HeaderHook: func(ctx context.Context, _ bool) (http.Header, error) {
+				return provider.MergeForwarded(ctx, make(http.Header)), nil
+			},
 		},
 		id:    id,
 		caps:  caps,

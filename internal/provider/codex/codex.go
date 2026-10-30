@@ -48,6 +48,11 @@ type Provider struct {
 	// rateLimitTap parses codex.rate_limits SSE events off the response
 	// stream; nil when no sink is wired.
 	rateLimitTap *sseRateLimitTap
+
+	// hasCredential is the routing-time answer, cached at construction.
+	// HasCredential runs for every candidate on every request; the old
+	// implementation read SQLite and could even refresh inline.
+	hasCredential bool
 }
 
 // ProviderConfig wires the provider at construction time.
@@ -96,6 +101,7 @@ func New(cfg ProviderConfig) *Provider {
 		client:        client,
 		responses:     openai.ResponsesCodec{},
 		clientVersion: clientVersion,
+		hasCredential: tokenPresent(context.Background(), cfg.Auth),
 	}
 	if cfg.RateLimitSink != nil {
 		// The sink runs on the dispatch path: parse headers here, tap the
@@ -122,8 +128,29 @@ func (p *Provider) Type() string { return "codex-oauth" }
 // HasCredential reports whether the token store holds an access token for
 // this account (ADR-009 decision 4: a draft account whose device sign-in
 // never completed stays out of type expansion).
+// HasCredential reports the construction-time credential presence. Routing
+// calls this for every candidate; it must never touch the store or the
+// issuer. A token write triggers a provider reload, which reconstructs this
+// value.
 func (p *Provider) HasCredential() bool {
-	tok, err := p.auth.AccessToken(context.Background())
+	return p.hasCredential
+}
+
+// tokenPresence is the no-refresh probe the production auth client exposes.
+type tokenPresence interface {
+	HasToken(context.Context) bool
+}
+
+// tokenPresent checks for a credential row without refreshing it. Auth stubs
+// that do not implement HasToken fall back to AccessToken.
+func tokenPresent(ctx context.Context, a Auth) bool {
+	if a == nil {
+		return false
+	}
+	if h, ok := a.(tokenPresence); ok {
+		return h.HasToken(ctx)
+	}
+	tok, err := a.AccessToken(ctx)
 	return err == nil && tok.Access != ""
 }
 
@@ -149,11 +176,9 @@ func (p *Provider) headers(ctx context.Context, stream bool) (http.Header, error
 	if stream {
 		h.Set("Accept", "text/event-stream")
 	}
-	// The platform tail "(os_type os_version; arch) terminal" is deliberately
-	// omitted: it is telemetry, not auth material, and the backend is not
-	// known to gate on it. If the live smoke run (PROXYLLM_SMOKE=1) shows
-	// otherwise, the tail becomes a build/runtime stamp.
-	return h, nil
+	// Allow-listed client surface headers (openai-beta, x-stainless-*).
+	// Codex's own auth/account headers always win.
+	return provider.MergeForwarded(ctx, h), nil
 }
 
 // Complete performs one round trip. The ChatGPT backend has no

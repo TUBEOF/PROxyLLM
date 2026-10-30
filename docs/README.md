@@ -39,7 +39,7 @@ Four ways in, depending on what you are doing.
 |---|---|
 | How is the system put together, and why is it built this way? | [Architecture decision records](adr/README.md) |
 | How do I build, test, run and release it? | [Development](development.md) |
-| How do I stand up a local test instance and run the multi-CLI live test? | [Local test instance](test-instance.md) |
+| How do I run the live CLI suite and see which CLIs currently work? | [Live CLI workflow](test-instance.md) |
 | How do I contribute? | [CONTRIBUTING.md](../CONTRIBUTING.md) |
 | How does field X of protocol A map to protocol B? | [Translation matrix](reference/translation-matrix.md) |
 | What does a per-model compatibility setting do? | [Model compatibility](reference/model-compat.md) |

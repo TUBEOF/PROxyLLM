@@ -22,10 +22,14 @@ import (
 // layer's seed strings are the same hyphenated forms (review fix `f9d6429`),
 // so WebUI saves never rewrite a seeded provider's type.
 const (
-	ProviderTypeCustomOpenAI = "custom-openai"
-	ProviderTypeOllamaCloud  = "ollama-cloud"
-	ProviderTypeCodexOAuth   = "codex-oauth"
-	ProviderTypeFirecrawl    = "firecrawl"
+	ProviderTypeCustomOpenAI    = "custom-openai"
+	ProviderTypeAnthropic       = "anthropic"
+	ProviderTypeOpenAIResponses = "openai-responses"
+	ProviderTypeOllamaCloud     = "ollama-cloud"
+	ProviderTypeOllamaNative    = "ollama-native"
+	ProviderTypeOpenAIDecisions = "openai-decisions"
+	ProviderTypeCodexOAuth      = "codex-oauth"
+	ProviderTypeFirecrawl       = "firecrawl"
 	// ProviderTypeOllamaCloudWeb is Ollama's hosted web-tool API as a
 	// web-tool backend (web_search/web_fetch), NOT a chat provider. It is a
 	// separate account type from ollama-cloud on purpose: a provider row is
@@ -163,6 +167,26 @@ func parseProviderConfig(typ string, raw []byte, guardURLs bool) (ProviderConfig
 		if cfg.Issuer != "" {
 			return cfg, fmt.Errorf("base_url is the only URL field for custom-openai (issuer belongs to codex-oauth)")
 		}
+	case ProviderTypeAnthropic:
+		if cfg.BaseURL == "" {
+			return cfg, fmt.Errorf("anthropic requires base_url (the Messages API root, e.g. https://api.anthropic.com)")
+		}
+		if err := checkURL(cfg.BaseURL, "base_url", guardURLs); err != nil {
+			return cfg, err
+		}
+		if cfg.Issuer != "" {
+			return cfg, fmt.Errorf("base_url is the only URL field for anthropic (issuer belongs to codex-oauth)")
+		}
+	case ProviderTypeOpenAIResponses:
+		if cfg.BaseURL == "" {
+			return cfg, fmt.Errorf("openai-responses requires base_url (the Responses API root, e.g. https://api.openai.com)")
+		}
+		if err := checkURL(cfg.BaseURL, "base_url", guardURLs); err != nil {
+			return cfg, err
+		}
+		if cfg.Issuer != "" {
+			return cfg, fmt.Errorf("base_url is the only URL field for openai-responses (issuer belongs to codex-oauth)")
+		}
 	case ProviderTypeOllamaCloud:
 		if cfg.BaseURL != "" {
 			if err := checkURL(cfg.BaseURL, "base_url", guardURLs); err != nil {
@@ -171,6 +195,25 @@ func parseProviderConfig(typ string, raw []byte, guardURLs bool) (ProviderConfig
 		}
 		if cfg.Issuer != "" {
 			return cfg, fmt.Errorf("base_url is the only URL field for ollama-cloud (issuer belongs to codex-oauth)")
+		}
+	case ProviderTypeOllamaNative:
+		if cfg.BaseURL != "" {
+			if err := checkURL(cfg.BaseURL, "base_url", guardURLs); err != nil {
+				return cfg, err
+			}
+		}
+		if cfg.Issuer != "" {
+			return cfg, fmt.Errorf("base_url is the only URL field for ollama-native (issuer belongs to codex-oauth)")
+		}
+	case ProviderTypeOpenAIDecisions:
+		if cfg.BaseURL == "" {
+			return cfg, fmt.Errorf("openai-decisions requires base_url (the Decisions API root, e.g. https://api.example.com)")
+		}
+		if err := checkURL(cfg.BaseURL, "base_url", guardURLs); err != nil {
+			return cfg, err
+		}
+		if cfg.Issuer != "" {
+			return cfg, fmt.Errorf("base_url is the only URL field for openai-decisions (issuer belongs to codex-oauth)")
 		}
 	case ProviderTypeCodexOAuth:
 		if cfg.Issuer == "" {
@@ -198,9 +241,9 @@ func parseProviderConfig(typ string, raw []byte, guardURLs bool) (ProviderConfig
 			return cfg, fmt.Errorf("base_url is the only URL field for web-tool providers (issuer belongs to codex-oauth)")
 		}
 	case "":
-		return cfg, fmt.Errorf("type is required (custom-openai, ollama-cloud, codex-oauth, firecrawl, ollama-cloud-web)")
+		return cfg, fmt.Errorf("type is required (custom-openai, anthropic, openai-responses, ollama-cloud, ollama-native, openai-decisions, codex-oauth, firecrawl, ollama-cloud-web)")
 	default:
-		return cfg, fmt.Errorf("unknown provider type %q (custom-openai, ollama-cloud, codex-oauth, firecrawl, ollama-cloud-web)", typ)
+		return cfg, fmt.Errorf("unknown provider type %q (custom-openai, anthropic, openai-responses, ollama-cloud, ollama-native, openai-decisions, codex-oauth, firecrawl, ollama-cloud-web)", typ)
 	}
 
 	for name := range cfg.Capabilities {

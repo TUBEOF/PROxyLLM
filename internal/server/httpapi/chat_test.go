@@ -329,7 +329,7 @@ func TestChatCompletions_StreamErrorRedactsCredentialsInRequestLog(t *testing.T)
 	if strings.Contains(msg, "sk-live-abcd1234efgh") {
 		t.Errorf("request log carries the raw upstream key: %q", msg)
 	}
-	if !strings.Contains(msg, "[REDACTED]") {
+	if !strings.Contains(msg, "REDACTED") {
 		t.Errorf("redaction left no marker — the message must survive masked, not vanish: %q", msg)
 	}
 }

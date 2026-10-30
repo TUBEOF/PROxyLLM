@@ -467,8 +467,8 @@ func TestRefresh_FlightWait_ParksWaitersOnFlight(t *testing.T) {
 	// Give the waiter a scheduling head start; it can only be inside the
 	// flight-wait branch (server hits prove no second rotation started).
 	select {
-	case <-waiterDone:
-		t.Fatal("waiter returned before the leader's rotation completed — it did not park on the flight")
+	case err := <-waiterDone:
+		t.Fatalf("waiter returned before the leader's rotation completed (%v) — it did not park on the flight", err)
 	case <-time.After(50 * time.Millisecond):
 	}
 	if hits.Load() != 1 {
@@ -935,10 +935,10 @@ func TestStepwiseDevice_PollPastDeadline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartDeviceLogin: %v", err)
 	}
-	time.Sleep(20 * time.Millisecond)
-	if err != nil {
-		t.Fatalf("StartDeviceLogin: %v", err)
+	if sess == nil {
+		t.Fatal("StartDeviceLogin returned a nil session")
 	}
+	time.Sleep(20 * time.Millisecond)
 	if _, _, err := sess.Poll(context.Background()); err == nil {
 		t.Fatal("poll past the deadline must fail")
 	}

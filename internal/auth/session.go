@@ -215,6 +215,14 @@ func (sm *SessionManager) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	})).ServeHTTP(w, r)
 }
 
+// SessionExpired reports whether a session is outside either server-side
+// window (idle or absolute). The admin log stream re-checks this on every
+// heartbeat so an already-open SSE connection cannot outlive logout,
+// expiry or a password-change revocation.
+func SessionExpired(sess *storage.Session, now int64) bool {
+	return now-sess.LastSeenAt > sessionIdleWindow || now >= sess.AbsoluteExpiresAt
+}
+
 // RequireAdmin wraps admin handlers with session auth (strict,
 // server-side windows) and, for state-changing methods, the CSRF layers:
 // application/json only, Origin match when present, valid
@@ -239,7 +247,7 @@ func (sm *SessionManager) RequireAdmin(next http.Handler) http.Handler {
 		now := sm.now()
 		// both windows checked server-side against store timestamps —
 		// a doctored client clock is irrelevant.
-		if now-sess.LastSeenAt > sessionIdleWindow || now >= sess.AbsoluteExpiresAt {
+		if SessionExpired(sess, now) {
 			writeAdminUnauthorized(w)
 			return
 		}

@@ -1,0 +1,43 @@
+{
+  "name": "opencode",
+  "label": "OpenCode",
+  "tier": "core",
+  "command": "opencode",
+  "install": "npm install -g opencode-ai",
+  "tested": "latest",
+  "runnable": true,
+  "env_keep": [
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "TERM",
+    "TMPDIR",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NODE_EXTRA_CA_CERTS"
+  ],
+  "scrub_env": [
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL"
+  ],
+  "env": {
+    "OPENCODE_CONFIG_CONTENT": "{\"$schema\":\"https://opencode.ai/config.json\",\"provider\":{\"proxyllm\":{\"npm\":\"@ai-sdk/openai-compatible\",\"name\":\"PROxyLLM\",\"options\":{\"baseURL\":\"{{BASE_URL}}/v1\",\"apiKey\":\"{{CLIENT_KEY}}\"},\"models\":{\"proxy-chat\":{\"name\":\"PROxyLLM\"}}}},\"model\":\"proxyllm/proxy-chat\"}",
+    "OPENCODE_DISABLE_PROJECT_CONFIG": "1"
+  },
+  "args": [
+    "run",
+    "-m",
+    "proxyllm/proxy-chat",
+    "--format",
+    "json",
+    "--auto",
+    "{{PROMPT}}"
+  ],
+  "canary": [
+    "~/.config/opencode",
+    "~/.local/share/opencode"
+  ]
+}

@@ -28,6 +28,11 @@ import (
 type Executor struct {
 	cfg ExecutorConfig
 
+	// defaultRetrySleeper is true when the caller did not inject a sleeper.
+	// The production path then waits on a context-aware timer; injected test
+	// sleepers keep their deterministic no-op behaviour.
+	defaultRetrySleeper bool
+
 	// captions holds descriptions of images the proxy has already seen, keyed
 	// by image content. It is what keeps the image-to-text rescue from
 	// describing the same image again on every turn of a conversation, and it
@@ -272,13 +277,14 @@ func NewExecutor(cfg ExecutorConfig) *Executor {
 	if cfg.EmulationTotalBudget <= 0 {
 		cfg.EmulationTotalBudget = defaultEmulationTotalBudget
 	}
+	defaultSleeper := cfg.RetrySleeper == nil
 	if cfg.RetrySleeper == nil {
 		cfg.RetrySleeper = time.Sleep
 	}
 	if cfg.now == nil {
 		cfg.now = time.Now
 	}
-	return &Executor{cfg: cfg, captions: newCaptionCache(captionCacheEntries)}
+	return &Executor{cfg: cfg, defaultRetrySleeper: defaultSleeper, captions: newCaptionCache(captionCacheEntries)}
 }
 
 // Execute performs a non-streaming request against the chain with the
@@ -409,7 +415,19 @@ func (e *Executor) walkChain(ctx context.Context, chain []ChainEntry, req ir.Req
 		attempts := 1 + e.cfg.MaxRetriesPerProvider
 		for attempt := 0; attempt < attempts; attempt++ {
 			if attempt > 0 {
-				e.cfg.RetrySleeper(pendingBackoff)
+				if e.defaultRetrySleeper {
+					// A client disconnect or SIGTERM must stop the backoff:
+					// time.Sleep leaves the handler goroutine parked.
+					timer := time.NewTimer(pendingBackoff)
+					select {
+					case <-timer.C:
+					case <-ctx.Done():
+						timer.Stop()
+						return ir.Response{}, ctx.Err()
+					}
+				} else {
+					e.cfg.RetrySleeper(pendingBackoff)
+				}
 			}
 			trace.Attempt(entry.ProviderID, entry.Model)
 			attempted++
@@ -656,49 +674,72 @@ func (e *Executor) executeEmulatedAsStream(ctx context.Context, chain []ChainEnt
 // caller stops writing (the channel close is the loop's exit).
 func synthesizeStream(ctx context.Context, ch chan<- ir.StreamEvent, resp ir.Response, usage ir.Usage) {
 	defer close(ch)
+	// Every send selects on ctx: relayStream stops reading when the client
+	// disconnects, and a plain send would park this goroutine forever while
+	// holding the whole response.
+	emit := func(ev ir.StreamEvent) bool {
+		select {
+		case ch <- ev:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
 	if err := ctx.Err(); err != nil {
-		ch <- ir.StreamEvent{Type: ir.Error, Error: &ir.UpstreamError{
+		_ = emit(ir.StreamEvent{Type: ir.Error, Error: &ir.UpstreamError{
 			Type: "cancelled", Message: "request cancelled",
-		}}
+		}})
 		return
 	}
 	// Start.
 	respFull := resp
 	respFull.Usage = ir.Usage{} // usage rides the terminal MessageDelta
-	ch <- ir.StreamEvent{Type: ir.Start, Response: &respFull}
+	if !emit(ir.StreamEvent{Type: ir.Start, Response: &respFull}) {
+		return
+	}
 	for i, part := range resp.Content {
 		if err := ctx.Err(); err != nil {
 			return
 		}
 		switch p := part.(type) {
 		case ir.TextPart:
-			ch <- ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: ir.TextPart{}}
-			ch <- ir.StreamEvent{Type: ir.Delta, Index: i,
-				Delta: ir.DeltaPayload{Kind: ir.DeltaText, Text: p.Text}}
-			ch <- ir.StreamEvent{Type: ir.BlockStop, Index: i}
+			if !emit(ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: ir.TextPart{}}) ||
+				!emit(ir.StreamEvent{Type: ir.Delta, Index: i,
+					Delta: ir.DeltaPayload{Kind: ir.DeltaText, Text: p.Text}}) ||
+				!emit(ir.StreamEvent{Type: ir.BlockStop, Index: i}) {
+				return
+			}
 		case ir.ThinkingPart:
-			ch <- ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: ir.ThinkingPart{}}
-			ch <- ir.StreamEvent{Type: ir.Delta, Index: i,
-				Delta: ir.DeltaPayload{Kind: ir.DeltaThinking, Text: p.Thinking}}
-			ch <- ir.StreamEvent{Type: ir.BlockStop, Index: i}
+			if !emit(ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: ir.ThinkingPart{}}) ||
+				!emit(ir.StreamEvent{Type: ir.Delta, Index: i,
+					Delta: ir.DeltaPayload{Kind: ir.DeltaThinking, Text: p.Thinking}}) ||
+				!emit(ir.StreamEvent{Type: ir.BlockStop, Index: i}) {
+				return
+			}
 		case ir.ToolCallPart:
-			ch <- ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: ir.ToolCallPart{ID: p.ID, Name: p.Name}}
-			ch <- ir.StreamEvent{Type: ir.Delta, Index: i,
-				Delta: ir.DeltaPayload{Kind: ir.DeltaToolInput, PartialJSON: string(p.Input)}}
-			ch <- ir.StreamEvent{Type: ir.BlockStop, Index: i}
+			if !emit(ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: ir.ToolCallPart{ID: p.ID, Name: p.Name}}) ||
+				!emit(ir.StreamEvent{Type: ir.Delta, Index: i,
+					Delta: ir.DeltaPayload{Kind: ir.DeltaToolInput, PartialJSON: string(p.Input)}}) ||
+				!emit(ir.StreamEvent{Type: ir.BlockStop, Index: i}) {
+				return
+			}
 		case ir.ServerToolUsePart:
 			// BlockStart + the input_json_delta + BlockStop: every block is
 			// closed (the golden stream fixture discipline) — a bare start
 			// desynced strict parsers (Claude Code) on the next
 			// content_block_start. The input rides the delta like tool_use,
 			// not the content_block_start (the empty-init contract).
-			ch <- ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: ir.ServerToolUsePart{ID: p.ID, Name: p.Name}}
-			ch <- ir.StreamEvent{Type: ir.Delta, Index: i,
-				Delta: ir.DeltaPayload{Kind: ir.DeltaToolInput, PartialJSON: string(p.Input)}}
-			ch <- ir.StreamEvent{Type: ir.BlockStop, Index: i}
+			if !emit(ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: ir.ServerToolUsePart{ID: p.ID, Name: p.Name}}) ||
+				!emit(ir.StreamEvent{Type: ir.Delta, Index: i,
+					Delta: ir.DeltaPayload{Kind: ir.DeltaToolInput, PartialJSON: string(p.Input)}}) ||
+				!emit(ir.StreamEvent{Type: ir.BlockStop, Index: i}) {
+				return
+			}
 		case ir.ServerToolResultPart:
-			ch <- ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: p}
-			ch <- ir.StreamEvent{Type: ir.BlockStop, Index: i}
+			if !emit(ir.StreamEvent{Type: ir.BlockStart, Index: i, Part: p}) ||
+				!emit(ir.StreamEvent{Type: ir.BlockStop, Index: i}) {
+				return
+			}
 		default:
 			// Unknown parts skip (the round-trip loop never produces others).
 		}
@@ -707,8 +748,10 @@ func synthesizeStream(ctx context.Context, ch chan<- ir.StreamEvent, resp ir.Res
 		return
 	}
 	md := ir.MessageDeltaPayload{StopReason: resp.StopReason, Usage: usage}
-	ch <- ir.StreamEvent{Type: ir.MessageDelta, MessageDelta: &md}
-	ch <- ir.StreamEvent{Type: ir.Done}
+	if !emit(ir.StreamEvent{Type: ir.MessageDelta, MessageDelta: &md}) {
+		return
+	}
+	_ = emit(ir.StreamEvent{Type: ir.Done})
 }
 
 // walkChainStream is ExecuteStream's core with the fallback gate:

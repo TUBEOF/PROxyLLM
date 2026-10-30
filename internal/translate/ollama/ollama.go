@@ -28,8 +28,44 @@ func (Codec) DecodeRequest(raw []byte) (ir.Request, error) {
 		return ir.Request{}, fmt.Errorf("ollama: decode request: %w", err)
 	}
 	req := ir.Request{
-		Model:  w.Model,
-		Stream: w.Stream,
+		Model:          w.Model,
+		Stream:         w.Stream,
+		KeepAlive:      w.KeepAlive,
+		ResponseFormat: w.Format,
+		SourceProtocol: "ollama",
+		Passthrough:    ir.UnknownFields(raw, ollamaRequestFields),
+	}
+	if w.Options != nil {
+		if v, ok := w.Options["temperature"].(float64); ok {
+			req.Temperature = &v
+		}
+		if v, ok := w.Options["top_p"].(float64); ok {
+			req.TopP = &v
+		}
+		if v, ok := w.Options["top_k"].(float64); ok {
+			i := int(v)
+			req.TopK = &i
+		}
+		if v, ok := w.Options["num_predict"].(float64); ok {
+			req.MaxTokens = int(v)
+		}
+		if v, ok := w.Options["seed"].(float64); ok {
+			i := int(v)
+			req.Seed = &i
+		}
+		if v, ok := w.Options["stop"].([]any); ok {
+			for _, s := range v {
+				if text, ok := s.(string); ok {
+					req.StopSequences = append(req.StopSequences, text)
+				}
+			}
+		}
+	}
+	if rawOpts, ok := rawField(raw, "options"); ok {
+		var m map[string]json.RawMessage
+		if json.Unmarshal(rawOpts, &m) == nil {
+			req.OllamaOptions = m
+		}
 	}
 	if w.Think != nil && w.Think.on() {
 		// Ollama thinking levels (high/medium/low/max) or true map onto the
@@ -98,8 +134,41 @@ func (Codec) DecodeRequest(raw []byte) (ir.Request, error) {
 // adaptive → true, enabled with a budget → the closest effort level.
 func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 	w := wireRequest{
-		Model:  req.Model,
-		Stream: req.Stream, // no omitempty: stream:false must be explicit
+		Model:     req.Model,
+		Stream:    req.Stream, // no omitempty: stream:false must be explicit
+		KeepAlive: req.KeepAlive,
+		Format:    ollamaFormat(req.ResponseFormat),
+	}
+	opts := map[string]any{}
+	if req.Temperature != nil {
+		opts["temperature"] = *req.Temperature
+	}
+	if req.TopP != nil {
+		opts["top_p"] = *req.TopP
+	}
+	if req.TopK != nil {
+		opts["top_k"] = *req.TopK
+	}
+	if req.MaxTokens > 0 {
+		opts["num_predict"] = req.MaxTokens
+	}
+	if req.Seed != nil {
+		opts["seed"] = *req.Seed
+	}
+	if len(req.StopSequences) > 0 {
+		opts["stop"] = req.StopSequences
+	}
+	for k, rawv := range req.OllamaOptions {
+		if _, exists := opts[k]; exists {
+			continue
+		}
+		var v any
+		if json.Unmarshal(rawv, &v) == nil {
+			opts[k] = v
+		}
+	}
+	if len(opts) > 0 {
+		w.Options = opts
 	}
 	if req.Thinking != nil && req.Thinking.Enabled {
 		switch {
@@ -108,6 +177,12 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 		default:
 			w.Think = &wireThink{Str: strPtr(effortFor(req))}
 		}
+	} else if req.ReasoningEffort != "" {
+		effort := req.ReasoningEffort
+		if effort == "minimal" {
+			effort = "low"
+		}
+		w.Think = &wireThink{Str: strPtr(effort)}
 	}
 	if len(req.System) > 0 {
 		sys := wireMessage{Role: "system"}
@@ -173,7 +248,7 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ollama: encode request: %w", err)
 	}
-	return raw, nil
+	return ir.MergePassthrough(raw, ir.PassthroughFor(req, "ollama"))
 }
 
 // DecodeResponse decodes an Ollama /api/chat response body into the IR.
@@ -185,6 +260,9 @@ func (Codec) DecodeResponse(raw []byte) (ir.Response, error) {
 	var w wireResponse
 	if err := json.Unmarshal(raw, &w); err != nil {
 		return ir.Response{}, fmt.Errorf("ollama: decode response: %w", err)
+	}
+	if w.Error != "" {
+		return ir.Response{}, fmt.Errorf("ollama: upstream error: %s", w.Error)
 	}
 	resp := ir.Response{
 		ID:         synthesizeID(w.Model, w.CreatedAt),
@@ -318,11 +396,76 @@ type wireToolFunction struct {
 }
 
 type wireRequest struct {
-	Model    string        `json:"model"`
-	Messages []wireMessage `json:"messages"`
-	Stream   bool          `json:"stream"` // always explicit, never omitted
-	Think    *wireThink    `json:"think,omitempty"`
-	Tools    []wireTool    `json:"tools,omitempty"`
+	Model     string          `json:"model"`
+	Messages  []wireMessage   `json:"messages"`
+	Stream    bool            `json:"stream"` // always explicit, never omitted
+	Think     *wireThink      `json:"think,omitempty"`
+	Tools     []wireTool      `json:"tools,omitempty"`
+	Options   map[string]any  `json:"options,omitempty"`
+	KeepAlive json.RawMessage `json:"keep_alive,omitempty"`
+	Format    json.RawMessage `json:"format,omitempty"`
+}
+
+// UnmarshalJSON defaults stream to true: Ollama's /api/chat streams unless the
+// client explicitly sends stream:false. A plain bool would decode an absent
+// field as false and turn a stock Ollama client into a non-streaming one.
+func (w *wireRequest) UnmarshalJSON(b []byte) error {
+	type alias wireRequest
+	aux := alias{Stream: true}
+	if err := json.Unmarshal(b, &aux); err != nil {
+		return err
+	}
+	*w = wireRequest(aux)
+	return nil
+}
+
+// rawField returns one top-level member of a JSON object.
+func rawField(raw []byte, name string) (json.RawMessage, bool) {
+	var all map[string]json.RawMessage
+	if json.Unmarshal(raw, &all) != nil {
+		return nil, false
+	}
+	v, ok := all[name]
+	return v, ok
+}
+
+// ollamaRequestFields is the set of top-level members the codec translates.
+var ollamaRequestFields = map[string]bool{
+	"model": true, "messages": true, "stream": true, "think": true,
+	"tools": true, "options": true, "keep_alive": true, "format": true,
+}
+
+// ollamaFormat maps a chat/responses response_format onto Ollama's format
+// field: json_object → "json", json_schema → its bare schema, anything else
+// passes through (a same-protocol Ollama request already carries the native
+// shape).
+func ollamaFormat(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return nil
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(raw, &m) != nil {
+		return raw
+	}
+	var typ string
+	_ = json.Unmarshal(m["type"], &typ)
+	switch typ {
+	case "json_object":
+		return json.RawMessage(`"json"`)
+	case "json_schema":
+		if inner, ok := m["json_schema"]; ok {
+			var obj map[string]json.RawMessage
+			if json.Unmarshal(inner, &obj) == nil {
+				return obj["schema"]
+			}
+		}
+		if schema, ok := m["schema"]; ok {
+			return schema
+		}
+		return raw
+	default:
+		return raw
+	}
 }
 
 type wireResponse struct {
@@ -331,6 +474,7 @@ type wireResponse struct {
 	Message               wireMessage `json:"message"`
 	Done                  bool        `json:"done"`
 	DoneReason            string      `json:"done_reason,omitempty"`
+	Error                 string      `json:"error,omitempty"`
 	TotalDuration         int64       `json:"total_duration,omitempty"`
 	LoadDuration          int64       `json:"load_duration,omitempty"`
 	PromptEvalCount       int         `json:"prompt_eval_count,omitempty"`

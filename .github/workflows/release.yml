@@ -16,6 +16,14 @@ permissions:
   packages: write
 
 jobs:
+  # Every release runs the real-CLI suite on the tagged commit. The release
+  # job downloads its report and appends the per-CLI table (with the exact
+  # tested versions) to the release notes. A failing CLI phase blocks the
+  # release.
+  live-cli:
+    uses: ./.github/workflows/live-cli.yml
+    secrets: inherit
+
   # Hard release gate: the perf budgets block release. The CI
   # benchmark job runs the same tests on main non-blocking; here the budget
   # assertions in TestPerfBudgets fail the tag build loudly.
@@ -30,7 +38,7 @@ jobs:
       - run: go test ./internal/e2e -run TestPerfBudgets -v -count=1
 
   release:
-    needs: [perf-budgets]
+    needs: [live-cli, perf-budgets]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -69,6 +77,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The release notes ALWAYS carry the per-CLI result table. Verify the
+      # report BEFORE GoReleaser: once a release is published, a missing
+      # report can no longer block it.
+      - name: Download live CLI report
+        uses: actions/download-artifact@v7
+        with:
+          name: live-cli-report
+          path: cli-report
+
+      - name: Verify live CLI report exists
+        run: test -n "$(find cli-report -name report.md | head -1)"
+
       # go:embed reads webui/dist at compile time; GoReleaser's build step
       # must see the real assets. (The committed dist/index.html placeholder
       # is replaced in the working tree only — it stays committed for
@@ -85,7 +105,26 @@ jobs:
           # Pinned, not `latest`: a release must be reproducible, and a GoReleaser
           # released between the tag and the run would otherwise change the build
           # under it. Bump deliberately.
-          version: v2.18.3
+          version: v2.19.0
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Append per-CLI results to the release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          report=$(find cli-report -name report.md | head -1)
+          if [ -z "$report" ]; then
+            echo "live CLI report missing; refusing to publish a release without CLI results" >&2
+            exit 1
+          fi
+          gh release view "$TAG" --json body -q .body > /tmp/release-body.md
+          {
+            echo
+            echo "## Live CLI test results"
+            echo
+            awk '/^\| CLI /{p=1} p' "$report"
+          } >> /tmp/release-body.md
+          gh release edit "$TAG" --notes-file /tmp/release-body.md

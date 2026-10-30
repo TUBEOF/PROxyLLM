@@ -359,7 +359,12 @@ func (r *Router) resolveWithTrace(model string, required provider.Capabilities, 
 	// Step 5 (ADR-009): strategy. Round robin rotates the expanded
 	// candidates by the per-rule counter BEFORE the capability/health
 	// filter — rotation never overrides the gates, it only reorders.
-	strategy := rule.Strategy.Resolve(r.cfg.GlobalStrategy)
+	// The global strategy is written by SetStrategy under r.mu; read it
+	// under the same lock (a torn string would select a garbage strategy).
+	r.mu.RLock()
+	globalStrategy := r.cfg.GlobalStrategy
+	r.mu.RUnlock()
+	strategy := rule.Strategy.Resolve(globalStrategy)
 	if strategy == StrategyRoundRobin && len(entries) > 1 {
 		entries = r.rotate(rule, entries, trace)
 	}

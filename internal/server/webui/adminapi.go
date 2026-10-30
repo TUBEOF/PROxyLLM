@@ -283,6 +283,16 @@ func (a *AdminAPI) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	// The cheap existence check comes BEFORE the expensive Argon2id hash:
+	// an unauthenticated caller must not be able to spend 19 MiB and two
+	// passes per request on an instance that already has an admin.
+	if admins, err := a.store.CountAdmins(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal error")
+		return
+	} else if admins > 0 {
+		writeError(w, http.StatusConflict, "bootstrap unavailable")
+		return
+	}
 	hash, err := storage.NewArgon2Hasher().Hash(req.Password)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal error")
@@ -409,8 +419,13 @@ func (a *AdminAPI) putPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Revocation: every OTHER session of this admin dies with the old
-	// password. This session's own row survives.
-	_, _ = a.store.DeleteOtherSessionsForAdmin(r.Context(), adminID, auth.SessionIDHashFromContext(r.Context()))
+	// password. This session's own row survives. A store failure here must
+	// not be reported as success: the operator would believe stolen sessions
+	// were revoked while they are still valid.
+	if _, err := a.store.DeleteOtherSessionsForAdmin(r.Context(), adminID, auth.SessionIDHashFromContext(r.Context())); err != nil {
+		writeError(w, http.StatusInternalServerError, "password changed but other sessions could not be revoked; retry")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
@@ -497,6 +512,19 @@ func (a *AdminAPI) putProvider(w http.ResponseWriter, r *http.Request) {
 	// stored for nothing: only the ollama.com account types carry one.
 	if req.UsageCookie != nil && *req.UsageCookie != "" && !allowsUsageCookie(req.Type) {
 		writeError(w, http.StatusBadRequest, usageCookieRefusal)
+		return
+	}
+	// A provider's type is not an editable field: the credential shape,
+	// model rows and constructor all depend on it. Re-typing an account
+	// would carry the old OAuth/API key to the new base URL and leave the
+	// old model rows behind; delete and recreate instead.
+	existing, err := a.store.GetProvider(r.Context(), id)
+	if err != nil && !errors.Is(err, storage.ErrNotFound) {
+		writeStoreError(w, err)
+		return
+	}
+	if err == nil && existing.Type != req.Type {
+		writeError(w, http.StatusBadRequest, "provider type cannot be changed; delete and recreate the account")
 		return
 	}
 	if err := a.store.PutProvider(r.Context(), storage.Provider{
@@ -697,6 +725,11 @@ func (a *AdminAPI) oauthPoll(w http.ResponseWriter, r *http.Request) {
 	a.oauthMu.Lock()
 	delete(a.oauthFlows, id)
 	a.oauthMu.Unlock()
+	// The token triple now exists; rebuild the live provider set so the new
+	// account's cached HasCredential flips true and it joins type expansion.
+	if a.reloadProviders != nil {
+		a.reloadProviders()
+	}
 	writeJSON(w, http.StatusOK, oauthPollDTO{Status: "approved", AccountID: res.AccountID})
 }
 
@@ -1406,6 +1439,18 @@ func (a *AdminAPI) getLogs(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid offset")
 		return
+	}
+	// The UI never asks for more than a few hundred; an unbounded limit
+	// materialises a huge slice and can exceed SQLite's variable limit in
+	// the follow-up child query.
+	if limit < 0 {
+		limit = 0
+	}
+	if limit > 500 {
+		limit = 500
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	status, err := atoiDefault(q.Get("status"), 0)
 	if err != nil {

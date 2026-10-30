@@ -108,7 +108,7 @@ Playwright run locally:
 
 | Suite | Runs where | What it covers |
 |---|---|---|
-| `e2e/design-rules.spec.ts`, `e2e/log-childops.spec.ts`, `e2e/provider-type-form.spec.ts`, `e2e/setup.spec.ts`, `e2e/polish.spec.ts` | anywhere | Design rules, log rendering, provider forms, first-run wizard, focus/keyboard/confirmation polish — no image baselines |
+| `e2e/design-rules.spec.ts`, `e2e/log-childops.spec.ts`, `e2e/provider-type-form.spec.ts`, `e2e/models-page.spec.ts`, `e2e/quota-page.spec.ts`, `e2e/setup.spec.ts`, `e2e/polish.spec.ts`, `e2e/keys-page.spec.ts` | anywhere | Design rules, log rendering, provider forms, models/quota pages, first-run wizard, focus/keyboard/confirmation polish, key lifecycle — no image baselines |
 | `e2e/routes.spec.ts` and the screenshot suites | CI | Multi-viewport screenshots against committed baselines |
 
 Screenshot baselines are rendered **in CI only**; a local render differs by
@@ -140,19 +140,19 @@ They read their targets from the environment:
 `PROXYLLM_SMOKE_CODEX_{REFRESH_TOKEN,ISSUER,BACKEND}` for a Codex account.
 They never assert on token values and never echo an upstream body.
 
-### Local test instance
+### Live CLI workflow
 
-For a disposable instance with seeded providers, real client CLIs and a
-machine-readable report, use the `proxyllm-test-instance` skill; the stable
-procedure and invariants live in [Local test instance](test-instance.md).
+The real-CLI suite runs as `.github/workflows/live-cli.yml` against an
+ephemeral instance built from the current sources. It is path-filtered to the
+wire, provider, routing, server and auth areas, and needs the protected
+`live-cli` GitHub environment with `OLLAMA_CLOUD_API_KEY`. The workflow runs
+the Hello, image-fallback, web-search and web-fetch phases for every supported
+CLI and fails when an expected proxy fallback is missing.
 
-```bash
-.agents/skills/proxyllm-test-instance/scripts/test-instance.sh init \
-  --home ~/proxyllm-test-instance --key-file ~/.config/proxyllm/keys.env
-.agents/skills/proxyllm-test-instance/scripts/test-instance.sh start --build
-.agents/skills/proxyllm-test-instance/scripts/test-instance.sh setup
-.agents/skills/proxyllm-test-instance/scripts/test-instance.sh test
-```
+The stable procedure, the four phases, the hard assertions and the report
+shape are in [Live CLI workflow](test-instance.md). The reusable scripts live
+under `.github/live-cli/`; `python3 -I .github/live-cli/live_cli.py --home
+<dir>` reproduces a run against an already configured instance.
 
 ## Performance
 
@@ -178,9 +178,12 @@ release rather than every pull request.
 
 ## Release
 
-A release is a tag. The workflow builds the SPA, runs GoReleaser (per-OS
-archives plus a multi-arch container image), and publishes the GitHub
-release; the perf-budget gate runs before any of it.
+A release is a tag. The workflow runs the real-CLI suite on the tagged
+commit, builds the SPA, runs GoReleaser (per-OS archives plus a multi-arch
+container image), and publishes the GitHub release; the perf-budget gate runs
+before any of it. The release job downloads the live-CLI report and appends
+its per-CLI table — phase results and the exact tested CLI versions — to the
+release notes. A failing CLI phase blocks the release.
 
 1. Merge everything that should ship to `main`, with CI green.
 2. Tag `vX.Y.Z` (annotated or not — the workflow triggers on `v*`) and push

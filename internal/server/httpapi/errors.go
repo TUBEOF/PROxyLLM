@@ -14,7 +14,6 @@ import (
 	"math"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/provider"
@@ -340,40 +339,8 @@ func redactedMessage(err error) string {
 // redactedMessage apply — a misbehaving upstream echoing a bearer token or
 // key-shaped substring must never persist raw.
 func redactUpstreamMessage(msg string) string {
-	msg = maskAfter(msg, "Bearer ")
-	msg = maskKeyPrefixes(msg)
-	return msg
-}
-
-// maskAfter replaces the substring following marker up to the next space
-// or end (Authorization header values in accidentally-included messages).
-func maskAfter(msg, marker string) string {
-	idx := strings.Index(msg, marker)
-	if idx < 0 {
-		return msg
-	}
-	start := idx + len(marker)
-	end := start
-	for end < len(msg) && msg[end] != ' ' {
-		end++
-	}
-	return msg[:start] + "[REDACTED]" + msg[end:]
-}
-
-// maskKeyPrefixes masks common credential prefixes appearing inline.
-func maskKeyPrefixes(msg string) string {
-	for _, prefix := range []string{"sk-", "fc-", "pk_"} {
-		for {
-			idx := strings.Index(msg, prefix)
-			if idx < 0 {
-				break
-			}
-			end := idx
-			for end < len(msg) && msg[end] != ' ' && msg[end] != '"' && msg[end] != '\'' {
-				end++
-			}
-			msg = msg[:idx] + "[REDACTED]" + msg[end:]
-		}
-	}
-	return msg
+	// The full redactor (Bearer, sk-/fc-/pk_ keys, JWTs, cookies, long
+	// base64), not just the narrow prefix mask: this string is persisted in
+	// request_logs.error_redacted and echoed to the client.
+	return childRedactor.Redact(msg)
 }

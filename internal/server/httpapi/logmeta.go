@@ -29,6 +29,7 @@ const (
 	protocolAnthropic       = "anthropic"
 	protocolOpenAI          = "openai"
 	protocolOpenAIResponses = "openai-responses"
+	protocolOllama          = "ollama"
 	protocolSystemOne       = "systemone"
 	protocolDecisions       = "decisions"
 )
@@ -116,6 +117,9 @@ func (a *api) beginRequest(r *http.Request, protocol string, raw []byte, req ir.
 	// descriptions inside the client they came from. Every surface decodes
 	// through here, so this is where it enters the context.
 	ctx := routing.WithClientKeyID(r.Context(), auth.ClientKeyIDFromContext(r.Context()))
+	// Allow-listed surface headers (anthropic-version/beta, openai-beta,
+	// x-stainless-*) ride the context to the provider HeaderHooks.
+	ctx = provider.WithForwardedHeaders(ctx, r.Header)
 	r = r.WithContext(context.WithValue(ctx, logMetaCtxKey{}, meta))
 	// The conversation is known here and nowhere else as cheaply. Only the
 	// reference is taken; encoding it is deferred to the payload write.

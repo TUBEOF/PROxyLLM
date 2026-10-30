@@ -1,183 +1,100 @@
-# Local test instance
+# Live CLI workflow
 
-This page is the stable procedure for standing up a disposable PROxyLLM
-instance, configuring it against real upstreams, and running the multi-CLI live
-test. The executable harness lives in the `proxyllm-test-instance` skill; this
-page owns the invariants it implements.
+The live CLI suite is `.github/workflows/live-cli.yml`. It builds the current
+sources, starts an ephemeral PROxyLLM instance on `127.0.0.1:18080`, configures
+Ollama Cloud through the admin API, and runs every supported CLI through four
+phases. The reusable scripts live under `.github/live-cli/`; this page owns the
+invariants.
 
-Use it when you need to reproduce a client bug, verify a fallback or emulated
-web tool against real upstreams, or exercise a CLI that cannot be pointed at
-production.
+## Trigger and secrets
 
-## Prerequisites
+- `push` and `pull_request`, path-filtered to `internal/translate/**`,
+  `internal/provider/**`, `internal/routing/**`, `internal/server/**`,
+  `internal/auth/**`, `internal/storage/**`, `internal/smoke/**`, `cmd/**`,
+  `go.mod`, `go.sum` and the harness itself.
+- `workflow_dispatch` for a manual run.
+- The protected GitHub Environment `live-cli` supplies
+  `OLLAMA_CLOUD_API_KEY`. Fork PRs are skipped because they never receive the
+  secret.
+- `concurrency` cancels a superseded run on the same ref.
 
-- A checkout of this repository and Go available (`make build`).
-- An Ollama Cloud API key. The key is written to `<instance>/.env` (0600) and is
-  never printed. `init --key-file ~/.config/proxyllm/keys.env` reads only
-  `OLLAMA_CLOUD_API_KEY` from an existing dotenv file.
-- The client CLIs you want to exercise. `clients install NAME --yes-install`
-  installs one; `test --clients all` (the default) runs every adapter. Missing
-  CLIs are reported with their install command and skipped. The current
-  verified set is Claude Code, Codex, OpenCode, Goose, Kimi, Aider, Qwen,
-  Continue and Cline (OpenAI-compatible provider); Factory Droid needs
-  `FACTORY_API_KEY`.
-- Codex tool runs use `--sandbox danger-full-access` in the disposable test
-  work dir. The `read-only` sandbox needs user namespaces (`bwrap`) that many
-  hosts do not allow, and the full-access mode means the CLI has the invoking
-  user's shell privileges. Run the harness only against a disposable instance
-  and a scratch work dir.
+## Phases
 
-## Instance layout
+Each phase is a separate CLI invocation with a fresh run directory. Prompts are
+English only. After every phase the driver checks the CLI exit code, the
+`request_logs` row (200, empty `error_redacted`, no `failed`/`rejected` in the
+trace) and the proxy log window (no `ERROR`).
 
-The default home is `~/proxyllm-test-instance`; set `--home PATH` on any
-command or export `PROXYLLM_TEST_HOME`. Runtime state never goes into the
-repository.
+| Phase | Prompt | Model | Expected trace |
+|---|---|---|---|
+| `hello` | `Hello` | chat | 200, no error, no proxy `ERROR` |
+| `vision` | `What is in this image? Describe it in one sentence.` | blind fallback model | `capability_fallback` with `capability="vision"` **and** `image_caption` |
+| `web_search` | `Search the web for today's date and the current top news headline. Cite the source.` | chat | `emulated_tool` or `emulated_tool_attempt` with `to="web_search"` |
+| `web_fetch` | `Fetch https://example.com and summarize the first paragraph.` | chat | `emulated_tool` or `emulated_tool_attempt` with `to="web_fetch"` |
 
-```text
-<home>/
-  .env                     0600: OLLAMA_CLOUD_API_KEY, ADMIN_USER,
-                           ADMIN_PASSWORD, CLIENT_KEY
-  instance.json            repo, port, requested/resolved models, binary SHA
-  bin/proxyllm             copied build + SHA256
-  data/proxyllm.db         SQLite store; master.key is created 0600
-  logs/proxyllm.log        proxy log; logs/instance.log harness actions
-  run/                     pid, lock, cookie jar (0600), temp files
-  clients/<cli>/<run-id>/  isolated HOME/XDG/config per CLI run
-  artifacts/<run-id>/      report.json, report.md, CLI captures, images
-```
+The image is a real 512×512 PNG (a 1×1 image makes vision upstreams fail).
+The primary model is deliberately blind, and the vision-fallback list points
+at a vision-capable model, so the fallback must trigger.
 
-A marker file (`.proxyllm-test-instance`) lets teardown refuse an arbitrary
-path.
+**Hard rule:** if the request reached the proxy, the model is marked
+non-native for the capability, and the expected fallback event is absent, the
+phase is `fail` — not a warning. The fallback may only be absent when the
+model natively serves the capability (the matrix marks such a cell
+`native: true`) or when the CLI cannot perform the phase headlessly
+(`skipped_unsupported`).
 
-## Create the instance
+## CLI coverage
 
-```bash
-.agents/skills/proxyllm-test-instance/scripts/test-instance.sh init \
-  --home ~/proxyllm-test-instance \
-  --key-file ~/.config/proxyllm/keys.env \
-  --chat-model deepseek-v4.1-flash:1017 \
-  --fallback-model nemotron-3-ultra
-```
+- **Hello:** all nine runnable adapters — Claude Code, Codex, OpenCode, Goose,
+  Kimi, Aider, Qwen, Continue, Cline.
+- **Image:** Codex (`codex exec -i`) today; other adapters are
+  `skipped_unsupported` until their wire path can attach an image.
+- **Web search/fetch:** Claude Code (`--allowedTools WebSearch WebFetch`) and
+  Codex (`--search`) today; other adapters are `skipped_unsupported` until
+  their adapter exposes a headless web tool.
 
-`init` prompts for the path on a TTY (default shown) and asks for the key
-source and models when the flags are absent. It generates a fresh admin
-password and writes `.env` 0600. It does not write a client key; `setup` reuses
-a valid one or creates a new one.
+Factory Droid stays `skipped_unsupported` (needs `FACTORY_API_KEY`).
 
-## Start it
+## Local reproduction
+
+The workflow is the source of truth. To reproduce against a disposable
+instance:
 
 ```bash
-.agents/skills/proxyllm-test-instance/scripts/test-instance.sh start --build
-.agents/skills/proxyllm-test-instance/scripts/test-instance.sh status
+python3 -I .github/live-cli/bootstrap.py --home /tmp/proxyllm-live \
+  --chat-model nemotron-3-ultra --fallback-model deepseek-v4.1-flash:1017
+# start ./proxyllm with PROXYLLM_SERVER_ADDR=127.0.0.1:18080,
+# PROXYLLM_STORAGE_PATH, PROXYLLM_MASTER_KEY_PATH,
+# PROXYLLM_LOG_FORMAT=json (see the workflow's "Start instance" step)
+python3 -I .github/live-cli/admin.py --home /tmp/proxyllm-live setup
+python3 -I .github/live-cli/live_cli.py --home /tmp/proxyllm-live
 ```
 
-`start --build` rebuilds the current sources and copies the binary into the
-instance. The server listens on `127.0.0.1:18080` by default; if the port is
-taken, choose another with `init --port`.
+`bootstrap.py` writes `.env` (0600) from `OLLAMA_CLOUD_API_KEY`, generates the
+admin password, and writes `instance.json`. It is idempotent: rerunning it
+preserves existing secrets and the resolved model ids. `admin.py` bootstraps
+the admin, creates the two Ollama Cloud accounts (chat and web tools), syncs
+models, pins the blind test model, merges the Claude aliases, writes the
+capability fallbacks, and mints the client key. `live_cli.py` runs the phases.
 
-## Configure it
+## Report and safety
 
-```bash
-.agents/skills/proxyllm-test-instance/scripts/test-instance.sh setup
-```
-
-`setup` performs these writes in order:
-
-1. `PUT /api/admin/providers/acc-ollama-cloud` and
-   `PUT /api/admin/providers/acc-ollama-web` with the same key
-   (`ollama-cloud` and `ollama-cloud-web`), then enables both.
-2. `POST /api/admin/model-sync/run`; a skipped chat provider is a failure.
-3. Resolves the requested model names against the synced rows and refuses to
-   guess when a name is ambiguous.
-4. Pins the fallback-test row `vision:false` with `pinned.vision:true`.
-5. Merges `claude-*`, `proxy-chat`, `sonnet/opus/haiku/fable`,
-   `fallback-test` and the requested names into `model_aliases`; a conflicting
-   existing alias is kept unless `--force-aliases` is passed.
-6. Writes the vision and web-tool fallback lists in **one**
-   `PUT /api/admin/capability-fallbacks` call.
-7. Verifies an existing client key against `GET /v1/models` or creates a new
-   one with `POST /api/admin/keys` (display-once), then stores it in `.env`.
-8. Probes both model rows via `POST /api/admin/models/test/{id}`.
-
-`dry-run` prints the current providers, model count, settings keys, fallback
-lists and both resolved models without config writes. `setup` is idempotent; it
-rewrites the fallback lists to force the live reload.
-
-### Two invariants
-
-- **Never write `vision_fallback` through `PUT /api/admin/settings`.** It
-  persists, but `ReloadSettings` does not call `SetCapabilityFallbacks`; the
-  live list stays stale. Use `PUT /api/admin/capability-fallbacks`.
-- **A fallback-test model must be known blind.** The pre-dispatch image
-  substitution runs only when every chain entry is pinned or detected
-  `vision:false`; the harness pins it explicitly.
-
-## Run the test pattern
-
-```bash
-.agents/skills/proxyllm-test-instance/scripts/test-instance.sh test
-```
-
-| Phase | What it proves |
-|---|---|
-| 0 | Preflight: health, permissions, provider/key/fallback inventory, CLI inventory |
-| 1 | “Sag nur Hallo.” through each selected CLI, with a 200 request and the expected protocol |
-| 2 | Watermark-scoped log/DB scan and the console log read path |
-| 3 | A file-read tool prompt through every CLI whose non-interactive mode has agent tools; the answer must contain the canary |
-| 4 | Claude Code web tools: 3× search+fetch and 6× mixed web+file prompts; no leaked `web_fetch`/`web_search` name |
-| 5 | The full Neon-UX session through Claude Code with a 900 s budget; no 5xx/529 in the window |
-| 6 | Failover through a real CLI, with the first provider pointed at a real public endpoint that refuses connections |
-| 7 | Vision through `codex exec -i` on the known-blind fallback model |
-| 8 | Transport-timeout mapping with a lowered header wall: 504, never 500, then recovery after restore (runs last) |
-
-Reports land in `artifacts/<run-id>/report.json` and `report.md`. Statuses are
-`pass`, `fail`, `warn`, `skipped_missing`, `skipped_unsupported`,
-`model_behavior` and `client_config`. `model_behavior` is used when Claude
-Code's on-demand ToolSearch executes its own `WebSearch`/`WebFetch` client-side
-(no proxy child row, no error) or the model chooses not to call a tool; it is
-not a proxy failure. A client `tool_use` named lowercase `web_fetch` or
-`web_search` is the leak this suite exists to catch and is a `fail`.
-
-Phase 6 uses no stub: the first provider's base URL is a real public endpoint
-(`example.com:1`) that refuses the connection, and the CLI must still receive a
-200 from the healthy account with a traced `failover`. Phase 7 requires Codex's
-`exec -i`; phase 8 lowers `upstream_response_header_timeout_ms`, re-applies the
-provider (a settings write alone does not rebuild the live clients), and
-restores it before the warm-up call.
-
-## Inspect and stop
-
-```bash
-.agents/skills/proxyllm-test-instance/scripts/test-instance.sh logs 100
-.agents/skills/proxyllm-test-instance/scripts/db.py --db \
-  ~/proxyllm-test-instance/data/proxyllm.db recent --limit 20
-.agents/skills/proxyllm-test-instance/scripts/test-instance.sh stop
-.agents/skills/proxyllm-test-instance/scripts/test-instance.sh teardown --purge --yes
-```
-
-`teardown` without `--purge` only stops the process. Purge requires the marker,
-the data directory, `--yes`, and a path under `$HOME`; it removes the instance
-home.
-
-## Client safety
-
-Each CLI runs with a freshly constructed environment from an explicit
-keep-list (not the caller's environment), a fresh HOME/XDG/config directory
-under `clients/`, and a canary snapshot of its real config paths. A change to
-`~/.codex`, `~/.config/opencode` or any other real config path is a hard
-`client_config` failure. Claude Code skips the canary when the harness runs
-inside Claude Code itself (the parent session writes `~/.claude` and
-`~/.claude.json` concurrently); its isolation is `CLAUDE_CONFIG_DIR` plus a
-fresh HOME. The client key reaches the CLI environment
-(`PROXYLLM_TEST_CLIENT_KEY`), never a command-line argument. Installation is
-opt-in and never automatic.
+Reports land in `<home>/artifacts/<run-id>/report.json` and `report.md`; the
+Markdown table lists every CLI, its exact installed version and the result of
+each phase. The Overall column is `PASS` only when all four phases pass,
+`PARTIAL` when at least one passed but some are unsupported, and `FAIL` when
+any phase failed. `skipped_unsupported` means the CLI has no headless path for
+that phase. The release workflow runs this suite on the tagged commit and
+appends that table to the GitHub release notes. The process exits non-zero
+when any check is `fail`. The client key never enters the report, and
+`run_cli.py` redacts the key from captured CLI output. Each CLI runs with a
+fresh HOME/XDG/config/work directory and a canary snapshot of its real config
+paths; a change to a real config path is a failure.
 
 ## Related
 
-- Client matrix and invocation details:
-  `.agents/skills/proxyllm-test-instance/references/cli-adapters.md`
-- Failure classification:
-  `.agents/skills/proxyllm-test-instance/references/troubleshooting.md`
-- Admin endpoints and CSRF: [api/admin.md](api/admin.md)
-- Configuration layers and keys: [configuration.md](configuration.md)
-- Claude Code against non-Claude models: [claude-code.md](claude-code.md)
+- Client matrix and invocation details: `.github/live-cli/adapters/*.json`
+- Field mapping: [translation matrix](reference/translation-matrix.md)
+- Trace events: [route trace](reference/route-trace.md)
+- Configuration layers: [configuration](configuration.md)
+- Claude Code against non-Claude models: [claude-code](claude-code.md)
