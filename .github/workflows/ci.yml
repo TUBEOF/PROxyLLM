@@ -119,6 +119,20 @@ jobs:
       - name: CodeQL analyze
         if: ${{ !github.event.repository.private }}
         uses: github/codeql-action/analyze@v4
+      - name: CodeQL gate (critical/high)
+        # The analyze action uploads SARIF but does not fail on findings.
+        # Without this query, critical/high alerts sit in the Security tab
+        # and never block a merge. Fork PRs cannot upload SARIF, so the
+        # gate only runs for same-repo refs.
+        if: ${{ !github.event.repository.private && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ref="${{ github.ref }}"
+          count=$(gh api "repos/${{ github.repository }}/code-scanning/alerts?state=open&ref=${ref}&per_page=100" \
+            --jq '[.[] | select(.rule.security_severity_level == "critical" or .rule.security_severity_level == "high")] | length')
+          echo "critical/high code-scanning alerts: ${count}"
+          test "${count}" -eq 0
       - name: CodeQL skipped (no GHAS on private repo)
         if: ${{ github.event.repository.private }}
         run: |

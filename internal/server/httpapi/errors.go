@@ -59,11 +59,27 @@ func writeOpenAIError(w http.ResponseWriter, status int, errType, message string
 // (internal errors carry no distinct machine code; upstream body codes are
 // relayed by writeUpstreamError below).
 func writeJSONErrorBody(w http.ResponseWriter, errType, message, code string) {
-	body := `{"error":{"message":` + jsonString(message) +
-		`,"type":` + jsonString(errType) +
-		`,"code":` + jsonString(code) +
-		`,"param":null}}`
-	_, _ = w.Write([]byte(body))
+	var body openAIErrorEnvelope
+	body.Error.Message = message
+	body.Error.Type = errType
+	body.Error.Code = code
+	raw, err := json.Marshal(body)
+	if err != nil {
+		raw = []byte(`{"error":{"message":"internal error","type":"server_error","code":"server_error","param":null}}`)
+	}
+	_, _ = w.Write(raw)
+}
+
+// openAIErrorEnvelope is marshalled with encoding/json rather than built by
+// string concatenation: the values are JSON-escaped by the encoder, and the
+// shape is obvious to readers and scanners.
+type openAIErrorEnvelope struct {
+	Error struct {
+		Message string  `json:"message"`
+		Type    string  `json:"type"`
+		Code    string  `json:"code"`
+		Param   *string `json:"param"`
+	} `json:"error"`
 }
 
 // writeAnthropicError emits the Anthropic error envelope:
@@ -71,9 +87,23 @@ func writeJSONErrorBody(w http.ResponseWriter, errType, message, code string) {
 func writeAnthropicError(w http.ResponseWriter, status int, errType, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	body := `{"type":"error","error":{"type":` + jsonString(errType) +
-		`,"message":` + jsonString(message) + `}}`
-	_, _ = w.Write([]byte(body))
+	var body anthropicErrorEnvelope
+	body.Type = "error"
+	body.Error.Type = errType
+	body.Error.Message = message
+	raw, err := json.Marshal(body)
+	if err != nil {
+		raw = []byte(`{"type":"error","error":{"type":"api_error","message":"internal error"}}`)
+	}
+	_, _ = w.Write(raw)
+}
+
+type anthropicErrorEnvelope struct {
+	Type  string `json:"type"`
+	Error struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"error"`
 }
 
 // writeSystemOneError emits the systemone error shape: {"error":".."} with
@@ -83,17 +113,13 @@ func writeAnthropicError(w http.ResponseWriter, status int, errType, message str
 func writeSystemOneError(w http.ResponseWriter, status int, _ string, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_, _ = w.Write([]byte(`{"error":` + jsonString(message) + `}`))
-}
-
-// jsonString marshals s as a JSON string, falling back to "" on the
-// impossible marshal failure of a string.
-func jsonString(s string) string {
-	b, err := json.Marshal(s)
+	raw, err := json.Marshal(struct {
+		Error string `json:"error"`
+	}{Error: message})
 	if err != nil {
-		return `""`
+		raw = []byte(`{"error":"internal error"}`)
 	}
-	return string(b)
+	_, _ = w.Write(raw)
 }
 
 // errorWriter is the surface-specific error emitter pair.
