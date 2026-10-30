@@ -614,6 +614,41 @@ func TestResponsesStreamEncode_UnknownKindComment(t *testing.T) {
 	}
 }
 
+// TestResponsesStreamEncode_ServerToolBlocksKeepLaterText: the emulation loop
+// prepends server_tool_use/result blocks to the final answer. The Responses
+// wire cannot represent them directly, but their index slots must not shift
+// the answer: the text deltas and the completed snapshot carry the answer.
+func TestResponsesStreamEncode_ServerToolBlocksKeepLaterText(t *testing.T) {
+	evs := []ir.StreamEvent{
+		{Type: ir.Start, Response: &ir.Response{ID: "resp_1", Model: "m"}},
+		{Type: ir.BlockStart, Index: 0, Part: ir.ServerToolUsePart{ID: "srv_1", Name: "web_search"}},
+		{Type: ir.BlockStop, Index: 0},
+		{Type: ir.BlockStart, Index: 1, Part: ir.ServerToolResultPart{ToolUseID: "srv_1", ToolName: "web_search"}},
+		{Type: ir.BlockStop, Index: 1},
+		{Type: ir.BlockStart, Index: 2, Part: ir.TextPart{}},
+		{Type: ir.Delta, Index: 2, Delta: ir.DeltaPayload{Kind: ir.DeltaText, Text: "Antwort"}},
+		{Type: ir.BlockStop, Index: 2},
+		{Type: ir.MessageDelta, MessageDelta: &ir.MessageDeltaPayload{StopReason: ir.StopEndTurn}},
+	}
+	events := parseSSEEvents(t, encodeResponsesAll(t, evs))
+
+	var delta, completed string
+	for _, ev := range events {
+		switch ev.Name {
+		case "response.output_text.delta":
+			delta = ev.Data
+		case "response.completed":
+			completed = ev.Data
+		}
+	}
+	if !strings.Contains(delta, `"delta":"Antwort"`) {
+		t.Errorf("answer delta missing after server-tool blocks, got %q", delta)
+	}
+	if !strings.Contains(completed, `"text":"Antwort"`) {
+		t.Errorf("completed snapshot must carry the answer text, got %q", completed)
+	}
+}
+
 // TestResponsesStreamEncode_PingComment: Ping/Comment → comment line.
 func TestResponsesStreamEncode_PingComment(t *testing.T) {
 	for _, typ := range []ir.StreamEventType{ir.Ping, ir.Comment} {
