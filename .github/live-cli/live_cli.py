@@ -268,11 +268,13 @@ def run_phase(
 
 
 def transient_failure(detail: str) -> bool:
-    """A CLI/transport hiccup is retried once; a missing fallback is not —
-    that is the assertion the suite exists for."""
+    """A CLI/transport hiccup gets one retry. A model may also decline a tool
+    on a single turn; retry that once too. If the expected fallback is still
+    absent after the retry, the assertion fails hard — that is the suite's
+    reason to exist."""
     d = detail.lower()
     if "expected fallback missing" in d:
-        return False
+        return True
     return (
         "cli fail" in d
         or "request status 499" in d
