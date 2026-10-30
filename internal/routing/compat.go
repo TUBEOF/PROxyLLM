@@ -83,6 +83,25 @@ const (
 // ErrThinkingBlocked is the terminal error for the block policy.
 var ErrThinkingBlocked = errors.New("routing: thinking requests are blocked by the model's thinking_handling policy")
 
+// ErrEmptyRequest is the terminal error for a request with nothing to dispatch
+// (see RequireMessages).
+var ErrEmptyRequest = errors.New("routing: request contains no messages")
+
+// RequireMessages enforces the one request invariant every upstream chat wire
+// shares: `messages` is a required array with at least one entry (a lone
+// system prompt arrives as one system message and is valid). With neither,
+// there is nothing to translate or send — Ollama Cloud answers such a body
+// `[] is too short - 'messages' (ref: …)` — so the client boundary must refuse
+// it instead of letting it become an opaque upstream 400 that costs the
+// provider a circuit-breaker failure. Codex's startup prewarm can send such a
+// request before its prompt is built.
+func RequireMessages(req ir.Request) error {
+	if len(req.System) == 0 && len(req.Messages) == 0 {
+		return ErrEmptyRequest
+	}
+	return nil
+}
+
 // ApplyCompat adapts req per the per-model compatibility policy, recording
 // every application in a fresh Trace (never silent — each event names the
 // setting and its applied value).

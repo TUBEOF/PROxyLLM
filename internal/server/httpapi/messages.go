@@ -54,6 +54,13 @@ func (a *api) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := routing.RequireMessages(req); err != nil {
+		_, _ = a.writeRouteError(w, ew, err)
+		a.writeRequestLog(ctx, keyID, req.Model, "", http.StatusBadRequest, 0,
+			nil, routeTrace(compatTrace), redactedMessage(err))
+		return
+	}
+
 	compat := a.compatFor(ctx, req.Model)
 	// The Anthropic surface claims the client's own web tools (Claude Code
 	// sends WebFetch/WebSearch as plain client tools and fetches in the CLI):

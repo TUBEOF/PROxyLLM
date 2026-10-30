@@ -166,6 +166,12 @@ func (a *api) serveWSResponse(ctx context.Context, wc *wsConn, r *http.Request, 
 		req.PreviousResponseID = ""
 	}
 
+	if err := routing.RequireMessages(req); err != nil {
+		status, msg := a.writeRouteErrorWS(wc, err)
+		a.writeRequestLog(ctx, keyID, req.Model, "", status, 0, nil, nil, msg)
+		return
+	}
+
 	compat := a.compatFor(ctx, req.Model)
 	req, compatTrace, err := routing.ApplyCompat(compat, req)
 	if err != nil {
