@@ -194,3 +194,20 @@ turns the claim off and leaves the client's tools to the client.
 The claim is scoped to the surface whose wire can carry the family's result
 blocks — the Anthropic surface. `off` and `native` never claim: they leave the
 client's own tool alone, because there the client is the one that runs it.
+
+## Addendum 2026-10-30: the claim covers every surface
+
+The scope restriction above was wrong in practice. A chat client (OpenCode,
+Qwen, Cline) offers its web tool as an ordinary function too; leaving the
+claim off outside the Anthropic surface meant the CLI fetched the page itself
+and the proxy never saw a web-tool request, so neither the accounts nor the
+trace could be exercised. The 2026-10-30 Codex repro made the same point from
+the other side: a Responses client whose emulated search answered still got no
+answer text, because the synthesized server-tool blocks were unrepresentable
+there.
+
+The claim now rides `compatFor`, which every surface uses. What differs is only
+what the client sees: the Anthropic wire carries the `server_tool_use` +
+result blocks; chat/Responses encoders drop them and return the final answer,
+which is what those surfaces can express. The operator mapping still gates
+everything — an unmapped client tool is never touched.

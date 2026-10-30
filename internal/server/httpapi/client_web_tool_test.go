@@ -116,6 +116,53 @@ func TestClientWebToolIsClaimedAndServedThroughTheProxy(t *testing.T) {
 	}
 }
 
+// chatClientWebToolRequest is a chat-surface client (OpenCode/Qwen shape): its
+// own web tool as an ordinary function, mapped to the family by the operator.
+const chatClientWebToolRequest = `{
+  "model": "ollama-cloud/m",
+  "messages": [{"role": "user", "content": "fetch https://example.com and quote the title"}],
+  "tools": [{"type": "function", "function": {"name": "webfetch", "description": "fetch a url",
+    "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}}]
+}`
+
+// TestClientWebToolClaimedOnTheChatSurface: the claim is not Anthropic-only.
+// A chat client whose tool name is in the operator mapping must be answered by
+// the proxy loop too — the client sees the final answer, never the tool call.
+func TestClientWebToolClaimedOnTheChatSurface(t *testing.T) {
+	e := newAliasWebToolEnv(t)
+	emu := &stubEmulator{}
+	e.exec.SetEmulator(emu)
+	e.handler.SetClientWebTools(map[string]string{"webfetch": "web_fetch"})
+
+	const toolCall = `{"id":"x","object":"chat.completion","created":1,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"web_fetch","arguments":"{\"url\":\"https://example.com\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`
+	const answer = `{"id":"y","object":"chat.completion","created":1,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"The title is Example Domain."},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`
+	e.mock.Enqueue(
+		mockprovider.NewScript().JSONResponse(200, toolCall, nil),
+		mockprovider.NewScript().JSONResponse(200, answer, nil),
+	)
+
+	status, body := e.post(t, "/v1/chat/completions", chatClientWebToolRequest)
+	if status != 200 {
+		t.Fatalf("status = %d, body %s", status, body)
+	}
+	if len(emu.fetched) != 1 || emu.fetched[0] != "https://example.com" {
+		t.Fatalf("the proxy did not fetch through the web-tool account: %v", emu.fetched)
+	}
+	reqs := e.mock.Requests()
+	if len(reqs) != 2 {
+		t.Fatalf("upstream requests = %d, want 2 (answer the call, re-dispatch)", len(reqs))
+	}
+	if !strings.Contains(reqs[0].Body, `"web_fetch"`) || strings.Contains(reqs[0].Body, `"webfetch"`) {
+		t.Errorf("the client tool was not claimed by family name: %s", reqs[0].Body)
+	}
+	if strings.Contains(body, `"tool_calls"`) {
+		t.Errorf("the client received the proxy-internal tool call: %s", body)
+	}
+	if !strings.Contains(body, "The title is Example Domain.") {
+		t.Errorf("the client did not receive the answer: %s", body)
+	}
+}
+
 // The claim is the operator's: an empty mapping (settings KV
 // `client_web_tools`) leaves the client's tool untouched, and then the proxy
 // neither fetches nor logs a web-tool row.

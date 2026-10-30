@@ -72,11 +72,12 @@ synthesized back into the client's protocol. The model rows themselves always
 record `web_search`/`web_fetch`/`code_execution` as `false`: those families are
 served by accounts and fallback lists, not by individual models.
 
-A client's own web tool is claimed the same way when the surface maps its name
-to a family (`client_web_tools`, Anthropic surface only — the one wire that can
-carry the family's result blocks): Claude Code sends `WebFetch`/`WebSearch` as
+A client's own web tool is claimed the same way when the mapping names it
+(`client_web_tools`, any surface): Claude Code sends `WebFetch`/`WebSearch` as
 plain client tools and would otherwise fetch in the CLI itself, so the proxy
-would see no web-tool request at all. Claiming one rewrites the definition into
+would see no web-tool request at all. On the Anthropic surface the client
+receives the family's result blocks; on a chat/Responses surface the loop
+consumes the call and the client only sees the final answer. Claiming one rewrites the definition into
 the family def; the client stops doing the work, the proxy serves it, and the
 call appears in the log like any other emulated call. A forced `tool_choice`
 follows the rename (and degrades to `auto` when `off` removes the definition),
