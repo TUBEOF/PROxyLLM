@@ -197,10 +197,19 @@ func New(cfg *config.Config, store *storage.Store, logger *slog.Logger, opts ...
 	// fallback ACCOUNT KVs order the pool (decision 3, consumed now); the
 	// ENV emulator (o.emulator) rides the tail when set (the legacy
 	// PROXYLLM_FIRECRAWL_API_KEY configuration path stays functional).
+	emulatorPool := buildEmulatorPool(context.Background(), dbEmulators, o.emulator, store, logger)
+	if emulatorPool == nil {
+		// Loud in both directions (ADR-010): emulation itself is always on,
+		// but without a backend every call degrades to the documented
+		// "unavailable" result. Judged AFTER the stored accounts load — an
+		// ENV-only check told operators with a DB account the opposite.
+		logger.Warn("PROxyLLM: no web-tool backend is configured in this process (WebUI Providers → Firecrawl or Ollama Cloud (Web Tools), or PROXYLLM_FIRECRAWL_API_KEY); web_search/web_fetch definitions are still emulated, but every call is answered with the documented \"unavailable\" error result")
+	}
+
 	exec := routing.NewExecutor(routing.ExecutorConfig{
 		Registry:            reg,
 		Health:              health,
-		Emulator:            buildEmulatorPool(context.Background(), dbEmulators, o.emulator, store, logger),
+		Emulator:            emulatorPool,
 		CapabilityFallbacks: capabilityFallbacks,
 		Caption:             resolveCaptionConfig(context.Background(), store),
 		OnCapabilityGap:     s.learnCapabilityGap,
