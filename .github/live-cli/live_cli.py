@@ -236,6 +236,7 @@ def run_phase(
     run_dir = home / "clients" / cli / f"{phase}-{uuid.uuid4().hex[:8]}"
     args = [
         sys.executable,
+        "-u",
         "-I",
         str(Path(__file__).resolve().parent / "run_cli.py"),
         "--manifest",
@@ -420,6 +421,7 @@ def main() -> int:
                                "detail": why, "version": versions.get(cli, "unknown")})
                 continue
             model = inst["resolved"]["blind"] if phase == "vision" else inst["resolved"]["chat"]
+            print(f"{cli:14s} {phase:11s} running", flush=True)
             for attempt in range(3):
                 check = evaluate_phase(
                     home, db, proxy_log, base_url, key, adapter_dir, cli, manifest,
@@ -433,7 +435,7 @@ def main() -> int:
                     break
                 time.sleep(1)
             checks.append(check)
-            print(f"{cli:14s} {phase:11s} {check['status']:20s} {check['detail']}")
+            print(f"{cli:14s} {phase:11s} {check['status']:20s} {check['detail']}", flush=True)
 
     finished = datetime.now(timezone.utc).isoformat()
     clis: dict[str, dict] = {}
@@ -454,7 +456,7 @@ def main() -> int:
     report_path = out_dir / "report.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     (out_dir / "report.md").write_text(render_markdown(report), encoding="utf-8")
-    print(str(report_path))
+    print(str(report_path), flush=True)
     return 0 if all(c["status"] != "fail" for c in checks) else 1
 
 

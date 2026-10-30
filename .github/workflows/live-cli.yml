@@ -65,6 +65,9 @@ concurrency:
 
 env:
   PROXYLLM_TEST_HOME: ${{ github.workspace }}/.live-cli
+  # GitHub captures step output through a pipe; unbuffered Python makes the
+  # per-CLI progress lines visible while the suite runs.
+  PYTHONUNBUFFERED: "1"
   # The blind test model (no vision) is nemotron; deepseek-flash is the
   # vision fallback and the fast chat model for Hello/web phases.
   CHAT_MODEL: deepseek-v4.1-flash:1017
