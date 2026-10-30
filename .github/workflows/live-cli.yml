@@ -41,11 +41,11 @@ on:
       - ".github/workflows/live-cli.yml"
   workflow_dispatch:
   # Called by the release workflow so every release carries the per-CLI
-  # result table (and the exact tested versions) in its notes.
+  # result table (and the exact tested versions) in its notes. The secret is
+  # an environment secret on the job below — declaring it as a required
+  # workflow_call secret would make the caller provide a value it does not
+  # hold.
   workflow_call:
-    secrets:
-      OLLAMA_CLOUD_API_KEY:
-        required: true
 
 permissions:
   contents: read
