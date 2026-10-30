@@ -56,6 +56,12 @@ type streamEncoder struct {
 
 	toolIndex int // wire tool_calls index of the open tool block
 	hasTool   bool
+	// toolOpen is true while a ToolCallPart block is the current block. The
+	// emulation loop also emits DeltaToolInput for ServerToolUsePart blocks
+	// (a family the chat wire cannot represent); without this gate those
+	// fragments reached the client as tool_calls deltas with no id/name and
+	// strict parsers (OpenCode, Cline) rejected the whole stream.
+	toolOpen bool
 
 	// pendingStop: a BlockStop was seen whose finish_reason chunk is not
 	// yet emitted (the stop reason arrives with MessageDelta).
@@ -84,7 +90,9 @@ func (e *streamEncoder) Write(ctx context.Context, ev ir.StreamEvent) error {
 			Delta: &encDelta{Role: "assistant", Content: ptrString("")},
 		}}, nil, nil))
 	case ir.BlockStart:
+		e.toolOpen = false
 		if tc, ok := ev.Part.(ir.ToolCallPart); ok {
+			e.toolOpen = true
 			if e.hasTool {
 				// A second tool block shifts the wire index; the first is 0.
 				e.toolIndex++
@@ -118,6 +126,12 @@ func (e *streamEncoder) Write(ctx context.Context, ev ir.StreamEvent) error {
 				Delta: &encDelta{Content: ptrString(ev.Delta.Text)},
 			}}, nil, nil))
 		case ir.DeltaToolInput:
+			if !e.toolOpen {
+				// A ServerToolUsePart's input has no chat-wire channel and no
+				// anchor was emitted for it; a fragment here would corrupt
+				// every client that assembles tool calls.
+				return nil
+			}
 			return e.emit(e.chunk([]encChoice{{
 				Index: 0,
 				Delta: &encDelta{ToolCalls: []encToolCall{{
@@ -132,6 +146,7 @@ func (e *streamEncoder) Write(ctx context.Context, ev ir.StreamEvent) error {
 	case ir.BlockStop:
 		// Deferred: the finish_reason chunk is emitted at MessageDelta (or
 		// Done, defensively) when the stop reason is known.
+		e.toolOpen = false
 		e.pendingStop = true
 		return nil
 	case ir.MessageDelta:

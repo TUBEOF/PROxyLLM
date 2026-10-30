@@ -193,3 +193,27 @@ func TestChatStreamEncode_CommentRelay(t *testing.T) {
 		t.Errorf("comment must relay as a wire comment line, got %q", wire)
 	}
 }
+
+// A ServerToolUsePart's input delta has no chat-wire channel: the encoder
+// emits no tool_calls fragment for it (a fragment without an anchor id/name
+// made OpenCode and Cline reject the whole stream), and the answer text after
+// the synthesized block still arrives.
+func TestChatStreamEncode_ServerToolInputDoesNotLeakAsToolCall(t *testing.T) {
+	evs := []ir.StreamEvent{
+		{Type: ir.Start, Response: &ir.Response{ID: "chatcmpl-1", Model: "m"}},
+		{Type: ir.BlockStart, Index: 0, Part: ir.ServerToolUsePart{ID: "srv_1", Name: "web_fetch"}},
+		{Type: ir.Delta, Index: 0, Delta: ir.DeltaPayload{Kind: ir.DeltaToolInput, PartialJSON: `{"url":"https://example.com"}`}},
+		{Type: ir.BlockStop, Index: 0},
+		{Type: ir.BlockStart, Index: 1, Part: ir.TextPart{}},
+		{Type: ir.Delta, Index: 1, Delta: ir.DeltaPayload{Kind: ir.DeltaText, Text: "Antwort"}},
+		{Type: ir.BlockStop, Index: 1},
+		{Type: ir.MessageDelta, MessageDelta: &ir.MessageDeltaPayload{StopReason: ir.StopEndTurn}},
+	}
+	wire := string(encodeChatAll(t, evs))
+	if strings.Contains(wire, `"tool_calls"`) {
+		t.Fatalf("server-tool input leaked as a tool_calls delta: %s", wire)
+	}
+	if !strings.Contains(wire, `"content":"Antwort"`) {
+		t.Errorf("answer text missing: %s", wire)
+	}
+}
