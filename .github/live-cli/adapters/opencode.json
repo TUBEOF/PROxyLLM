@@ -39,5 +39,13 @@
   "canary": [
     "~/.config/opencode",
     "~/.local/share/opencode"
-  ]
+  ],
+  "features": {
+    "tools": {},
+    "web_fetch": {}
+  },
+  "skip_reasons": {
+    "web_search": "OpenCode has no web_search tool",
+    "vision": "OpenCode's --file did not attach the image to the model request"
+  }
 }

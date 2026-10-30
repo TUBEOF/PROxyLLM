@@ -68,7 +68,7 @@ def main() -> int:
     parser.add_argument("--client-key", default=os.environ.get("PROXYLLM_TEST_CLIENT_KEY", ""))
     parser.add_argument("--model", required=True)
     parser.add_argument("--prompt", required=True)
-    parser.add_argument("--web", action="store_true")
+    parser.add_argument("--feature", default="hello")
     parser.add_argument("--image", default="")
     parser.add_argument("--timeout", type=int, default=120)
     args = parser.parse_args()
@@ -92,11 +92,30 @@ def main() -> int:
         "CLIENT_KEY": args.client_key,
         "MODEL": args.model,
         "PROMPT": args.prompt,
+        "IMAGE": args.image,
+        "FILE": str(run_dir / "work" / "notes.txt"),
+        "MARKER": "PROXYLLM-LIVE-MARKER-7Q",
     }
-    for path in dirs.values():
+    for key, path in dirs.items():
+        # FILE/IMAGE name files, not directories; creating them here made
+        # notes.txt a directory.
+        if key in ("FILE", "IMAGE"):
+            continue
         if path.startswith(str(run_dir)):
             Path(path).mkdir(parents=True, exist_ok=True)
     (run_dir / "home").chmod(0o700)
+    # The image lives inside the run's work dir: CLIs (Claude Code, Goose)
+    # refuse to read files outside their working directory.
+    if dirs["IMAGE"]:
+        src = Path(dirs["IMAGE"])
+        if src.exists():
+            dst = Path(dirs["WORK_DIR"]) / ("image" + src.suffix)
+            shutil.copyfile(src, dst)
+            dirs["IMAGE"] = str(dst)
+    # Prompts may reference {{IMAGE}} / {{FILE}}; render before they become
+    # the PROMPT value (a single render pass would otherwise leave them in).
+    dirs["PROMPT"] = render(dirs["PROMPT"], dirs)
+    Path(dirs["FILE"]).write_text(dirs["MARKER"] + "\nsecond line\n", encoding="utf-8")
 
     skip_env = manifest.get("canary_skip_env")
     canary_skipped = bool(skip_env and os.environ.get(skip_env))
@@ -132,21 +151,10 @@ def main() -> int:
         target.write_text(render(str(content), dirs), encoding="utf-8")
         target.chmod(0o600)
 
-    argv = [render(str(a), dirs) for a in manifest.get("args", [])]
-    if args.web and manifest.get("web_args"):
-        argv = [render(str(a), dirs) for a in manifest["web_args"]]
-    if args.image:
-        # Only Codex's exec mode accepts an image attachment; the other
-        # adapters' wire paths do not carry one. -i belongs to the exec
-        # subcommand, after it and before the positional prompt.
-        if manifest.get("name") != "codex":
-            print(f"{manifest.get('name')} does not support --image", file=sys.stderr)
-            return 2
-        try:
-            at = argv.index("exec") + 1
-        except ValueError:
-            at = 0
-        argv = [*argv[:at], "-i", args.image, *argv[at:]]
+    # A feature's own argv when the adapter declares one; otherwise the
+    # adapter's default argv (used for hello and for CLIs that need no flag).
+    spec = (manifest.get("features") or {}).get(args.feature) or {}
+    argv = [render(str(a), dirs) for a in (spec.get("args") or manifest.get("args", []))]
     command = manifest["command"]
     if not shutil.which(command, path=env.get("PATH", os.environ.get("PATH", ""))):
         print(f"missing CLI: {command}", file=sys.stderr)

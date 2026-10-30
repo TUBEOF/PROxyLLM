@@ -39,16 +39,37 @@
     "--json",
     "{{PROMPT}}"
   ],
-  "web_args": [
-    "--search",
-    "exec",
-    "--ephemeral",
-    "--skip-git-repo-check",
-    "--sandbox",
-    "danger-full-access",
-    "--json",
-    "{{PROMPT}}"
-  ],
+  "features": {
+    "tools": {},
+    "vision": {
+      "args": [
+        "exec",
+        "-i",
+        "{{IMAGE}}",
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "--sandbox",
+        "danger-full-access",
+        "--json",
+        "{{PROMPT}}"
+      ]
+    },
+    "web_search": {
+      "args": [
+        "--search",
+        "exec",
+        "--ephemeral",
+        "--skip-git-repo-check",
+        "--sandbox",
+        "danger-full-access",
+        "--json",
+        "{{PROMPT}}"
+      ]
+    }
+  },
+  "skip_reasons": {
+    "web_fetch": "Codex offers web_search only; it has no fetch tool"
+  },
   "canary": [
     "~/.codex"
   ]

@@ -36,5 +36,13 @@
   ],
   "canary": [
     "~/.continue"
-  ]
+  ],
+  "features": {
+    "tools": {},
+    "web_fetch": {}
+  },
+  "skip_reasons": {
+    "vision": "Continue CLI has no headless image attachment",
+    "web_search": "Continue CLI exposes no web_search tool"
+  }
 }

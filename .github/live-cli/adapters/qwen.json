@@ -35,5 +35,13 @@
   ],
   "canary": [
     "~/.qwen"
-  ]
+  ],
+  "features": {
+    "tools": {}
+  },
+  "skip_reasons": {
+    "vision": "Qwen Code has no headless image attachment",
+    "web_search": "Qwen Code's web search is Google-grounded, not in the one-shot tool set",
+    "web_fetch": "Qwen Code does not expose a web tool to the model in one-shot mode"
+  }
 }

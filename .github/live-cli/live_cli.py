@@ -1,17 +1,22 @@
 #!/usr/bin/env python3
-"""Run the four live CLI phases against an ephemeral PROxyLLM instance.
+"""Run every supported feature through every CLI against an ephemeral instance.
 
-Phases (English prompts only):
-  1. hello       — "Hello", expect a 200 and no proxy error.
-  2. vision      — a real PNG through a blind model; the proxy MUST caption it
-                   (route_trace: capability_fallback vision + image_caption).
-  3. web_search  — a prompt that requires web search; route_trace MUST carry
-                   emulated_tool/emulated_tool_attempt to=web_search.
-  4. web_fetch   — same for a fetch; to=web_fetch.
+Features (English prompts only, one feature per invocation):
+  hello       — the CLI reaches the proxy at all.
+  tools       — a client tool call (read a file) and its result.
+  vision      — a real PNG through a blind model; the proxy MUST caption it
+                (route_trace: capability_fallback vision + image_caption).
+  web_search  — three independent tasks; each MUST end with a successful
+                emulated_tool (more than zero results) AND a cited source URL
+                in the CLI's own output.
+  web_fetch   — two independent tasks; each MUST end with a fetched page
+                (emulated_tool "fetched ...") AND the page's marker text in
+                the CLI's own output.
 
-A missing expected fallback is a FAILURE, not a warning. The only exceptions
-are a natively capable model (the matrix marks it, none is used here) and a CLI
-that cannot perform the phase headlessly (skipped_unsupported).
+Evidence means proxy AND answer: a green trace with a broken client answer is
+exactly the failure this suite exists to catch. There is no retry — a model
+that declines the tool once is a failure, not noise. A CLI without a headless
+path for a feature is reported skipped WITH ITS REASON.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -28,18 +34,66 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-PHASES = ("hello", "vision", "web_search", "web_fetch")
-PROMPTS = {
-    "hello": "Hello there",
-    "vision": "What is in this image? Describe it in one sentence.",
-    "web_search": (
-        "Use the web search tool to find today's date and the current top "
-        "news headline. Cite the source."
-    ),
-    "web_fetch": (
-        "Use the WebFetch tool to fetch https://example.com and summarize "
-        "the first paragraph. Do not answer from memory."
-    ),
+FEATURES = ("hello", "tools", "vision", "web_search", "web_fetch")
+MARKER = "PROXYLLM-LIVE-MARKER-7Q"
+
+# Every task is one CLI invocation asking for exactly one feature. The web
+# tasks run more than once: one green run says nothing about reliability.
+TASKS: dict[str, list[dict]] = {
+    "hello": [
+        {"name": "hello", "prompt": "Hello there"},
+    ],
+    "tools": [
+        {
+            "name": "read-file",
+            "prompt": "Read the file notes.txt in the current directory and "
+                      "reply with its first line only.",
+        },
+    ],
+    "vision": [
+        {
+            "name": "describe-image",
+            "prompt": "What is in the image at {{IMAGE}}? Describe it in one sentence.",
+        },
+    ],
+    "web_search": [
+        {
+            "name": "date-headline",
+            "prompt": "Use the web search tool to find today's date and one "
+                      "current news headline. Cite the source URL.",
+        },
+        {
+            "name": "weather-cologne",
+            "prompt": "Use the web search tool to find tomorrow's weather "
+                      "forecast for Cologne, Germany. Cite the source URL.",
+        },
+        {
+            "name": "news-today",
+            "prompt": "Use the web search tool to find the current top story "
+                      "on a major news site today. Cite the source URL.",
+        },
+    ],
+    # The fetched pages must carry content the model cannot know from memory:
+    # example.com's paragraph is in every training set, and a model that
+    # answers it without calling the tool would pass a weaker assertion.
+    "web_fetch": [
+        {
+            "name": "random-integer",
+            "prompt": "You must call the web fetch tool now. Fetch "
+                      "https://www.random.org/integers/?num=1&min=1000&max=9999"
+                      "&col=1&base=10&format=plain&rnd=new and reply with the "
+                      "number it returned. Answering from memory is not allowed.",
+            "marker_re": r"\b\d{4}\b",
+        },
+        {
+            "name": "random-six-digit",
+            "prompt": "You must call the web fetch tool now. Fetch "
+                      "https://www.random.org/integers/?num=1&min=100000&max=999999"
+                      "&col=1&base=10&format=plain&rnd=new and reply with the "
+                      "number it returned. Answering from memory is not allowed.",
+            "marker_re": r"\b\d{6}\b",
+        },
+    ],
 }
 
 
@@ -84,31 +138,30 @@ def render_markdown(report: dict) -> str:
         "",
         f"Run: `{report['run_id']}`",
         "",
-        "| CLI | Version | Hello | Vision | Web Search | Web Fetch | Overall |",
-        "|---|---|---|---|---|---|---|",
+        "| CLI | Version | Hello | Tools | Vision | Web Search | Web Fetch | Overall | Notes |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for cli, info in sorted(report.get("clis", {}).items()):
         phases = info.get("phases", {})
-        cells = [phases.get(p, "—") for p in PHASES]
-        if any(s == "fail" for s in cells):
-            overall = "FAIL"
-        elif all(s == "pass" for s in cells):
-            overall = "PASS"
-        elif any(s == "pass" for s in cells):
-            overall = "PARTIAL"
-        else:
-            overall = "SKIPPED"
+        cells = [phases.get(feature, "skipped") for feature in FEATURES]
+        supported = sum(1 for c in cells if c != "skipped")
+        passed = sum(1 for c in cells if c == "pass")
+        overall = "FAIL" if "fail" in cells else "PASS"
+        notes = "; ".join(
+            f"{feature}: {why}"
+            for feature, why in sorted(info.get("skips", {}).items())
+        )
         lines.append(
             f"| `{cli}` | {info.get('version', 'unknown')} | "
             + " | ".join(cells)
-            + f" | **{overall}** |"
+            + f" | **{overall} {passed}/{supported}** | {notes or '—'} |"
         )
     lines += [
         "",
-        "`skipped_unsupported` means the CLI has no headless path for that "
-        "phase; `client_side` means the CLI executed the tool itself and the "
-        "proxy was not in the path. `PARTIAL` means at least one phase "
-        "passed, but not all four.",
+        "`skipped` means the adapter has no headless path for that feature; "
+        "the Notes column carries the reason. Overall counts passed/supported "
+        "features and is FAIL when any supported feature failed — there is no "
+        "partial status that hides a skip.",
     ]
     return "\n".join(lines) + "\n"
 
@@ -188,40 +241,33 @@ def has_event(events: list[dict], name: str, field: str = "", value: str = "") -
     return False
 
 
-def expected_fallback(phase: str, events: list[dict]) -> tuple[bool, str]:
-    if phase == "vision":
-        ok = has_event(events, "capability_fallback", "capability", "vision") and has_event(
-            events, "image_caption"
-        )
-        return ok, "capability_fallback(vision) + image_caption"
-    if phase == "web_search":
-        ok = has_event(events, "emulated_tool", "to", "web_search") or has_event(
-            events, "emulated_tool_attempt", "to", "web_search"
-        )
-        return ok, "emulated_tool(to=web_search)"
-    if phase == "web_fetch":
-        ok = has_event(events, "emulated_tool", "to", "web_fetch") or has_event(
-            events, "emulated_tool_attempt", "to", "web_fetch"
-        )
-        return ok, "emulated_tool(to=web_fetch)"
-    return True, ""
+def emulated_success(events: list[dict], family: str) -> tuple[bool, str]:
+    """A SUCCESSFUL emulation: the account walk answered with content.
+
+    `emulated_tool_attempt` is not evidence — it also records failed and
+    empty outcomes, which is how a missing backend stayed green.
+    """
+    for ev in events:
+        if ev.get("type") != "emulated_tool" or ev.get("to") != family:
+            continue
+        reason = str(ev.get("reason") or "")
+        if family == "web_search":
+            m = re.search(r"→\s*(\d+)\s+result", reason)
+            if m and int(m.group(1)) > 0:
+                return True, reason
+        elif reason.startswith("fetched "):
+            return True, reason
+    return False, ""
 
 
-def phase_supported(manifest: dict, phase: str) -> tuple[bool, str]:
-    if phase == "hello":
+def feature_supported(manifest: dict, feature: str) -> tuple[bool, str]:
+    if feature == "hello":
         return True, ""
-    if phase == "vision":
-        # run_cli.py attaches an image only for Codex's exec -i today.
-        if manifest.get("name") == "codex":
-            return True, ""
-        return False, "adapter has no headless image input"
-    if phase in ("web_search", "web_fetch"):
-        if not manifest.get("web_args"):
-            return False, "adapter has no headless web tool"
-        if phase == "web_fetch" and not manifest.get("web_fetch"):
-            return False, "adapter exposes web_search only"
+    if feature in (manifest.get("features") or {}):
         return True, ""
-    return False, "unknown phase"
+    return False, (manifest.get("skip_reasons") or {}).get(
+        feature, "adapter declares no headless path for this feature"
+    )
 
 
 def run_phase(
@@ -230,12 +276,13 @@ def run_phase(
     key: str,
     adapter_dir: Path,
     cli: str,
-    phase: str,
+    feature: str,
+    prompt: str,
     model: str,
     image: Path,
     timeout: int,
 ) -> tuple[int, dict, Path]:
-    run_dir = home / "clients" / cli / f"{phase}-{uuid.uuid4().hex[:8]}"
+    run_dir = home / "clients" / cli / f"{feature}-{uuid.uuid4().hex[:8]}"
     args = [
         sys.executable,
         "-u",
@@ -252,13 +299,13 @@ def run_phase(
         "--model",
         model,
         "--prompt",
-        PROMPTS[phase],
+        prompt,
+        "--feature",
+        feature,
         "--timeout",
         str(timeout),
     ]
-    if phase in ("web_search", "web_fetch"):
-        args.append("--web")
-    if phase == "vision":
+    if feature == "vision" and str(image):
         args += ["--image", str(image)]
     env = dict(os.environ)
     env["PROXYLLM_TEST_CLIENT_KEY"] = key
@@ -273,25 +320,44 @@ def run_phase(
     return proc.returncode, result, run_dir
 
 
-def transient_failure(detail: str) -> bool:
-    """A CLI/transport hiccup gets one retry. A model may also decline a tool
-    on a single turn; retry that once too. If the expected fallback is still
-    absent after the retry, the assertion fails hard — that is the suite's
-    reason to exist."""
-    d = detail.lower()
-    if "expected fallback missing" in d:
-        return True
-    return (
-        "cli fail" in d
-        or "request status 499" in d
-        or "request status 5" in d
-        or "no request_logs row" in d
-        or "proxy log error" in d
-        or "timeout" in d
-    )
+def feature_evidence(
+    feature: str, task: dict, rows: list[tuple], stdout: str
+) -> tuple[str, str]:
+    """Proxy evidence AND answer evidence. A trace that shows the emulated
+    call while the client received nothing is the failure mode this suite
+    missed until now."""
+    events = [ev for row in rows for ev in trace_events(row)]
+    if feature == "tools":
+        if MARKER not in stdout:
+            return "fail", "the CLI output does not contain the file marker"
+        return "pass", "tool result observed"
+    if feature == "vision":
+        ok = has_event(events, "capability_fallback", "capability", "vision") and has_event(
+            events, "image_caption"
+        )
+        if not ok:
+            return "fail", "vision fallback missing (capability_fallback vision + image_caption)"
+        return "pass", "vision fallback observed"
+    if feature in ("web_search", "web_fetch"):
+        reason = ""
+        for row in rows:
+            ok, why = emulated_success(trace_events(row), feature)
+            if ok:
+                reason = why
+                break
+        if not reason:
+            return "fail", f"no successful emulated_tool(to={feature}) with content"
+        if feature == "web_search" and not re.search(r"https?://", stdout):
+            return "fail", "the CLI answer cites no source URL"
+        if feature == "web_fetch":
+            marker_re = task.get("marker_re") or ""
+            if marker_re and not re.search(marker_re, stdout):
+                return "fail", f"the CLI answer lacks a match for {marker_re!r}"
+        return "pass", reason
+    return "pass", "ok"
 
 
-def evaluate_phase(
+def evaluate_feature(
     home: Path,
     db: Path,
     proxy_log: Path,
@@ -300,7 +366,8 @@ def evaluate_phase(
     adapter_dir: Path,
     cli: str,
     manifest: dict,
-    phase: str,
+    feature: str,
+    task: dict,
     model: str,
     image: Path,
     timeout: int,
@@ -309,48 +376,40 @@ def evaluate_phase(
     since = max_request_id(db)
     log_at = log_size(proxy_log)
     code, result, run_dir = run_phase(
-        home, base_url, key, adapter_dir, cli, phase, model, image, timeout
+        home, base_url, key, adapter_dir, cli, feature, task["prompt"], model, image, timeout
     )
-    # The request-log write may be off the request path; poll for the row
-    # instead of relying on a fixed sleep.
-    deadline = time.time() + 5
+    # The request-log write is off the request path, and one CLI run makes
+    # several requests. Wait until no NEW row appeared for two polls: breaking
+    # on the first row misses the tool-using request that follows it (Claude
+    # Code's multi-turn runs failed exactly that way).
+    deadline = time.time() + 8
     rows: list[tuple] = []
+    stable = 0
     while time.time() < deadline:
-        rows = request_rows(db, since)
-        if rows:
-            break
-        time.sleep(0.2)
+        fresh = request_rows(db, since)
+        if fresh and len(fresh) == len(rows):
+            stable += 1
+            if stable >= 2:
+                break
+        else:
+            stable = 0
+        rows = fresh
+        time.sleep(0.3)
     errs = proxy_errors(proxy_log, log_at)
+    stdout = result.get("stdout") or ""
     detail = str(result.get("status", "")) or f"exit={code}"
     status = "pass"
     if code == 3:
         status, detail = "skipped_missing", f"CLI missing: {manifest.get('install', '')}"
     elif code == 2:
-        status, detail = "skipped_unsupported", "adapter cannot run this phase"
+        status, detail = "skipped_unsupported", "adapter cannot run this feature"
     elif code != 0 or result.get("status") not in (None, "", "pass"):
         err = (result.get("stderr") or "").strip().splitlines()
-        out = (result.get("stdout") or "").strip().splitlines()
+        out = stdout.strip().splitlines()
         tail = (err[-1] if err else (out[-1] if out else ""))[-240:]
         status, detail = "fail", f"CLI {detail}: {tail}"
     elif not rows:
         status, detail = "fail", "no request_logs row"
-    elif phase != "hello":
-        ok = False
-        for row in rows:
-            ok, want = expected_fallback(phase, trace_events(row))
-            if ok:
-                detail = f"fallback observed: {want}"
-                break
-        if not ok:
-            if cli == "claude-code" and phase == "web_fetch":
-                # Claude Code executes its own WebFetch client-side; the
-                # proxy never sees a tool call, so a proxy fallback is not
-                # expected. Web search still proves the web-tool backend.
-                status = "client_side"
-                detail = "Claude Code executed WebFetch client-side; the proxy was not in the path"
-            else:
-                status = "fail"
-                detail = f"expected fallback missing: {expected_fallback(phase, [])[1]}"
     if status == "pass":
         for row in rows:
             if int(row[1]) != 200:
@@ -365,10 +424,13 @@ def evaluate_phase(
                     break
             if status != "pass":
                 break
+    if status == "pass" and feature != "hello":
+        status, detail = feature_evidence(feature, task, rows, stdout)
     if status == "pass" and errs:
         status, detail = "fail", f"proxy log ERROR: {errs[0][:200]}"
     return {
-        "phase": phase,
+        "feature": feature,
+        "task": task["name"],
         "cli": cli,
         "status": status,
         "detail": detail,
@@ -420,41 +482,48 @@ def main() -> int:
     for cli in names:
         manifest = adapters.get(cli)
         if not manifest:
-            checks.append({"phase": "*", "cli": cli, "status": "fail",
+            checks.append({"feature": "*", "task": "*", "cli": cli, "status": "fail",
                            "detail": "unknown adapter", "version": "unknown"})
             continue
-        for phase in PHASES:
-            supported, why = phase_supported(manifest, phase)
+        for feature in FEATURES:
+            supported, why = feature_supported(manifest, feature)
             if not supported:
-                checks.append({"phase": phase, "cli": cli, "status": "skipped_unsupported",
-                               "detail": why, "version": versions.get(cli, "unknown")})
+                checks.append({"feature": feature, "task": "*", "cli": cli,
+                               "status": "skipped_unsupported", "detail": why,
+                               "version": versions.get(cli, "unknown")})
                 continue
-            model = inst["resolved"]["blind"] if phase == "vision" else inst["resolved"]["chat"]
-            print(f"{cli:14s} {phase:11s} running", flush=True)
-            for attempt in range(3):
-                check = evaluate_phase(
+            model = inst["resolved"]["blind"] if feature == "vision" else inst["resolved"]["chat"]
+            for task in TASKS[feature]:
+                print(f"{cli:14s} {feature:11s} {task['name']:22s} running", flush=True)
+                check = evaluate_feature(
                     home, db, proxy_log, base_url, key, adapter_dir, cli, manifest,
-                    phase, model, image, args.timeout, versions.get(cli, "unknown"),
+                    feature, task, model, image, args.timeout,
+                    versions.get(cli, "unknown"),
                 )
-                if (
-                    check["status"] != "fail"
-                    or not transient_failure(check["detail"])
-                    or attempt == 2
-                ):
-                    break
-                time.sleep(1)
-            checks.append(check)
-            print(f"{cli:14s} {phase:11s} {check['status']:20s} {check['detail']}", flush=True)
+                checks.append(check)
+                print(
+                    f"{cli:14s} {feature:11s} {task['name']:22s} "
+                    f"{check['status']:20s} {check['detail']}",
+                    flush=True,
+                )
 
     finished = datetime.now(timezone.utc).isoformat()
     clis: dict[str, dict] = {}
     for check in checks:
         entry = clis.setdefault(check["cli"], {
-            "version": versions.get(check["cli"], "unknown"), "phases": {},
+            "version": versions.get(check["cli"], "unknown"), "phases": {}, "skips": {},
         })
-        entry["phases"][check["phase"]] = check["status"]
+        if check["status"] == "skipped_unsupported":
+            entry["skips"][check["feature"]] = check["detail"]
+            entry["phases"].setdefault(check["feature"], "skipped")
+            continue
+        # A feature passes only when every one of its tasks passed.
+        current = entry["phases"].get(check["feature"], "pass")
+        entry["phases"][check["feature"]] = (
+            "fail" if "fail" in (current, check["status"]) else "pass"
+        )
     report = {
-        "schema": 1,
+        "schema": 2,
         "run_id": run_id,
         "started_at": started,
         "finished_at": finished,
