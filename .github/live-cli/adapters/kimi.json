@@ -42,5 +42,13 @@
   "canary": [
     "~/.kimi",
     "~/.config/kimi"
-  ]
+  ],
+  "features": {
+    "tools": {},
+    "web_fetch": {}
+  },
+  "skip_reasons": {
+    "web_search": "Kimi Code exposes no web_search tool",
+    "vision": "Kimi Code's Read returns text for an image path"
+  }
 }

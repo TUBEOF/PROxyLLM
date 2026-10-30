@@ -42,5 +42,13 @@
   ],
   "canary": [
     "~/.cline"
-  ]
+  ],
+  "features": {
+    "tools": {},
+    "web_fetch": {}
+  },
+  "skip_reasons": {
+    "vision": "Cline's read tools return text, not an image part",
+    "web_search": "Cline's web search needs a client-side search provider key"
+  }
 }

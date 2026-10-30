@@ -41,5 +41,13 @@
   ],
   "canary": [
     "~/.config/goose"
-  ]
+  ],
+  "features": {
+    "tools": {}
+  },
+  "skip_reasons": {
+    "web_search": "Goose has no built-in web search in this setup",
+    "web_fetch": "Goose has no built-in fetch tool in this setup",
+    "vision": "Goose's read_image does not put the image into the model request"
+  }
 }

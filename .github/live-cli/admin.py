@@ -415,6 +415,26 @@ def _setup(client: AdminClient, inst: dict, env: dict, home: str,
     })
     print("capability fallbacks: vision=" + chat["id"] + ", web=acc-ollama-web")
 
+    # Client tools each CLI declares for its own web tool. The claim only
+    # fires for a tool the request actually carries, so the union is safe and
+    # lets every adapter take the same proxy path. Names are wire facts of the
+    # CLIs; the mapping is operator configuration by design.
+    client_web_tools = {
+        "WebFetch": "web_fetch",
+        "WebSearch": "web_search",
+        "webfetch": "web_fetch",
+        "web_fetch": "web_fetch",
+        "fetch_web_content": "web_fetch",
+        "FetchURL": "web_fetch",
+        "Fetch": "web_fetch",
+        "web_search": "web_search",
+    }
+    put(client, "/api/admin/settings", {
+        "key": "client_web_tools",
+        "value": json.dumps(client_web_tools, separators=(",", ":"), sort_keys=True),
+    })
+    print("client web tools: " + ", ".join(sorted(client_web_tools)))
+
     # Client key: verify an existing one, otherwise mint a new one.
     key = env.get("CLIENT_KEY", "")
     if key and _key_works(client, key):

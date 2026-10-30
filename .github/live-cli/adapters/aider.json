@@ -47,5 +47,12 @@
   "canary": [
     "~/.aider.conf.yml",
     "~/.aider"
-  ]
+  ],
+  "features": {},
+  "skip_reasons": {
+    "tools": "Aider's --message mode has no agent tool",
+    "vision": "Aider's --message mode cannot attach an image",
+    "web_search": "Aider has no web search tool",
+    "web_fetch": "Aider has no web fetch tool"
+  }
 }
