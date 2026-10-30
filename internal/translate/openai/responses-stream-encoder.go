@@ -207,7 +207,11 @@ func (e *responsesStreamEncoder) emitBlockStart(ev ir.StreamEvent) error {
 		e.openItems = append(e.openItems, item)
 		return e.emitEvent("response.output_item.added", e.outputItemAddedReasoning(item))
 	default:
-		// Unknown part kind: relay as comment.
+		// Unknown part kind: keep an index slot so later IR indices still
+		// line up (deltas address openItems by the IR index), and relay as
+		// comment. Without the slot an emulated tool block prepended to the
+		// content would swallow every delta of the answer that follows it.
+		e.openItems = append(e.openItems, nil)
 		return e.emitComment("")
 	}
 }
@@ -259,6 +263,10 @@ func (e *responsesStreamEncoder) emitBlockStop(ev ir.StreamEvent) error {
 		return e.emitComment("")
 	}
 	item := e.openItems[ev.Index]
+	if item == nil {
+		// A closed slot or an unrepresentable part: nothing to emit.
+		return e.emitComment("")
+	}
 	// Move to completed for the final output array.
 	e.completedItems = append(e.completedItems, item)
 	// Close the slot; leave a nil placeholder so indices stay stable.
