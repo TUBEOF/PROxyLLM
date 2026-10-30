@@ -354,20 +354,21 @@ def _setup(client: AdminClient, inst: dict, env: dict, home: str,
     print(f"chat model:     {chat['id']}")
     print(f"fallback model: {fallback['id']}")
 
-    # The TEST model is the blind one: pin its vision capability false so the
-    # image phase MUST go through the configured vision fallback.
-    caps = dict(chat.get("capabilities") or {})
+    # The blind test model is the fallback row: pin its vision capability
+    # false so the image phase MUST go through the configured vision
+    # fallback (the chat/deepseek model).
+    caps = dict(fallback.get("capabilities") or {})
     caps["vision"] = False
     pinned = dict(caps.get("pinned") or {})
     pinned["vision"] = True
     caps["pinned"] = pinned
-    put(client, "/api/admin/models/" + model_id_path(chat["id"]), {
-        "provider_id": chat.get("provider_id"),
-        "name": chat.get("name"),
+    put(client, "/api/admin/models/" + model_id_path(fallback["id"]), {
+        "provider_id": fallback.get("provider_id"),
+        "name": fallback.get("name"),
         "capabilities": caps,
-        "priority": chat.get("priority", 0),
+        "priority": fallback.get("priority", 0),
     })
-    print("test model pinned vision=false")
+    print("blind fallback model pinned vision=false")
 
     # Aliases: merge, never clobber an existing different target silently.
     settings = get_json(client, "/api/admin/settings").get("entries", [])
@@ -384,8 +385,8 @@ def _setup(client: AdminClient, inst: dict, env: dict, home: str,
         "haiku": chat["id"],
         "fable": chat["id"],
         inst["chat_model"]: chat["id"],
-        "fallback-test": chat["id"],
-        "vision-test": fallback["id"],
+        "fallback-test": fallback["id"],
+        "vision-test": chat["id"],
         inst["fallback_model"]: fallback["id"],
     }
     changed = False
@@ -406,13 +407,13 @@ def _setup(client: AdminClient, inst: dict, env: dict, home: str,
     print(f"aliases: {len(aliases)} entr(y/ies)")
 
     # One live write for all three fallback lists. Vision MUST fall back to
-    # the deepseek model; web tools MUST use the Ollama Cloud Web account.
+    # the deepseek chat model; web tools MUST use the Ollama Cloud Web account.
     put(client, "/api/admin/capability-fallbacks", {
-        "vision": [fallback["id"]],
+        "vision": [chat["id"]],
         "web_search": ["acc-ollama-web"],
         "web_fetch": ["acc-ollama-web"],
     })
-    print("capability fallbacks: vision=" + fallback["id"] + ", web=acc-ollama-web")
+    print("capability fallbacks: vision=" + chat["id"] + ", web=acc-ollama-web")
 
     # Client key: verify an existing one, otherwise mint a new one.
     key = env.get("CLIENT_KEY", "")
@@ -429,12 +430,13 @@ def _setup(client: AdminClient, inst: dict, env: dict, home: str,
         if not _key_works(client, key):
             raise SystemExit("new client key does not authenticate against /v1/models")
 
-    # Persist resolved ids. blind is the test model; vision is its fallback.
+    # Persist resolved ids. blind is the nemotron test model; vision is its
+    # deepseek fallback.
     inst["resolved"] = {
         "chat": chat["id"],
         "fallback": fallback["id"],
-        "blind": chat["id"],
-        "vision": fallback["id"],
+        "blind": fallback["id"],
+        "vision": chat["id"],
         "web": "acc-ollama-web",
     }
     with open(os.path.join(home, "instance.json"), "w", encoding="utf-8") as f:
@@ -476,11 +478,11 @@ def _validate(client: AdminClient, inst: dict, env: dict, skip_probe: bool) -> N
     fallback = next((m for m in models if m.get("id") == resolved.get("fallback")), None)
     if not chat or not fallback:
         raise SystemExit("resolved models are missing from /api/admin/models")
-    caps = chat.get("capabilities") or {}
+    caps = fallback.get("capabilities") or {}
     if caps.get("vision") is not False or (caps.get("pinned") or {}).get("vision") is not True:
-        raise SystemExit("test model is not pinned vision=false")
+        raise SystemExit("blind fallback model is not pinned vision=false")
     fallbacks = get_json(client, "/api/admin/capability-fallbacks")
-    if fallbacks.get("vision") != [fallback["id"]]:
+    if fallbacks.get("vision") != [chat["id"]]:
         raise SystemExit(f"vision fallback mismatch: {fallbacks.get('vision')}")
     for key in ("web_search", "web_fetch"):
         if fallbacks.get(key) != ["acc-ollama-web"]:
@@ -489,7 +491,7 @@ def _validate(client: AdminClient, inst: dict, env: dict, skip_probe: bool) -> N
     raw = next((e.get("value", "{}") for e in settings if e.get("key") == "model_aliases"), "{}")
     aliases = json.loads(raw or "{}")
     for key, target in (("claude-*", chat["id"]), ("proxy-chat", chat["id"]),
-                        ("fallback-test", chat["id"]), ("vision-test", fallback["id"])):
+                        ("fallback-test", fallback["id"]), ("vision-test", chat["id"])):
         if aliases.get(key) != target:
             raise SystemExit(f"alias mismatch: {key} -> {aliases.get(key)} (want {target})")
     key = env.get("CLIENT_KEY", "")

@@ -62,7 +62,7 @@ instance:
 
 ```bash
 python3 -I .github/live-cli/bootstrap.py --home /tmp/proxyllm-live \
-  --chat-model nemotron-3-ultra --fallback-model deepseek-v4.1-flash:1017
+  --chat-model deepseek-v4.1-flash:1017 --fallback-model nemotron-3-ultra
 # start ./proxyllm with PROXYLLM_SERVER_ADDR=127.0.0.1:18080,
 # PROXYLLM_STORAGE_PATH, PROXYLLM_MASTER_KEY_PATH,
 # PROXYLLM_LOG_FORMAT=json (see the workflow's "Start instance" step)

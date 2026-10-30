@@ -19,8 +19,8 @@ def main() -> int:
     p.add_argument("--home", required=True)
     p.add_argument("--repo", default=os.getcwd())
     p.add_argument("--port", type=int, default=18080)
-    p.add_argument("--chat-model", default="nemotron-3-ultra")
-    p.add_argument("--fallback-model", default="deepseek-v4.1-flash:1017")
+    p.add_argument("--chat-model", default="deepseek-v4.1-flash:1017")
+    p.add_argument("--fallback-model", default="nemotron-3-ultra")
     a = p.parse_args()
 
     home = Path(a.home).resolve()
