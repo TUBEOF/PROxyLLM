@@ -77,17 +77,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The release notes ALWAYS carry the per-CLI result table. Verify the
-      # report BEFORE GoReleaser: once a release is published, a missing
-      # report can no longer block it.
-      - name: Download live CLI report
-        uses: actions/download-artifact@v7
-        with:
-          name: live-cli-report
-          path: cli-report
-
-      - name: Verify live CLI report exists
-        run: test -n "$(find cli-report -name report.md | head -1)"
+      # The live-CLI reusable workflow returns the Markdown table as a job
+      # output. Using an output instead of an artifact keeps the release
+      # independent of the account's artifact egress quota.
+      - name: Write live CLI report
+        env:
+          REPORT: ${{ needs.live-cli.outputs.report }}
+        run: |
+          test -n "$REPORT"
+          printf '%s\n' "$REPORT" > /tmp/cli-report.md
+          grep -q '^| CLI ' /tmp/cli-report.md
 
       # go:embed reads webui/dist at compile time; GoReleaser's build step
       # must see the real assets. (The committed dist/index.html placeholder
@@ -115,8 +114,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          report=$(find cli-report -name report.md | head -1)
-          if [ -z "$report" ]; then
+          if [ ! -s /tmp/cli-report.md ]; then
             echo "live CLI report missing; refusing to publish a release without CLI results" >&2
             exit 1
           fi
@@ -125,6 +123,6 @@ jobs:
             echo
             echo "## Live CLI test results"
             echo
-            awk '/^\| CLI /{p=1} p' "$report"
+            cat /tmp/cli-report.md
           } >> /tmp/release-body.md
           gh release edit "$TAG" --notes-file /tmp/release-body.md
