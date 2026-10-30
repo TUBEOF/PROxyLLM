@@ -30,7 +30,7 @@ from pathlib import Path
 
 PHASES = ("hello", "vision", "web_search", "web_fetch")
 PROMPTS = {
-    "hello": "Hello",
+    "hello": "Hello there",
     "vision": "What is in this image? Describe it in one sentence.",
     "web_search": (
         "Search the web for today's date and the current top news headline. "
@@ -211,9 +211,11 @@ def phase_supported(manifest: dict, phase: str) -> tuple[bool, str]:
             return True, ""
         return False, "adapter has no headless image input"
     if phase in ("web_search", "web_fetch"):
-        if manifest.get("web_args"):
-            return True, ""
-        return False, "adapter has no headless web tool"
+        if not manifest.get("web_args"):
+            return False, "adapter has no headless web tool"
+        if phase == "web_fetch" and not manifest.get("web_fetch"):
+            return False, "adapter exposes web_search only"
+        return True, ""
     return False, "unknown phase"
 
 
@@ -340,7 +342,9 @@ def main() -> int:
             elif code == 2:
                 status, detail = "skipped_unsupported", "adapter cannot run this phase"
             elif code != 0 or result.get("status") not in (None, "", "pass"):
-                status, detail = "fail", f"CLI {detail}"
+                err = (result.get("stderr") or "").strip().splitlines()
+                tail = err[-1][-240:] if err else ""
+                status, detail = "fail", f"CLI {detail}: {tail}"
             elif not rows:
                 status, detail = "fail", "no request_logs row"
             elif phase != "hello":
