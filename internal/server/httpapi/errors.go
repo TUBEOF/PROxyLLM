@@ -259,6 +259,9 @@ func mapRouteError(err error) (int, string, string) {
 	case errors.Is(err, routing.ErrThinkingBlocked):
 		return http.StatusBadRequest, errTypeInvalidRequest,
 			"This model's compatibility policy does not allow thinking requests (thinking_handling=block)."
+	case errors.Is(err, routing.ErrEmptyRequest):
+		return http.StatusBadRequest, errTypeInvalidRequest,
+			"The request contains no messages; an upstream chat API requires at least one."
 	case errors.Is(err, routing.ErrNoRoute):
 		// The reference's spelling for an unknown model — "model: <id>" — is
 		// load-bearing on the wire: Claude Code classifies a 404 as

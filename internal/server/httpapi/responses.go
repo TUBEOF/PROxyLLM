@@ -41,6 +41,13 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	keyID := auth.ClientKeyIDFromContext(ctx)
 
+	if err := routing.RequireMessages(req); err != nil {
+		_, _ = a.writeRouteError(w, ew, err)
+		a.writeRequestLog(ctx, keyID, req.Model, "", http.StatusBadRequest, 0,
+			nil, nil, redactedMessage(err))
+		return
+	}
+
 	compat := a.compatFor(ctx, req.Model)
 	req, compatTrace, err := routing.ApplyCompat(compat, req)
 	if err != nil {

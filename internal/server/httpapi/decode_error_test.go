@@ -69,3 +69,30 @@ func TestChatAndResponses_MalformedRequestIs400Not500(t *testing.T) {
 		}
 	}
 }
+
+// TestEmptyRequestIs400NotForwarded: a request with no system prompt and no
+// messages has nothing to translate, and every upstream chat wire requires at
+// least one message — Ollama Cloud answers the empty body with
+// `[] is too short - 'messages' (ref: …)` (observed live 2026-10-30). The
+// refusal must be local: a 400 for the client, no dispatch to the provider, and
+// a log row that names the actual problem instead of an upstream ref.
+func TestEmptyRequestIs400NotForwarded(t *testing.T) {
+	for _, tc := range []struct {
+		path string
+		body string
+	}{
+		{"/v1/chat/completions", `{"model":"gpt-5","messages":[]}`},
+		{"/v1/responses", `{"model":"gpt-5","input":[]}`},
+		{"/v1/messages", `{"model":"claude-sonnet-5","max_tokens":16,"messages":[]}`},
+		{"/api/chat", `{"model":"llama-4","messages":[]}`},
+	} {
+		e := newEnv(t)
+		status, resp := e.post(t, tc.path, tc.body)
+		if status != http.StatusBadRequest {
+			t.Errorf("%s status = %d, want 400 (body %s)", tc.path, status, resp)
+		}
+		if reqs := e.mock.Requests(); len(reqs) != 0 {
+			t.Errorf("%s dispatched %d upstream request(s), want none", tc.path, len(reqs))
+		}
+	}
+}

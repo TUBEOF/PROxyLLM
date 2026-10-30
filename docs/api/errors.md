@@ -70,7 +70,7 @@ cooldown and its reason.
 
 | Status | Meaning | Retryable |
 |---|---|---|
-| `400` | Invalid request: body decode failure, a surface policy rejection (`anthropic_surface_non_claude=block`, `thinking_handling=block`) | no |
+| `400` | Invalid request: body decode failure, an empty request (no system prompt and no messages — every upstream chat wire requires at least one message), a surface policy rejection (`anthropic_surface_non_claude=block`, `thinking_handling=block`) | no |
 | `401` | Missing or invalid API key | no |
 | `403` | Key present but not permitted (key scope) | no |
 | `404` | No route for the model (see above) | no |
