@@ -63,9 +63,12 @@ func TestEmulator_SearchMapsResultsAndSendsTheBearerKey(t *testing.T) {
 	if items[0].URL != "https://ollama.com/" || items[0].Title != "Ollama" {
 		t.Errorf("first item = %+v", items[0])
 	}
-	// The snippet has no IR field, so it is deliberately dropped rather than
-	// smuggled into Title.
-	if items[0].Title == "Cloud models are now available..." {
+	// The snippet rides its own field (model-facing only); never folded
+	// into the title.
+	if items[0].Snippet != "Cloud models are now available..." {
+		t.Errorf("Snippet = %q, want the service's content", items[0].Snippet)
+	}
+	if items[0].Title == items[0].Snippet {
 		t.Error("the content snippet must not be folded into the title")
 	}
 	if got := seen.Header.Get("Authorization"); got != "Bearer test-key" {

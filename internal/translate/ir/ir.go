@@ -138,6 +138,13 @@ type WebSearchResultItem struct {
 	Title            string
 	EncryptedContent string // provider-encrypted page content, opaque to the proxy
 	PageAge          string // "" when unknown
+	// Snippet is the backend's plain-text excerpt of the page. The client
+	// wire has no field for it (the Anthropic web_search_result block carries
+	// url/title/page_age/encrypted_content only), but the emulation loop hands
+	// it to the MODEL on the re-dispatch round — without it a search-only
+	// client (Codex has no web_fetch) gets titles and cannot answer anything
+	// that needs page content.
+	Snippet string
 }
 
 // WebFetchContent is the normalized page payload of a web_fetch_tool_result

@@ -472,7 +472,7 @@ func resultPayloadForModel(call ir.ToolCallPart, res ir.ServerToolResultPart) st
 		}{ToolUseID: call.ID, Content: make([]wireSearchItem, 0, len(items))}
 		for _, it := range items {
 			wire.Content = append(wire.Content, wireSearchItem{
-				URL: it.URL, Title: it.Title, PageAge: it.PageAge,
+				URL: it.URL, Title: it.Title, PageAge: it.PageAge, Content: it.Snippet,
 			})
 		}
 		_ = enc.Encode(wire)
@@ -497,11 +497,13 @@ func resultPayloadForModel(call ir.ToolCallPart, res ir.ServerToolResultPart) st
 }
 
 // wireSearchItem is one content array entry of the model-facing
-// web_search result (the documented url/title/page_age block).
+// web_search result (the documented url/title/page_age block). Content is the
+// backend snippet — model-facing only; the client wire has no such field.
 type wireSearchItem struct {
 	URL     string `json:"url"`
 	Title   string `json:"title"`
 	PageAge string `json:"page_age,omitempty"`
+	Content string `json:"content,omitempty"`
 }
 
 // wireFetchBody is the model-facing web_fetch document object (the

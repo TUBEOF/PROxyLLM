@@ -52,10 +52,10 @@ func NewEmulator(baseURL, apiKey string, httpClient *http.Client) *Emulator {
 
 // Search answers a web_search invocation: the definition's domain filters
 // map onto the documented include/exclude parameter lists, and every
-// returned web[] entry becomes an IR search item. Firecrawl returns titles
-// and URLs — not Anthropic's provider-encrypted page content — so
-// EncryptedContent stays empty: the emulation layer never fabricates
-// opaque provider data.
+// returned web[] entry becomes an IR search item. Firecrawl returns titles,
+// URLs and a description — not Anthropic's provider-encrypted page content —
+// so EncryptedContent stays empty (never fabricate opaque provider data) and
+// the description rides Snippet for the model-facing round.
 func (e *Emulator) Search(ctx context.Context, query string, st ir.ServerToolConfig) ([]ir.WebSearchResultItem, error) {
 	resp, err := e.client.Search(ctx, SearchRequest{
 		Query:          query,
@@ -68,8 +68,9 @@ func (e *Emulator) Search(ctx context.Context, query string, st ir.ServerToolCon
 	items := make([]ir.WebSearchResultItem, 0, len(resp.Data.Web))
 	for _, w := range resp.Data.Web {
 		items = append(items, ir.WebSearchResultItem{
-			URL:   w.URL,
-			Title: w.Title,
+			URL:     w.URL,
+			Title:   w.Title,
+			Snippet: w.Description,
 		})
 	}
 	return items, nil
