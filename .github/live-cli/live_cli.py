@@ -33,10 +33,13 @@ PROMPTS = {
     "hello": "Hello there",
     "vision": "What is in this image? Describe it in one sentence.",
     "web_search": (
-        "Search the web for today's date and the current top news headline. "
-        "Cite the source."
+        "Use the web search tool to find today's date and the current top "
+        "news headline. Cite the source."
     ),
-    "web_fetch": "Fetch https://example.com and summarize the first paragraph.",
+    "web_fetch": (
+        "Use the web fetch tool to fetch https://example.com and summarize "
+        "the first paragraph. Do not answer from memory."
+    ),
 }
 
 
@@ -416,7 +419,7 @@ def main() -> int:
                                "detail": why, "version": versions.get(cli, "unknown")})
                 continue
             model = inst["resolved"]["blind"] if phase == "vision" else inst["resolved"]["chat"]
-            for attempt in range(2):
+            for attempt in range(3):
                 check = evaluate_phase(
                     home, db, proxy_log, base_url, key, adapter_dir, cli, manifest,
                     phase, model, image, args.timeout, versions.get(cli, "unknown"),
@@ -424,7 +427,7 @@ def main() -> int:
                 if (
                     check["status"] != "fail"
                     or not transient_failure(check["detail"])
-                    or attempt == 1
+                    or attempt == 2
                 ):
                     break
                 time.sleep(1)
