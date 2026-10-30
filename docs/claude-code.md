@@ -119,9 +119,10 @@ the `client_web_tools` settings KV — the names are the client's wire fact and
 change with its releases. An empty object turns the claim off: the client then
 runs its own tools as before, and the proxy neither fetches nor logs a row.
 
-Two limits stay honest. The claim applies on the Anthropic surface, the only
-one whose wire can carry the family's result blocks. And the emulation's own
-rules apply to the intercepted call: a `web_fetch` URL must have appeared in
+Two limits stay honest. The claim applies on every surface; only the Anthropic
+wire carries the family's result blocks back, while a chat/Responses client
+sees just the final answer. And the emulation's own rules apply to the
+intercepted call: a `web_fetch` URL must have appeared in
 the conversation (or in earlier search results), a definition's
 `max_uses`/domain filters are enforced, and with no web-tool account configured
 the call comes back as the documented `unavailable` error result instead of
