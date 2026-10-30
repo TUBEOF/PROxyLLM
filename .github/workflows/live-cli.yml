@@ -103,9 +103,10 @@ jobs:
           # goose" step that reads /dev/tty; install the release binary
           # directly instead.
           curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/goose-x86_64-unknown-linux-gnu.tar.bz2 -o /tmp/goose.tar.bz2
-          tar -xjf /tmp/goose.tar.bz2 -C /tmp
+          mkdir -p /tmp/goose-extract
+          tar -xjf /tmp/goose.tar.bz2 -C /tmp/goose-extract
           mkdir -p "$HOME/.local/bin"
-          install -m 0755 "$(find /tmp -maxdepth 2 -type f -name goose | head -1)" "$HOME/.local/bin/goose"
+          install -m 0755 "$(find /tmp/goose-extract -type f -name goose | head -1)" "$HOME/.local/bin/goose"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Verify CLI versions
