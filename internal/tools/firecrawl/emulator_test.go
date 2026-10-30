@@ -69,8 +69,9 @@ func TestEmulator_SearchMapsDomainFiltersAndResults(t *testing.T) {
 		t.Fatalf("items = %d, want 1", len(items))
 	}
 	want := ir.WebSearchResultItem{
-		URL:   "https://go.dev/dl/",
-		Title: "Downloads - The Go Programming Language",
+		URL:     "https://go.dev/dl/",
+		Title:   "Downloads - The Go Programming Language",
+		Snippet: "d",
 	}
 	if items[0] != want {
 		t.Errorf("items[0] = %+v, want %+v", items[0], want)

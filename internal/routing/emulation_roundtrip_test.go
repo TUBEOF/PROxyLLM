@@ -130,7 +130,7 @@ func emulatedSearchRequest() ir.Request {
 func TestExecute_EmulatedWebSearchRoundTrip(t *testing.T) {
 	p := &emulProvider{}
 	emu := &fakeEmulator{searchAnswers: []string{`[
-		{"URL":"https://go.dev/dl/","Title":"Go Downloads","EncryptedContent":"","PageAge":"2026-09-01"},
+		{"URL":"https://go.dev/dl/","Title":"Go Downloads","EncryptedContent":"","PageAge":"2026-09-01","Snippet":"Download the latest Go release."},
 		{"URL":"https://go.dev/blog/","Title":"Go Blog","EncryptedContent":"","PageAge":""}
 	]`}}
 	e := roundTripExecutor(p, emu)
@@ -184,6 +184,15 @@ func TestExecute_EmulatedWebSearchRoundTrip(t *testing.T) {
 	}
 	if tr.ToolUseID != "tc1" || tr.IsError {
 		t.Errorf("tool result = %+v, want id tc1 non-error", tr)
+	}
+	// The model-facing payload carries the backend snippet; a search-only
+	// client (Codex) has no web_fetch to read the page afterwards.
+	wantSnippet := `"content":"Download the latest Go release."`
+	if len(tr.Content) == 0 {
+		t.Fatalf("tool result carries no payload: %+v", tr)
+	}
+	if tp, ok := tr.Content[0].(ir.TextPart); !ok || !strings.Contains(tp.Text, wantSnippet) {
+		t.Errorf("model payload = %+v, want it to carry %s", tr.Content[0], wantSnippet)
 	}
 	// The re-dispatch must NOT carry the emulated tool def again...
 	for _, tool := range p.lastReq.Tools {

@@ -50,10 +50,8 @@ func NewEmulator(baseURL, apiKey string, httpClient *http.Client) *Emulator {
 }
 
 // Search answers a web_search invocation. The service's per-result `content`
-// snippet is DROPPED: ir.WebSearchResultItem carries URL/Title/
-// EncryptedContent/PageAge and the Anthropic `web_search_result` block has no
-// plain-text field either, so there is nowhere on the wire to put it. Adding
-// one would be a wire change with a fixture refresh, not a backend concern.
+// snippet rides ir.WebSearchResultItem.Snippet: the client wire has no field
+// for it, but the emulation loop passes it to the model on the re-dispatch.
 func (e *Emulator) Search(ctx context.Context, query string, st ir.ServerToolConfig) ([]ir.WebSearchResultItem, error) {
 	if len(st.AllowedDomains) > 0 || len(st.BlockedDomains) > 0 {
 		return nil, ErrDomainFiltersUnsupported
@@ -64,7 +62,7 @@ func (e *Emulator) Search(ctx context.Context, query string, st ir.ServerToolCon
 	}
 	items := make([]ir.WebSearchResultItem, 0, len(resp.Results))
 	for _, r := range resp.Results {
-		items = append(items, ir.WebSearchResultItem{URL: r.URL, Title: r.Title})
+		items = append(items, ir.WebSearchResultItem{URL: r.URL, Title: r.Title, Snippet: r.Content})
 	}
 	return items, nil
 }

@@ -433,6 +433,14 @@ than returning results that silently ignore it. A fetched page is truncated
 to the definition's `max_content_tokens` when that limit is set, which bounds
 both what the model is re-sent and what the client receives.
 
+Both backends return a per-result text excerpt (Ollama's `content`,
+Firecrawl's `description`). The client wire has no field for it — the
+Anthropic `web_search_result` block carries url/title/page_age only — but the
+model-facing re-dispatch carries it as `content` on each result. Without it a
+search-only client (Codex has no `web_fetch`) receives titles and cannot
+answer anything that needs page content; a `web_fetch` client reads the page
+instead.
+
 ### Streaming requests with emulated tools
 
 A streaming request whose tools include emulated definitions — claimed web
