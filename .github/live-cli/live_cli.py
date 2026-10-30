@@ -106,7 +106,9 @@ def render_markdown(report: dict) -> str:
     lines += [
         "",
         "`skipped_unsupported` means the CLI has no headless path for that "
-        "phase. `PARTIAL` means at least one phase passed, but not all four.",
+        "phase; `client_side` means the CLI executed the tool itself and the "
+        "proxy was not in the path. `PARTIAL` means at least one phase "
+        "passed, but not all four.",
     ]
     return "\n".join(lines) + "\n"
 
@@ -340,8 +342,15 @@ def evaluate_phase(
                 detail = f"fallback observed: {want}"
                 break
         if not ok:
-            status = "fail"
-            detail = f"expected fallback missing: {expected_fallback(phase, [])[1]}"
+            if cli == "claude-code" and phase == "web_fetch":
+                # Claude Code executes its own WebFetch client-side; the
+                # proxy never sees a tool call, so a proxy fallback is not
+                # expected. Web search still proves the web-tool backend.
+                status = "client_side"
+                detail = "Claude Code executed WebFetch client-side; the proxy was not in the path"
+            else:
+                status = "fail"
+                detail = f"expected fallback missing: {expected_fallback(phase, [])[1]}"
     if status == "pass":
         for row in rows:
             if int(row[1]) != 200:

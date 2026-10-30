@@ -84,12 +84,14 @@ Markdown table lists every CLI, its exact installed version and the result of
 each phase. The Overall column is `PASS` only when all four phases pass,
 `PARTIAL` when at least one passed but some are unsupported, and `FAIL` when
 any phase failed. `skipped_unsupported` means the CLI has no headless path for
-that phase. The release workflow runs this suite on the tagged commit and
-appends that table to the GitHub release notes. The process exits non-zero
-when any check is `fail`. The client key never enters the report, and
-`run_cli.py` redacts the key from captured CLI output. Each CLI runs with a
-fresh HOME/XDG/config/work directory and a canary snapshot of its real config
-paths; a change to a real config path is a failure.
+that phase. `client_side` means the CLI executed the tool itself (Claude
+Code's WebFetch is such a client tool), so the proxy was not in the path and
+no proxy fallback is expected. The release workflow runs this suite on the
+tagged commit and appends that table to the GitHub release notes. The process
+exits non-zero when any check is `fail`. The client key never enters the
+report, and `run_cli.py` redacts the key from captured CLI output. Each CLI
+runs with a fresh HOME/XDG/config/work directory and a canary snapshot of its
+real config paths; a change to a real config path is a failure.
 
 ## Related
 
