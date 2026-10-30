@@ -33,6 +33,9 @@ go.work
 go.work.sum
 
 # Agent tooling — local working files, never part of the project.
+.live-cli/
+.aider.chat.history.md
+.aider.input.history
 # Project skills ship with the repo in .agents/skills/ (the cross-harness
 # Agent Skills path). .claude/skills/ holds only symlinks to those directories
 # so Claude Code discovers the same files; nothing there is a second copy.
