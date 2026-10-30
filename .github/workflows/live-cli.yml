@@ -180,7 +180,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: live-cli-report
-          path: ${{ env.PROXYLLM_TEST_HOME }}/artifacts/**
+          path: |
+            ${{ env.PROXYLLM_TEST_HOME }}/artifacts/**
+            ${{ env.PROXYLLM_TEST_HOME }}/clients/**/result.json
           retention-days: 7
           if-no-files-found: error
 

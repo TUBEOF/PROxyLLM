@@ -30,7 +30,7 @@ trace) and the proxy log window (no `ERROR`).
 | `hello` | `Hello there` | chat | 200, no error, no proxy `ERROR` |
 | `vision` | `What is in this image? Describe it in one sentence.` | blind fallback model | `capability_fallback` with `capability="vision"` **and** `image_caption` |
 | `web_search` | `Use the web search tool to find today's date and the current top news headline. Cite the source.` | chat | `emulated_tool` or `emulated_tool_attempt` with `to="web_search"` |
-| `web_fetch` | `Use the web fetch tool to fetch https://example.com and summarize the first paragraph. Do not answer from memory.` | chat | `emulated_tool` or `emulated_tool_attempt` with `to="web_fetch"` |
+| `web_fetch` | `Use the WebFetch tool to fetch https://example.com and summarize the first paragraph. Do not answer from memory.` | chat | `emulated_tool` or `emulated_tool_attempt` with `to="web_fetch"` |
 
 The image is a real 512×512 PNG (a 1×1 image makes vision upstreams fail).
 The primary model is deliberately blind, and the vision-fallback list points

@@ -37,7 +37,7 @@ PROMPTS = {
         "news headline. Cite the source."
     ),
     "web_fetch": (
-        "Use the web fetch tool to fetch https://example.com and summarize "
+        "Use the WebFetch tool to fetch https://example.com and summarize "
         "the first paragraph. Do not answer from memory."
     ),
 }
@@ -326,7 +326,8 @@ def evaluate_phase(
         status, detail = "skipped_unsupported", "adapter cannot run this phase"
     elif code != 0 or result.get("status") not in (None, "", "pass"):
         err = (result.get("stderr") or "").strip().splitlines()
-        tail = err[-1][-240:] if err else ""
+        out = (result.get("stdout") or "").strip().splitlines()
+        tail = (err[-1] if err else (out[-1] if out else ""))[-240:]
         status, detail = "fail", f"CLI {detail}: {tail}"
     elif not rows:
         status, detail = "fail", "no request_logs row"
