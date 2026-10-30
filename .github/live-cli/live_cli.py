@@ -267,6 +267,100 @@ def run_phase(
     return proc.returncode, result, run_dir
 
 
+def transient_failure(detail: str) -> bool:
+    """A CLI/transport hiccup is retried once; a missing fallback is not —
+    that is the assertion the suite exists for."""
+    d = detail.lower()
+    if "expected fallback missing" in d:
+        return False
+    return (
+        "cli fail" in d
+        or "request status 499" in d
+        or "request status 5" in d
+        or "no request_logs row" in d
+        or "proxy log error" in d
+        or "timeout" in d
+    )
+
+
+def evaluate_phase(
+    home: Path,
+    db: Path,
+    proxy_log: Path,
+    base_url: str,
+    key: str,
+    adapter_dir: Path,
+    cli: str,
+    manifest: dict,
+    phase: str,
+    model: str,
+    image: Path,
+    timeout: int,
+    version: str,
+) -> dict:
+    since = max_request_id(db)
+    log_at = log_size(proxy_log)
+    code, result, run_dir = run_phase(
+        home, base_url, key, adapter_dir, cli, phase, model, image, timeout
+    )
+    # The request-log write may be off the request path; poll for the row
+    # instead of relying on a fixed sleep.
+    deadline = time.time() + 5
+    rows: list[tuple] = []
+    while time.time() < deadline:
+        rows = request_rows(db, since)
+        if rows:
+            break
+        time.sleep(0.2)
+    errs = proxy_errors(proxy_log, log_at)
+    detail = str(result.get("status", "")) or f"exit={code}"
+    status = "pass"
+    if code == 3:
+        status, detail = "skipped_missing", f"CLI missing: {manifest.get('install', '')}"
+    elif code == 2:
+        status, detail = "skipped_unsupported", "adapter cannot run this phase"
+    elif code != 0 or result.get("status") not in (None, "", "pass"):
+        err = (result.get("stderr") or "").strip().splitlines()
+        tail = err[-1][-240:] if err else ""
+        status, detail = "fail", f"CLI {detail}: {tail}"
+    elif not rows:
+        status, detail = "fail", "no request_logs row"
+    elif phase != "hello":
+        ok = False
+        for row in rows:
+            ok, want = expected_fallback(phase, trace_events(row))
+            if ok:
+                detail = f"fallback observed: {want}"
+                break
+        if not ok:
+            status = "fail"
+            detail = f"expected fallback missing: {expected_fallback(phase, [])[1]}"
+    if status == "pass":
+        for row in rows:
+            if int(row[1]) != 200:
+                status, detail = "fail", f"request status {row[1]}"
+                break
+            if row[2]:
+                status, detail = "fail", f"error_redacted: {row[2]}"
+                break
+            for ev in trace_events(row):
+                if ev.get("type") in ("failed", "rejected"):
+                    status, detail = "fail", f"trace {ev.get('type')}: {ev.get('reason', '')}"
+                    break
+            if status != "pass":
+                break
+    if status == "pass" and errs:
+        status, detail = "fail", f"proxy log ERROR: {errs[0][:200]}"
+    return {
+        "phase": phase,
+        "cli": cli,
+        "status": status,
+        "detail": detail,
+        "version": version,
+        "run_dir": str(run_dir.relative_to(home)),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--home", required=True)
@@ -320,68 +414,20 @@ def main() -> int:
                                "detail": why, "version": versions.get(cli, "unknown")})
                 continue
             model = inst["resolved"]["blind"] if phase == "vision" else inst["resolved"]["chat"]
-            since = max_request_id(db)
-            log_at = log_size(proxy_log)
-            code, result, run_dir = run_phase(
-                home, base_url, key, adapter_dir, cli, phase, model, image, args.timeout
-            )
-            # The request-log write may be off the request path; poll for the
-            # row instead of relying on a fixed sleep.
-            deadline = time.time() + 5
-            rows: list[tuple] = []
-            while time.time() < deadline:
-                rows = request_rows(db, since)
-                if rows:
+            for attempt in range(2):
+                check = evaluate_phase(
+                    home, db, proxy_log, base_url, key, adapter_dir, cli, manifest,
+                    phase, model, image, args.timeout, versions.get(cli, "unknown"),
+                )
+                if (
+                    check["status"] != "fail"
+                    or not transient_failure(check["detail"])
+                    or attempt == 1
+                ):
                     break
-                time.sleep(0.2)
-            errs = proxy_errors(proxy_log, log_at)
-            detail = str(result.get("status", "")) or f"exit={code}"
-            status = "pass"
-            if code == 3:
-                status, detail = "skipped_missing", f"CLI missing: {manifest.get('install', '')}"
-            elif code == 2:
-                status, detail = "skipped_unsupported", "adapter cannot run this phase"
-            elif code != 0 or result.get("status") not in (None, "", "pass"):
-                err = (result.get("stderr") or "").strip().splitlines()
-                tail = err[-1][-240:] if err else ""
-                status, detail = "fail", f"CLI {detail}: {tail}"
-            elif not rows:
-                status, detail = "fail", "no request_logs row"
-            elif phase != "hello":
-                ok = False
-                for row in rows:
-                    ok, want = expected_fallback(phase, trace_events(row))
-                    if ok:
-                        detail = f"fallback observed: {want}"
-                        break
-                if not ok:
-                    status = "fail"
-                    detail = f"expected fallback missing: {expected_fallback(phase, [])[1]}"
-            if status == "pass":
-                for row in rows:
-                    if int(row[1]) != 200:
-                        status, detail = "fail", f"request status {row[1]}"
-                        break
-                    if row[2]:
-                        status, detail = "fail", f"error_redacted: {row[2]}"
-                        break
-                    for ev in trace_events(row):
-                        if ev.get("type") in ("failed", "rejected"):
-                            status, detail = "fail", f"trace {ev.get('type')}: {ev.get('reason', '')}"
-                            break
-                    if status != "pass":
-                        break
-            if status == "pass" and errs:
-                status, detail = "fail", f"proxy log ERROR: {errs[0][:200]}"
-            checks.append({
-                "phase": phase,
-                "cli": cli,
-                "status": status,
-                "detail": detail,
-                "version": versions.get(cli, "unknown"),
-                "run_dir": str(run_dir.relative_to(home)),
-            })
-            print(f"{cli:14s} {phase:11s} {status:20s} {detail}")
+                time.sleep(1)
+            checks.append(check)
+            print(f"{cli:14s} {phase:11s} {check['status']:20s} {check['detail']}")
 
     finished = datetime.now(timezone.utc).isoformat()
     clis: dict[str, dict] = {}
