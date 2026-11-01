@@ -45,23 +45,32 @@ Without either variable the matrix tests skip with a clear reason; the
 
 ## Status
 
-Green today (existing surfaces):
-- OpenAI Chat client → Ollama Cloud (OpenAI-compatible) upstream, streaming.
-- OpenAI Responses client → Responses upstream.
-- Anthropic Messages client → Anthropic upstream, streaming.
-- Chat client → Anthropic upstream; Responses client → Anthropic upstream.
-- Ollama native client → Ollama native upstream, NDJSON streaming.
-- Chat client → Ollama native upstream.
-- Chat client → Responses upstream, tool call.
-- Faults: upstream 429/Retry-After and mid-stream truncation surface as errors.
+Green today:
 
-Planned cells (red until the surface exists; the fix loop owns them):
-- Native Gemini upstream (`generateContent`/`streamGenerateContent`) and the
-  native Gemini client surface.
-- Ollama Cloud's Anthropic-compatible `/v1/messages` upstream (only if a
-  product path uses it) and the remaining kept pairings.
-- Every client surface × every kept upstream wire, including the web-tool
-  emulation flows.
+**The pair matrix (80 cells).** Every client surface × upstream wire ×
+{text, tools} × {non-streaming, streaming}, driven by the two runners
+`TestMatrix_TextPairs` and `TestMatrix_ToolPairs` — the manifest
+(`internal/e2e/testdata/matrix.json`) is the single source of truth, the
+runners only execute it.
+
+**Scenario and fault cells.** Streaming round trips per surface, the
+cross-protocol scenarios, the tool-call round trip, upstream 429/Retry-After
+and mid-stream truncation (must surface as errors), the emulated
+web_search flow (Anthropic client, fully offline — MockServer also plays the
+Firecrawl v2 backend), count_tokens (local estimate, no upstream call), and
+the negative control (a 200 with a wrong wire shape must fail the client).
+
+**Gates.** `TestMatrix_ManifestIsComplete` enforces the full cross product
+and a reason on every pending cell;
+`.github/test-matrix/check_manifest.py` enforces that the manifest and the
+Go tests agree in both directions, and the workflow runs the whole matrix
+with `-count=2` for determinism.
+
+Pending cells (the manifest names the reason for each; the fix loop owns them):
+- Native Gemini upstream and client surface (40 pair cells).
+- The chat-surface web-tool claim flow, web_fetch emulation,
+  `previous_response_id`, thinking, vision fallback, client cancel,
+  the codex OAuth upstream and the decision surfaces.
 - M2: the 14 CLIs, plain start, full scenario set.
 
 Out of scope (no client or product path uses them): embeddings, audio, images,

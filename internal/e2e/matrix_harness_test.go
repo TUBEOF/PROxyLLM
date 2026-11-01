@@ -34,6 +34,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/server/httpapi"
 	"github.com/tubeof/proxyllm/internal/storage"
 	"github.com/tubeof/proxyllm/internal/testutil/mockserver"
+	"github.com/tubeof/proxyllm/internal/tools/firecrawl"
 )
 
 // upstream is one provider row under test: its type decides the wire the
@@ -69,8 +70,32 @@ func allCaps() provider.Capabilities {
 // the expectations afterwards (after a Reset, which the harness performs).
 func newMatrixEnv(t *testing.T, ups ...upstream) *matrixEnv {
 	t.Helper()
+	return buildMatrixEnv(t, nil, ups...)
+}
+
+// newMatrixEnvEmulated assembles the same proxy with the web-tool emulator
+// pool pointed at MockServer too, so the emulated web_search/web_fetch flow
+// runs entirely offline: MockServer also serves the Firecrawl v2 wire as the
+// web-tool backend.
+func newMatrixEnvEmulated(t *testing.T, ups ...upstream) *matrixEnv {
+	t.Helper()
+	return buildMatrixEnv(t, func(base string) routing.Emulator {
+		emu := firecrawl.NewEmulator(base, "simulated-key", nil)
+		return routing.NewEmulatorPool([]routing.Emulator{emu}, []routing.Emulator{emu})
+	}, ups...)
+}
+
+// buildMatrixEnv assembles the proxy; emuFactory (nil for none) receives the
+// MockServer base URL so the web-tool backend and the expectations share one
+// instance.
+func buildMatrixEnv(t *testing.T, emuFactory func(base string) routing.Emulator, ups ...upstream) *matrixEnv {
+	t.Helper()
 	ms := mockserver.New(t)
 	ms.Reset(t)
+	var emu routing.Emulator
+	if emuFactory != nil {
+		emu = emuFactory(ms.URL)
+	}
 
 	ctx := context.Background()
 	st, err := storage.Open(config.StorageConfig{Path: t.TempDir() + "/test.db"})
@@ -103,6 +128,7 @@ func newMatrixEnv(t *testing.T, ups ...upstream) *matrixEnv {
 	exec := routing.NewExecutor(routing.ExecutorConfig{
 		Registry:     reg,
 		Health:       health,
+		Emulator:     emu,
 		RetrySleeper: func(time.Duration) {},
 	})
 	h := httpapi.New(httpapi.Params{Store: st, Router: router, Executor: exec})

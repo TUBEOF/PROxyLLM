@@ -51,5 +51,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-      - name: Protocol conformance matrix
-        run: go test ./internal/e2e/ -run 'TestMatrix_' -v
+      - name: Manifest gate (cells and tests must agree)
+        run: python3 -I .github/test-matrix/check_manifest.py
+      - name: Protocol conformance matrix (run twice for determinism)
+        run: go test ./internal/e2e/ -run 'TestMatrix_' -v -count=2

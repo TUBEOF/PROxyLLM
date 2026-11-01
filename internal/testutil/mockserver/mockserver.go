@@ -122,9 +122,10 @@ func (s *Server) Upsert(t *testing.T, expectation any) {
 
 // Recorded is one request MockServer received.
 type Recorded struct {
-	Method string `json:"method"`
-	Path   string `json:"path"`
-	Body   struct {
+	Method  string              `json:"method"`
+	Path    string              `json:"path"`
+	Headers map[string][]string `json:"headers"`
+	Body    struct {
 		Type string          `json:"type"`
 		JSON json.RawMessage `json:"json"`
 	} `json:"body"`
