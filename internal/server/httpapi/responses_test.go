@@ -353,3 +353,51 @@ func TestResponses_NoRoute(t *testing.T) {
 		t.Errorf("no-route error body missing fields: %s", body)
 	}
 }
+
+// previous_response_id: the POST surface keeps the turn it answered, so a
+// client that chains the next request by id sees the earlier input and answer
+// (a tool result arriving without its tool call is the failure this prevents).
+func TestResponses_PreviousResponseIDChainsTurn(t *testing.T) {
+	e := newEnv(t)
+	e.mock.Enqueue(mockJSON(t, http.StatusOK, string(golden(t, "openai/chat-response.json"))))
+	e.mock.Enqueue(mockJSON(t, http.StatusOK, string(golden(t, "openai/chat-response.json"))))
+
+	status, body := e.post(t, "/v1/responses", `{"model":"gpt-5","input":"My name is Zebra."}`)
+	if status != http.StatusOK {
+		t.Fatalf("first turn status = %d, want 200 (body %s)", status, body)
+	}
+	var first struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(body), &first); err != nil || first.ID == "" {
+		t.Fatalf("first turn carries no response id: %v (%s)", err, body)
+	}
+
+	status, body = e.post(t, "/v1/responses",
+		`{"model":"gpt-5","previous_response_id":"`+first.ID+`","input":"What is my name?"}`)
+	if status != http.StatusOK {
+		t.Fatalf("chained turn status = %d, want 200 (body %s)", status, body)
+	}
+
+	reqs := e.mock.Requests()
+	if len(reqs) != 2 {
+		t.Fatalf("upstream requests = %d, want 2", len(reqs))
+	}
+	if !strings.Contains(reqs[1].Body, "My name is Zebra.") {
+		t.Errorf("chained request lost the earlier turn: %s", reqs[1].Body)
+	}
+}
+
+// An id this process does not hold is the documented 404, never a silently
+// orphaned turn answered as if the conversation had never happened.
+func TestResponses_UnknownPreviousResponseID(t *testing.T) {
+	e := newEnv(t)
+	status, body := e.post(t, "/v1/responses",
+		`{"model":"gpt-5","previous_response_id":"resp_missing","input":"What is my name?"}`)
+	if status != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 (body %s)", status, body)
+	}
+	if reqs := e.mock.Requests(); len(reqs) != 0 {
+		t.Errorf("upstream requests = %d, want 0 (the 404 must not dispatch)", len(reqs))
+	}
+}

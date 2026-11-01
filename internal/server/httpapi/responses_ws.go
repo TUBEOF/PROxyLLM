@@ -30,10 +30,10 @@ import (
 
 const (
 	wsWriteTimeout = 15 * time.Second
-	// wsHistoryLimit bounds remembered responses per connection. Codex keeps
+	// responseHistoryLimit bounds remembered responses per connection. Codex keeps
 	// one conversation per connection; a small LRU is enough and keeps a
 	// long-lived socket from growing without bound.
-	wsHistoryLimit = 16
+	responseHistoryLimit = 16
 )
 
 // handleResponsesWS serves the Responses WebSocket upgrade. A plain GET keeps
@@ -59,7 +59,7 @@ func (a *api) handleResponsesWS(w http.ResponseWriter, r *http.Request) {
 	conn.SetReadLimit(32 << 20)
 
 	wc := &wsConn{c: conn}
-	hist := newWSHistory(wsHistoryLimit)
+	hist := newResponseHistory(responseHistoryLimit)
 
 	readCtx, readCancel := context.WithCancel(r.Context())
 	defer readCancel()
@@ -133,7 +133,7 @@ func (a *api) handleResponsesWS(w http.ResponseWriter, r *http.Request) {
 
 // serveWSResponse runs one response.create frame through the same pipeline as
 // POST /v1/responses.
-func (a *api) serveWSResponse(ctx context.Context, wc *wsConn, r *http.Request, raw []byte, previousID string, hist *wsHistory) {
+func (a *api) serveWSResponse(ctx context.Context, wc *wsConn, r *http.Request, raw []byte, previousID string, hist *responseHistory) {
 	req, err := openai.ResponsesCodec{}.DecodeRequest(raw)
 	if err != nil {
 		msg := redactUpstreamMessage(err.Error())
@@ -330,6 +330,9 @@ func relayWSStream(ctx context.Context, ch <-chan ir.StreamEvent, enc openai.Str
 				}
 			case ir.Error:
 				if ev.Error != nil {
+					if ev.Error.Type == "" {
+						ev.Error.Type = errTypeUpstream
+					}
 					streamErr = ev.Error
 				}
 				_ = enc.Write(ctx, ev)
@@ -383,19 +386,22 @@ func (w *wsConn) Event(_ string, data string) error {
 // Comment has no WebSocket equivalent; comments are SSE-only.
 func (w *wsConn) Comment(string) error { return nil }
 
-// wsHistory is a bounded per-connection response history.
-type wsHistory struct {
+// responseHistory is a bounded per-connection response history.
+type responseHistory struct {
 	mu    sync.Mutex
 	max   int
 	order []string
 	turns map[string][]ir.Message
 }
 
-func newWSHistory(max int) *wsHistory {
-	return &wsHistory{max: max, turns: make(map[string][]ir.Message)}
+func newResponseHistory(max int) *responseHistory {
+	return &responseHistory{max: max, turns: make(map[string][]ir.Message)}
 }
 
-func (h *wsHistory) get(id string) ([]ir.Message, bool) {
+func (h *responseHistory) get(id string) ([]ir.Message, bool) {
+	if h == nil {
+		return nil, false
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	msgs, ok := h.turns[id]
@@ -405,8 +411,8 @@ func (h *wsHistory) get(id string) ([]ir.Message, bool) {
 	return cloneMessages(msgs), true
 }
 
-func (h *wsHistory) put(id string, msgs []ir.Message) {
-	if id == "" {
+func (h *responseHistory) put(id string, msgs []ir.Message) {
+	if h == nil || id == "" {
 		return
 	}
 	h.mu.Lock()

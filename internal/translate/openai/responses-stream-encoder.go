@@ -113,7 +113,7 @@ type responsesEncItem struct {
 
 // NewResponsesStreamEncoder returns the OpenAI Responses-API SSE stream
 // encoder for w.
-func NewResponsesStreamEncoder(w io.Writer) translate.StreamEncoder {
+func NewResponsesStreamEncoder(w io.Writer) StreamEncoderWithID {
 	return &responsesStreamEncoder{sink: sseEventSink{w: w}}
 }
 
