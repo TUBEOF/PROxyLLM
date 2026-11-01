@@ -460,8 +460,15 @@ def evaluate_feature(
         status, detail = "fail", f"CLI {detail}: {tail}"
     elif not rows:
         status, detail = "fail", "no request_logs row"
+    # A 499 row is the CLIENT abandoning its own request (the proxy's own
+    # rule: abandoned is neither success nor failure). CLIs fire-and-cancel
+    # auxiliary calls (titles, prewarm); only a run with no completed row at
+    # all is a failure.
+    completed = [row for row in rows if int(row[1]) != 499]
+    if status == "pass" and not completed:
+        status, detail = "fail", "no request_logs row completed (every row was client-abandoned)"
     if status == "pass":
-        for row in rows:
+        for row in completed:
             if int(row[1]) != 200:
                 status, detail = "fail", f"request status {row[1]}"
                 break

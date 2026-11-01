@@ -56,6 +56,13 @@ the image into the model request).
   catch.
 - A feature is skipped only when the adapter declares no headless path for
   it, and the report carries that reason.
+- A `499` request row is the CLI abandoning its own request (the proxy's own
+  rule: abandoned is neither a success nor a provider failure), so it does not
+  fail a task — CLIs fire-and-cancel auxiliary calls. A run whose every row
+  was abandoned still fails, and so does any other non-200 row.
+- Claude Code runs with `--output-format stream-json`: the CLI's `json`
+  format intermittently emits an empty `result` on continued turns, which
+  would strip the answer out of the evidence.
 
 ## CLI coverage
 

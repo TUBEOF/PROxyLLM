@@ -43,7 +43,8 @@
     "-p",
     "{{PROMPT}}",
     "--output-format",
-    "json"
+    "stream-json",
+    "--verbose"
   ],
   "canary": [
     "~/.claude",
@@ -57,7 +58,8 @@
         "-p",
         "{{PROMPT}}",
         "--output-format",
-        "json",
+        "stream-json",
+        "--verbose",
         "--allowedTools",
         "Read"
       ]
@@ -67,7 +69,8 @@
         "-p",
         "{{PROMPT}}",
         "--output-format",
-        "json",
+        "stream-json",
+        "--verbose",
         "--allowedTools",
         "WebSearch",
         "WebFetch",
@@ -80,7 +83,8 @@
           "-p",
           "{{PROMPT}}",
           "--output-format",
-          "json",
+          "stream-json",
+          "--verbose",
           "--allowedTools",
           "WebSearch",
           "WebFetch",
@@ -91,7 +95,8 @@
           "-p",
           "{{PROMPT}}",
           "--output-format",
-          "json",
+          "stream-json",
+          "--verbose",
           "--allowedTools",
           "WebSearch",
           "WebFetch",
