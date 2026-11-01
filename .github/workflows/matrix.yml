@@ -1,0 +1,55 @@
+name: matrix
+
+# Protocol conformance matrix: every client surface against every upstream
+# wire, with MockServer (an established open-source LLM mock server) producing
+# the provider's real response shape — streaming, tool calls and fault
+# profiles included. No provider key, no GPU.
+#
+# Local run:
+#   java -jar mockserver.jar -serverPort 1080
+#   MOCKSERVER_URL=http://127.0.0.1:1080 go test ./internal/e2e -run TestMatrix_ -v
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "internal/**"
+      - "cmd/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/matrix.yml"
+  pull_request:
+    paths:
+      - "internal/**"
+      - "cmd/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/matrix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      mockserver:
+        image: mockserver/mockserver:9.2.0
+        ports:
+          - 1080:1080
+    env:
+      MOCKSERVER_URL: http://127.0.0.1:1080
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Protocol conformance matrix
+        run: go test ./internal/e2e/ -run 'TestMatrix_' -v
