@@ -65,6 +65,28 @@
         "--json",
         "{{PROMPT}}"
       ]
+    },
+    "multi_turn": {
+      "turns": [
+        [
+          "--search",
+          "exec",
+          "--skip-git-repo-check",
+          "--dangerously-bypass-approvals-and-sandbox",
+          "--json",
+          "{{PROMPT}}"
+        ],
+        [
+          "--search",
+          "exec",
+          "resume",
+          "--last",
+          "--skip-git-repo-check",
+          "--dangerously-bypass-approvals-and-sandbox",
+          "--json",
+          "{{PROMPT}}"
+        ]
+      ]
     }
   },
   "skip_reasons": {

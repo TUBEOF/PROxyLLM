@@ -73,6 +73,31 @@
         "WebFetch",
         "Read"
       ]
+    },
+    "multi_turn": {
+      "turns": [
+        [
+          "-p",
+          "{{PROMPT}}",
+          "--output-format",
+          "json",
+          "--allowedTools",
+          "WebSearch",
+          "WebFetch",
+          "Read"
+        ],
+        [
+          "-c",
+          "-p",
+          "{{PROMPT}}",
+          "--output-format",
+          "json",
+          "--allowedTools",
+          "WebSearch",
+          "WebFetch",
+          "Read"
+        ]
+      ]
     }
   },
   "skip_reasons": {

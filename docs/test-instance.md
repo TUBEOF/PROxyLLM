@@ -2,9 +2,9 @@
 
 The live CLI suite is `.github/workflows/live-cli.yml`. It builds the current
 sources, starts an ephemeral PROxyLLM instance on `127.0.0.1:18080`, configures
-Ollama Cloud through the admin API, and runs every supported CLI through four
-phases. The reusable scripts live under `.github/live-cli/`; this page owns the
-invariants.
+Ollama Cloud through the admin API, and runs every supported CLI through the
+feature matrix. The reusable scripts live under `.github/live-cli/`; this page
+owns the invariants.
 
 ## Trigger and secrets
 
@@ -21,8 +21,12 @@ invariants.
 ## Phases
 
 Each task is a separate CLI invocation with a fresh run directory, and every
-task exercises exactly one feature. Prompts are English only. After every task
-the driver checks the CLI exit code, the `request_logs` row (200, empty
+task exercises exactly one feature. Prompts are English only — except the
+multi-turn task, which opens with a German greeting because that is the
+conversation shape a real user of these CLIs actually had. A multi-turn task
+runs its turns in sequence in one session (the adapter declares one argv
+template per turn), which is how a user continues a conversation. After every
+task the driver checks the CLI exit code, the `request_logs` row (200, empty
 `error_redacted`, no `failed`/`rejected` in the trace) and the proxy log window
 (no `ERROR`).
 
@@ -30,6 +34,7 @@ the driver checks the CLI exit code, the `request_logs` row (200, empty
 |---|---|---|---|
 | `hello` | 1 | chat | 200, no error, no proxy `ERROR` |
 | `tools` | 1 (read `notes.txt`) | chat | the marker file's line appears in the CLI output |
+| `multi_turn` | 2 (two turns in one session) | chat | the second turn's output carries a value the model cannot know from the first (`4711`), and — for the web task — a **successful** `emulated_tool(to="web_search")` on the second turn plus a cited URL |
 | `vision` | 1 | blind model + vision fallback | `capability_fallback` with `capability="vision"` **and** `image_caption` |
 | `web_search` | 3 independent queries | chat | a **successful** `emulated_tool` with `to="web_search"` and more than zero results, **and** a cited `http(s)://` URL in the CLI output |
 | `web_fetch` | 2 independent pages | chat | a **successful** `emulated_tool` with `to="web_fetch"` and its `fetched` reason, **and** a value only the live page can contain (a fresh random number / string) in the CLI output |
@@ -57,17 +62,17 @@ the image into the model request).
 Every runnable adapter is attempted for every feature; an adapter that cannot
 run one declares it in its manifest and the report names the reason.
 
-| CLI | Tools | Vision | Web search | Web fetch |
-|---|---|---|---|---|
-| Claude Code | yes | no — `Read` did not attach the image | yes (`WebSearch`) | no — the model intermittently keeps `WebFetch`, which the CLI runs client-side |
-| Codex | yes | yes (`exec -i`) | yes (`--search`) | no — no fetch tool |
-| OpenCode | yes | no — `--file` did not attach the image | no | yes (`webfetch`, claimed) |
-| Qwen Code | yes | no | no | no — not exposed to the model in one-shot mode |
-| Cline | yes | no | no | yes (`fetch_web_content`, claimed) |
-| Continue | yes | no | no | yes (`Fetch`, claimed) |
-| Goose | yes | no — `read_image` does not reach the model request | no | no |
-| Kimi Code | yes | no — `Read` returns text, not an image part | no | yes (`FetchURL`, claimed) |
-| Aider | no | no | no | no |
+| CLI | Tools | Multi turn | Vision | Web search | Web fetch |
+|---|---|---|---|---|---|
+| Claude Code | yes | yes (`-c`) | no — `Read` did not attach the image | yes (`WebSearch`) | no — the model intermittently keeps `WebFetch`, which the CLI runs client-side |
+| Codex | yes | yes (`exec resume --last`) | yes (`exec -i`) | yes (`--search`) | no — no fetch tool |
+| OpenCode | yes | yes (`run -c`) | no — `--file` did not attach the image | no | yes (`webfetch`, claimed) |
+| Qwen Code | yes | yes (`-c`) | no | no | no — not exposed to the model in one-shot mode |
+| Cline | yes | no — headless resume needs a session id | no | no | yes (`fetch_web_content`, claimed) |
+| Continue | yes | yes (`--resume`) | no | no | yes (`Fetch`, claimed) |
+| Goose | yes | no — named-session resume is not verified headless | no — `read_image` does not reach the model request | no | no |
+| Kimi Code | yes | yes (`-c`) | no — `Read` returns text, not an image part | no | yes (`FetchURL`, claimed) |
+| Aider | no | no — `--message` keeps no session | no | no | no |
 
 Client-declared web tools are served through the web-tool accounts: the
 harness writes one `client_web_tools` mapping covering the CLIs' tool names

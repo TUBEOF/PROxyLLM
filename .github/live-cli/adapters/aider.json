@@ -53,6 +53,7 @@
     "tools": "Aider's --message mode has no agent tool",
     "vision": "Aider's --message mode cannot attach an image",
     "web_search": "Aider has no web search tool",
-    "web_fetch": "Aider has no web fetch tool"
+    "web_fetch": "Aider has no web fetch tool",
+    "multi_turn": "Aider's --message mode keeps no resumable session"
   }
 }

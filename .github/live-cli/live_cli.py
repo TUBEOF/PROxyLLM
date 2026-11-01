@@ -4,6 +4,10 @@
 Features (English prompts only, one feature per invocation):
   hello       — the CLI reaches the proxy at all.
   tools       — a client tool call (read a file) and its result.
+  multi_turn  — a real conversation: two turns in one session, the second
+                using the first. One task proves context is kept (a marker
+                the model cannot guess); one does a web search on the second
+                turn, the shape a user's follow-up actually takes.
   vision      — a real PNG through a blind model; the proxy MUST caption it
                 (route_trace: capability_fallback vision + image_caption).
   web_search  — three independent tasks; each MUST end with a successful
@@ -34,7 +38,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-FEATURES = ("hello", "tools", "vision", "web_search", "web_fetch")
+FEATURES = ("hello", "tools", "multi_turn", "vision", "web_search", "web_fetch")
 MARKER = "PROXYLLM-LIVE-MARKER-7Q"
 
 # Every task is one CLI invocation asking for exactly one feature. The web
@@ -48,6 +52,32 @@ TASKS: dict[str, list[dict]] = {
             "name": "read-file",
             "prompt": "Read the file notes.txt in the current directory and "
                       "reply with its first line only.",
+        },
+    ],
+    "multi_turn": [
+        {
+            # A fact the model cannot know from memory: the second turn can
+            # only answer it if the first turn reached the model.
+            "name": "remember-number",
+            "prompts": [
+                "Remember this number: 4711. Reply with OK only.",
+                "What number did I ask you to remember? Reply with the number only.",
+            ],
+            "marker_re": r"\b4711\b",
+        },
+        {
+            # The user's own shape: a greeting, then a web question as the
+            # follow-up. The search must happen on the SECOND turn and still
+            # answer with a source.
+            "name": "weather-second-turn",
+            "prompts": [
+                "Hallo!",
+                "Use the web search tool to find tomorrow's weather forecast "
+                "for Cologne, Germany. Cite the source URL.",
+            ],
+            "evidence": "web_search",
+            "requires": "web_search",
+            "marker_re": r"https?://",
         },
     ],
     "vision": [
@@ -138,7 +168,7 @@ def render_markdown(report: dict) -> str:
         "",
         f"Run: `{report['run_id']}`",
         "",
-        "| CLI | Version | Hello | Tools | Vision | Web Search | Web Fetch | Overall | Notes |",
+        "| CLI | Version | Hello | Tools | Multi Turn | Vision | Web Search | Web Fetch | Overall | Notes |",
         "|---|---|---|---|---|---|---|---|---|",
     ]
     for cli, info in sorted(report.get("clis", {}).items()):
@@ -277,7 +307,7 @@ def run_phase(
     adapter_dir: Path,
     cli: str,
     feature: str,
-    prompt: str,
+    prompts: list[str],
     model: str,
     image: Path,
     timeout: int,
@@ -298,8 +328,10 @@ def run_phase(
         key,
         "--model",
         model,
-        "--prompt",
-        prompt,
+    ]
+    for prompt in prompts:
+        args += ["--prompt", prompt]
+    args += [
         "--feature",
         feature,
         "--timeout",
@@ -320,6 +352,16 @@ def run_phase(
     return proc.returncode, result, run_dir
 
 
+def emulated_evidence(rows: list[tuple], family: str) -> str:
+    """The first successful emulated_tool reason across the run's requests,
+    or "" when no request produced one."""
+    for row in rows:
+        ok, why = emulated_success(trace_events(row), family)
+        if ok:
+            return why
+    return ""
+
+
 def feature_evidence(
     feature: str, task: dict, rows: list[tuple], stdout: str
 ) -> tuple[str, str]:
@@ -331,6 +373,18 @@ def feature_evidence(
         if MARKER not in stdout:
             return "fail", "the CLI output does not contain the file marker"
         return "pass", "tool result observed"
+    if feature == "multi_turn":
+        # The second turn must show it saw the first: a marker the model
+        # cannot guess, and (for the web task) a search that really ran.
+        marker_re = task.get("marker_re") or ""
+        if marker_re and not re.search(marker_re, stdout):
+            return "fail", f"the second turn did not use the first (no match for {marker_re!r})"
+        if task.get("evidence") == "web_search":
+            why = emulated_evidence(rows, "web_search")
+            if not why:
+                return "fail", "no successful emulated_tool(web_search) in the conversation"
+            return "pass", why
+        return "pass", "second turn used the first"
     if feature == "vision":
         ok = has_event(events, "capability_fallback", "capability", "vision") and has_event(
             events, "image_caption"
@@ -339,12 +393,7 @@ def feature_evidence(
             return "fail", "vision fallback missing (capability_fallback vision + image_caption)"
         return "pass", "vision fallback observed"
     if feature in ("web_search", "web_fetch"):
-        reason = ""
-        for row in rows:
-            ok, why = emulated_success(trace_events(row), feature)
-            if ok:
-                reason = why
-                break
+        reason = emulated_evidence(rows, feature)
         if not reason:
             return "fail", f"no successful emulated_tool(to={feature}) with content"
         if feature == "web_search" and not re.search(r"https?://", stdout):
@@ -376,7 +425,8 @@ def evaluate_feature(
     since = max_request_id(db)
     log_at = log_size(proxy_log)
     code, result, run_dir = run_phase(
-        home, base_url, key, adapter_dir, cli, feature, task["prompt"], model, image, timeout
+        home, base_url, key, adapter_dir, cli, feature,
+        task.get("prompts") or [task["prompt"]], model, image, timeout
     )
     # The request-log write is off the request path, and one CLI run makes
     # several requests. Wait until no NEW row appeared for two polls: breaking
@@ -494,6 +544,18 @@ def main() -> int:
                 continue
             model = inst["resolved"]["blind"] if feature == "vision" else inst["resolved"]["chat"]
             for task in TASKS[feature]:
+                # A task that needs another feature (the second-turn web task
+                # needs web_search) is skipped for a CLI that does not declare
+                # it — the rest of multi_turn still runs.
+                needed = task.get("requires")
+                if needed and not feature_supported(manifest, needed)[0]:
+                    checks.append({
+                        "feature": feature, "task": task["name"], "cli": cli,
+                        "status": "skipped_unsupported",
+                        "detail": f"needs {needed}: {feature_supported(manifest, needed)[1]}",
+                        "version": versions.get(cli, "unknown"),
+                    })
+                    continue
                 print(f"{cli:14s} {feature:11s} {task['name']:22s} running", flush=True)
                 check = evaluate_feature(
                     home, db, proxy_log, base_url, key, adapter_dir, cli, manifest,
@@ -514,8 +576,13 @@ def main() -> int:
             "version": versions.get(check["cli"], "unknown"), "phases": {}, "skips": {},
         })
         if check["status"] == "skipped_unsupported":
-            entry["skips"][check["feature"]] = check["detail"]
-            entry["phases"].setdefault(check["feature"], "skipped")
+            if check["task"] not in ("*", ""):
+                # One task of a supported feature (the second-turn web task on
+                # a CLI without a web tool): a note, not a skipped feature.
+                entry["skips"][f"{check['feature']} ({check['task']})"] = check["detail"]
+            else:
+                entry["skips"][check["feature"]] = check["detail"]
+                entry["phases"].setdefault(check["feature"], "skipped")
             continue
         # A feature passes only when every one of its tasks passed.
         current = entry["phases"].get(check["feature"], "pass")
@@ -523,7 +590,7 @@ def main() -> int:
             "fail" if "fail" in (current, check["status"]) else "pass"
         )
     report = {
-        "schema": 2,
+        "schema": 3,
         "run_id": run_id,
         "started_at": started,
         "finished_at": finished,

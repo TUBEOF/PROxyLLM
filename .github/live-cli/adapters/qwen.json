@@ -37,7 +37,20 @@
     "~/.qwen"
   ],
   "features": {
-    "tools": {}
+    "tools": {},
+    "multi_turn": {
+      "turns": [
+        [
+          "-p",
+          "{{PROMPT}}"
+        ],
+        [
+          "-c",
+          "-p",
+          "{{PROMPT}}"
+        ]
+      ]
+    }
   },
   "skip_reasons": {
     "vision": "Qwen Code has no headless image attachment",
