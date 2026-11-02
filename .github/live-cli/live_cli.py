@@ -168,6 +168,11 @@ def render_markdown(report: dict) -> str:
         "",
         f"Run: `{report['run_id']}`",
         "",
+    ]
+    if report.get("run_aborted"):
+        lines.append(f"**{report['run_aborted']}**")
+        lines.append("")
+    lines += [
         "| CLI | Version | Hello | Tools | Multi Turn | Vision | Web Search | Web Fetch | Overall | Notes |",
         "|---|---|---|---|---|---|---|---|---|",
     ]
@@ -536,6 +541,8 @@ def main() -> int:
 
     started = datetime.now(timezone.utc).isoformat()
     checks: list[dict] = []
+    cooldown_streak = 0
+    aborted = ""
     for cli in names:
         manifest = adapters.get(cli)
         if not manifest:
@@ -575,6 +582,35 @@ def main() -> int:
                     f"{check['status']:20s} {check['detail']}",
                     flush=True,
                 )
+                # A provider in health cooldown fails every following task at
+                # its own per-CLI retry budget — three tasks of that burn
+                # minutes per CLI and the job dies in the 90-minute cap long
+                # before the suite is honest about anything. Fail fast: abort
+                # the run; the report carries the reason and the already-run
+                # failures stay verbatim.
+                if "health cooldown" in check["detail"]:
+                    cooldown_streak += 1
+                else:
+                    cooldown_streak = 0
+                if cooldown_streak >= 3:
+                    for rest in FEATURES[FEATURES.index(feature):][1:]:
+                        if feature_supported(manifest, rest)[0]:
+                            for rest_task in TASKS[rest]:
+                                checks.append({
+                                    "feature": rest, "task": rest_task["name"], "cli": cli,
+                                    "status": "skipped_unsupported",
+                                    "detail": "aborted: proxy provider in health cooldown (upstream quota/availability)",
+                                    "version": versions.get(cli, "unknown"),
+                                })
+                    aborted = (
+                        "Run aborted after repeated health-cooldown failures of the proxy's "
+                        "provider (upstream quota/availability). Tasks that already ran keep "
+                        "their own result; the report is NOT a clean pass."
+                    )
+                    print("abort: proxy provider in health cooldown; aborted early", flush=True)
+
+        if aborted:
+            break
 
     finished = datetime.now(timezone.utc).isoformat()
     clis: dict[str, dict] = {}
@@ -602,6 +638,7 @@ def main() -> int:
         "started_at": started,
         "finished_at": finished,
         "instance": {"base_url": base_url, "models": inst.get("resolved", {})},
+        "run_aborted": aborted,
         "clis": clis,
         "checks": checks,
     }
