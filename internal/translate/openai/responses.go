@@ -671,9 +671,54 @@ func responsesMessageFromItem(item responsesWireItem) []ir.Message {
 				Signature: item.EncryptedContent,
 			}},
 		}}
+	case "web_search_call":
+		// A client replaying the previous turn's search item (the contract's
+		// restore-into-context path) must reach the upstream as part of the
+		// conversation instead of being silently dropped. The IR carries it
+		// as the server-tool use it is: the action's raw JSON rides Input,
+		// and the same-wire encoder re-renders the item.
+		action := responsesActionInput(item.Action)
+		if action == "" {
+			return nil
+		}
+		return []ir.Message{{
+			Role: ir.RoleAssistant,
+			Parts: []ir.Part{ir.ServerToolUsePart{
+				ID:    item.ID,
+				Name:  "web_search",
+				Input: json.RawMessage(action),
+			}},
+		}}
 	default:
 		return nil
 	}
+}
+
+// responsesActionInput flattens the item's action object into the JSON the
+// IR's ServerToolUsePart.Input carries (the same shape the encoder reads the
+// search query back out of).
+func responsesActionInput(action *responsesWireSearchAction) string {
+	if action == nil {
+		return ""
+	}
+	raw, err := json.Marshal(action)
+	if err != nil || len(raw) == 0 {
+		return ""
+	}
+	return string(raw)
+}
+
+// responsesActionFromInput rebuilds the action object from the input JSON a
+// decoded ServerToolUsePart carries (decode(encode(x)) symmetry).
+func responsesActionFromInput(input json.RawMessage) *responsesWireSearchAction {
+	if len(input) == 0 {
+		return nil
+	}
+	var a responsesWireSearchAction
+	if err := json.Unmarshal(input, &a); err != nil {
+		return nil
+	}
+	return &a
 }
 
 // responsesItemsFromMessage maps one IR message onto input items.
@@ -722,6 +767,18 @@ func responsesItemsFromMessage(m ir.Message) []responsesWireItem {
 				}
 				item.EncryptedContent = pt.Signature
 				items = append(items, item)
+			case ir.ServerToolUsePart:
+				// The replayed search item: the contract restores it into
+				// the context (input item web_search_call with its action).
+				if pt.Name != "web_search" {
+					break
+				}
+				items = append(items, responsesWireItem{
+					Type:   "web_search_call",
+					ID:     pt.ID,
+					Status: "completed",
+					Action: responsesActionFromInput(pt.Input),
+				})
 			default:
 				textParts = append(textParts, pt)
 			}

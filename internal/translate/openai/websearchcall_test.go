@@ -66,16 +66,58 @@ func TestEncodeResponse_WebSearchCallItem(t *testing.T) {
 	}
 }
 
-func TestEncodeResponse_WebSearchRoundTripsAsInput(t *testing.T) {
-	// The same shape must survive input→IR→encode unchanged — the replay
-	// path Codex uses when it sends the previous turn's search calls back.
-	in := []byte(`{"model":"gpt-test","input":[{"type":"web_search_call","id":"ws_9","status":"completed","action":{"type":"search","query":"wetter köln"}}]}`)
+func TestEncodeResponse_WebSearchReplayRoundTrip(t *testing.T) {
+	// A client replaying the previous turn's search item must reach the
+	// upstream conversation instead of being dropped: input→IR→encode
+	// round-trips the item (the contract's restore-into-context path).
+	in := []byte(`{"model":"gpt-test","input":[
+		{"type":"message","role":"user","content":"und morgen?"},
+		{"type":"web_search_call","id":"ws_9","status":"completed","action":{"type":"search","query":"wetter köln"}}
+	]}`)
 	req, err := oa.ResponsesCodec{}.DecodeRequest(in)
 	if err != nil {
 		t.Fatalf("DecodeRequest: %v", err)
 	}
-	if len(req.Messages) != 0 {
-		t.Fatalf("a bare web_search_call input decodes to %d messages, want 0", len(req.Messages))
+	var found bool
+	for _, m := range req.Messages {
+		for _, p := range m.Parts {
+			if c, ok := p.(ir.ServerToolUsePart); ok && c.Name == "web_search" && c.ID == "ws_9" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("the replayed web_search_call is lost after decode: %+v", req.Messages)
+	}
+	// Re-encode: the item renders back with the stored query; the answer
+	// conversation keeps its order.
+	raw, err := oa.ResponsesCodec{}.EncodeRequest(req)
+	if err != nil {
+		t.Fatalf("EncodeRequest: %v", err)
+	}
+	var doc struct {
+		Input []struct {
+			Type   string `json:"type"`
+			ID     string `json:"id"`
+			Action *struct {
+				Type  string `json:"type"`
+				Query string `json:"query"`
+			} `json:"action"`
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"input"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("re-decode: %v (%s)", err, raw)
+	}
+	ok := false
+	for _, it := range doc.Input {
+		if it.Type == "web_search_call" && it.ID == "ws_9" && it.Action != nil && it.Action.Query == "wetter köln" {
+			ok = true
+		}
+	}
+	if !ok {
+		t.Fatalf("the re-encoded request lost the search item: %s", raw)
 	}
 }
 
