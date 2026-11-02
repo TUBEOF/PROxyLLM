@@ -1,9 +1,9 @@
-package openai
+package openai_test
 
 // web_search_call contract (RED-GREEN): the Responses surface renders an
 // emulated web search as the item the real API emits — verified 2026-11-02
-// against the SDK types and openresponses.org. Expectations derive from the
-// official contract, never from this encoder's behaviour.
+// against the official SDK types and openresponses.org. Expectations derive
+// from the official contract, never from this encoder's behaviour.
 
 import (
 	"encoding/json"
@@ -11,10 +11,11 @@ import (
 	"testing"
 
 	"github.com/tubeof/proxyllm/internal/translate/ir"
+	oa "github.com/tubeof/proxyllm/internal/translate/openai"
 )
 
 func TestEncodeResponse_WebSearchCallItem(t *testing.T) {
-	raw, err := ResponsesCodec{}.EncodeResponse(ir.Response{
+	raw, err := oa.ResponsesCodec{}.EncodeResponse(ir.Response{
 		ID:    "resp_1",
 		Model: "gpt-test",
 		Content: []ir.Part{
@@ -69,11 +70,43 @@ func TestEncodeResponse_WebSearchRoundTripsAsInput(t *testing.T) {
 	// The same shape must survive input→IR→encode unchanged — the replay
 	// path Codex uses when it sends the previous turn's search calls back.
 	in := []byte(`{"model":"gpt-test","input":[{"type":"web_search_call","id":"ws_9","status":"completed","action":{"type":"search","query":"wetter köln"}}]}`)
-	req, err := ResponsesCodec{}.DecodeRequest(in)
+	req, err := oa.ResponsesCodec{}.DecodeRequest(in)
 	if err != nil {
 		t.Fatalf("DecodeRequest: %v", err)
 	}
 	if len(req.Messages) != 0 {
 		t.Fatalf("a bare web_search_call input decodes to %d messages, want 0", len(req.Messages))
+	}
+}
+
+func TestStreamEncode_WebSearchCallItem(t *testing.T) {
+	events := []ir.StreamEvent{
+		{Type: ir.Start, Response: &ir.Response{ID: "resp_1", Model: "gpt-test"}},
+		{Type: ir.BlockStart, Index: 0, Part: ir.ServerToolUsePart{
+			ID: "ws_1", Name: "web_search",
+			Input: json.RawMessage(`{"query":"wetter köln morgen"}`),
+		}},
+		{Type: ir.BlockStop, Index: 0},
+		{Type: ir.BlockStart, Index: 1, Part: ir.TextPart{}},
+		{Type: ir.Delta, Index: 1, Delta: ir.DeltaPayload{Kind: ir.DeltaText, Text: "answer"}},
+		{Type: ir.BlockStop, Index: 1},
+		{Type: ir.MessageDelta, MessageDelta: &ir.MessageDeltaPayload{Usage: ir.Usage{InputTokens: 3, OutputTokens: 7}}},
+	}
+	out := string(encodeResponsesAll(t, events))
+	for _, want := range []string{
+		`"type":"web_search_call"`,
+		`"id":"ws_0"`,
+		`"status":"in_progress"`,
+		`"query":"wetter köln morgen"`,
+		`"type":"search"`,
+		`"status":"completed"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("stream %q missing %q", out, want)
+		}
+	}
+	if strings.Count(out, `"type":"web_search_call"`) != 3 {
+		t.Errorf("web_search_call items = %d, want 3 (added + done + completed snapshot)",
+			strings.Count(out, `"type":"web_search_call"`))
 	}
 }
