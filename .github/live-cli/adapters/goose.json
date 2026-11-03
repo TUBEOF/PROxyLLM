@@ -3,8 +3,8 @@
   "label": "Goose",
   "tier": "recommended",
   "command": "goose",
-  "install": "curl -fsSL https://github.com/aaif-goose/goose/releases/download/stable/goose-x86_64-unknown-linux-gnu.tar.bz2 -o /tmp/goose.tar.bz2 && mkdir -p /tmp/goose-extract && tar -xjf /tmp/goose.tar.bz2 -C /tmp/goose-extract && mkdir -p \"$HOME/.local/bin\" && install -m 0755 \"$(find /tmp/goose-extract -type f -name goose | head -1)\" \"$HOME/.local/bin/goose\"",
-  "tested": "latest",
+  "install": "curl -fsSL https://github.com/aaif-goose/goose/releases/download/v1.57.0/goose-x86_64-unknown-linux-gnu.tar.bz2 -o /tmp/goose.tar.bz2 && mkdir -p /tmp/goose-extract && tar -xjf /tmp/goose.tar.bz2 -C /tmp/goose-extract && mkdir -p \"$HOME/.local/bin\" && install -m 0755 \"$(find /tmp/goose-extract -type f -name goose | head -1)\" \"$HOME/.local/bin/goose\"",
+  "tested": "1.57.0",
   "runnable": true,
   "env_keep": [
     "PATH",
@@ -42,6 +42,9 @@
   "canary": [
     "~/.config/goose"
   ],
+  "files": {
+    "{{DATA_DIR}}/goose/config/config.yaml": "GOOSE_TELEMETRY_ENABLED: false\nactive_provider: openai\nproviders:\n  openai:\n    enabled: true\n    model: {{MODEL}}\n    configured: true\n"
+  },
   "features": {
     "tools": {}
   },
