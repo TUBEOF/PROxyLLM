@@ -84,6 +84,10 @@ jobs:
         run: |
           pipx install "openhands-ai==0.59.0"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install gptme CLI (pinned)
+        run: |
+          pipx install "gptme==0.36.0"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Ensure tmux (the plain-start driver runs CLIs in a pseudo-terminal)
         run: |
           if ! command -v tmux >/dev/null; then
@@ -93,4 +97,4 @@ jobs:
       - name: Build the proxy
         run: env -u GOROOT make build
       - name: Plain-start CLI matrix
-        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush,openhands --scenarios answer,recall
+        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush,openhands,gptme --scenarios answer,recall

@@ -125,21 +125,24 @@ def ms_reset(mockserver: str) -> None:
 
 
 # Observed wire facts (2026-11 codex 0.166 / claude-code 2.1.316 / crush
-# 0.99.0 / openhands 0.59.0): codex buffers /v1/responses turns upstream (no
-# "stream" key; plain string message content) and drives utility calls —
-# task-title generation — as STREAMED requests quoting the conversation;
-# Claude streams every Messages turn and sends the user prompt as its own text
-# part; crush streams chat completions with the user prompt as a plain string,
-# and its title calls stream too; openhands (with native_tool_calling in its
-# [llm] config) posts closed chat completions with the prompt as a plain
-# string and never streams — its agent loop has no utility calls, but the
-# CodeAct runtime appends a <RUNTIME_INFORMATION> user message after the
-# prompt on the first turn only. MockServer's LLM response follows the
-# expectation's streaming flag only, and its JSON matcher wants exact leaf
-# values, so each turn is pinned by its exact last user message in the CLI's
-# own shape, later turns ranked higher (their request carries earlier prompts
-# in history). The fallback buckets catch the utility traffic so no upstream
-# call 404s (the proxy would log the failure and fail the clean-rows check).
+# 0.99.0 / openhands 0.59.0 / gptme 0.36.0): codex buffers /v1/responses turns
+# upstream (no "stream" key; plain string message content) and drives utility
+# calls — task-title generation — as STREAMED requests quoting the
+# conversation; Claude streams every Messages turn and sends the user prompt
+# as its own text part; crush streams chat completions with the user prompt
+# as a plain string, and its title calls stream too; openhands (with
+# native_tool_calling in its [llm] config) posts closed chat completions with
+# the prompt as a plain string and never streams — its agent loop has no
+# utility calls, but the CodeAct runtime appends a <RUNTIME_INFORMATION> user
+# message after the prompt on the first turn only; gptme wraps every message
+# content (system included) in typed text parts, streams its model turns and
+# fires one closed auto-naming call after the first reply. MockServer's LLM
+# response follows the expectation's streaming flag only, and its JSON
+# matcher wants exact leaf values, so each turn is pinned by its exact last
+# user message in the CLI's own shape, later turns ranked higher (their
+# request carries earlier prompts in history). The fallback buckets catch the
+# utility traffic so no upstream call 404s (the proxy would log the failure
+# and fail the clean-rows check).
 def _mock_expectation(mockserver: str, text: str, streaming: bool,
                       priority: int, times: int | None, matcher: dict | None) -> None:
     req: dict = {"method": "POST", "path": UPSTREAM_PATH}
@@ -164,6 +167,14 @@ def _mock_expectation(mockserver: str, text: str, streaming: bool,
         raise SystemExit(f"expectation {text!r} -> HTTP {exc.code}: {detail}") from exc
 
 
+# Senders wrapping message content in an array of typed parts instead of a
+# plain string; the pinned matcher holds the prompt in the text part.
+# gptme sends arrays of typed parts to the OpenAI endpoint, but the proxy
+# forwards its turns as plain strings — the matcher must match the forwarded
+# shape, so only claude-code is pinned as a part-array sender here.
+PART_ARRAY = {"claude-code"}
+
+
 def mock_pinned(mockserver: str, cli: str, turns: list[tuple[str, str]], streaming: bool) -> None:
     for rank, (prompt, text) in enumerate(turns):
         matcher: dict = {"messages": [{"role": "user", "content": prompt}]}
@@ -172,7 +183,7 @@ def mock_pinned(mockserver: str, cli: str, turns: list[tuple[str, str]], streami
             priority = 150 + 10 * rank
         else:
             priority = 140 + 10 * rank
-        if cli == "claude-code":  # the only part-array sender
+        if cli in PART_ARRAY:
             matcher["messages"][0]["content"] = [{"text": prompt}]
         _mock_expectation(mockserver, text, streaming, priority, None, matcher)
 
@@ -227,17 +238,22 @@ def plain_command(manifest: Path) -> str:
 
 
 # A CLI is "ready" once its own chrome painted; each TUI names itself.
+# gptme flushes stdin before entering its read loop, so its ready marker must
+# be the composer prompt itself — text typed earlier is discarded.
 READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
-                 "openhands": "OpenHands CLI v"}
+                 "openhands": "OpenHands CLI v",
+                 "gptme": "User:"}
 
 # How each CLI's model turns stream upstream, and what the catch-all bucket
 # answer must look like to absorb the utility traffic (title generation):
 # codex buffers turns but streams its title calls, claude-code streams
 # nothing but turns, crush streams everything, openhands never streams its
-# turns and makes no utility calls.
-STREAMING = {"codex": False, "claude-code": True, "crush": True, "openhands": False}
+# turns and makes no utility calls, gptme streams turns but not its one
+# auto-naming call (a closed chat completion after the first reply).
+STREAMING = {"codex": False, "claude-code": True, "crush": True, "openhands": False,
+             "gptme": True}
 FALLBACK_STREAMING = {"codex": True, "claude-code": False, "crush": True,
-                      "openhands": False}
+                      "openhands": False, "gptme": False}
 
 # User-message markers that are runtime metadata, not model turns; see
 # turn_requests.
@@ -246,12 +262,16 @@ RUNTIME_HINTS = {"openhands": "<RUNTIME_INFORMATION>"}
 # First-run dialogs some TUIs paint before the composer; each entry waits for
 # its pane text, then presses keys. claude-code 2.1.316's trust dialog
 # defaults to "No, exit" — the Down moves it to "Yes, I trust this folder";
-# a blind Enter there exits the CLI with an empty pane.
+# a blind Enter there exits the CLI with an empty pane. gptme's picker
+# ("New conversation") is preselected, so Enter starts the chat.
 ONBOARDING = {
     "claude-code": [
         ("Choose the text style", ["Enter"]),
         ("Press Enter to continue", ["Enter"]),
         ("Quick safety check", ["Down", "Enter"]),
+    ],
+    "gptme": [
+        ("New conversation or load previous?", ["Enter"]),
     ],
 }
 
@@ -295,10 +315,31 @@ def tmux_pane(name: str) -> str:
     return tmux("capture-pane", "-p", "-t", name, check=False)
 
 
-def submit(name: str, text: str) -> None:
+# Some CLIs flush stdin when they repaint the composer after every turn, so
+# typed-ahead input is discarded: wait until the composer prompt itself is
+# the pane's last line before typing.
+PROMPT_TAIL = {"gptme": "User:"}
+
+
+def wait_pane_tail(name: str, tail: str, timeout: float, what: str) -> None:
+    """Wait until the pane's last non-empty line is the fresh composer prompt."""
+    deadline = time.time() + timeout
+    last = ""
+    while time.time() < deadline:
+        last = tmux_pane(name)
+        lines = [ln.rstrip() for ln in last.splitlines() if ln.strip()]
+        if lines and lines[-1] == tail:
+            return
+        time.sleep(0.5)
+    raise AssertionError(f"{what}: composer prompt {tail!r} is not the pane's last line; last pane:\n{last}")
+
+
+def submit(name: str, cli: str, text: str) -> None:
     """Send one prompt and submit it. The first Enter can race the TUI's own
     async input handling, so a second Enter follows while the composer still
     holds the text; an Enter on an empty composer is a no-op."""
+    if tail := PROMPT_TAIL.get(cli):
+        wait_pane_tail(name, tail, 30, "composer")
     tmux_send(name, text)
     time.sleep(1.0)
     tmux_send(name, "")
@@ -442,9 +483,9 @@ def scenario_answer(cli: str, manifest: Path, home: Path, base_url: str, key: st
     name = f"plain-{cli}-answer"
     tmux_spawn(name, cwd, env, [plain_command(manifest)])
     try:
-        wait_pane(name, READY_MARKERS.get(cli, cli), 45, "startup")  # the TUI painted its chrome
         onboard(name, cli)
-        submit(name, prompt)
+        wait_pane(name, READY_MARKERS.get(cli, cli), 45, "startup")  # the TUI painted its chrome
+        submit(name, cli, prompt)
         # The pane echoes the prompt AND the answer once; the answer marker
         # must appear on both, so two occurrences prove the model replied.
         wait_pane_count(name, marker, 2, 120, "answer")
@@ -475,11 +516,11 @@ def scenario_recall(cli: str, manifest: Path, home: Path, base_url: str, key: st
     name = f"plain-{cli}-recall"
     tmux_spawn(name, cwd, env, [plain_command(manifest)])
     try:
-        wait_pane(name, READY_MARKERS.get(cli, cli), 45, "startup")
         onboard(name, cli)
-        submit(name, t1)
+        wait_pane(name, READY_MARKERS.get(cli, cli), 45, "startup")
+        submit(name, cli, t1)
         wait_pane(name, "Noted.", 120, "recall turn 1")
-        submit(name, t2)
+        submit(name, cli, t2)
         # The turn-1 echo and the answer together prove the history came back;
         # the follow-up request carrying 4711 is asserted below from MockServer
         # regardless.
@@ -510,7 +551,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--home", required=True)
     parser.add_argument("--mockserver", required=True)
-    parser.add_argument("--clients", default="codex,claude-code,crush,openhands")
+    parser.add_argument("--clients", default="codex,claude-code,crush,openhands,gptme")
     parser.add_argument("--scenarios", default="answer,recall")
     parser.add_argument("--binary", default=str(REPO / "proxyllm"))
     parser.add_argument("--port", type=int, default=18190)
