@@ -1131,6 +1131,12 @@
    "note": ""
   },
   {
+   "id": "web__emulated-search-plain-client",
+   "test": "TestMatrix_WebEmulation_InjectWebTools_PlainClient",
+   "status": "green",
+   "note": ""
+  },
+  {
    "id": "count-tokens__anthropic",
    "test": "TestMatrix_AnthropicClient_CountTokens",
    "status": "green",
