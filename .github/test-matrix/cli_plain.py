@@ -156,7 +156,16 @@ def ms_reset(mockserver: str) -> None:
 # plain start has no onboarding keys — the seeded ~/.continue/
 # .onboarding_complete marker (a normal post-onboarding user's state) skips
 # the first-run Anthropic-key gate, and the config's custom openai model is
-# used with no Continue account.
+# used with no Continue account. goose 1.57.0 streams every call it makes
+# (model turns and one title call per turn, always with stream_options); its
+# last user message carries the typed prompt plus a <turn-context> block
+# whose per-turn timestamp cannot be pinned, so its turns are pinned
+# STRUCTURALLY — a real turn is the request that carries tool definitions
+# (the title calls carry none), and from turn 2 on the previous turn's
+# assistant reply in the history (stored verbatim) discriminates the turns.
+# Its wizard-shaped config seed (GOOSE_TELEMETRY_ENABLED: false plus
+# active_provider/providers.openai, the state a user's completed configure
+# run has) makes the plain start skip every first-run dialog.
 def _mock_expectation(mockserver: str, text: str, streaming: bool,
                       priority: int, times: int | None, matcher: dict | None) -> None:
     req: dict = {"method": "POST", "path": UPSTREAM_PATH}
@@ -220,6 +229,10 @@ AIDER_MESSAGE_SUFFIX = (
 )
 WRAPS_PROMPT = {"aider": True}
 
+# CLIs whose sent user message carries the typed prompt as a PREFIX (goose
+# appends its <turn-context> block after it; see STRUCTURE_PINNED).
+PREFIX_TURN = {"goose"}
+
 
 def last_user_content(cli: str, prompt: str) -> str:
     """The user message content the CLI puts on the wire for one typed prompt."""
@@ -228,11 +241,25 @@ def last_user_content(cli: str, prompt: str) -> str:
     return prompt
 
 
+# CLIs whose turns cannot be pinned by exact user-message content (goose
+# appends <turn-context> with a per-turn timestamp): their matcher is the
+# structural discriminator instead — a real turn is the request that carries
+# tool definitions, and turn >= 2 carries the previous turn's (verbatim)
+# assistant reply in the history. See the wire-facts note above.
+STRUCTURE_PINNED = {"goose"}
+
+
 def mock_pinned(mockserver: str, cli: str, turns: list[tuple[str, str]], streaming: bool) -> None:
     for rank, (prompt, text) in enumerate(turns):
         matcher: dict = {"messages": [{"role": "user", "content": last_user_content(cli, prompt)}]}
+        if cli in STRUCTURE_PINNED:
+            matcher = {"tools": [{"type": "function"}]}
+            if streaming:
+                matcher["stream"] = True
+            if rank:
+                matcher["messages"] = [{"role": "assistant", "content": turns[rank - 1][1]}]
         if streaming:
-            matcher["stream"] = True
+            matcher.setdefault("stream", True)
             priority = 150 + 10 * rank
         else:
             priority = 140 + 10 * rank
@@ -268,7 +295,8 @@ def turn_requests(reqs: list[dict], prompt: str, cli: str = "") -> list[dict]:
         last = msgs[-1]
         content = last.get("content")
         if isinstance(content, str):
-            if content == prompt or (WRAPS_PROMPT.get(cli) and content.startswith(prompt)):
+            if content == prompt or (WRAPS_PROMPT.get(cli) and content.startswith(prompt)) \
+                    or (cli in PREFIX_TURN and content.startswith(prompt)):
                 out.append(r)
         elif isinstance(content, list):
             if any(isinstance(p, dict) and p.get("type") == "text" and p.get("text") == prompt
@@ -307,6 +335,9 @@ READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
                  # the status strip name the CLI; the placeholder is stable
                  # across turns).
                  "continue": "Ask anything, @ for context",
+                 # goose: the first-run banner's start state, printed once
+                 # before the composer paints; "goose is ready" stays.
+                 "goose": "goose is ready",
                  "open-interpreter": "Open Interpreter (v"}
 
 # How each CLI's model turns stream upstream, and what the catch-all bucket
@@ -328,11 +359,11 @@ READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
 # means the driver never answers an onboarding dialog.
 STREAMING = {"codex": False, "claude-code": True, "crush": True, "openhands": False,
              "gptme": True, "aider": True, "cline": True,
-             "continue": True,
+             "continue": True, "goose": True,
              "open-interpreter": True}
 FALLBACK_STREAMING = {"codex": True, "claude-code": False, "crush": True,
                       "openhands": False, "gptme": False, "aider": True,
-                      "cline": True, "continue": False,
+                      "cline": True, "continue": False, "goose": True,
                       "open-interpreter": True}
 
 # User-message markers that are runtime metadata, not model turns; see
@@ -642,7 +673,7 @@ def main() -> int:
     parser.add_argument("--home", required=True)
     parser.add_argument("--mockserver", required=True)
     parser.add_argument("--clients",
-                        default="codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue")
+                        default="codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue,goose")
     parser.add_argument("--scenarios", default="answer,recall")
     parser.add_argument("--binary", default=str(REPO / "proxyllm"))
     parser.add_argument("--port", type=int, default=18190)
