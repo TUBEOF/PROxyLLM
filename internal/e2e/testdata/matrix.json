@@ -1156,9 +1156,8 @@
   },
   {
    "id": "history__previous-response-id",
-   "test": "",
-   "status": "pending",
-   "note": "previous_response_id is live on main (PR #79); the cell test still needs writing"
+   "test": "TestMatrix_History_PreviousResponseIDChain",
+   "status": "green"
   },
   {
    "id": "thinking__anthropic-client",

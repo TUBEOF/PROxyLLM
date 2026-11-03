@@ -79,8 +79,11 @@ and mid-stream truncation (must surface as errors), the emulated
 web-tool flows (fully offline — MockServer also plays the Firecrawl v2
 backend): the Anthropic search cell, the chat-surface client-web-tool claim,
 the web_fetch cell (prior-context guard + document result), the plain-CLI
-tool injection, count_tokens (local estimate, no upstream call), and
-the negative control (a 200 with a wrong wire shape must fail the client).
+tool injection, count_tokens (local estimate, no upstream call), the
+negative control (a 200 with a wrong wire shape must fail the client), the
+`previous_response_id` chain on POST /v1/responses (the next upstream request
+carries the restored first turn; an id the proxy does not hold is the
+documented 404).
 
 **Gates.** `TestMatrix_ManifestIsComplete` enforces the full cross product, a
 reason on every pending cell and the `schema_note` rule (a green pair cell is
@@ -90,8 +93,7 @@ Go tests agree in both directions, and the workflow runs the whole matrix
 with `-count=2` for determinism.
 
 Pending cells (the manifest names the reason for each; the fix loop owns them):
-- The `previous_response_id` cell test (the fix itself is live from PR #79),
-  vision fallback, client cancel, the codex OAuth upstream and
+- The vision fallback, client cancel, the codex OAuth upstream and
   the decision surfaces.
 - M2: the 14 CLIs, plain start, full scenario set.
 
