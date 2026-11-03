@@ -210,8 +210,8 @@
    "upstream": "gemini-native",
    "feature": "text",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "openai-chat__gemini-native__text__stream",
@@ -219,8 +219,8 @@
    "upstream": "gemini-native",
    "feature": "text",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "openai-chat__gemini-native__tools__nonstream",
@@ -228,8 +228,8 @@
    "upstream": "gemini-native",
    "feature": "tools",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "openai-chat__gemini-native__tools__stream",
@@ -237,8 +237,8 @@
    "upstream": "gemini-native",
    "feature": "tools",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "openai-responses__openai-chat__text__nonstream",
@@ -426,8 +426,8 @@
    "upstream": "gemini-native",
    "feature": "text",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "openai-responses__gemini-native__text__stream",
@@ -435,8 +435,8 @@
    "upstream": "gemini-native",
    "feature": "text",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "openai-responses__gemini-native__tools__nonstream",
@@ -444,8 +444,8 @@
    "upstream": "gemini-native",
    "feature": "tools",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "openai-responses__gemini-native__tools__stream",
@@ -453,8 +453,8 @@
    "upstream": "gemini-native",
    "feature": "tools",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "anthropic-messages__openai-chat__text__nonstream",
@@ -642,8 +642,8 @@
    "upstream": "gemini-native",
    "feature": "text",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "anthropic-messages__gemini-native__text__stream",
@@ -651,8 +651,8 @@
    "upstream": "gemini-native",
    "feature": "text",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "anthropic-messages__gemini-native__tools__nonstream",
@@ -660,8 +660,8 @@
    "upstream": "gemini-native",
    "feature": "tools",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "anthropic-messages__gemini-native__tools__stream",
@@ -669,8 +669,8 @@
    "upstream": "gemini-native",
    "feature": "tools",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "ollama-native__openai-chat__text__nonstream",
@@ -858,8 +858,8 @@
    "upstream": "gemini-native",
    "feature": "text",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "ollama-native__gemini-native__text__stream",
@@ -867,8 +867,8 @@
    "upstream": "gemini-native",
    "feature": "text",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "ollama-native__gemini-native__tools__nonstream",
@@ -876,8 +876,8 @@
    "upstream": "gemini-native",
    "feature": "tools",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "ollama-native__gemini-native__tools__stream",
@@ -885,8 +885,8 @@
    "upstream": "gemini-native",
    "feature": "tools",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__openai-chat__text__nonstream",
@@ -894,8 +894,8 @@
    "upstream": "openai-chat",
    "feature": "text",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__openai-chat__text__stream",
@@ -903,8 +903,8 @@
    "upstream": "openai-chat",
    "feature": "text",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__openai-chat__tools__nonstream",
@@ -912,8 +912,8 @@
    "upstream": "openai-chat",
    "feature": "tools",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__openai-chat__tools__stream",
@@ -921,8 +921,8 @@
    "upstream": "openai-chat",
    "feature": "tools",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__openai-responses__text__nonstream",
@@ -930,8 +930,8 @@
    "upstream": "openai-responses",
    "feature": "text",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__openai-responses__text__stream",
@@ -939,8 +939,8 @@
    "upstream": "openai-responses",
    "feature": "text",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__openai-responses__tools__nonstream",
@@ -948,8 +948,8 @@
    "upstream": "openai-responses",
    "feature": "tools",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__openai-responses__tools__stream",
@@ -957,8 +957,8 @@
    "upstream": "openai-responses",
    "feature": "tools",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__anthropic-messages__text__nonstream",
@@ -966,8 +966,8 @@
    "upstream": "anthropic-messages",
    "feature": "text",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__anthropic-messages__text__stream",
@@ -975,8 +975,8 @@
    "upstream": "anthropic-messages",
    "feature": "text",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__anthropic-messages__tools__nonstream",
@@ -984,8 +984,8 @@
    "upstream": "anthropic-messages",
    "feature": "tools",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__anthropic-messages__tools__stream",
@@ -993,8 +993,8 @@
    "upstream": "anthropic-messages",
    "feature": "tools",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__ollama-native__text__nonstream",
@@ -1002,8 +1002,8 @@
    "upstream": "ollama-native",
    "feature": "text",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__ollama-native__text__stream",
@@ -1011,8 +1011,8 @@
    "upstream": "ollama-native",
    "feature": "text",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__ollama-native__tools__nonstream",
@@ -1020,8 +1020,8 @@
    "upstream": "ollama-native",
    "feature": "tools",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__ollama-native__tools__stream",
@@ -1029,8 +1029,8 @@
    "upstream": "ollama-native",
    "feature": "tools",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__ollama-cloud__text__nonstream",
@@ -1038,8 +1038,8 @@
    "upstream": "ollama-cloud",
    "feature": "text",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__ollama-cloud__text__stream",
@@ -1047,8 +1047,8 @@
    "upstream": "ollama-cloud",
    "feature": "text",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__ollama-cloud__tools__nonstream",
@@ -1056,8 +1056,8 @@
    "upstream": "ollama-cloud",
    "feature": "tools",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__ollama-cloud__tools__stream",
@@ -1065,8 +1065,8 @@
    "upstream": "ollama-cloud",
    "feature": "tools",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__gemini-native__text__nonstream",
@@ -1074,8 +1074,8 @@
    "upstream": "gemini-native",
    "feature": "text",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__gemini-native__text__stream",
@@ -1083,8 +1083,8 @@
    "upstream": "gemini-native",
    "feature": "text",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__gemini-native__tools__nonstream",
@@ -1092,8 +1092,8 @@
    "upstream": "gemini-native",
    "feature": "tools",
    "mode": "nonstream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   },
   {
    "id": "gemini-native__gemini-native__tools__stream",
@@ -1101,8 +1101,8 @@
    "upstream": "gemini-native",
    "feature": "tools",
    "mode": "stream",
-   "status": "pending",
-   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+   "status": "green",
+   "note": ""
   }
  ],
  "extras": [
@@ -1152,7 +1152,7 @@
    "id": "history__previous-response-id",
    "test": "",
    "status": "pending",
-   "note": "lands with the POST previous_response_id fix (open PR); cell added after merge"
+   "note": "previous_response_id is live on main (PR #79); the cell test still needs writing"
   },
   {
    "id": "thinking__anthropic-client",

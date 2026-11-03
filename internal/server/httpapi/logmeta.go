@@ -30,6 +30,7 @@ const (
 	protocolOpenAI          = "openai"
 	protocolOpenAIResponses = "openai-responses"
 	protocolOllama          = "ollama"
+	protocolGemini          = "gemini"
 	protocolSystemOne       = "systemone"
 	protocolDecisions       = "decisions"
 )

@@ -27,6 +27,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/provider"
 	anthropicprovider "github.com/tubeof/proxyllm/internal/provider/anthropic"
 	"github.com/tubeof/proxyllm/internal/provider/custom"
+	geminiprovider "github.com/tubeof/proxyllm/internal/provider/gemini"
 	"github.com/tubeof/proxyllm/internal/provider/ollamacloud"
 	"github.com/tubeof/proxyllm/internal/provider/ollamanative"
 	"github.com/tubeof/proxyllm/internal/provider/openairesponses"
@@ -41,7 +42,7 @@ import (
 // proxy speaks to it, and BaseURL points at the simulator.
 type upstream struct {
 	ID      string
-	Type    string // custom-openai | openai-responses | anthropic | ollama-native | ollama-cloud
+	Type    string // custom-openai | openai-responses | anthropic | ollama-native | ollama-cloud | gemini
 	BaseURL string
 	Caps    provider.Capabilities
 }
@@ -178,6 +179,8 @@ func buildUpstream(u upstream) provider.Provider {
 		return ollamanative.New(u.ID, u.BaseURL, "", u.Caps)
 	case "ollama-cloud":
 		return ollamacloud.New(u.ID, u.BaseURL, apiKey, u.Caps)
+	case "gemini":
+		return geminiprovider.New(u.ID, u.BaseURL, apiKey, u.Caps)
 	default:
 		panic("matrix: unknown upstream type " + u.Type)
 	}

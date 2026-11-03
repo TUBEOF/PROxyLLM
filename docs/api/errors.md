@@ -25,6 +25,11 @@ own `code` is relayed when there is one.
 **System One** (`/v1/systemone`): the reference's flat shape, which has no
 error-type field — `{"error":"…"}`.
 
+**Gemini** (`/v1beta/models/{model}:generateContent` and the streaming
+action): the reference's `{"error":{"code":…,"message":"…","status":"…"}}`
+with `code` the HTTP status and `status` the GenerateContentError enum
+member (`INVALID_ARGUMENT`, `NOT_FOUND`, `UNAVAILABLE`, …).
+
 Messages are redacted before they are written and before they are logged: a
 credential that an upstream echoed into its error text comes back masked.
 
@@ -58,6 +63,7 @@ retryable and surface-specific:
 | Anthropic | `529` | `overloaded_error` |
 | OpenAI-compatible | `503` | `server_error` |
 | System One | `500` | — |
+| Gemini | `503` | `UNAVAILABLE` |
 
 Unlike the 404, a client is expected to retry these. The body names the actual
 state — `circuit breaker` or an upstream `quota/rate-limit` window — and, when

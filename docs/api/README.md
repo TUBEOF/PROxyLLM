@@ -1,6 +1,6 @@
 # Client API
 
-PROxyLLM serves four client-facing surfaces from one endpoint. They share
+PROxyLLM serves five client-facing surfaces from one endpoint. They share
 authentication, request limits and error conventions; each speaks its own
 protocol family on the wire.
 
@@ -9,6 +9,7 @@ protocol family on the wire.
 | OpenAI-compatible | `POST /v1/chat/completions`, `POST /v1/responses` (HTTP or WebSocket upgrade), `GET /v1/models` | yes | `Authorization: Bearer pk_…` |
 | Anthropic-compatible | `POST /v1/messages`, `POST /v1/messages/count_tokens`, `GET /v1/models` | yes | `x-api-key: pk_…` and/or `Authorization: Bearer pk_…` |
 | Ollama native | `POST /api/chat`, `GET /api/tags` | yes (NDJSON) | `Authorization: Bearer pk_…` and/or `x-api-key: pk_…` |
+| Gemini native | `POST /v1beta/models/{model}:generateContent`, `POST /v1beta/models/{model}:streamGenerateContent?alt=sse` | yes (SSE) | `Authorization: Bearer pk_…` |
 | Decision | `POST /v1/systemone`, `POST /v1/decisions` | no — by contract | either family above |
 
 Per-surface detail lives on its own page: [OpenAI](openai.md),
@@ -85,6 +86,8 @@ that does not know a newer event can ignore it.
 | `POST` | `/v1/messages/count_tokens` | [Anthropic](anthropic.md#post-v1messagescount_tokens) |
 | `POST` | `/api/chat` | Native Ollama chat (JSON or NDJSON) |
 | `GET` | `/api/tags` | Native Ollama model list |
+| `POST` | `/v1beta/models/{model}:generateContent` | Native Gemini chat (JSON) |
+| `POST` | `/v1beta/models/{model}:streamGenerateContent?alt=sse` | Native Gemini chat (SSE) |
 | `POST` | `/v1/systemone` | [Decisions](decisions.md#post-v1systemone) |
 | `POST` | `/v1/decisions` | [Decisions](decisions.md#post-v1decisions) |
 | `GET` | `/healthz` | [Deployment](../deployment.md) |

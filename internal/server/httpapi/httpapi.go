@@ -127,6 +127,10 @@ func New(p Params) *API {
 	// Native Ollama client surface (mounted outside /v1 by the server).
 	mux.HandleFunc("POST /api/chat", a.handleOllamaChat)
 	mux.HandleFunc("GET /api/tags", a.handleOllamaTags)
+	// The Gemini path convention carries the action inside a path segment
+	// ("{model}:generateContent"), which a ServeMux wildcard cannot match —
+	// the subtree pattern dispatches, the handler parses the segment.
+	mux.HandleFunc("POST /v1beta/", a.handleGemini)
 	return &API{Handler: mux, a: a}
 }
 
