@@ -3,8 +3,8 @@
   "label": "Continue CLI",
   "tier": "tier2",
   "command": "cn",
-  "install": "npm install -g @continuedev/cli",
-  "tested": "latest",
+  "install": "npm install -g @continuedev/cli@1.5.47",
+  "tested": "1.5.47",
   "runnable": true,
   "env_keep": [
     "PATH",
@@ -23,8 +23,14 @@
     "ANTHROPIC_AUTH_TOKEN",
     "ANTHROPIC_BASE_URL"
   ],
+  "env": {
+    "CONTINUE_CLI_ENABLE_TELEMETRY": "0",
+    "CONTINUE_CLI_AUTO_UPDATED": "1"
+  },
   "files": {
-    "{{CONFIG_DIR}}/continue/config.yaml": "name: proxyllm\nversion: 0.0.1\nschema: v1\nmodels:\n  - name: proxy-chat\n    provider: openai\n    model: {{MODEL}}\n    apiBase: {{BASE_URL}}/v1\n    apiKey: {{CLIENT_KEY}}\n    useResponsesApi: false\n"
+    "{{CONFIG_DIR}}/continue/config.yaml": "name: proxyllm\nversion: 0.0.1\nschema: v1\nmodels:\n  - name: proxy-chat\n    provider: openai\n    model: {{MODEL}}\n    apiBase: {{BASE_URL}}/v1\n    apiKey: {{CLIENT_KEY}}\n    useResponsesApi: false\n",
+    "{{HOME}}/.continue/config.yaml": "name: proxyllm\nversion: 0.0.1\nschema: v1\nmodels:\n  - name: proxy-chat\n    provider: openai\n    model: {{MODEL}}\n    apiBase: {{BASE_URL}}/v1\n    apiKey: {{CLIENT_KEY}}\n    useResponsesApi: false\n",
+    "{{HOME}}/.continue/.onboarding_complete": "2026-01-01T00:00:00.000Z"
   },
   "args": [
     "-p",

@@ -101,6 +101,8 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install cline CLI (pinned)
         run: npm install -g cline@3.0.74
+      - name: Install Continue CLI (pinned)
+        run: npm install -g @continuedev/cli@1.5.47
       - name: Ensure tmux (the plain-start driver runs CLIs in a pseudo-terminal)
         run: |
           if ! command -v tmux >/dev/null; then
@@ -110,4 +112,4 @@ jobs:
       - name: Build the proxy
         run: env -u GOROOT make build
       - name: Plain-start CLI matrix
-        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline --scenarios answer,recall
+        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue --scenarios answer,recall
