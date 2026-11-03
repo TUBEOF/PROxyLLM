@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -25,6 +26,12 @@ type matrixCell struct {
 	Test     string `json:"test,omitempty"`
 	Status   string `json:"status"`
 	Note     string `json:"note,omitempty"`
+	// SchemaNote documents, for a green pair cell, why its client-facing
+	// response is not yet validated against the official wire schema (a
+	// measured, nameable emission gap; the fix loop owns the parity). The
+	// runner prints the note whenever the cell runs, so the gap stays
+	// visible on every matrix run — never a silent skip.
+	SchemaNote string `json:"schema_note,omitempty"`
 }
 
 // matrixManifest mirrors testdata/matrix.json.
@@ -59,8 +66,8 @@ func loadMatrix(t *testing.T) matrixManifest {
 // completeness gate — a matrix that quietly drops a combination fails here.
 func TestMatrix_ManifestIsComplete(t *testing.T) {
 	m := loadMatrix(t)
-	if m.Schema != 1 {
-		t.Fatalf("manifest schema = %d, want 1", m.Schema)
+	if m.Schema != 2 {
+		t.Fatalf("manifest schema = %d, want 2", m.Schema)
 	}
 	if len(m.Clients) == 0 || len(m.Upstreams) == 0 || len(m.Features) == 0 || len(m.Modes) == 0 {
 		t.Fatal("manifest axes must not be empty")
@@ -80,9 +87,22 @@ func TestMatrix_ManifestIsComplete(t *testing.T) {
 			if c.Note != "" {
 				t.Errorf("green cell %q carries a note: %q", c.ID, c.Note)
 			}
+			if c.SchemaNote != "" {
+				// A documented schema gap is only meaningful on a pair cell
+				// the runners execute, and must state itself precisely.
+				if !strings.HasPrefix(c.SchemaNote, "schema: not yet strict — ") {
+					t.Errorf("schema_note on %q must describe the not-yet-strict state (got %q)", c.ID, c.SchemaNote)
+				}
+				if c.Client == "" || c.Feature == "" || c.Mode == "" {
+					t.Errorf("schema_note on %q rides a pair cell, not an extra", c.ID)
+				}
+			}
 		case "pending":
 			if c.Note == "" {
 				t.Errorf("pending cell %q carries no reason", c.ID)
+			}
+			if c.SchemaNote != "" {
+				t.Errorf("pending cell %q carries a schema_note; only green pair cells document gaps", c.ID)
 			}
 		default:
 			t.Errorf("cell %q status = %q, want green|pending", c.ID, c.Status)

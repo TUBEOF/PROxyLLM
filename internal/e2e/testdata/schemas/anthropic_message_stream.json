@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "internal/e2e/testdata/schemas/anthropic_message_stream.json",
+  "title": "Anthropic Messages streaming events",
+  "description": "Per-SSE-event data payloads of a Messages stream, per the official streaming reference (message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop, ping, error). Sub-objects are typed where the reference names them (delta variants, usage); unknown members stay permissive by the 2020-12 default. See .meta.json for provenance.",
+  "$defs": {
+    "Message": {
+      "type": "object",
+      "required": ["type", "id", "model", "role", "content", "stop_reason", "stop_sequence", "usage"],
+      "properties": {
+        "type": { "const": "message" },
+        "id": { "type": "string" },
+        "model": { "type": "string" },
+        "role": { "const": "assistant" },
+        "content": { "type": "array" },
+        "stop_reason": { "anyOf": [ { "type": "string" }, { "type": "null" } ] },
+        "stop_sequence": { "anyOf": [ { "type": "string" }, { "type": "null" } ] },
+        "usage": {
+          "type": "object",
+          "required": ["input_tokens", "output_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"],
+          "properties": {
+            "input_tokens": { "type": "integer", "minimum": 0 },
+            "output_tokens": { "type": "integer", "minimum": 0 },
+            "cache_creation_input_tokens": { "type": "integer", "minimum": 0 },
+            "cache_read_input_tokens": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "ContentBlock": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "text"],
+          "properties": { "type": { "const": "text" }, "text": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "required": ["type", "thinking"],
+          "properties": { "type": { "const": "thinking" }, "thinking": { "type": "string", "description": "start blocks stream empty; signature rides signature_delta" } }
+        },
+        {
+          "type": "object",
+          "required": ["type", "id", "name", "input"],
+          "properties": { "type": { "const": "tool_use" }, "id": { "type": "string" }, "name": { "type": "string" }, "input": { "type": "object", "description": "input:{} at start; the object assembles via input_json_delta" } }
+        },
+        {
+          "type": "object",
+          "required": ["type", "id", "name", "input"],
+          "properties": { "type": { "const": "server_tool_use" }, "id": { "type": "string" }, "name": { "type": "string" }, "input": { "type": "object" } }
+        }
+      ]
+    },
+    "Delta": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "text"],
+          "properties": { "type": { "const": "text_delta" }, "text": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "required": ["type", "partial_json"],
+          "properties": { "type": { "const": "input_json_delta" }, "partial_json": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "required": ["type", "thinking"],
+          "properties": { "type": { "const": "thinking_delta" }, "thinking": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "required": ["type", "signature"],
+          "properties": { "type": { "const": "signature_delta" }, "signature": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "required": ["type", "citations"],
+          "properties": { "type": { "const": "citations_delta" }, "citations": { "type": "array" } }
+        }
+      ]
+    },
+    "MessageStartEvent": {
+      "type": "object",
+      "required": ["type", "message"],
+      "properties": { "type": { "const": "message_start" }, "message": { "$ref": "#/$defs/Message" } }
+    },
+    "ContentBlockStartEvent": {
+      "type": "object",
+      "required": ["type", "index", "content_block"],
+      "properties": { "type": { "const": "content_block_start" }, "index": { "type": "integer", "minimum": 0 }, "content_block": { "$ref": "#/$defs/ContentBlock" } }
+    },
+    "ContentBlockDeltaEvent": {
+      "type": "object",
+      "required": ["type", "index", "delta"],
+      "properties": { "type": { "const": "content_block_delta" }, "index": { "type": "integer", "minimum": 0 }, "delta": { "$ref": "#/$defs/Delta" } }
+    },
+    "ContentBlockStopEvent": {
+      "type": "object",
+      "required": ["type", "index"],
+      "properties": { "type": { "const": "content_block_stop" }, "index": { "type": "integer", "minimum": 0 } }
+    },
+    "MessageDeltaEvent": {
+      "type": "object",
+      "required": ["type", "delta", "usage"],
+      "properties": {
+        "type": { "const": "message_delta" },
+        "delta": {
+          "type": "object",
+          "required": ["stop_reason", "stop_sequence"],
+          "properties": {
+            "stop_reason": { "anyOf": [ { "type": "string" }, { "type": "null" } ] },
+            "stop_sequence": { "anyOf": [ { "type": "string" }, { "type": "null" } ] },
+            "container": { "type": "object" },
+            "stop_details": { "anyOf": [ { "type": "object" }, { "type": "null" } ] }
+          }
+        },
+        "usage": {
+          "type": "object",
+          "required": ["output_tokens"],
+          "properties": {
+            "output_tokens": { "type": "integer", "minimum": 0 },
+            "input_tokens": { "type": "integer", "minimum": 0 },
+            "cache_creation_input_tokens": { "type": "integer", "minimum": 0 },
+            "cache_read_input_tokens": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "MessageStopEvent": {
+      "type": "object",
+      "required": ["type"],
+      "properties": { "type": { "const": "message_stop" } }
+    },
+    "PingEvent": {
+      "type": "object",
+      "required": ["type"],
+      "properties": { "type": { "const": "ping" } }
+    },
+    "ErrorEvent": {
+      "type": "object",
+      "required": ["type", "error"],
+      "properties": { "type": { "const": "error" }, "error": { "type": "object", "required": ["type", "message"], "properties": { "type": { "type": "string" }, "message": { "type": "string" } } } }
+    }
+  },
+  "oneOf": [
+    { "$ref": "#/$defs/MessageStartEvent" },
+    { "$ref": "#/$defs/ContentBlockStartEvent" },
+    { "$ref": "#/$defs/ContentBlockDeltaEvent" },
+    { "$ref": "#/$defs/ContentBlockStopEvent" },
+    { "$ref": "#/$defs/MessageDeltaEvent" },
+    { "$ref": "#/$defs/MessageStopEvent" },
+    { "$ref": "#/$defs/PingEvent" },
+    { "$ref": "#/$defs/ErrorEvent" }
+  ]
+}

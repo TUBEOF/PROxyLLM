@@ -5,8 +5,11 @@ go 1.27.3
 require (
 	github.com/anthropics/anthropic-sdk-go v1.84.0
 	github.com/coder/websocket v1.8.15
+	github.com/dlclark/regexp2 v1.12.0
 	github.com/openai/openai-go/v3 v3.90.0
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	golang.org/x/crypto v0.58.0
+	golang.org/x/text v0.43.0
 	modernc.org/sqlite v1.61.0
 )
 

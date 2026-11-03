@@ -146,6 +146,10 @@ func runPairCell(t *testing.T, cell matrixCell, completion map[string]any) {
 			t.Errorf("%s: upstream request carries no tools: %v", cell.ID, body)
 		}
 	}
+
+	// WP6: the emitted client-facing bytes must also satisfy the surface's
+	// official wire schema.
+	validatePairCellResponse(t, cell, e)
 }
 
 // pairResult is what a client driver reports back.

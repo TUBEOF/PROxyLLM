@@ -1,0 +1,12 @@
+{
+  "source": "https://raw.githubusercontent.com/ollama/ollama/main/docs/openapi.yaml (repo main @ commit 355eaee353f81f598932faf3226344d39e482860, file blob 61b78c723b1442953383ce9fa16e3640cd4d7c8f)",
+  "spec_version": "0.1.0",
+  "wire": "Ollama",
+  "accessed": "2026-11-03",
+  "license": "MIT",
+  "transformation": "mechanical extraction: transitive $ref closure of ChatStreamEvent (the documented schema of POST /api/chat's application/x-ndjson response, one object per line); refs rewritten '#/components/schemas/X' -> '#/$defs/X'.",
+  "extracted": [
+    "ChatStreamEvent"
+  ],
+  "root": "#/$defs/ChatStreamEvent"
+}
