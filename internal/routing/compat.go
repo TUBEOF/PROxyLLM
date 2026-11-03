@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 )
@@ -48,6 +49,16 @@ type Compat struct {
 	// client tools untouched, which is what the OpenAI-shaped surfaces need:
 	// they cannot encode server-tool blocks.
 	ClientWebTools map[string]string
+
+	// InjectWebTools appends the emulated web_search/web_fetch definitions to
+	// a request that declares none — the plain-CLI case: codex started without
+	// --search never sends a web tool, so the emulation loop never engages and
+	// the model answers "I can't fetch forecasts". With this the request
+	// carries the families pre-dispatch and emulation answers every surface.
+	// Rides the emulation policy: under off it never applies (a policy that
+	// removes tool definitions must not add them), and families the request
+	// already declares are never doubled.
+	InjectWebTools bool
 }
 
 // ThinkingHandling values.
@@ -73,6 +84,14 @@ const (
 	EmulationEmulateFirecrawl = "emulate-firecrawl"
 	EmulationOff              = "off"
 )
+
+// SettingInjectWebTools is the compat setting name the trace event carries:
+// inject the emulated web-tool families into a request that declares none.
+const SettingInjectWebTools = "inject_web_tools"
+
+// injectableWebFamilies names the emulated families inject_web_tools appends,
+// in wire order: search first (a fetch rides a URL a search produced).
+var injectableWebFamilies = []string{"web_search", "web_fetch"}
 
 // CacheControl values.
 const (
@@ -456,7 +475,28 @@ func applyEmulation(c Compat, req ir.Request, trace *Trace) ir.Request {
 		converted++
 	}
 
-	if removed == 0 && converted == 0 && claimed == 0 {
+	// inject_web_tools: fill the absent families on the FINAL tool set, so a
+	// request the client sent tool-free (a plain CLI) still engages the
+	// emulation loop, and a family already present — natively, converted, or
+	// claimed above — is never carried twice. Only under emulation: off
+	// removes definitions, it must never add them.
+	injected := 0
+	var injectedFamilies []string
+	if c.InjectWebTools && c.ServerToolEmulation == EmulationEmulateFirecrawl {
+		// The families keep only what survived the pass above: a raw client
+		// tool's family is not visible in the wire, only its claimed form is.
+		keptFamilies := presentFamilies(kept)
+		for _, family := range injectableWebFamilies {
+			if keptFamilies[family] {
+				continue
+			}
+			kept = append(kept, emulatedToolDef(family, "", &ir.ServerToolConfig{}))
+			injected++
+			injectedFamilies = append(injectedFamilies, family)
+		}
+	}
+
+	if removed == 0 && converted == 0 && claimed == 0 && injected == 0 {
 		return req
 	}
 
@@ -467,15 +507,22 @@ func applyEmulation(c Compat, req ir.Request, trace *Trace) ir.Request {
 	}
 	switch {
 	case c.ServerToolEmulation == EmulationOff:
+		// Reachable only with removed > 0: off never injects, so a pure
+		// no-op under off returns above.
 		trace.CompatPolicy("server_tool_emulation", EmulationOff,
 			strconv.Itoa(removed)+" server-tool def(s) removed (emulation off)"+choiceNote)
 	case claimed > 0:
 		trace.CompatPolicy("server_tool_emulation", EmulationEmulateFirecrawl,
 			"client web-tool def(s) served by the proxy (emulation): "+
 				strconv.Itoa(claimed)+" claimed, "+strconv.Itoa(converted)+" server-tool def(s) converted"+choiceNote)
-	default:
+	case converted > 0:
 		trace.CompatPolicy("server_tool_emulation", EmulationEmulateFirecrawl,
 			"server-tool def(s) converted to emulated client tool(s) (web-tool accounts)"+choiceNote)
+	}
+	if injected > 0 {
+		trace.CompatPolicy(SettingInjectWebTools, "true",
+			strconv.Itoa(injected)+" emulated web tool(s) injected for a tool-free request: "+
+				strings.Join(injectedFamilies, ", ")+choiceNote)
 	}
 	return req
 }

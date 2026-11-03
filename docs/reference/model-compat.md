@@ -48,6 +48,7 @@ an explicit `false` is a statement that the model cannot see images.
 |---|---|---|
 | `thinking_handling` | `strip` (default off-Anthropic), `map-to-reasoning-effort`, `block` | How the `thinking` parameter and thinking blocks in history are handled, and (see below) what happens to thinking an upstream volunteers |
 | `server_tool_emulation` | `emulate-firecrawl` (default for every target), `native`, `off` | Whether the request's web tools — dated server-tool definitions (`web_search_*`, `web_fetch_*`) and the client's own tools the `client_web_tools` mapping claims (Claude Code's `WebFetch`/`WebSearch`) — are converted into emulated tools served by a web-tool account, ride to the upstream, or are removed. `off` is the only reachable pin: the derived default is emulation, and a stored legacy `native` reads as emulation (no provider type in this proxy speaks the server-tool wire) |
+| `inject_web_tools` | boolean (default `false`) | Appends the emulated `web_search`/`web_fetch` definitions to a request that declares none — the plain-CLI case (codex started without `--search`) — so the emulation loop engages there too. Families the request already declares are never doubled; under `server_tool_emulation: off` it does not apply |
 | `max_tokens_clamp` | integer, `0` = off | Caps `max_tokens` for a target with a lower output limit. Operator-set only — the proxy never guesses a target's limit |
 | `context_window` | integer tokens, `0` = unknown | Feeds the capability filter and the token estimate. Detected from upstream metadata, overridable by the operator |
 | `cache_control` | `forward` (Anthropic→Anthropic only), anything else = drop | Whether `cache_control` markers survive translation |
@@ -71,6 +72,14 @@ executor, answered through the configured web-tool accounts, and the result is
 synthesized back into the client's protocol. The model rows themselves always
 record `web_search`/`web_fetch`/`code_execution` as `false`: those families are
 served by accounts and fallback lists, not by individual models.
+
+The loop only ever answered requests that carried a web tool, which left the
+plain-CLI case out: codex started without `--search` declares nothing, asks a
+weather question, and the model answers that it cannot fetch forecasts. The
+`inject_web_tools` compat flag closes that gap — the request gains both
+emulated definitions pre-dispatch, exactly as if the client had declared them,
+and the emulation half (budgets, the documented `unavailable` error result
+with no web-tool account configured) applies unchanged.
 
 A client's own web tool is claimed the same way when the mapping names it
 (`client_web_tools`, any surface): Claude Code sends `WebFetch`/`WebSearch` as
