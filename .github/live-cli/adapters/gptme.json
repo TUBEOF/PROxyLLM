@@ -1,0 +1,35 @@
+{
+  "name": "gptme",
+  "label": "gptme",
+  "tier": "core",
+  "command": "gptme",
+  "install": "pipx install gptme==0.36.0",
+  "tested": "0.36.0",
+  "runnable": false,
+  "runnable_note": "Plain-start matrix client (cli_plain.py); no verified headless run path yet (docs: gptme.org/docs/getting-started.html)",
+  "env_keep": [
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "TERM",
+    "TMPDIR",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR"
+  ],
+  "scrub_env": [
+    "OPENAI_API_KEY",
+    "OPENAI_API_BASE",
+    "OPENAI_BASE_URL",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "GPTME_LOGS_HOME"
+  ],
+  "env": {},
+  "files": {
+    "{{HOME}}/.config/gptme/config.toml": "[env]\nOPENAI_API_KEY = \"{{CLIENT_KEY}}\"\nOPENAI_BASE_URL = \"{{BASE_URL}}/v1\"\nMODEL = \"local/{{MODEL}}\"\n"
+  },
+  "canary": [
+    "~/.config/gptme"
+  ]
+}
