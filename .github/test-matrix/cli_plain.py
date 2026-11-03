@@ -125,17 +125,21 @@ def ms_reset(mockserver: str) -> None:
 
 
 # Observed wire facts (2026-11 codex 0.166 / claude-code 2.1.316 / crush
-# 0.99.0): codex buffers /v1/responses turns upstream (no "stream" key; plain
-# string message content) and drives utility calls — task-title generation —
-# as STREAMED requests quoting the conversation; Claude streams every
-# Messages turn and sends the user prompt as its own text part; crush streams
-# chat completions with the user prompt as a plain string, and its title
-# calls stream too. MockServer's LLM response follows the expectation's
-# streaming flag only, and its JSON matcher wants exact leaf values, so each
-# turn is pinned by its exact last user message in the CLI's own shape, later
-# turns ranked higher (their request carries earlier prompts in history). The
-# fallback buckets catch the utility traffic so no upstream call 404s (the
-# proxy would log the failure and fail the clean-rows check).
+# 0.99.0 / openhands 0.59.0): codex buffers /v1/responses turns upstream (no
+# "stream" key; plain string message content) and drives utility calls —
+# task-title generation — as STREAMED requests quoting the conversation;
+# Claude streams every Messages turn and sends the user prompt as its own text
+# part; crush streams chat completions with the user prompt as a plain string,
+# and its title calls stream too; openhands (with native_tool_calling in its
+# [llm] config) posts closed chat completions with the prompt as a plain
+# string and never streams — its agent loop has no utility calls, but the
+# CodeAct runtime appends a <RUNTIME_INFORMATION> user message after the
+# prompt on the first turn only. MockServer's LLM response follows the
+# expectation's streaming flag only, and its JSON matcher wants exact leaf
+# values, so each turn is pinned by its exact last user message in the CLI's
+# own shape, later turns ranked higher (their request carries earlier prompts
+# in history). The fallback buckets catch the utility traffic so no upstream
+# call 404s (the proxy would log the failure and fail the clean-rows check).
 def _mock_expectation(mockserver: str, text: str, streaming: bool,
                       priority: int, times: int | None, matcher: dict | None) -> None:
     req: dict = {"method": "POST", "path": UPSTREAM_PATH}
@@ -178,16 +182,23 @@ def mock_fallback(mockserver: str, text: str, streaming: bool) -> None:
                       {"stream": True} if streaming else None)
 
 
-def turn_requests(reqs: list[dict], prompt: str) -> list[dict]:
+def turn_requests(reqs: list[dict], prompt: str, cli: str = "") -> list[dict]:
     """Real model turns, not utility calls: upstream requests whose LAST
     message carries the prompt as an exact message or text part (codex's
-    title calls quote the conversation, so containment would count them)."""
+    title calls quote the conversation, so containment would count them).
+    Runtime-metadata user messages some CLIs append after the prompt —
+    openhands's CodeAct runtime inserts one <RUNTIME_INFORMATION> turn —
+    never carry the prompt, so the cli's hint drops them from the LAST
+    message check."""
     out = []
     for r in reqs:
         if r.get("path") != UPSTREAM_PATH:
             continue
         payload = (r.get("body") or {}).get("json") or {}
         msgs = payload.get("messages") or []
+        hint = RUNTIME_HINTS.get(cli)
+        if hint:
+            msgs = [m for m in msgs if hint not in str(m.get("content") or "")]
         if not msgs or msgs[-1].get("role") != "user":
             continue
         last = msgs[-1]
@@ -216,14 +227,21 @@ def plain_command(manifest: Path) -> str:
 
 
 # A CLI is "ready" once its own chrome painted; each TUI names itself.
-READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush"}
+READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
+                 "openhands": "OpenHands CLI v"}
 
 # How each CLI's model turns stream upstream, and what the catch-all bucket
 # answer must look like to absorb the utility traffic (title generation):
 # codex buffers turns but streams its title calls, claude-code streams
-# nothing but turns, crush streams everything.
-STREAMING = {"codex": False, "claude-code": True, "crush": True}
-FALLBACK_STREAMING = {"codex": True, "claude-code": False, "crush": True}
+# nothing but turns, crush streams everything, openhands never streams its
+# turns and makes no utility calls.
+STREAMING = {"codex": False, "claude-code": True, "crush": True, "openhands": False}
+FALLBACK_STREAMING = {"codex": True, "claude-code": False, "crush": True,
+                      "openhands": False}
+
+# User-message markers that are runtime metadata, not model turns; see
+# turn_requests.
+RUNTIME_HINTS = {"openhands": "<RUNTIME_INFORMATION>"}
 
 # First-run dialogs some TUIs paint before the composer; each entry waits for
 # its pane text, then presses keys. claude-code 2.1.316's trust dialog
@@ -438,7 +456,7 @@ def scenario_answer(cli: str, manifest: Path, home: Path, base_url: str, key: st
         raise AssertionError("answer: the proxy logged no request row")
     if bad:
         raise AssertionError(f"answer: proxy rows not clean: {bad}")
-    real = turn_requests(ms_requests(mockserver), prompt)
+    real = turn_requests(ms_requests(mockserver), prompt, cli)
     if len(real) != 1:
         raise AssertionError(f"answer: upstream turn requests = {len(real)}, want exactly 1")
 
@@ -476,8 +494,8 @@ def scenario_recall(cli: str, manifest: Path, home: Path, base_url: str, key: st
     if bad:
         raise AssertionError(f"recall: proxy rows not clean: {bad}")
     reqs = ms_requests(mockserver)
-    real1 = turn_requests(reqs, t1)
-    real2 = turn_requests(reqs, t2)
+    real1 = turn_requests(reqs, t1, cli)
+    real2 = turn_requests(reqs, t2, cli)
     if len(real1) != 1 or len(real2) != 1:
         raise AssertionError(
             f"recall: upstream turn requests: turn1={len(real1)}, turn2={len(real2)}, want 1 each")
@@ -492,7 +510,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--home", required=True)
     parser.add_argument("--mockserver", required=True)
-    parser.add_argument("--clients", default="codex,claude-code,crush")
+    parser.add_argument("--clients", default="codex,claude-code,crush,openhands")
     parser.add_argument("--scenarios", default="answer,recall")
     parser.add_argument("--binary", default=str(REPO / "proxyllm"))
     parser.add_argument("--port", type=int, default=18190)

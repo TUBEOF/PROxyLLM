@@ -80,6 +80,10 @@ jobs:
           node-version: 26.13.0
       - name: "Install CLIs (plain-start scope: codex, claude-code, crush)"
         run: npm install -g @openai/codex @anthropic-ai/claude-code @charmland/crush
+      - name: Install OpenHands CLI (last released terminal CLI, pinned)
+        run: |
+          pipx install "openhands-ai==0.59.0"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Ensure tmux (the plain-start driver runs CLIs in a pseudo-terminal)
         run: |
           if ! command -v tmux >/dev/null; then
@@ -89,4 +93,4 @@ jobs:
       - name: Build the proxy
         run: env -u GOROOT make build
       - name: Plain-start CLI matrix
-        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush --scenarios answer,recall
+        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush,openhands --scenarios answer,recall
