@@ -45,7 +45,28 @@
   ],
   "features": {
     "tools": {},
-    "web_fetch": {}
+    "web_fetch": {},
+    "multi_turn": {
+      "turns": [
+        [
+          "-p",
+          "{{PROMPT}}",
+          "-m",
+          "proxy-chat",
+          "--output-format",
+          "text"
+        ],
+        [
+          "-p",
+          "{{PROMPT}}",
+          "-c",
+          "-m",
+          "proxy-chat",
+          "--output-format",
+          "text"
+        ]
+      ]
+    }
   },
   "skip_reasons": {
     "web_search": "Kimi Code exposes no web_search tool",

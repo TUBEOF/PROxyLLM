@@ -39,7 +39,28 @@
   ],
   "features": {
     "tools": {},
-    "web_fetch": {}
+    "web_fetch": {},
+    "multi_turn": {
+      "turns": [
+        [
+          "-p",
+          "{{PROMPT}}",
+          "--config",
+          "{{CONFIG_DIR}}/continue/config.yaml",
+          "--format",
+          "json"
+        ],
+        [
+          "-p",
+          "{{PROMPT}}",
+          "--resume",
+          "--config",
+          "{{CONFIG_DIR}}/continue/config.yaml",
+          "--format",
+          "json"
+        ]
+      ]
+    }
   },
   "skip_reasons": {
     "vision": "Continue CLI has no headless image attachment",

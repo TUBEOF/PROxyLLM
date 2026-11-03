@@ -121,6 +121,7 @@ runs:
         path: |
           ${{ github.workspace }}/.live-cli/artifacts/**
           ${{ github.workspace }}/.live-cli/clients/**/result.json
+          ${{ github.workspace }}/.live-cli/logs/**
         retention-days: 7
         if-no-files-found: error
 

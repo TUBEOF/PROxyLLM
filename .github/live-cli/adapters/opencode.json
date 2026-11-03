@@ -42,7 +42,30 @@
   ],
   "features": {
     "tools": {},
-    "web_fetch": {}
+    "web_fetch": {},
+    "multi_turn": {
+      "turns": [
+        [
+          "run",
+          "-m",
+          "proxyllm/proxy-chat",
+          "--format",
+          "json",
+          "--auto",
+          "{{PROMPT}}"
+        ],
+        [
+          "run",
+          "-c",
+          "-m",
+          "proxyllm/proxy-chat",
+          "--format",
+          "json",
+          "--auto",
+          "{{PROMPT}}"
+        ]
+      ]
+    }
   },
   "skip_reasons": {
     "web_search": "OpenCode has no web_search tool",

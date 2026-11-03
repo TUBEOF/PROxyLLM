@@ -48,6 +48,7 @@
   "skip_reasons": {
     "web_search": "Goose has no built-in web search in this setup",
     "web_fetch": "Goose has no built-in fetch tool in this setup",
-    "vision": "Goose's read_image does not put the image into the model request"
+    "vision": "Goose's read_image does not put the image into the model request",
+    "multi_turn": "Goose's resumable run needs a named session and its headless session handling is not verified here"
   }
 }

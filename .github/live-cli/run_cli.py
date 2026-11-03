@@ -67,7 +67,8 @@ def main() -> int:
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--client-key", default=os.environ.get("PROXYLLM_TEST_CLIENT_KEY", ""))
     parser.add_argument("--model", required=True)
-    parser.add_argument("--prompt", required=True)
+    parser.add_argument("--prompt", required=True, action="append",
+                        help="one per conversation turn (repeated for multi-turn features)")
     parser.add_argument("--feature", default="hello")
     parser.add_argument("--image", default="")
     parser.add_argument("--timeout", type=int, default=120)
@@ -91,7 +92,6 @@ def main() -> int:
         "BASE_URL": args.base_url.rstrip("/"),
         "CLIENT_KEY": args.client_key,
         "MODEL": args.model,
-        "PROMPT": args.prompt,
         "IMAGE": args.image,
         "FILE": str(run_dir / "work" / "notes.txt"),
         "MARKER": "PROXYLLM-LIVE-MARKER-7Q",
@@ -112,11 +112,8 @@ def main() -> int:
             dst = Path(dirs["WORK_DIR"]) / ("image" + src.suffix)
             shutil.copyfile(src, dst)
             dirs["IMAGE"] = str(dst)
-    # Prompts may reference {{IMAGE}} / {{FILE}}; render before they become
-    # the PROMPT value (a single render pass would otherwise leave them in).
-    dirs["PROMPT"] = render(dirs["PROMPT"], dirs)
+    # Prompts may reference {{IMAGE}} / {{FILE}}; render per turn below.
     Path(dirs["FILE"]).write_text(dirs["MARKER"] + "\nsecond line\n", encoding="utf-8")
-
     skip_env = manifest.get("canary_skip_env")
     canary_skipped = bool(skip_env and os.environ.get(skip_env))
     canary_before = {} if canary_skipped else snapshot(manifest.get("canary", []))
@@ -153,41 +150,69 @@ def main() -> int:
 
     # A feature's own argv when the adapter declares one; otherwise the
     # adapter's default argv (used for hello and for CLIs that need no flag).
+    # A multi-turn feature declares `turns` — one argv template per turn, run
+    # in sequence in the same isolated home/work dir, which is how a user
+    # continues a conversation (codex `exec resume --last`, claude `-c`).
     spec = (manifest.get("features") or {}).get(args.feature) or {}
-    argv = [render(str(a), dirs) for a in (spec.get("args") or manifest.get("args", []))]
+    turns = spec.get("turns") or [spec.get("args") or manifest.get("args", [])]
+    prompts = list(args.prompt)
+    if len(prompts) != len(turns):
+        print(f"prompt count {len(prompts)} does not match the adapter's "
+              f"{len(turns)} turn(s) for {args.feature}", file=sys.stderr)
+        return 2
     command = manifest["command"]
     if not shutil.which(command, path=env.get("PATH", os.environ.get("PATH", ""))):
         print(f"missing CLI: {command}", file=sys.stderr)
         return 3
 
     started = time.time()
-    try:
-        proc = subprocess.run(
-            [command, *argv],
-            cwd=dirs["WORK_DIR"],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=args.timeout,
-            check=False,
-        )
-        exit_code = proc.returncode
-        stdout = proc.stdout
-        stderr = proc.stderr
-        timed_out = False
-    except subprocess.TimeoutExpired as exc:
-        exit_code = 124
-        stdout = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
-        stderr = (exc.stderr or "") if isinstance(exc.stderr, str) else ""
-        timed_out = True
+    turn_results: list[dict] = []
+    exit_code, timed_out = 0, False
+    for argv_template, prompt in zip(turns, prompts):
+        dirs["PROMPT"] = render(prompt, dirs)
+        argv = [render(str(a), dirs) for a in argv_template]
+        turn_started = time.time()
+        try:
+            proc = subprocess.run(
+                [command, *argv],
+                cwd=dirs["WORK_DIR"],
+                env=env,
+                # A CLI that reads stdin when it finds one (codex prints
+                # "Reading additional input from stdin...") blocks until EOF, so
+                # an inherited pipe turns every task into a timeout.
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=args.timeout,
+                check=False,
+            )
+            turn_exit, out, err, turn_timed_out = proc.returncode, proc.stdout, proc.stderr, False
+        except subprocess.TimeoutExpired as exc:
+            turn_exit, turn_timed_out = 124, True
+            out = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
+            err = (exc.stderr or "") if isinstance(exc.stderr, str) else ""
+        turn_results.append({
+            "argv": ["<redacted>" if a == args.client_key else redact(a)
+                     for a in [command, *argv]],
+            "exit_code": turn_exit,
+            "timed_out": turn_timed_out,
+            "duration_seconds": round(time.time() - turn_started, 2),
+            "stdout": redact(out[-20000:]),
+            "stderr": redact(err[-20000:]),
+        })
+        if turn_exit != 0 and exit_code == 0:
+            exit_code = turn_exit
+        timed_out = timed_out or turn_timed_out
+    stdout = "\n".join(t["stdout"] for t in turn_results)
+    stderr = "\n".join(t["stderr"] for t in turn_results)
     duration = round(time.time() - started, 2)
     canary_after = {} if canary_skipped else snapshot(manifest.get("canary", []))
     canary_ok = True if canary_skipped else canary_before == canary_after
 
     result = {
         "cli": manifest.get("name", command),
-        "command": ["<redacted>" if a == args.client_key else redact(a)
-                    for a in [command, *argv]],
+        "command": turn_results[-1]["argv"] if turn_results else [command],
+        "turns": turn_results,
         "exit_code": exit_code,
         "timed_out": timed_out,
         "duration_seconds": duration,

@@ -49,6 +49,7 @@
   },
   "skip_reasons": {
     "vision": "Cline's read tools return text, not an image part",
-    "web_search": "Cline's web search needs a client-side search provider key"
+    "web_search": "Cline's web search needs a client-side search provider key",
+    "multi_turn": "Cline's headless mode resumes only by session id, which the one-shot run does not surface"
   }
 }
