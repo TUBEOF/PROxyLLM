@@ -55,6 +55,7 @@ type matrixEnv struct {
 	store   *storage.Store
 	srv     *httptest.Server
 	key     string
+	exec    *routing.Executor
 	openai  openaiclient.Client
 	anthrop anthropic.Client
 	// wire tees the client-facing response bytes at the proxy boundary (the
@@ -135,6 +136,18 @@ func buildMatrixEnv(t *testing.T, emuFactory func(base string) routing.Emulator,
 		Health:       health,
 		Emulator:     emu,
 		RetrySleeper: func(time.Duration) {},
+		// The shipped learning contract rides with the assembly (the server
+		// wires learnCapabilityGap, which persists vision:false through
+		// MergeLearnedCapability on every capability_gap). The harness keeps
+		// the write inline — synchronous, no goroutine — so a cell can assert
+		// the learned row deterministically under -race.
+		OnCapabilityGap: func(entry routing.ChainEntry) {
+			learnCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			if err := st.MergeLearnedCapability(learnCtx, entry.ProviderID, entry.Model, "vision", false); err != nil {
+				t.Logf("capability-gap learning write failed: %v", err)
+			}
+		},
 	})
 	// The shipped claim mapping rides with the assembly, as the server wires
 	// it (loadClientWebTools): a client function tool the mapping names is
@@ -158,7 +171,7 @@ func buildMatrixEnv(t *testing.T, emuFactory func(base string) routing.Emulator,
 	t.Cleanup(func() { httpapi.WaitForPendingCaptures(5 * time.Second) })
 
 	return &matrixEnv{
-		ms: ms, store: st, srv: srv, key: key, wire: wire,
+		ms: ms, store: st, srv: srv, key: key, exec: exec, wire: wire,
 		openai: openaiclient.NewClient(
 			openaioption.WithBaseURL(srv.URL+"/v1"),
 			openaioption.WithAPIKey(key),
