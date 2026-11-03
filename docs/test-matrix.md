@@ -47,7 +47,7 @@ Without either variable the matrix tests skip with a clear reason; the
 
 Green today:
 
-**The pair matrix (80 cells).** Every client surface × upstream wire ×
+**The pair matrix (120 cells).** Every client surface × upstream wire ×
 {text, tools} × {non-streaming, streaming}, driven by the two runners
 `TestMatrix_TextPairs` and `TestMatrix_ToolPairs` — the manifest
 (`internal/e2e/testdata/matrix.json`) is the single source of truth, the
@@ -67,10 +67,10 @@ Go tests agree in both directions, and the workflow runs the whole matrix
 with `-count=2` for determinism.
 
 Pending cells (the manifest names the reason for each; the fix loop owns them):
-- Native Gemini upstream and client surface (40 pair cells).
-- The chat-surface web-tool claim flow, web_fetch emulation,
-  `previous_response_id`, thinking, vision fallback, client cancel,
-  the codex OAuth upstream and the decision surfaces.
+- The chat-surface web-tool claim flow, web_fetch emulation, the
+  `previous_response_id` cell test (the fix itself is live from PR #79),
+  thinking, vision fallback, client cancel, the codex OAuth upstream and
+  the decision surfaces.
 - M2: the 14 CLIs, plain start, full scenario set.
 
 Out of scope (no client or product path uses them): embeddings, audio, images,

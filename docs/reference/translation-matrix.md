@@ -36,8 +36,7 @@ wire**, **`ollama-native` talks `/api/chat`**, **`gemini` talks the Gemini
 v1beta `generateContent` REST wire**, **`ollama-cloud` also serves
 System One**, and **`openai-decisions` serves `/v1/decisions`**. Client
 surfaces are Anthropic Messages, OpenAI Chat, OpenAI Responses (HTTP and
-WebSocket), Ollama native, System One and OpenAI Decisions. (There is no
-Gemini client surface yet; Gemini exists only as an upstream.)
+WebSocket), Ollama native, Gemini native, System One and OpenAI Decisions.
 
 Protocol directions:
 
@@ -47,6 +46,7 @@ Protocol directions:
 | OpenAI Chat | native | translated | translated | translated | translated | N/A | N/A |
 | OpenAI Responses | translated | native | translated | translated | translated | N/A | N/A |
 | Ollama native | translated | translated | translated | native | translated | N/A | N/A |
+| Gemini native | translated | translated | translated | translated | native | N/A | N/A |
 | System One | N/A | N/A | N/A | N/A | N/A | native | translated |
 | OpenAI Decisions | N/A | N/A | N/A | N/A | N/A | translated | native |
 
@@ -220,9 +220,9 @@ signature cannot become a data URL and fails the encode with a clear error.
   and a client surface (`POST /api/chat`, `GET /api/tags`). Its limitation
   stands: interleaved thinking and content fragments decode as separate
   content blocks at each kind change.
-- **Gemini v1beta wire** (`gemini`, accessed 2026-11-03) is a shipped
-  upstream: `POST /v1beta/models/{model}:generateContent`,
-  `:streamGenerateContent?alt=sse` (data:-framed Complete
+- **Gemini v1beta wire** (`gemini`) is a shipped upstream and a client
+  surface (`POST /v1beta/models/{model}:generateContent` (JSON) and
+  `:streamGenerateContent?alt=sse`, data:-framed Complete
   GenerateContentResponse chunks), `:countTokens` (the provider sends the
   full `generateContentRequest` — the reference makes `contents[]` and
   `generateContentRequest` mutually exclusive) and the paginated
