@@ -14,10 +14,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tubeof/proxyllm/internal/auth"
 	"github.com/tubeof/proxyllm/internal/config"
 	"github.com/tubeof/proxyllm/internal/provider"
+	"github.com/tubeof/proxyllm/internal/server/httpapi"
 	"github.com/tubeof/proxyllm/internal/storage"
 	"github.com/tubeof/proxyllm/internal/testutil/mockprovider"
 	"github.com/tubeof/proxyllm/internal/tools/firecrawl"
@@ -38,6 +40,13 @@ func authCreateKey(ctx context.Context, st *storage.Store) (string, string, erro
 // database.
 func newConfig(t *testing.T) config.Config {
 	t.Helper()
+	// Payload capture writes off the request path (see capture.go), so a
+	// detached goroutine can still be inserting into the store while this
+	// test's t.TempDir cleanup runs RemoveAll — CI showed that up as
+	// "TempDir RemoveAll cleanup: directory not empty". Registered after
+	// t.TempDir, so LIFO runs it BEFORE that RemoveAll; the same pattern
+	// the httpapi and e2e suites use.
+	t.Cleanup(func() { httpapi.WaitForPendingCaptures(5 * time.Second) })
 	return config.Config{Storage: config.StorageConfig{Path: t.TempDir() + "/test.db"}}
 }
 

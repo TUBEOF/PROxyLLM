@@ -35,10 +35,14 @@ type Store struct {
 }
 
 // Open creates the SQLite store: pragmas applied per connection via DSN
-// (WAL journal, busy timeout, foreign keys), single connection to avoid
-// SQLITE_BUSY, per modernc.org/sqlite guidance. The master key is resolved
-// (ENV over keyfile, generated 0600 on first start) and the envelope is
-// initialized for secret columns.
+// (WAL journal, busy timeout, foreign keys), transactions begin IMMEDIATE
+// — busy_timeout absorbs the write-lock wait at BEGIN, and a read-modify-
+// write transaction (e.g. capability learning merging into the row the
+// operator's editor writes) can never lose its read snapshot to an
+// intervening writer, the failure mode busy_timeout cannot absorb on a
+// deferred transaction. The master key is resolved (ENV over keyfile,
+// generated 0600 on first start) and the envelope is initialized for
+// secret columns.
 func Open(cfg config.StorageConfig) (*Store, error) {
 	// Ensure the data directory exists before SQLite creates the file.
 	if dir := filepath.Dir(cfg.Path); dir != "" && dir != "." {
@@ -47,7 +51,7 @@ func Open(cfg config.StorageConfig) (*Store, error) {
 		}
 	}
 
-	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)",
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)&_txlock=immediate",
 		url.PathEscape(cfg.Path))
 
 	db, err := sql.Open("sqlite", dsn)
