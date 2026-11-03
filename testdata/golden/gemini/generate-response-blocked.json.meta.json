@@ -1,0 +1,6 @@
+{
+  "fixture": "generate-response-blocked.json",
+  "source": "https://aistudio.google.com/api-reference/generate-content (redirects from ai.google.dev/api/generate-content)",
+  "accessed": "2026-11-03",
+  "notes": "A prompt-blocked response: promptFeedback.blockReason SAFETY and NO candidates \u2014 the reference states no candidates are returned when the prompt is blocked. Normalizes to a content-filter stop with empty content, never an error."
+}

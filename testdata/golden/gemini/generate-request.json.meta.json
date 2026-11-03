@@ -1,0 +1,6 @@
+{
+  "fixture": "generate-request.json",
+  "source": "https://aistudio.google.com/api-reference/generate-content (redirects from ai.google.dev/api/generate-content) ; https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta",
+  "accessed": "2026-11-03",
+  "notes": "Full GenerateContentRequest, transcribed from the reference type definitions. contents[] roles are user|model (the Tool reference also names a 'function' role for the function-response turn, which the codec accepts). Parts: text, inlineData{mimeType,data}, functionCall{id,name,args}, functionResponse{id,name,response}; a functionCall part can carry thoughtSignature, which must be replayed verbatim. toolConfig.functionCallingConfig mode is ANY with allowedFunctionNames (only legal with ANY/VALIDATED). generationConfig covers the typed members incl. thinkingConfig{includeThoughts,thinkingBudget,thinkingLevel: MINIMAL..HIGH} and the current responseFormat.text{mimeType:APPLICATION_JSON}; 'seed' is a documented member the codec treats as nested passthrough. Top-level 'labels' is likewise documented-and-unknown to the codec (captured as same-protocol passthrough). Deliberately ABSENT: stream (this wire has none), safetySettings, cachedContent."
+}

@@ -1,0 +1,33 @@
+{
+  "systemInstruction": {"role": "user", "parts": [{"text": "You are a helpful assistant."}]},
+  "contents": [
+    {"role": "user", "parts": [
+      {"text": "What's the weather in San Francisco?"},
+      {"inlineData": {"mimeType": "image/png", "data": "aVBORw0KGgo="}}
+    ]},
+    {"role": "model", "parts": [
+      {"thought": true, "text": "The user wants weather info. I should call get_weather.", "thoughtSignature": "c2lnX3RoaW5raW5n"},
+      {"functionCall": {"id": "call_1", "name": "get_weather", "args": {"location": "San Francisco, CA"}}, "thoughtSignature": "c2ln"}
+    ]},
+    {"role": "user", "parts": [
+      {"functionResponse": {"id": "call_1", "name": "get_weather", "response": {"temperature": 18, "unit": "C"}}}
+    ]}
+  ],
+  "tools": [
+    {"functionDeclarations": [
+      {"name": "get_weather", "description": "Get the current weather for a location.", "parameters": {"type": "object", "properties": {"location": {"type": "string"}}, "required": ["location"]}}
+    ]}
+  ],
+  "toolConfig": {"functionCallingConfig": {"mode": "ANY", "allowedFunctionNames": ["get_weather"]}},
+  "generationConfig": {
+    "maxOutputTokens": 1024,
+    "temperature": 0.7,
+    "topP": 0.9,
+    "topK": 40,
+    "stopSequences": ["END"],
+    "thinkingConfig": {"includeThoughts": true, "thinkingBudget": 512, "thinkingLevel": "MEDIUM"},
+    "responseFormat": {"text": {"mimeType": "APPLICATION_JSON"}},
+    "seed": 7
+  },
+  "labels": {"safety_identifier": "session-1"}
+}

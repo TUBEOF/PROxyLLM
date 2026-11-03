@@ -1,0 +1,2 @@
+data: {"responseId":"resp-blocked-1","modelVersion":"gemini-2.5-flash","promptFeedback":{"blockReason":"SAFETY"},"usageMetadata":{"promptTokenCount":12,"totalTokenCount":12}}
+

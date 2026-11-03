@@ -1,0 +1,6 @@
+{
+  "fixture": "models-list.json",
+  "source": "https://aistudio.google.com/api-reference/models (list) ; https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta",
+  "accessed": "2026-11-03",
+  "notes": "Page 1 of the paginated GET /v1beta/models (pageSize<=1000, pageToken) response. The Model resource name is models/{model} (the chat paths take the bare model); thinking is the resource's own 'whether the model supports thinking' boolean \u2014 the discovery source for the model row's thinking flag; inputTokenLimit feeds the context window; supportedGenerationMethods gates which rows are chat-routable (the embedding entry pins that filter). nextPageToken drives the pager test."
+}

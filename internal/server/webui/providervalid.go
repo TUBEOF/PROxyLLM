@@ -29,6 +29,7 @@ const (
 	ProviderTypeOllamaNative    = "ollama-native"
 	ProviderTypeOpenAIDecisions = "openai-decisions"
 	ProviderTypeCodexOAuth      = "codex-oauth"
+	ProviderTypeGemini          = "gemini"
 	ProviderTypeFirecrawl       = "firecrawl"
 	// ProviderTypeOllamaCloudWeb is Ollama's hosted web-tool API as a
 	// web-tool backend (web_search/web_fetch), NOT a chat provider. It is a
@@ -215,6 +216,17 @@ func parseProviderConfig(typ string, raw []byte, guardURLs bool) (ProviderConfig
 		if cfg.Issuer != "" {
 			return cfg, fmt.Errorf("base_url is the only URL field for openai-decisions (issuer belongs to codex-oauth)")
 		}
+	case ProviderTypeGemini:
+		// base_url is optional: empty selects the hosted endpoint
+		// (generativelanguage.googleapis.com) — Vertex proxies override it.
+		if cfg.BaseURL != "" {
+			if err := checkURL(cfg.BaseURL, "base_url", guardURLs); err != nil {
+				return cfg, err
+			}
+		}
+		if cfg.Issuer != "" {
+			return cfg, fmt.Errorf("base_url is the only URL field for gemini (issuer belongs to codex-oauth)")
+		}
 	case ProviderTypeCodexOAuth:
 		if cfg.Issuer == "" {
 			return cfg, fmt.Errorf("codex-oauth requires issuer (the OAuth issuer, e.g. https://auth.openai.com)")
@@ -241,9 +253,9 @@ func parseProviderConfig(typ string, raw []byte, guardURLs bool) (ProviderConfig
 			return cfg, fmt.Errorf("base_url is the only URL field for web-tool providers (issuer belongs to codex-oauth)")
 		}
 	case "":
-		return cfg, fmt.Errorf("type is required (custom-openai, anthropic, openai-responses, ollama-cloud, ollama-native, openai-decisions, codex-oauth, firecrawl, ollama-cloud-web)")
+		return cfg, fmt.Errorf("type is required (custom-openai, anthropic, openai-responses, ollama-cloud, ollama-native, openai-decisions, codex-oauth, gemini, firecrawl, ollama-cloud-web)")
 	default:
-		return cfg, fmt.Errorf("unknown provider type %q (custom-openai, anthropic, openai-responses, ollama-cloud, ollama-native, openai-decisions, codex-oauth, firecrawl, ollama-cloud-web)", typ)
+		return cfg, fmt.Errorf("unknown provider type %q (custom-openai, anthropic, openai-responses, ollama-cloud, ollama-native, openai-decisions, codex-oauth, gemini, firecrawl, ollama-cloud-web)", typ)
 	}
 
 	for name := range cfg.Capabilities {

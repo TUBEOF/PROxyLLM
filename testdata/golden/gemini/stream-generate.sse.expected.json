@@ -1,0 +1,16 @@
+[
+  { "type": "start", "model": "gemini-3-flash", "usage": { "input_tokens": 10, "output_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0 } },
+  { "type": "block_start", "index": 0, "part": { "kind": "thinking" } },
+  { "type": "delta", "index": 0, "delta": { "kind": "thinking", "text": "Considering the weather request." } },
+  { "type": "block_stop", "index": 0 },
+  { "type": "block_start", "index": 1, "part": { "kind": "text" } },
+  { "type": "delta", "index": 1, "delta": { "kind": "text", "text": "Hello" } },
+  { "type": "delta", "index": 1, "delta": { "kind": "text", "text": " world" } },
+  { "type": "block_stop", "index": 1 },
+  { "type": "block_start", "index": 2, "part": { "kind": "tool_use", "id": "call_1", "name": "get_weather" } },
+  { "type": "delta", "index": 2, "delta": { "kind": "tool_input", "partial_json": "{\"location\":\"SF\"}" } },
+  { "type": "delta", "index": 2, "delta": { "kind": "signature", "text": "c2ln" } },
+  { "type": "block_stop", "index": 2 },
+  { "type": "message_delta", "message_delta": { "stop_reason": "tool_use", "usage": { "input_tokens": 10, "output_tokens": 5, "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0, "reasoning_tokens": 3 } } },
+  { "type": "done" }
+]

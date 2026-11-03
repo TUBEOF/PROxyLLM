@@ -90,6 +90,11 @@ const (
 
 	// ErrorOllama is `{"error":"message"}` — plain string, no typed codes.
 	ErrorOllama ErrorShape = "ollama"
+
+	// ErrorGemini is the Google API error body
+	// `{"error":{"code":…,"message":…,"status":"PERMISSION_DENIED"}}`; the
+	// status string is the vendor error code.
+	ErrorGemini ErrorShape = "gemini"
 )
 
 // EncodeRequest is the codec-side request encoder every provider uses.
@@ -477,6 +482,17 @@ func (c *Client) mapError(resp *http.Response) *provider.UpstreamError {
 		}
 		if json.Unmarshal(raw, &w) == nil && w.Error != "" {
 			up.Message = w.Error
+		}
+	case ErrorGemini:
+		var w struct {
+			Error struct {
+				Message string `json:"message"`
+				Status  string `json:"status"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(raw, &w) == nil {
+			up.Message = w.Error.Message
+			up.Type = w.Error.Status
 		}
 	default: // ErrorOpenAI
 		var w struct {

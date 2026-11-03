@@ -1,0 +1,6 @@
+{
+  "fixture": "generate-response.json",
+  "source": "https://aistudio.google.com/api-reference/generate-content (redirects from ai.google.dev/api/generate-content)",
+  "accessed": "2026-11-03",
+  "notes": "Complete GenerateContentResponse, transcribed from the reference: candidates[0].content.parts carrying a thought part (thought:true + thoughtSignature), a text part with thoughtSignature, and a functionCall with id/name/args; finishReason STOP on a parts list that includes a functionCall (the wire has no tool-calls finish reason); usageMetadata with promptTokenCount/candidatesTokenCount/thoughtsTokenCount/cachedContentTokenCount/totalTokenCount; modelVersion and responseId. finishMessage deliberately ABSENT (no IR channel)."
+}

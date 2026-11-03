@@ -1,0 +1,6 @@
+{
+  "fixture": "error-body.json",
+  "source": "https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta",
+  "accessed": "2026-11-03",
+  "notes": "The Google API non-2xx error body shape: error{code, message, status}. The HTTP status is the tier-1 classification; the status string (here RESOURCE_EXHAUSTED) is the vendor error code and decodes into the typed error's type."
+}

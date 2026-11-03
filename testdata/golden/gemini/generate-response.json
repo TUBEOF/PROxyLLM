@@ -1,0 +1,13 @@
+{
+  "candidates": [{
+    "content": {"role": "model", "parts": [
+      {"thought": true, "text": "The user wants weather info. I should call get_weather.", "thoughtSignature": "c2lnX3RoaW5raW5n"},
+      {"text": "I'll check the weather for you.", "thoughtSignature": "c2ln"},
+      {"functionCall": {"id": "call_1", "name": "get_weather", "args": {"location": "San Francisco, CA"}}}
+    ]},
+    "finishReason": "STOP"
+  }],
+  "usageMetadata": {"promptTokenCount": 26, "candidatesTokenCount": 17, "thoughtsTokenCount": 12, "cachedContentTokenCount": 8, "totalTokenCount": 63},
+  "modelVersion": "gemini-2.5-flash",
+  "responseId": "resp-request-123"
+}

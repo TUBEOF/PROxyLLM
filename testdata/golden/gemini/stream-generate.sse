@@ -1,0 +1,12 @@
+data: {"responseId":"resp-stream-1","modelVersion":"gemini-3-flash","candidates":[{"content":{"role":"model","parts":[]},"index":0}],"usageMetadata":{"promptTokenCount":10}}
+
+data: {"responseId":"resp-stream-1","modelVersion":"gemini-3-flash","candidates":[{"content":{"role":"model","parts":[{"thought":true,"text":"Considering the weather request."}]},"index":0}]}
+
+data: {"responseId":"resp-stream-1","modelVersion":"gemini-3-flash","candidates":[{"content":{"role":"model","parts":[{"text":"Hello"}]},"index":0}]}
+
+data: {"responseId":"resp-stream-1","modelVersion":"gemini-3-flash","candidates":[{"content":{"role":"model","parts":[{"text":" world"}]},"index":0}]}
+
+data: {"responseId":"resp-stream-1","modelVersion":"gemini-3-flash","candidates":[{"content":{"role":"model","parts":[{"functionCall":{"id":"call_1","name":"get_weather","args":{"location":"SF"}},"thoughtSignature":"c2ln"}]},"index":0}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"thoughtsTokenCount":3,"totalTokenCount":18}}
+
+data: {"responseId":"resp-stream-1","modelVersion":"gemini-3-flash","candidates":[{"finishReason":"STOP","content":{"role":"model","parts":[]},"index":0}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":5,"thoughtsTokenCount":3,"totalTokenCount":18}}
+

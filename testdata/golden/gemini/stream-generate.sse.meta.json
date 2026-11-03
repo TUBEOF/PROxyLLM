@@ -1,0 +1,6 @@
+{
+  "fixture": "stream-generate.sse",
+  "source": "https://aistudio.google.com/api-reference/generate-content (redirects from ai.google.dev/api/generate-content)/stream-generate-content ; https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta",
+  "accessed": "2026-11-03",
+  "notes": "The alt=sse streaming form: POST /v1beta/models/{model}:streamGenerateContent?alt=sse returns standard data:-framed SSE whose payloads are COMPLETE GenerateContentResponse chunks (the reference REST example shows the endpoint with alt=sse; chunk type is the documented streamGenerateContent response, one GenerateContentResponse). First chunk announces modelVersion/responseId; thought parts carry thought:true; the functionCall chunk carries thoughtSignature on the part; the FINAL chunk carries finishReason plus the full usageMetadata. The paired .expected.json holds the canonical ir.StreamEvent sequence (implicit block framing: text/thinking/tool blocks open and close on payload-kind changes; the signature rides a signature delta before the block stop). Transcribed from the reference shapes; framing per the WHATWG SSE rules the shared reader implements."
+}
