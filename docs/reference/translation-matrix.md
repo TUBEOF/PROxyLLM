@@ -112,7 +112,19 @@ fix lands with its fixture, matrix row, test and this entry's update.
 11. **Usage flavours** — `reasoning`-style and cached counters
     (`prompt_eval_cached_count`, Anthropic cache and web-request counters)
     normalize into the canonical usage; a flavour an upstream does not report
-    stays absent, never zero-invented.
+    stays absent, never zero-invented. Two surfaces are the documented
+    exception — their official schemas (openai-openapi 73e5f9e; the
+    anthropic-sdk-go v1.84 Usage required set — matrix fixtures, accessed
+    2026-11-03) require the members even when the upstream reported nothing:
+    the chat `chat.completion` document and its streaming usage chunk always
+    carry the three token totals (explicit zeros), and the Anthropic Message
+    carries the `cache_creation` TTL breakdown, `output_tokens_details` and
+    `server_tool_use` objects (explicit zeros) plus serving metadata. The
+    latter's strings are the reference's neutral values (tier `standard`,
+    speed `standard`, region `global`) — never an invented count; the
+    Responses usage detail objects (`cached_tokens` / `cache_write_tokens` /
+    `reasoning_tokens`) ride explicit zeros the same way. Upstream-reported
+    values are mapped through the IR and echoed verbatim.
 12. **Decision-image without a sniffable media type** — fails the encode with
     a clear error instead of a guessed data URL (see Decision operations).
 13. **Text citations on a replayed assistant block** — the `citations` key
@@ -122,6 +134,13 @@ fix lands with its fixture, matrix row, test and this entry's update.
     forwards without it (the IR has no citation field), while the config
     object still sets `ServerTool.CitationsEnabled`. Pinning the object shape
     used to fail the whole request with a 500.
+14. **Tool calls without an id** — native Ollama's `tool_calls` carry no id.
+    The official client-facing objects all require one, so the emission mints
+    `call_<n>` (OpenAI chat document, Responses `call_id`) or `toolu_<n>`
+    (Anthropic `tool_use`) per response, deterministically; the client replays
+    the minted id as `tool_call_id` / `tool_use_id` and the loop stays closed.
+    The canonical Anthropic `content_block_start` stream block already carried
+    an explicit `"id"` member, so streaming needs no mint.
 
 ## Request-side mapping
 
@@ -162,13 +181,26 @@ fabricated caption shared by every file id.
 | Tool call | `tool_calls[]`, with `finish_reason: tool_calls` | function-call item | `tool_use` block, with `stop_reason: tool_use` | `tool_calls[]` with object arguments | `functionCall` part — a STOP finish on a call turn reads `tool_use` (the wire has no tool-calls finish reason) |
 | Thinking | `reasoning` / `reasoning_content` on the message, decoded into a thinking part; the chat encoder has no thinking channel | reasoning item | thinking block with its opaque signature | `message.thinking` | `thought:true` parts carrying `thoughtSignature`, replayed verbatim |
 | Stop reason | `finish_reason` | `status` (`incomplete` reads as a max-tokens stop) | `stop_reason` | `done_reason` | `finishReason` enum: STOP→end_turn, MAX_TOKENS→max_tokens, the safety family→content_filter, tool failures + MISSING_THOUGHT_SIGNATURE→refusal, CONTINUATION→pause_turn |
-| Usage | `prompt_tokens` / `completion_tokens` / `total_tokens` | usage on the terminal `response.completed` event | `input_tokens` / `output_tokens`, plus the cache counters and the `server_tool_use` web-request counters | `prompt_eval_count` / `eval_count`, plus `prompt_eval_cached_count` | `usageMetadata`: promptTokenCount, candidatesTokenCount, thoughtsTokenCount (→ reasoning), cachedContentTokenCount (→ cache read) |
+| Usage | `prompt_tokens` / `completion_tokens` / `total_tokens` — always emitted (zeros explicit, like the streaming usage chunk; catalog №11) | usage on the terminal `response.completed` event, detail objects always present (`cached_tokens`+`cache_write_tokens`, `reasoning_tokens`) | `input_tokens` / `output_tokens`, plus the cache counters and the `server_tool_use` web-request counters, the `cache_creation` TTL breakdown, `output_tokens_details` and the serving metadata strings (catalog №11) | `prompt_eval_count` / `eval_count`, plus `prompt_eval_cached_count` | `usageMetadata`: promptTokenCount, candidatesTokenCount, thoughtsTokenCount (→ reasoning), cachedContentTokenCount (→ cache read) |
 
 Thinking an upstream volunteers for a request that never enabled it is dropped
 from the answer on every wire, streamed blocks included and renumbered so the
 client never sees a gap: a client that asked for no thinking reads the first
 content block as the answer. The policy behind it is in
 [model compatibility](model-compat.md); the drop is recorded in the trace.
+
+**Response envelopes are the official schemas, not a subset.** The three
+client-facing chat-family surfaces validate their emitted bytes against the
+official wire schemas in the conformance matrix (`internal/e2e/testdata/
+schemas/`, provenance in each `.meta.json`, accessed 2026-11-03), so the
+emission carries every member those schemas require — including the ones the
+IR does not track, rendered with the references' own neutral values:
+
+| Surface (ir.Response → wire) | Always-present members | Neutral value when untracked |
+|---|---|---|
+| OpenAI Chat `chat.completion` | `created`, per-choice `logprobs`, usage totals | `created` minted at encode; `logprobs: null`; usage zeros |
+| OpenAI Responses `response` (document and stream snapshots) | `access_programs`, `created_at`, `error`, `incomplete_details`, `instructions`, `tools`, `parallel_tool_calls`, `metadata`, `tool_choice`, `temperature`, `top_p`; item ids; output_text `annotations`/`logprobs`; usage detail objects | null / minted at encode / `[]` / `"auto"` / `1.0` / `true` / `{}` / `[]` — exactly the streaming snapshots' values |
+| Anthropic Message (document and `message_start`) | `container`, `stop_details`, `diagnostics`, `stop_sequence`, the usage sub-objects and serving strings | explicit nulls; `stop_sequence` rides the IR; serving `standard`/`standard`/`global` (reference defaults) with upstream-reported values echoed through the IR |
 
 ## Decision operations
 

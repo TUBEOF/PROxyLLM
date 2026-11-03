@@ -61,7 +61,7 @@ func TestEncodeResponse_WebSearchCallItem(t *testing.T) {
 	if item.Action == nil || item.Action.Type != "search" || item.Action.Query != "wetter köln morgen" {
 		t.Errorf("output[0].action = %+v, want search with the model's query", item.Action)
 	}
-	if !strings.Contains(string(raw), `{"type":"output_text","text":"Tomorrow: 12C, dry."}`) {
+	if !strings.Contains(string(raw), `{"type":"output_text","text":"Tomorrow: 12C, dry.","annotations":[],"logprobs":[]}`) {
 		t.Errorf("the final message was lost: %s", raw)
 	}
 }

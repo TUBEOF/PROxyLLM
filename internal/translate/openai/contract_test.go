@@ -366,6 +366,28 @@ func TestEncodeResponse_FromIR(t *testing.T) {
 	}
 }
 
+// TestEncodeResponse_SchemaParity pins the members the official chat.completion
+// schema requires (openai-openapi 73e5f9e, testdata/schemas/openai_chat.json):
+// created, per-choice logprobs (null when unrequested) and the usage counts
+// — present even when the upstream reported none (explicit zeros, like the
+// streaming usage chunk).
+func TestEncodeResponse_SchemaParity(t *testing.T) {
+	raw, err := oa.Codec{}.EncodeResponse(ir.Response{ID: "chatcmpl_1", Model: "m"})
+	if err != nil {
+		t.Fatalf("EncodeResponse: %v", err)
+	}
+	doc := string(raw)
+	for _, want := range []string{
+		`"created":1`, // unix seconds — any integer; sanity-check the key
+		`"logprobs":null`,
+		`"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0`,
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("schema-required member missing: %s\ngot: %s", want, doc)
+		}
+	}
+}
+
 func TestEncodeRequest_FromIR(t *testing.T) {
 	f := 0.7
 	req := ir.Request{

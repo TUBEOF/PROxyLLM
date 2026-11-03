@@ -96,6 +96,10 @@ type responsesStreamEncoder struct {
 	// itemCounter mints unique wire item ids (msg_0, fc_0, rs_0, ...).
 	itemCounter int
 
+	// mintedCalls counts id-less tool calls; the official function_call
+	// item requires a call_id, so one is minted per such call.
+	mintedCalls int
+
 	// seq is the Responses stream sequence_number. Every event carries the
 	// next value; clients use it to order/replay the stream.
 	seq int
@@ -199,6 +203,12 @@ func (e *responsesStreamEncoder) emitBlockStart(ev ir.StreamEvent) error {
 		item.wireID = fmt.Sprintf("fc_%d", ix)
 		item.kind = "function_call"
 		item.callID = p.ID
+		if item.callID == "" {
+			// id-less call (native Ollama upstreams): the official
+			// function_call item requires call_id — mint call_<n>.
+			item.callID = fmt.Sprintf("call_%d", e.mintedCalls)
+			e.mintedCalls++
+		}
 		item.name = p.Name
 		e.openItems = append(e.openItems, item)
 		return e.emitEvent("response.output_item.added", e.outputItemAddedFunctionCall(item))
@@ -330,8 +340,9 @@ func (e *responsesStreamEncoder) completedSnapshot(u ir.Usage) string {
 	resp.Usage = &responsesWireUsage{
 		InputTokens:         u.InputTokens,
 		OutputTokens:        u.OutputTokens,
+		InputTokensDetails:  responsesWireUsageDetails{CachedTokens: u.CacheReadInputTokens, CacheWriteTokens: u.CacheCreationInputTokens},
+		OutputTokensDetails: responsesWireUsageDetails{ReasoningTokens: u.ReasoningTokens},
 		TotalTokens:         u.InputTokens + u.OutputTokens,
-		OutputTokensDetails: &responsesWireUsageDetails{ReasoningTokens: u.ReasoningTokens},
 	}
 	resp.Output = e.buildCompletedOutput()
 	raw, _ := json.Marshal(struct {
@@ -358,9 +369,7 @@ func (e *responsesStreamEncoder) buildCompletedOutput() []responsesWireItem {
 				Status: "completed",
 				Role:   "assistant",
 				Content: &responsesWireContent{
-					Parts: []responsesWirePart{
-						{Type: "output_text", Text: item.text},
-					},
+					Parts: []responsesWirePart{outputTextPart(item.text)},
 				},
 			})
 		case "function_call":
@@ -373,11 +382,17 @@ func (e *responsesStreamEncoder) buildCompletedOutput() []responsesWireItem {
 				Arguments: item.text,
 			})
 		case "reasoning":
-			out = append(out, responsesWireItem{
+			// summary is schema-required on the official reasoning item.
+			rs := responsesWireItem{
 				ID:     item.wireID,
 				Type:   "reasoning",
 				Status: "completed",
-			})
+			}
+			rs.Summary = []responsesWirePart{}
+			if item.text != "" {
+				rs.Summary = []responsesWirePart{{Type: "summary_text", Text: item.text}}
+			}
+			out = append(out, rs)
 		case "web_search_call":
 			out = append(out, responsesWireItem{
 				ID:     item.wireID,
@@ -433,6 +448,7 @@ type respEncSnapshot struct {
 	IncompleteDetails  *json.RawMessage    `json:"incomplete_details"`
 	Instructions       string              `json:"instructions"`
 	MaxOutputTokens    *int                `json:"max_output_tokens"`
+	AccessPrograms     *json.RawMessage    `json:"access_programs"`
 	Model              string              `json:"model"`
 	Output             []responsesWireItem `json:"output"`
 	ParallelToolCalls  bool                `json:"parallel_tool_calls"`
@@ -486,17 +502,35 @@ func (e *responsesStreamEncoder) outputItemAddedMessage(item *responsesEncItem) 
 
 func (e *responsesStreamEncoder) outputItemAddedFunctionCall(item *responsesEncItem) string {
 	raw, _ := json.Marshal(struct {
-		Type        string            `json:"type"`
-		OutputIndex int               `json:"output_index"`
-		Item        responsesWireItem `json:"item"`
+		Type        string `json:"type"`
+		OutputIndex int    `json:"output_index"`
+		Item        struct {
+			ID        string `json:"id"`
+			Type      string `json:"type"`
+			Status    string `json:"status"`
+			CallID    string `json:"call_id"`
+			Name      string `json:"name"`
+			Arguments string `json:"arguments"`
+		} `json:"item"`
 	}{
 		Type:        "response.output_item.added",
 		OutputIndex: item.outputIx,
-		Item: responsesWireItem{
+		Item: struct {
+			ID        string `json:"id"`
+			Type      string `json:"type"`
+			Status    string `json:"status"`
+			CallID    string `json:"call_id"`
+			Name      string `json:"name"`
+			Arguments string `json:"arguments"`
+		}{
 			ID:     item.wireID,
 			Type:   "function_call",
+			Status: "in_progress",
 			CallID: item.callID,
 			Name:   item.name,
+			// arguments is schema-required on the function_call item; the
+			// fragment assembly via function_call_arguments.delta follows.
+			Arguments: "",
 		},
 	})
 	return string(raw)
@@ -521,15 +555,29 @@ func (e *responsesStreamEncoder) outputItemAddedSearch(item *responsesEncItem) s
 
 func (e *responsesStreamEncoder) outputItemAddedReasoning(item *responsesEncItem) string {
 	raw, _ := json.Marshal(struct {
-		Type        string            `json:"type"`
-		OutputIndex int               `json:"output_index"`
-		Item        responsesWireItem `json:"item"`
+		Type        string `json:"type"`
+		OutputIndex int    `json:"output_index"`
+		Item        struct {
+			ID      string              `json:"id"`
+			Type    string              `json:"type"`
+			Status  string              `json:"status"`
+			Summary []responsesWirePart `json:"summary"`
+		} `json:"item"`
 	}{
 		Type:        "response.output_item.added",
 		OutputIndex: item.outputIx,
-		Item: responsesWireItem{
-			ID:   item.wireID,
-			Type: "reasoning",
+		Item: struct {
+			ID      string              `json:"id"`
+			Type    string              `json:"type"`
+			Status  string              `json:"status"`
+			Summary []responsesWirePart `json:"summary"`
+		}{
+			ID:     item.wireID,
+			Type:   "reasoning",
+			Status: "in_progress",
+			// summary is schema-required on the reasoning item; the summary
+			// deltas follow (summary_text assembled by the client).
+			Summary: []responsesWirePart{},
 		},
 	})
 	return string(raw)
@@ -542,12 +590,16 @@ func (e *responsesStreamEncoder) textDelta(item *responsesEncItem, text string) 
 		OutputIndex  int    `json:"output_index"`
 		ContentIndex int    `json:"content_index"`
 		Delta        string `json:"delta"`
+		// logprobs is schema-required on the official delta (the official
+		// example carries `[]`); token logprobs are not tracked by the IR.
+		Logprobs []json.RawMessage `json:"logprobs"`
 	}{
 		Type:         "response.output_text.delta",
 		ItemID:       item.wireID,
 		OutputIndex:  item.outputIx,
 		ContentIndex: 0,
 		Delta:        text,
+		Logprobs:     []json.RawMessage{},
 	})
 	return string(raw)
 }
@@ -594,14 +646,19 @@ func (e *responsesStreamEncoder) outputItemDone(item *responsesEncItem) string {
 	case "message":
 		wireItem.Role = "assistant"
 		wireItem.Content = &responsesWireContent{
-			Parts: []responsesWirePart{
-				{Type: "output_text", Text: item.text},
-			},
+			Parts: []responsesWirePart{outputTextPart(item.text)},
 		}
 	case "function_call":
 		wireItem.CallID = item.callID
 		wireItem.Name = item.name
 		wireItem.Arguments = item.text
+	case "reasoning":
+		// summary is schema-required on the reasoning item: the accumulated
+		// summary text, or the empty array the official in-flight shape uses.
+		wireItem.Summary = []responsesWirePart{}
+		if item.text != "" {
+			wireItem.Summary = []responsesWirePart{{Type: "summary_text", Text: item.text}}
+		}
 	case "web_search_call":
 		wireItem.Action = &responsesWireSearchAction{Type: "search", Query: item.query}
 	}

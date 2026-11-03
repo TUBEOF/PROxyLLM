@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/tubeof/proxyllm/internal/translate"
 	"github.com/tubeof/proxyllm/internal/translate/ir"
@@ -152,9 +153,11 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 			wm.Content = contentFromParts(m.Parts)
 		case ir.RoleAssistant:
 			wm.Content = contentFromParts(m.Parts)
+			histCalls := 0
 			for _, p := range m.Parts {
 				if tc, ok := p.(ir.ToolCallPart); ok {
-					wm.ToolCalls = append(wm.ToolCalls, toolCallToWire(tc))
+					histCalls++
+					wm.ToolCalls = append(wm.ToolCalls, toolCallToWire(tc, histCalls))
 				}
 			}
 		case ir.RoleTool:
@@ -288,18 +291,21 @@ func (Codec) DecodeResponse(raw []byte) (ir.Response, error) {
 // EncodeResponse encodes an IR response into an OpenAI chat-completions body.
 func (Codec) EncodeResponse(resp ir.Response) ([]byte, error) {
 	w := wireResponse{
-		ID:     resp.ID,
-		Object: "chat.completion",
-		Model:  resp.Model,
-		Usage:  usageToWire(resp.Usage),
+		ID:      resp.ID,
+		Object:  "chat.completion",
+		Model:   resp.Model,
+		Created: time.Now().Unix(),
+		Usage:   usageToWire(resp.Usage),
 	}
 	msg := &wireMessage{Role: "assistant"}
+	calls := 0
 	for _, p := range resp.Content {
 		switch pt := p.(type) {
 		case ir.TextPart:
 			msg.Content = wireContent{Str: &pt.Text}
 		case ir.ToolCallPart:
-			msg.ToolCalls = append(msg.ToolCalls, toolCallToWire(pt))
+			calls++
+			msg.ToolCalls = append(msg.ToolCalls, toolCallToWire(pt, calls))
 		}
 	}
 	finish := "stop"
@@ -310,6 +316,7 @@ func (Codec) EncodeResponse(resp ir.Response) ([]byte, error) {
 		Index:        0,
 		Message:      msg,
 		FinishReason: finish,
+		Logprobs:     nil, // explicit null: not requested on this surface
 	}}
 	raw, err := json.Marshal(w)
 	if err != nil {
@@ -530,9 +537,9 @@ type wireUsageDetails struct {
 }
 
 type wireUsage struct {
-	PromptTokens            int               `json:"prompt_tokens,omitempty"`
-	CompletionTokens        int               `json:"completion_tokens,omitempty"`
-	TotalTokens             int               `json:"total_tokens,omitempty"`
+	PromptTokens            int               `json:"prompt_tokens"`
+	CompletionTokens        int               `json:"completion_tokens"`
+	TotalTokens             int               `json:"total_tokens"`
 	PromptTokensDetails     *wireUsageDetails `json:"prompt_tokens_details,omitempty"`
 	CompletionTokensDetails *wireUsageDetails `json:"completion_tokens_details,omitempty"`
 }
@@ -542,12 +549,18 @@ type wireChoice struct {
 	Message      *wireMessage `json:"message,omitempty"`
 	Delta        *wireMessage `json:"delta,omitempty"`
 	FinishReason string       `json:"finish_reason"`
+	// Logprobs is the per-choice logprobs member: null when the surface
+	// did not request them (the official example emits `"logprobs": null`;
+	// the key is schema-required on every choice). Upstream-reported token
+	// logprobs would need IR threading this build does not carry.
+	Logprobs *json.RawMessage `json:"logprobs"`
 }
 
 type wireResponse struct {
 	ID      string        `json:"id"`
 	Object  string        `json:"object"`
 	Model   string        `json:"model"`
+	Created int64         `json:"created"`
 	Choices []wireChoice  `json:"choices"`
 	Usage   wireUsage     `json:"usage"`
 	Error   *wireAPIError `json:"error,omitempty"`
@@ -662,13 +675,21 @@ func toolCallFromWire(w wireToolCall) ir.ToolCallPart {
 	}
 }
 
-func toolCallToWire(tc ir.ToolCallPart) wireToolCall {
+// toolCallToWire renders a tool call. The official tool_call object requires
+// an id; an id-less call (upstreams like native Ollama carry none) mints the
+// nth `call_<n>` of this response — deterministic, and the client replays it
+// as tool_call_id.
+func toolCallToWire(tc ir.ToolCallPart, ordinal int) wireToolCall {
 	args := string(tc.Input)
 	if args == "" {
 		args = "{}"
 	}
+	id := tc.ID
+	if id == "" {
+		id = fmt.Sprintf("call_%d", ordinal-1)
+	}
 	return wireToolCall{
-		ID:       tc.ID,
+		ID:       id,
 		Type:     "function",
 		Function: wireFunction{Name: tc.Name, Arguments: args},
 	}

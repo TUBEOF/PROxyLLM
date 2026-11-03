@@ -93,7 +93,10 @@ func TestStreamEncode_WireShape(t *testing.T) {
 
 	for _, want := range []string{
 		"event: message_start\n",
-		`data: {"type":"message_start","message":{"id":"msg_01XFDUDYJgAACzvnptvVoYEL","type":"message","role":"assistant","model":"claude-sonnet-5","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":25,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}` + "\n\n",
+		// The Message schema requires the container/stop_details/diagnostics
+		// members (null unless used) and the usage sub-objects; the serving
+		// strings ride verbatim (unset → "" on the stream).
+		`data: {"type":"message_start","message":{"id":"msg_01XFDUDYJgAACzvnptvVoYEL","type":"message","role":"assistant","model":"claude-sonnet-5","content":[],"stop_reason":null,"stop_sequence":null,"container":null,"stop_details":null,"diagnostics":null,"usage":{"input_tokens":25,"output_tokens":1,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens_details":{"thinking_tokens":0},"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"","inference_geo":"","speed":""}}}` + "\n\n",
 		`event: content_block_start` + "\n",
 		`data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_01","name":"get_weather","input":{}}}` + "\n\n",
 		`event: content_block_delta` + "\n",
@@ -199,7 +202,7 @@ func TestStreamEncode_ServerToolWireShape(t *testing.T) {
 		`data: {"type":"content_block_start","index":1,"content_block":{"type":"server_tool_use","id":"srvtoolu_014hJH82Qum7Td6UV8gDXThB","name":"web_search","input":{}}}` + "\n\n",
 		`data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"latest quantum computing breakthroughs 2025\"}"}}` + "\n\n",
 		`data: {"type":"content_block_start","index":2,"content_block":{"type":"web_search_tool_result","tool_use_id":"srvtoolu_014hJH82Qum7Td6UV8gDXThB","content":[{"type":"web_search_result","url":"https://example.com","title":"Quantum Computing Breakthroughs in 2025","encrypted_content":"Ev0DCioIAxgCIiQ3NmU4ZmI4OC1k..."}]}}` + "\n\n",
-		`"usage":{"input_tokens":10682,"output_tokens":510,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"server_tool_use":{"web_search_requests":1}}}` + "\n\n",
+		`"usage":{"input_tokens":10682,"output_tokens":510,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens_details":{"thinking_tokens":0},"server_tool_use":{"web_search_requests":1,"web_fetch_requests":0},"service_tier":"","inference_geo":"","speed":""}}` + "\n\n",
 	} {
 		if !strings.Contains(wire, want) {
 			t.Errorf("wire missing %q\ngot:\n%s", want, wire)

@@ -243,18 +243,25 @@ func wireEventName(v any) string {
 // fixture shows is emitted — and nothing else (message_stop must not carry
 // a stray "index":0).
 
-// wireStartMessage is the message snapshot inside message_start; unlike
-// wireResponse it emits stop_reason/stop_sequence as explicit nulls, as the
-// fixture's wire shape requires.
+// wireStartMessage is the message snapshot inside message_start — and the
+// non-streaming Message body (the official schema governs both: every
+// member is required, and container/stop_details/diagnostics are explicit
+// nulls unless the request created a container / the model refused / cache
+// diagnostics were requested). Unlike wireResponse it emits
+// stop_reason/stop_sequence as explicit nulls, as the fixture's wire shape
+// requires.
 type wireStartMessage struct {
-	ID           string         `json:"id"`
-	Type         string         `json:"type"`
-	Role         string         `json:"role"`
-	Model        string         `json:"model"`
-	Content      []wireBlock    `json:"content"`
-	StopReason   *ir.StopReason `json:"stop_reason"`
-	StopSequence *string        `json:"stop_sequence"`
-	Usage        wireUsage      `json:"usage"`
+	ID           string           `json:"id"`
+	Type         string           `json:"type"`
+	Role         string           `json:"role"`
+	Model        string           `json:"model"`
+	Content      []wireBlock      `json:"content"`
+	StopReason   *ir.StopReason   `json:"stop_reason"`
+	StopSequence *string          `json:"stop_sequence"`
+	Container    *json.RawMessage `json:"container"`
+	StopDetails  *json.RawMessage `json:"stop_details"`
+	Diagnostics  *json.RawMessage `json:"diagnostics"`
+	Usage        wireUsage        `json:"usage"`
 }
 
 type wireStartEvent struct {

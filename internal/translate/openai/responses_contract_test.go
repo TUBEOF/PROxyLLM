@@ -406,6 +406,74 @@ func TestResponsesEncodeRequest_FromIR(t *testing.T) {
 	}
 }
 
+// TestResponsesEncodeResponse_SchemaParity pins the members the official
+// Response schema requires (openai-openapi 73e5f9e, testdata/schemas/
+// openai_responses.json): the full envelope (neutral defaults for
+// untracked request properties), item ids on message items, the
+// annotations/logprobs members on output_text parts, and the usage detail
+// objects.
+func TestResponsesEncodeResponse_SchemaParity(t *testing.T) {
+	raw, err := oa.ResponsesCodec{}.EncodeResponse(ir.Response{
+		ID:    "resp_1",
+		Model: "m",
+		Content: []ir.Part{
+			ir.TextPart{Text: "hi"},
+		},
+		Usage: ir.Usage{InputTokens: 3, OutputTokens: 2},
+	})
+	if err != nil {
+		t.Fatalf("EncodeResponse: %v", err)
+	}
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, key := range []string{"access_programs", "created_at", "error", "incomplete_details", "instructions", "tools", "parallel_tool_calls", "metadata", "tool_choice", "temperature", "top_p", "id", "object", "model", "output", "usage"} {
+		if v, ok := doc[key]; !ok || string(v) == "" {
+			t.Errorf("schema-required envelope member %q missing\nraw: %s", key, raw)
+		}
+	}
+	if got := string(doc["access_programs"]); got != "null" {
+		t.Errorf("access_programs = %s, want null (no program access claimed)", got)
+	}
+	var usage struct {
+		InputTokensDetails struct {
+			CachedTokens     int `json:"cached_tokens"`
+			CacheWriteTokens int `json:"cache_write_tokens"`
+		} `json:"input_tokens_details"`
+		OutputTokensDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"output_tokens_details"`
+	}
+	if err := json.Unmarshal(doc["usage"], &usage); err != nil {
+		t.Fatalf("usage unmarshal: %v (%s)", err, doc["usage"])
+	}
+	var items []struct {
+		ID      string `json:"id"`
+		Content []struct {
+			Type        string            `json:"type"`
+			Annotations []json.RawMessage `json:"annotations"`
+			Logprobs    []json.RawMessage `json:"logprobs"`
+		} `json:"content"`
+	}
+	if err := json.Unmarshal(doc["output"], &items); err != nil {
+		t.Fatalf("output unmarshal: %v (%s)", err, doc["output"])
+	}
+	if len(items) != 1 {
+		t.Fatalf("output items = %d, want the one message (%s)", len(items), raw)
+	}
+	item := items[0]
+	if item.ID == "" {
+		t.Errorf("message item carries no id: %s", raw)
+	}
+	if len(item.Content) != 1 || item.Content[0].Type != "output_text" {
+		t.Fatalf("message content = %s", doc["output"])
+	}
+	if item.Content[0].Annotations == nil || item.Content[0].Logprobs == nil {
+		t.Errorf("output_text part missing the required annotations/logprobs members: %s", raw)
+	}
+}
+
 func TestResponsesEncodeResponse_FromIR(t *testing.T) {
 	resp := ir.Response{
 		ID:    "resp_test",
