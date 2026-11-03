@@ -91,3 +91,15 @@ that does not know a newer event can ignore it.
 | `POST` | `/v1/systemone` | [Decisions](decisions.md#post-v1systemone) |
 | `POST` | `/v1/decisions` | [Decisions](decisions.md#post-v1decisions) |
 | `GET` | `/healthz` | [Deployment](../deployment.md) |
+
+## Machine-readable description
+
+`openapi.json` in this directory is an OpenAPI 3.1 description covering every
+HTTP surface above (chat, responses, models, messages + count_tokens, native
+Ollama and Gemini, the decision surfaces). The one surface it cannot express is
+`GET /v1/responses` (the Responses transport's WebSocket upgrade): OpenAPI 3.0/3.1
+has no streaming-channel vocabulary, and an AsyncAPI description is out of
+scope. That transport follows the same request body and event shapes as
+`POST /v1/responses` — one `response.create` frame decoded by the same codec,
+one JSON text frame back per Responses event, and a per-connection
+`previous_response_id` history (see internal/server/httpapi/responses_ws.go).
