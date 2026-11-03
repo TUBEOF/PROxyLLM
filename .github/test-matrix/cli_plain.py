@@ -141,7 +141,11 @@ def ms_reset(mockserver: str) -> None:
 # (the Codex fork, wire_api = "chat") streams every upstream call it makes —
 # model turns carry its guidance stacks (<skills_instructions>,
 # <environment_context> user messages before the prompt) plus one streamed
-# title call after the first turn. MockServer's LLM
+# title call after the first turn. aider 0.86.2 streams every call it makes
+# (with stream_options.include_usage) and makes no utility calls; it appends
+# its whole-edit instructions to each user message at request time, so its
+# pinned matcher content is the prompt plus that fixed scaffold (see
+# AIDER_MESSAGE_SUFFIX). MockServer's LLM
 # response follows the expectation's streaming flag only, and its JSON
 # matcher wants exact leaf values, so each turn is pinned by its exact last
 # user message in the CLI's own shape, later turns ranked higher (their
@@ -180,9 +184,48 @@ def _mock_expectation(mockserver: str, text: str, streaming: bool,
 PART_ARRAY = {"claude-code"}
 
 
+# CLIs that wrap the typed prompt in a larger user message on the wire:
+# aider 0.86.2 appends its whole-edit instructions verbatim to every user
+# message at request time (captured from the pinned version's wire), so the
+# pinned MockServer matcher must carry prompt + scaffold while the real-turn
+# check accepts the prompt as its prefix.
+AIDER_MESSAGE_SUFFIX = (
+    "\n\n"
+    "To suggest changes to a file you MUST return the entire content of the updated file.\n"
+    "You MUST use this *file listing* format:\n"
+    "\n"
+    "path/to/filename.js\n"
+    "```\n"
+    "// entire file content ...\n"
+    "// ... goes in between\n"
+    "```\n"
+    "\n"
+    "Every *file listing* MUST use this format:\n"
+    "- First line: the filename with any originally provided path; no extra markup, punctuation, comments, etc. **JUST** the filename with path.\n"
+    "- Second line: opening ```\n"
+    "- ... entire content of the file ...\n"
+    "- Final line: closing ```\n"
+    "\n"
+    "To suggest changes to a file you MUST return a *file listing* that contains the entire content of the file.\n"
+    '*NEVER* skip, omit or elide content from a *file listing* using "..." or by adding comments like "... rest of code..."!\n'
+    "Create a new file you MUST return a *file listing* which includes an appropriate filename, including any appropriate path.\n"
+    "\n"
+    "Reply in English.\n"
+    "\n"
+)
+WRAPS_PROMPT = {"aider": True}
+
+
+def last_user_content(cli: str, prompt: str) -> str:
+    """The user message content the CLI puts on the wire for one typed prompt."""
+    if WRAPS_PROMPT.get(cli):
+        return prompt + AIDER_MESSAGE_SUFFIX
+    return prompt
+
+
 def mock_pinned(mockserver: str, cli: str, turns: list[tuple[str, str]], streaming: bool) -> None:
     for rank, (prompt, text) in enumerate(turns):
-        matcher: dict = {"messages": [{"role": "user", "content": prompt}]}
+        matcher: dict = {"messages": [{"role": "user", "content": last_user_content(cli, prompt)}]}
         if streaming:
             matcher["stream"] = True
             priority = 150 + 10 * rank
@@ -220,7 +263,7 @@ def turn_requests(reqs: list[dict], prompt: str, cli: str = "") -> list[dict]:
         last = msgs[-1]
         content = last.get("content")
         if isinstance(content, str):
-            if content == prompt:
+            if content == prompt or (WRAPS_PROMPT.get(cli) and content.startswith(prompt)):
                 out.append(r)
         elif isinstance(content, list):
             if any(isinstance(p, dict) and p.get("type") == "text" and p.get("text") == prompt
@@ -244,10 +287,13 @@ def plain_command(manifest: Path) -> str:
 
 # A CLI is "ready" once its own chrome painted; each TUI names itself.
 # gptme flushes stdin before entering its read loop, so its ready marker must
-# be the composer prompt itself — text typed earlier is discarded.
+# be the composer prompt itself — text typed earlier is discarded. aider
+# (prompt_toolkit, no TUI chrome) repaints its composer per token too, so its
+# ready state is its banner and the composer waits are the bare prompt.
 READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
                  "openhands": "OpenHands CLI v",
                  "gptme": "User:",
+                 "aider": "Aider v",
                  "open-interpreter": "Open Interpreter (v"}
 
 # How each CLI's model turns stream upstream, and what the catch-all bucket
@@ -257,11 +303,13 @@ READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
 # turns and makes no utility calls, gptme streams turns but not its one
 # auto-naming call (a closed chat completion after the first reply).
 # open-interpreter is a Codex fork and streams everything it sends upstream
-# (model turns and title calls alike, over wire_api = "chat").
+# (model turns and title calls alike, over wire_api = "chat"), as does aider
+# (which makes no utility calls at all).
 STREAMING = {"codex": False, "claude-code": True, "crush": True, "openhands": False,
-             "gptme": True, "open-interpreter": True}
+             "gptme": True, "aider": True, "open-interpreter": True}
 FALLBACK_STREAMING = {"codex": True, "claude-code": False, "crush": True,
-                      "openhands": False, "gptme": False, "open-interpreter": True}
+                      "openhands": False, "gptme": False, "aider": True,
+                      "open-interpreter": True}
 
 # User-message markers that are runtime metadata, not model turns; see
 # turn_requests.
@@ -331,7 +379,7 @@ def tmux_pane(name: str) -> str:
 # Some CLIs flush stdin when they repaint the composer after every turn, so
 # typed-ahead input is discarded: wait until the composer prompt itself is
 # the pane's last line before typing.
-PROMPT_TAIL = {"gptme": "User:"}
+PROMPT_TAIL = {"gptme": "User:", "aider": ">"}
 
 
 def wait_pane_tail(name: str, tail: str, timeout: float, what: str) -> None:
@@ -564,7 +612,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--home", required=True)
     parser.add_argument("--mockserver", required=True)
-    parser.add_argument("--clients", default="codex,claude-code,crush,openhands,gptme,open-interpreter")
+    parser.add_argument("--clients", default="codex,claude-code,crush,openhands,gptme,open-interpreter,aider")
     parser.add_argument("--scenarios", default="answer,recall")
     parser.add_argument("--binary", default=str(REPO / "proxyllm"))
     parser.add_argument("--port", type=int, default=18190)
