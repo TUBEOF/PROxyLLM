@@ -1173,9 +1173,8 @@
   },
   {
    "id": "cancel__client-abort",
-   "test": "",
-   "status": "pending",
-   "note": "client-driven abort cell: needs a streaming client that cancels mid-answer"
+   "test": "TestMatrix_Cancel_ClientAbort",
+   "status": "green"
   },
   {
    "id": "upstream__codex-oauth",
