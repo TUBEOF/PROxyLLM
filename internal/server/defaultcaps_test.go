@@ -21,6 +21,7 @@ func TestDefaultCaps_MatchProviderTypeCatalog(t *testing.T) {
 		webui.ProviderTypeOllamaNative,
 		webui.ProviderTypeOpenAIDecisions,
 		webui.ProviderTypeCodexOAuth,
+		webui.ProviderTypeGemini,
 		webui.ProviderTypeFirecrawl,
 		webui.ProviderTypeOllamaCloudWeb,
 	}

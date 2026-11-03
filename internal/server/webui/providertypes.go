@@ -122,6 +122,21 @@ var providerTypes = []providerTypeDesc{
 		DefaultCapabilities: map[string]bool{"streaming": true, "tools": true, "vision": true},
 	},
 	{
+		Type:        ProviderTypeGemini,
+		Label:       "Google Gemini",
+		Description: "Google's native Gemini generateContent API at /v1beta with x-goog-api-key authentication and SSE streaming.",
+		Kind:        KindLLM,
+		Auth:        "api_key",
+		SettingsFields: []fieldDesc{
+			{Key: "base_url", Label: "Base URL", Kind: fieldKindURL, Required: false,
+				Hint: "Optional; defaults to https://generativelanguage.googleapis.com (the /v1beta/models/{model}:generateContent path rides the root)"},
+			{Key: "model_prefix", Label: "Model prefix", Kind: fieldKindText, Required: false,
+				Hint: "Model identity prefix for this type. Empty = the type string (\"gemini\")."},
+		},
+		AccountFields:       nil,
+		DefaultCapabilities: map[string]bool{"streaming": true, "tools": true, "vision": true},
+	},
+	{
 		Type:        ProviderTypeOllamaCloud,
 		Label:       "Ollama Cloud",
 		Description: "The hosted Ollama API at ollama.com via its OpenAI-compatible /v1 endpoint. Multiple API keys = multiple accounts.",

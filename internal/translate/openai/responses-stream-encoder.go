@@ -103,10 +103,11 @@ type responsesStreamEncoder struct {
 
 // responsesEncItem is one tracked output item on the encoder side.
 type responsesEncItem struct {
-	wireID   string // minted wire item id (msg_n / fc_n / rs_n)
-	kind     string // "message" | "function_call" | "reasoning"
+	wireID   string // minted wire item id (msg_n / fc_n / rs_n / ws_n)
+	kind     string // "message" | "function_call" | "reasoning" | "web_search_call"
 	callID   string // function_call only
 	name     string // function_call only
+	query    string // web_search_call only: the action's search query
 	text     string // accumulated text for message/reasoning items
 	outputIx int    // output_index on the wire
 }
@@ -206,6 +207,22 @@ func (e *responsesStreamEncoder) emitBlockStart(ev ir.StreamEvent) error {
 		item.kind = "reasoning"
 		e.openItems = append(e.openItems, item)
 		return e.emitEvent("response.output_item.added", e.outputItemAddedReasoning(item))
+	case ir.ServerToolUsePart:
+		if p.Name != "web_search" {
+			// web_fetch and friends have no item type this wire defines
+			// (verified 2026-11-02) - the slot keeps later deltas aligned.
+			e.openItems = append(e.openItems, nil)
+			return e.emitComment("")
+		}
+		var in struct {
+			Query string `json:"query"`
+		}
+		_ = json.Unmarshal(p.Input, &in)
+		item.wireID = fmt.Sprintf("ws_%d", ix)
+		item.kind = "web_search_call"
+		item.query = in.Query
+		e.openItems = append(e.openItems, item)
+		return e.emitEvent("response.output_item.added", e.outputItemAddedSearch(item))
 	default:
 		// Unknown part kind: keep an index slot so later IR indices still
 		// line up (deltas address openItems by the IR index), and relay as
@@ -361,6 +378,13 @@ func (e *responsesStreamEncoder) buildCompletedOutput() []responsesWireItem {
 				Type:   "reasoning",
 				Status: "completed",
 			})
+		case "web_search_call":
+			out = append(out, responsesWireItem{
+				ID:     item.wireID,
+				Type:   "web_search_call",
+				Status: "completed",
+				Action: &responsesWireSearchAction{Type: "search", Query: item.query},
+			})
 		}
 	}
 	return out
@@ -478,6 +502,23 @@ func (e *responsesStreamEncoder) outputItemAddedFunctionCall(item *responsesEncI
 	return string(raw)
 }
 
+func (e *responsesStreamEncoder) outputItemAddedSearch(item *responsesEncItem) string {
+	raw, _ := json.Marshal(struct {
+		Type        string            `json:"type"`
+		OutputIndex int               `json:"output_index"`
+		Item        responsesWireItem `json:"item"`
+	}{
+		Type:        "response.output_item.added",
+		OutputIndex: item.outputIx,
+		Item: responsesWireItem{
+			ID:     item.wireID,
+			Type:   "web_search_call",
+			Status: "in_progress",
+		},
+	})
+	return string(raw)
+}
+
 func (e *responsesStreamEncoder) outputItemAddedReasoning(item *responsesEncItem) string {
 	raw, _ := json.Marshal(struct {
 		Type        string            `json:"type"`
@@ -561,6 +602,8 @@ func (e *responsesStreamEncoder) outputItemDone(item *responsesEncItem) string {
 		wireItem.CallID = item.callID
 		wireItem.Name = item.name
 		wireItem.Arguments = item.text
+	case "web_search_call":
+		wireItem.Action = &responsesWireSearchAction{Type: "search", Query: item.query}
 	}
 	raw, _ := json.Marshal(struct {
 		Type        string            `json:"type"`

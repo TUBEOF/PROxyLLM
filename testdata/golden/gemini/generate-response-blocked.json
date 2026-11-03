@@ -1,0 +1,6 @@
+{
+  "promptFeedback": {"blockReason": "SAFETY"},
+  "usageMetadata": {"promptTokenCount": 12, "totalTokenCount": 12},
+  "modelVersion": "gemini-2.5-flash",
+  "responseId": "resp-blocked-1"
+}

@@ -323,6 +323,32 @@ func (ResponsesCodec) EncodeResponse(resp ir.Response) ([]byte, error) {
 			}
 			item.EncryptedContent = pt.Signature
 			w.Output = append(w.Output, item)
+		case ir.ServerToolUsePart:
+			// web_search rendering per the Responses contract: one item per
+			// use, status completed, the action carrying the query the model
+			// searched. web_fetch has no sibling item type in the contract,
+			// so it stays unrepresented here (the Anthropic surface renders
+			// both; the Chat/Ollama surfaces drop both — matrix, translation
+			// matrix).
+			if pt.Name != "web_search" {
+				continue
+			}
+			var in struct {
+				Query string `json:"query"`
+			}
+			_ = json.Unmarshal(pt.Input, &in)
+			w.Output = append(w.Output, responsesWireItem{
+				Type:   "web_search_call",
+				ID:     pt.ID,
+				Status: "completed",
+				Action: &responsesWireSearchAction{Type: "search", Query: in.Query},
+			})
+		case ir.ServerToolResultPart:
+			// The result block carries no item of its own on this wire: the
+			// search item above is the client-visible fact, and results are
+			// opt-in (include web_search_call.results). Nothing is dropped
+			// that the contract expects here.
+			continue
 		}
 	}
 	raw, err := json.Marshal(w)
@@ -422,6 +448,49 @@ type responsesWireItem struct {
 	// reasoning items.
 	Summary          []responsesWirePart `json:"summary,omitempty"`
 	EncryptedContent string              `json:"encrypted_content,omitempty"`
+
+	// web_search_call: the item the real Responses API emits for a server-
+	// executed web search (verified 2026-11-02 against the OpenAI SDK types
+	// and openresponses.org: id, status, action{type:"search",query}).
+	// The item carries no results — citations ride the message's
+	// output_text annotations; the same shape round-trips as an input item.
+	Action *responsesWireSearchAction `json:"action,omitempty"`
+}
+
+// responsesWireSearchAction is web_search_call's action object. Only the
+// search variant is produced by emulation; the wire may carry open_page and
+// find_in_page variants on replay, which decode raw and re-emit untouched.
+type responsesWireSearchAction struct {
+	Type  string `json:"type"`
+	Query string `json:"query,omitempty"`
+
+	// Raw preserves an action whose type the proxy does not produce —
+	// verbatim in, verbatim out.
+	Raw map[string]json.RawMessage `json:"-"`
+}
+
+func (a *responsesWireSearchAction) UnmarshalJSON(b []byte) error {
+	if err := json.Unmarshal(b, &a.Raw); err != nil {
+		return err
+	}
+	if t, ok := a.Raw["type"]; ok {
+		_ = json.Unmarshal(t, &a.Type)
+	}
+	if q, ok := a.Raw["query"]; ok {
+		_ = json.Unmarshal(q, &a.Query)
+	}
+	return nil
+}
+
+func (a responsesWireSearchAction) MarshalJSON() ([]byte, error) {
+	if a.Raw != nil {
+		return json.Marshal(a.Raw)
+	}
+	body := map[string]any{"type": a.Type}
+	if a.Query != "" {
+		body["query"] = a.Query
+	}
+	return json.Marshal(body)
 }
 
 // responsesWireTool is a FLAT function tool: no nested function wrapper.
@@ -602,9 +671,54 @@ func responsesMessageFromItem(item responsesWireItem) []ir.Message {
 				Signature: item.EncryptedContent,
 			}},
 		}}
+	case "web_search_call":
+		// A client replaying the previous turn's search item (the contract's
+		// restore-into-context path) must reach the upstream as part of the
+		// conversation instead of being silently dropped. The IR carries it
+		// as the server-tool use it is: the action's raw JSON rides Input,
+		// and the same-wire encoder re-renders the item.
+		action := responsesActionInput(item.Action)
+		if action == "" {
+			return nil
+		}
+		return []ir.Message{{
+			Role: ir.RoleAssistant,
+			Parts: []ir.Part{ir.ServerToolUsePart{
+				ID:    item.ID,
+				Name:  "web_search",
+				Input: json.RawMessage(action),
+			}},
+		}}
 	default:
 		return nil
 	}
+}
+
+// responsesActionInput flattens the item's action object into the JSON the
+// IR's ServerToolUsePart.Input carries (the same shape the encoder reads the
+// search query back out of).
+func responsesActionInput(action *responsesWireSearchAction) string {
+	if action == nil {
+		return ""
+	}
+	raw, err := json.Marshal(action)
+	if err != nil || len(raw) == 0 {
+		return ""
+	}
+	return string(raw)
+}
+
+// responsesActionFromInput rebuilds the action object from the input JSON a
+// decoded ServerToolUsePart carries (decode(encode(x)) symmetry).
+func responsesActionFromInput(input json.RawMessage) *responsesWireSearchAction {
+	if len(input) == 0 {
+		return nil
+	}
+	var a responsesWireSearchAction
+	if err := json.Unmarshal(input, &a); err != nil {
+		return nil
+	}
+	return &a
 }
 
 // responsesItemsFromMessage maps one IR message onto input items.
@@ -653,6 +767,18 @@ func responsesItemsFromMessage(m ir.Message) []responsesWireItem {
 				}
 				item.EncryptedContent = pt.Signature
 				items = append(items, item)
+			case ir.ServerToolUsePart:
+				// The replayed search item: the contract restores it into
+				// the context (input item web_search_call with its action).
+				if pt.Name != "web_search" {
+					break
+				}
+				items = append(items, responsesWireItem{
+					Type:   "web_search_call",
+					ID:     pt.ID,
+					Status: "completed",
+					Action: responsesActionFromInput(pt.Input),
+				})
 			default:
 				textParts = append(textParts, pt)
 			}

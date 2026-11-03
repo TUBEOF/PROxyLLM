@@ -1,0 +1,6 @@
+{
+  "fixture": "count-tokens-response.json",
+  "source": "https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta",
+  "accessed": "2026-11-03",
+  "notes": "CountTokensResponse: totalTokens is the count; promptTokensDetails/cachedContentTokenCount are documented optional detail. The codec reads totalTokens only."
+}

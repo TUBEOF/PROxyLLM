@@ -1,0 +1,7 @@
+{
+  "generateContentRequest": {
+    "systemInstruction": {"role": "user", "parts": [{"text": "You are a helpful assistant."}]},
+    "contents": [{"role": "user", "parts": [{"text": "Count these tokens."}]}],
+    "tools": [{"functionDeclarations": [{"name": "get_weather", "description": "Get the current weather.", "parameters": {"type": "object"}}]}]
+  }
+}

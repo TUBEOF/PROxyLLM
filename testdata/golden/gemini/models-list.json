@@ -1,0 +1,8 @@
+{
+  "models": [
+    {"name": "models/gemini-2.5-flash", "displayName": "Gemini 2.5 Flash", "inputTokenLimit": 1048576, "thinking": true, "supportedGenerationMethods": ["generateContent", "countTokens"]},
+    {"name": "models/gemini-2.0-flash", "displayName": "Gemini 2.0 Flash", "thinking": false, "supportedGenerationMethods": ["generateContent"]},
+    {"name": "models/text-embedding-004", "displayName": "Text Embedding 004", "supportedGenerationMethods": ["embedContent"]}
+  ],
+  "nextPageToken": "cGFnZS0y"
+}

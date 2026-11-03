@@ -1,0 +1,6 @@
+{
+  "fixture": "count-tokens-request.json",
+  "source": "https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta",
+  "accessed": "2026-11-03",
+  "notes": "POST /v1beta/models/{model}:countTokens body. CountTokensRequest documents contents[] and generateContentRequest as mutually exclusive ('You can either send Model + Contents or a generate_content_request, but never both'); the codec always sends the full generateContentRequest so system instructions and tool declarations count too."
+}

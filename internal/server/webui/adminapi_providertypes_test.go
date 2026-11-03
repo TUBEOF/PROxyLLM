@@ -43,10 +43,10 @@ func TestProviderTypes_Catalog(t *testing.T) {
 	// ADR-010: firecrawl joined the catalog as the first web_tool kind;
 	// ollama-cloud-web is the second (ADR-015 — the same vendor's hosted
 	// web-tool API, a distinct account type from its chat endpoint).
-	// anthropic, openai-responses, ollama-native and openai-decisions are
-	// native upstream protocols.
-	if len(resp.Types) != 9 {
-		t.Fatalf("catalog has %d types, want 9 (custom-openai, anthropic, openai-responses, ollama-cloud, ollama-native, openai-decisions, codex-oauth, firecrawl, ollama-cloud-web)", len(resp.Types))
+	// anthropic, openai-responses, ollama-native, openai-decisions and
+	// gemini are native upstream protocols.
+	if len(resp.Types) != 10 {
+		t.Fatalf("catalog has %d types, want 10 (custom-openai, anthropic, openai-responses, ollama-cloud, ollama-native, openai-decisions, codex-oauth, gemini, firecrawl, ollama-cloud-web)", len(resp.Types))
 	}
 	kinds := map[string]string{}
 	for _, pt := range resp.Types {
@@ -54,6 +54,9 @@ func TestProviderTypes_Catalog(t *testing.T) {
 	}
 	if kinds["ollama-cloud"] != "api_key" || kinds["codex-oauth"] != "oauth" || kinds["firecrawl"] != "api_key" {
 		t.Errorf("auth kinds: %v (ollama-cloud=api_key, codex-oauth=oauth, firecrawl=api_key expected)", kinds)
+	}
+	if kinds["gemini"] != "api_key" {
+		t.Errorf("gemini auth = %q, want api_key", kinds["gemini"])
 	}
 	if kinds["ollama-cloud-web"] != "api_key" {
 		t.Errorf("ollama-cloud-web auth = %q, want api_key", kinds["ollama-cloud-web"])

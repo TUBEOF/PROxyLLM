@@ -1,0 +1,8 @@
+{
+  "candidates": [{
+    "content": {"role": "model", "parts": [{"text": "Let me call the"}]},
+    "finishReason": "MALFORMED_FUNCTION_CALL"
+  }],
+  "usageMetadata": {"promptTokenCount": 15, "candidatesTokenCount": 4, "totalTokenCount": 19},
+  "modelVersion": "gemini-3-flash"
+}

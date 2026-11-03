@@ -1,0 +1,6 @@
+{
+  "fixture": "generate-response-malformed.json",
+  "source": "https://aistudio.google.com/api-reference/generate-content (redirects from ai.google.dev/api/generate-content) ; https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta",
+  "accessed": "2026-11-03",
+  "notes": "finishReason MALFORMED_FUNCTION_CALL from the Candidate.finishReason enum (23 values, transcribed): the model produced an invalid function call. Maps to the IR refusal stop."
+}
