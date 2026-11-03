@@ -83,10 +83,13 @@ tool injection, count_tokens (local estimate, no upstream call), the
 negative control (a 200 with a wrong wire shape must fail the client), the
 `previous_response_id` chain on POST /v1/responses (the next upstream request
 carries the restored first turn; an id the proxy does not hold is the
-documented 404), and the client-abort cell (a streaming client that cancels
+documented 404), the client-abort cell (a streaming client that cancels
 mid-answer leaves a 499 log row, fires no re-dispatch, and the proxy answers
 the next request normally — the MockServer simulation paces the stream with
-`streamingPhysics` so the abort lands mid-answer deterministically).
+`streamingPhysics` so the abort lands mid-answer deterministically), and the
+decision surfaces driven with the golden decision fixtures through their
+upstream providers (`ollama-cloud` on the System One wire, `openai-decisions`
+on the Decisions API).
 
 **Gates.** `TestMatrix_ManifestIsComplete` enforces the full cross product, a
 reason on every pending cell and the `schema_note` rule (a green pair cell is
@@ -96,8 +99,7 @@ Go tests agree in both directions, and the workflow runs the whole matrix
 with `-count=2` for determinism.
 
 Pending cells (the manifest names the reason for each; the fix loop owns them):
-- The vision fallback, the codex OAuth upstream and
-  the decision surfaces.
+- The vision fallback and the codex OAuth upstream.
 - M2: the 14 CLIs, plain start, full scenario set.
 
 Out of scope (no client or product path uses them): embeddings, audio, images,

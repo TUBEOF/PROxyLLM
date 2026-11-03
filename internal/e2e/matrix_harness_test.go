@@ -30,6 +30,7 @@ import (
 	geminiprovider "github.com/tubeof/proxyllm/internal/provider/gemini"
 	"github.com/tubeof/proxyllm/internal/provider/ollamacloud"
 	"github.com/tubeof/proxyllm/internal/provider/ollamanative"
+	"github.com/tubeof/proxyllm/internal/provider/openaidecisions"
 	"github.com/tubeof/proxyllm/internal/provider/openairesponses"
 	"github.com/tubeof/proxyllm/internal/routing"
 	"github.com/tubeof/proxyllm/internal/server/httpapi"
@@ -42,7 +43,7 @@ import (
 // proxy speaks to it, and BaseURL points at the simulator.
 type upstream struct {
 	ID      string
-	Type    string // custom-openai | openai-responses | anthropic | ollama-native | ollama-cloud | gemini
+	Type    string // custom-openai | openai-responses | anthropic | ollama-native | ollama-cloud | gemini | openai-decisions
 	BaseURL string
 	Caps    provider.Capabilities
 }
@@ -185,6 +186,8 @@ func buildUpstream(u upstream) provider.Provider {
 		return anthropicprovider.New(u.ID, u.BaseURL, apiKey, u.Caps)
 	case "ollama-native":
 		return ollamanative.New(u.ID, u.BaseURL, "", u.Caps)
+	case "openai-decisions":
+		return openaidecisions.New(u.ID, u.BaseURL, apiKey, u.Caps)
 	case "ollama-cloud":
 		return ollamacloud.New(u.ID, u.BaseURL, apiKey, u.Caps)
 	case "gemini":

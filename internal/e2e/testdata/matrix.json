@@ -1184,15 +1184,15 @@
   },
   {
    "id": "decision__systemone",
-   "test": "",
-   "status": "pending",
-   "note": "decision surfaces have dedicated tests; matrix cell pending"
+   "test": "TestMatrix_Decision_SystemOne",
+   "status": "green",
+   "note": ""
   },
   {
    "id": "decision__openai-decisions",
-   "test": "",
-   "status": "pending",
-   "note": "decision surfaces have dedicated tests; matrix cell pending"
+   "test": "TestMatrix_Decision_OpenAIDecisions",
+   "status": "green",
+   "note": ""
   },
   {
    "id": "scenario__chat-streaming-ollama-cloud",
