@@ -159,9 +159,9 @@ these keys means the default.
 | `onboarding_state` | JSON wizard progress (`version`, `completed[]`, `dismissed`, timestamps); written through `PUT /api/admin/onboarding` | [Operating: first run](operating.md#first-run) |
 
 The per-model compatibility settings (`thinking_handling`,
-`server_tool_emulation`, `max_tokens_clamp`, `context_window`,
-`cache_control`) are stored on the model row, not in this store — see
-[model compatibility](reference/model-compat.md#the-settings).
+`server_tool_emulation`, `inject_web_tools`, `max_tokens_clamp`,
+`context_window`, `cache_control`) are stored on the model row, not in this
+store — see [model compatibility](reference/model-compat.md#the-settings).
 
 ## Master key
 

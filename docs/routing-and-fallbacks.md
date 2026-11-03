@@ -362,6 +362,12 @@ setting keeps the name it was introduced under; the pool it drives is no
 longer Firecrawl-only. With no account configured, a call is answered with
 the documented `unavailable` error result, so the model can tell the client
 it could not look the request up.
+
+A request that declares NO web tool engages none of this — every plain CLI
+(codex without `--search`) sends none — unless the model row's compat sets
+`inject_web_tools`, which appends the emulated family definitions
+pre-dispatch so emulation covers that case too
+([model compatibility](reference/model-compat.md#the-settings)).
 That conversion is also what keeps the request routable at all: an emulated
 request no longer *requires* native `web_search`/`web_fetch`, so the capability
 filter (step 6 above) has nothing to skip and an upstream that has never heard

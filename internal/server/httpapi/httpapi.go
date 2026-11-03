@@ -145,6 +145,7 @@ type wireCompat struct {
 	MaxTokensClamp      int    `json:"max_tokens_clamp"`
 	ContextWindow       int    `json:"context_window"`
 	CacheControl        string `json:"cache_control"`
+	InjectWebTools      bool   `json:"inject_web_tools"`
 }
 
 // liveClientWebTools returns the live client-tool → family mapping.
@@ -199,6 +200,7 @@ func (a *api) compatFor(ctx context.Context, model string) routing.Compat {
 	c.MaxTokensClamp = w.MaxTokensClamp
 	c.ContextWindow = w.ContextWindow
 	c.CacheControl = defaultCacheControl(w.CacheControl)
+	c.InjectWebTools = w.InjectWebTools
 	// The operator's client-tool → family mapping applies on every surface:
 	// a client tool whose name is mapped is claimed and answered by the
 	// emulation loop exactly like a server-tool definition. The default
