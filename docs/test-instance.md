@@ -51,21 +51,31 @@ the image into the model request).
 - `emulated_tool_attempt` is **not** evidence: it also records `failed` and
   `empty` outcomes. Only a successful `emulated_tool` with content, plus the
   answer evidence in the CLI's own output, passes a web task.
-- There is **no retry**. A model that declines the tool on one task fails
-  that task; a suite that retries hides exactly the flakiness it exists to
-  catch. The one exception is the web-tool backend's **transient
-  unavailability**: a `web_search`/`web_fetch` task that failed on exactly
-  the emulation's transient unavailability — the trace shows the documented
-  `{"error_code":"unavailable"}` error the proxy answers when the emulator's
-  own upstream call failed (`emulator fetch failed` / `emulator search
-  failed`) **and** the CLI output echoes that error shape — runs the same
-  task once more, fresh and unchanged. The retry alone decides the task (a
-  retry that still fails keeps the failure), the cap is one per task, and
-  every other failure class — a declined tool, a missing canary, a protocol
-  defect — and every non-web feature never retries. Each check records
-  `attempts` (0 = never ran, 1 = one run, 2 = retried), `report.json`'s
-  schema is 4 (additive field bump), and the report's Notes column carries a
-  `retry 1/1 passed` (or `retry 1/1 still failed`) line per retried task.
+- There is **no retry** — a suite that retries hides exactly the flakiness it
+  exists to catch. A `web_search`/`web_fetch` task gets one bounded
+  exception: on one of two failure classes it runs the same task once more,
+  fresh and unchanged, the retry alone decides the task (a retry that still
+  fails keeps the failure), and the cap is one per task. **Model plain
+  miss**: the CLI's own stream ends a completed turn without a single
+  invocation of the family's tool — the model answers "I'll search…" and
+  never calls it, as codex did in run 41684909774 — a verdict only the two
+  streams that record tool items can reach (codex `--json`: `web_search`
+  items plus a `turn.completed` event; Claude Code stream-json: a `WebSearch`
+  `tool_use` or `web_search` `server_tool_use` block plus a `result` event
+  with `subtype: success`); the fetch-tool CLIs' stdout records no tool
+  items and a stream without a completed turn is parse uncertainty, so
+  neither ever retries. **Backend transient unavailability**: the trace
+  shows the documented `{"error_code":"unavailable"}` error the proxy
+  answers when the emulator's own upstream call failed (`emulator fetch
+  failed` / `emulator search failed`) and the CLI output echoes that error
+  shape. Every other failure class — a missing canary, an answer fail after
+  a successful emulated call (no cited URL, or the fetched value missing), a
+  protocol defect — and every non-web feature, `multi_turn` included, never
+  retries. Each check records `attempts` (0 = never ran, 1 = one run,
+  2 = retried) and, for a retried task, the class as `retry`;
+  `report.json`'s schema stays 4 with the attempts semantics unchanged, and
+  the report's Notes column carries a `retry 1/1 passed` (or `retry 1/1
+  still failed`) line, with the class in parentheses, per retried task.
 - A feature is skipped only when the adapter declares no headless path for
   it, and the report carries that reason.
 - A `499` request row is the CLI abandoning its own request (the proxy's own
