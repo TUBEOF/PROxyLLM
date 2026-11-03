@@ -1,0 +1,38 @@
+{
+  "name": "crush",
+  "label": "Crush",
+  "tier": "core",
+  "command": "crush",
+  "install": "npm install -g @charmland/crush",
+  "tested": "0.99.0",
+  "runnable": false,
+  "runnable_note": "Plain-start matrix client (cli_plain.py); no verified headless run path yet (docs: github.com/charmbracelet/crush/blob/main/docs/config/README.md)",
+  "env_keep": [
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "TERM",
+    "TMPDIR",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NODE_EXTRA_CA_CERTS"
+  ],
+  "scrub_env": [
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL"
+  ],
+  "env": {
+    "PROXYLLM_CLIENT_KEY": "{{CLIENT_KEY}}"
+  },
+  "files": {
+    "{{CONFIG_DIR}}/crush/crush.json": "{\n  \"$schema\": \"https://charm.land/crush.json\",\n  \"providers\": {\n    \"proxyllm\": {\n      \"name\": \"PROxyLLM\",\n      \"type\": \"completions\",\n      \"base_url\": \"{{BASE_URL}}/v1\",\n      \"api_key\": \"$PROXYLLM_CLIENT_KEY\",\n      \"discover_models\": false,\n      \"models\": [\n        {\n          \"id\": \"{{MODEL}}\",\n          \"name\": \"{{MODEL}}\",\n          \"pricing\": {\"input\": 0, \"output\": 0},\n          \"context_window\": 128000,\n          \"default_max_tokens\": 4096,\n          \"reasoning\": {\"thinking\": \"never\"},\n          \"capabilities\": {\"vision\": false, \"audio\": false}\n        }\n      ]\n    }\n  },\n  \"models\": {\n    \"large\": {\"provider\": \"proxyllm\", \"model\": \"{{MODEL}}\"}\n  },\n  \"permissions\": {\"allowed_tools\": [\"view\", \"ls\", \"grep\"]}\n}\n",
+    "{{WORK_DIR}}/AGENTS.md": "# Test workbench\nA minimal project context so crush starts with nothing to analyze and goes straight to the prompt.\n"
+  },
+  "canary": [
+    "~/.config/crush",
+    "~/.local/share/crush"
+  ]
+}

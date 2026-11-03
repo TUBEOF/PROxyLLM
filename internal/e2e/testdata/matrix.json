@@ -1,0 +1,1242 @@
+{
+ "schema": 1,
+ "clients": [
+  "openai-chat",
+  "openai-responses",
+  "anthropic-messages",
+  "ollama-native",
+  "gemini-native"
+ ],
+ "upstreams": [
+  "openai-chat",
+  "openai-responses",
+  "anthropic-messages",
+  "ollama-native",
+  "ollama-cloud",
+  "gemini-native"
+ ],
+ "features": [
+  "text",
+  "tools"
+ ],
+ "modes": [
+  "nonstream",
+  "stream"
+ ],
+ "cells": [
+  {
+   "id": "openai-chat__openai-chat__text__nonstream",
+   "client": "openai-chat",
+   "upstream": "openai-chat",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__openai-chat__text__stream",
+   "client": "openai-chat",
+   "upstream": "openai-chat",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__openai-chat__tools__nonstream",
+   "client": "openai-chat",
+   "upstream": "openai-chat",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__openai-chat__tools__stream",
+   "client": "openai-chat",
+   "upstream": "openai-chat",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__openai-responses__text__nonstream",
+   "client": "openai-chat",
+   "upstream": "openai-responses",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__openai-responses__text__stream",
+   "client": "openai-chat",
+   "upstream": "openai-responses",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__openai-responses__tools__nonstream",
+   "client": "openai-chat",
+   "upstream": "openai-responses",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__openai-responses__tools__stream",
+   "client": "openai-chat",
+   "upstream": "openai-responses",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__anthropic-messages__text__nonstream",
+   "client": "openai-chat",
+   "upstream": "anthropic-messages",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__anthropic-messages__text__stream",
+   "client": "openai-chat",
+   "upstream": "anthropic-messages",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__anthropic-messages__tools__nonstream",
+   "client": "openai-chat",
+   "upstream": "anthropic-messages",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__anthropic-messages__tools__stream",
+   "client": "openai-chat",
+   "upstream": "anthropic-messages",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__ollama-native__text__nonstream",
+   "client": "openai-chat",
+   "upstream": "ollama-native",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__ollama-native__text__stream",
+   "client": "openai-chat",
+   "upstream": "ollama-native",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__ollama-native__tools__nonstream",
+   "client": "openai-chat",
+   "upstream": "ollama-native",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__ollama-native__tools__stream",
+   "client": "openai-chat",
+   "upstream": "ollama-native",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__ollama-cloud__text__nonstream",
+   "client": "openai-chat",
+   "upstream": "ollama-cloud",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__ollama-cloud__text__stream",
+   "client": "openai-chat",
+   "upstream": "ollama-cloud",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__ollama-cloud__tools__nonstream",
+   "client": "openai-chat",
+   "upstream": "ollama-cloud",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__ollama-cloud__tools__stream",
+   "client": "openai-chat",
+   "upstream": "ollama-cloud",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-chat__gemini-native__text__nonstream",
+   "client": "openai-chat",
+   "upstream": "gemini-native",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "openai-chat__gemini-native__text__stream",
+   "client": "openai-chat",
+   "upstream": "gemini-native",
+   "feature": "text",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "openai-chat__gemini-native__tools__nonstream",
+   "client": "openai-chat",
+   "upstream": "gemini-native",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "openai-chat__gemini-native__tools__stream",
+   "client": "openai-chat",
+   "upstream": "gemini-native",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "openai-responses__openai-chat__text__nonstream",
+   "client": "openai-responses",
+   "upstream": "openai-chat",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__openai-chat__text__stream",
+   "client": "openai-responses",
+   "upstream": "openai-chat",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__openai-chat__tools__nonstream",
+   "client": "openai-responses",
+   "upstream": "openai-chat",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__openai-chat__tools__stream",
+   "client": "openai-responses",
+   "upstream": "openai-chat",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__openai-responses__text__nonstream",
+   "client": "openai-responses",
+   "upstream": "openai-responses",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__openai-responses__text__stream",
+   "client": "openai-responses",
+   "upstream": "openai-responses",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__openai-responses__tools__nonstream",
+   "client": "openai-responses",
+   "upstream": "openai-responses",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__openai-responses__tools__stream",
+   "client": "openai-responses",
+   "upstream": "openai-responses",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__anthropic-messages__text__nonstream",
+   "client": "openai-responses",
+   "upstream": "anthropic-messages",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__anthropic-messages__text__stream",
+   "client": "openai-responses",
+   "upstream": "anthropic-messages",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__anthropic-messages__tools__nonstream",
+   "client": "openai-responses",
+   "upstream": "anthropic-messages",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__anthropic-messages__tools__stream",
+   "client": "openai-responses",
+   "upstream": "anthropic-messages",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__ollama-native__text__nonstream",
+   "client": "openai-responses",
+   "upstream": "ollama-native",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__ollama-native__text__stream",
+   "client": "openai-responses",
+   "upstream": "ollama-native",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__ollama-native__tools__nonstream",
+   "client": "openai-responses",
+   "upstream": "ollama-native",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__ollama-native__tools__stream",
+   "client": "openai-responses",
+   "upstream": "ollama-native",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__ollama-cloud__text__nonstream",
+   "client": "openai-responses",
+   "upstream": "ollama-cloud",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__ollama-cloud__text__stream",
+   "client": "openai-responses",
+   "upstream": "ollama-cloud",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__ollama-cloud__tools__nonstream",
+   "client": "openai-responses",
+   "upstream": "ollama-cloud",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__ollama-cloud__tools__stream",
+   "client": "openai-responses",
+   "upstream": "ollama-cloud",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "openai-responses__gemini-native__text__nonstream",
+   "client": "openai-responses",
+   "upstream": "gemini-native",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "openai-responses__gemini-native__text__stream",
+   "client": "openai-responses",
+   "upstream": "gemini-native",
+   "feature": "text",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "openai-responses__gemini-native__tools__nonstream",
+   "client": "openai-responses",
+   "upstream": "gemini-native",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "openai-responses__gemini-native__tools__stream",
+   "client": "openai-responses",
+   "upstream": "gemini-native",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "anthropic-messages__openai-chat__text__nonstream",
+   "client": "anthropic-messages",
+   "upstream": "openai-chat",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__openai-chat__text__stream",
+   "client": "anthropic-messages",
+   "upstream": "openai-chat",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__openai-chat__tools__nonstream",
+   "client": "anthropic-messages",
+   "upstream": "openai-chat",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__openai-chat__tools__stream",
+   "client": "anthropic-messages",
+   "upstream": "openai-chat",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__openai-responses__text__nonstream",
+   "client": "anthropic-messages",
+   "upstream": "openai-responses",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__openai-responses__text__stream",
+   "client": "anthropic-messages",
+   "upstream": "openai-responses",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__openai-responses__tools__nonstream",
+   "client": "anthropic-messages",
+   "upstream": "openai-responses",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__openai-responses__tools__stream",
+   "client": "anthropic-messages",
+   "upstream": "openai-responses",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__anthropic-messages__text__nonstream",
+   "client": "anthropic-messages",
+   "upstream": "anthropic-messages",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__anthropic-messages__text__stream",
+   "client": "anthropic-messages",
+   "upstream": "anthropic-messages",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__anthropic-messages__tools__nonstream",
+   "client": "anthropic-messages",
+   "upstream": "anthropic-messages",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__anthropic-messages__tools__stream",
+   "client": "anthropic-messages",
+   "upstream": "anthropic-messages",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__ollama-native__text__nonstream",
+   "client": "anthropic-messages",
+   "upstream": "ollama-native",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__ollama-native__text__stream",
+   "client": "anthropic-messages",
+   "upstream": "ollama-native",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__ollama-native__tools__nonstream",
+   "client": "anthropic-messages",
+   "upstream": "ollama-native",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__ollama-native__tools__stream",
+   "client": "anthropic-messages",
+   "upstream": "ollama-native",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__ollama-cloud__text__nonstream",
+   "client": "anthropic-messages",
+   "upstream": "ollama-cloud",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__ollama-cloud__text__stream",
+   "client": "anthropic-messages",
+   "upstream": "ollama-cloud",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__ollama-cloud__tools__nonstream",
+   "client": "anthropic-messages",
+   "upstream": "ollama-cloud",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__ollama-cloud__tools__stream",
+   "client": "anthropic-messages",
+   "upstream": "ollama-cloud",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "anthropic-messages__gemini-native__text__nonstream",
+   "client": "anthropic-messages",
+   "upstream": "gemini-native",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "anthropic-messages__gemini-native__text__stream",
+   "client": "anthropic-messages",
+   "upstream": "gemini-native",
+   "feature": "text",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "anthropic-messages__gemini-native__tools__nonstream",
+   "client": "anthropic-messages",
+   "upstream": "gemini-native",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "anthropic-messages__gemini-native__tools__stream",
+   "client": "anthropic-messages",
+   "upstream": "gemini-native",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "ollama-native__openai-chat__text__nonstream",
+   "client": "ollama-native",
+   "upstream": "openai-chat",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__openai-chat__text__stream",
+   "client": "ollama-native",
+   "upstream": "openai-chat",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__openai-chat__tools__nonstream",
+   "client": "ollama-native",
+   "upstream": "openai-chat",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__openai-chat__tools__stream",
+   "client": "ollama-native",
+   "upstream": "openai-chat",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__openai-responses__text__nonstream",
+   "client": "ollama-native",
+   "upstream": "openai-responses",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__openai-responses__text__stream",
+   "client": "ollama-native",
+   "upstream": "openai-responses",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__openai-responses__tools__nonstream",
+   "client": "ollama-native",
+   "upstream": "openai-responses",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__openai-responses__tools__stream",
+   "client": "ollama-native",
+   "upstream": "openai-responses",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__anthropic-messages__text__nonstream",
+   "client": "ollama-native",
+   "upstream": "anthropic-messages",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__anthropic-messages__text__stream",
+   "client": "ollama-native",
+   "upstream": "anthropic-messages",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__anthropic-messages__tools__nonstream",
+   "client": "ollama-native",
+   "upstream": "anthropic-messages",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__anthropic-messages__tools__stream",
+   "client": "ollama-native",
+   "upstream": "anthropic-messages",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__ollama-native__text__nonstream",
+   "client": "ollama-native",
+   "upstream": "ollama-native",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__ollama-native__text__stream",
+   "client": "ollama-native",
+   "upstream": "ollama-native",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__ollama-native__tools__nonstream",
+   "client": "ollama-native",
+   "upstream": "ollama-native",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__ollama-native__tools__stream",
+   "client": "ollama-native",
+   "upstream": "ollama-native",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__ollama-cloud__text__nonstream",
+   "client": "ollama-native",
+   "upstream": "ollama-cloud",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__ollama-cloud__text__stream",
+   "client": "ollama-native",
+   "upstream": "ollama-cloud",
+   "feature": "text",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__ollama-cloud__tools__nonstream",
+   "client": "ollama-native",
+   "upstream": "ollama-cloud",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__ollama-cloud__tools__stream",
+   "client": "ollama-native",
+   "upstream": "ollama-cloud",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "ollama-native__gemini-native__text__nonstream",
+   "client": "ollama-native",
+   "upstream": "gemini-native",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "ollama-native__gemini-native__text__stream",
+   "client": "ollama-native",
+   "upstream": "gemini-native",
+   "feature": "text",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "ollama-native__gemini-native__tools__nonstream",
+   "client": "ollama-native",
+   "upstream": "gemini-native",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "ollama-native__gemini-native__tools__stream",
+   "client": "ollama-native",
+   "upstream": "gemini-native",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__openai-chat__text__nonstream",
+   "client": "gemini-native",
+   "upstream": "openai-chat",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__openai-chat__text__stream",
+   "client": "gemini-native",
+   "upstream": "openai-chat",
+   "feature": "text",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__openai-chat__tools__nonstream",
+   "client": "gemini-native",
+   "upstream": "openai-chat",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__openai-chat__tools__stream",
+   "client": "gemini-native",
+   "upstream": "openai-chat",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__openai-responses__text__nonstream",
+   "client": "gemini-native",
+   "upstream": "openai-responses",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__openai-responses__text__stream",
+   "client": "gemini-native",
+   "upstream": "openai-responses",
+   "feature": "text",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__openai-responses__tools__nonstream",
+   "client": "gemini-native",
+   "upstream": "openai-responses",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__openai-responses__tools__stream",
+   "client": "gemini-native",
+   "upstream": "openai-responses",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__anthropic-messages__text__nonstream",
+   "client": "gemini-native",
+   "upstream": "anthropic-messages",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__anthropic-messages__text__stream",
+   "client": "gemini-native",
+   "upstream": "anthropic-messages",
+   "feature": "text",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__anthropic-messages__tools__nonstream",
+   "client": "gemini-native",
+   "upstream": "anthropic-messages",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__anthropic-messages__tools__stream",
+   "client": "gemini-native",
+   "upstream": "anthropic-messages",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__ollama-native__text__nonstream",
+   "client": "gemini-native",
+   "upstream": "ollama-native",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__ollama-native__text__stream",
+   "client": "gemini-native",
+   "upstream": "ollama-native",
+   "feature": "text",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__ollama-native__tools__nonstream",
+   "client": "gemini-native",
+   "upstream": "ollama-native",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__ollama-native__tools__stream",
+   "client": "gemini-native",
+   "upstream": "ollama-native",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__ollama-cloud__text__nonstream",
+   "client": "gemini-native",
+   "upstream": "ollama-cloud",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__ollama-cloud__text__stream",
+   "client": "gemini-native",
+   "upstream": "ollama-cloud",
+   "feature": "text",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__ollama-cloud__tools__nonstream",
+   "client": "gemini-native",
+   "upstream": "ollama-cloud",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__ollama-cloud__tools__stream",
+   "client": "gemini-native",
+   "upstream": "ollama-cloud",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__gemini-native__text__nonstream",
+   "client": "gemini-native",
+   "upstream": "gemini-native",
+   "feature": "text",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__gemini-native__text__stream",
+   "client": "gemini-native",
+   "upstream": "gemini-native",
+   "feature": "text",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__gemini-native__tools__nonstream",
+   "client": "gemini-native",
+   "upstream": "gemini-native",
+   "feature": "tools",
+   "mode": "nonstream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  },
+  {
+   "id": "gemini-native__gemini-native__tools__stream",
+   "client": "gemini-native",
+   "upstream": "gemini-native",
+   "feature": "tools",
+   "mode": "stream",
+   "status": "pending",
+   "note": "native Gemini surface not implemented yet (provider/client codec pending)"
+  }
+ ],
+ "extras": [
+  {
+   "id": "fault__rate-limit",
+   "test": "TestMatrix_ChatClient_UpstreamRateLimited",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "fault__truncated-stream",
+   "test": "TestMatrix_ChatClient_UpstreamTruncatedStream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "meta__negative-control-bad-upstream",
+   "test": "TestMatrix_Meta_NegativeControl_BadUpstreamShape",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "web__emulated-search-anthropic-client",
+   "test": "TestMatrix_WebEmulation_AnthropicClient_Search",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "count-tokens__anthropic",
+   "test": "TestMatrix_AnthropicClient_CountTokens",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "web__emulated-search-chat-client",
+   "test": "",
+   "status": "pending",
+   "note": "client web-tool claim on the chat surface: cells follow with the web-emulation harness"
+  },
+  {
+   "id": "web__emulated-fetch",
+   "test": "",
+   "status": "pending",
+   "note": "web_fetch emulation cell follows with the web-emulation harness"
+  },
+  {
+   "id": "history__previous-response-id",
+   "test": "",
+   "status": "pending",
+   "note": "lands with the POST previous_response_id fix (open PR); cell added after merge"
+  },
+  {
+   "id": "thinking__anthropic-client",
+   "test": "",
+   "status": "pending",
+   "note": "needs a request that enables thinking; MockServer reasoningText is available"
+  },
+  {
+   "id": "vision__blind-chain-caption",
+   "test": "",
+   "status": "pending",
+   "note": "needs the vision fallback harness (image + caption model wiring)"
+  },
+  {
+   "id": "cancel__client-abort",
+   "test": "",
+   "status": "pending",
+   "note": "client-driven abort cell: needs a streaming client that cancels mid-answer"
+  },
+  {
+   "id": "upstream__codex-oauth",
+   "test": "",
+   "status": "pending",
+   "note": "codex provider needs OAuth token plumbing in the harness"
+  },
+  {
+   "id": "decision__systemone",
+   "test": "",
+   "status": "pending",
+   "note": "decision surfaces have dedicated tests; matrix cell pending"
+  },
+  {
+   "id": "decision__openai-decisions",
+   "test": "",
+   "status": "pending",
+   "note": "decision surfaces have dedicated tests; matrix cell pending"
+  },
+  {
+   "id": "scenario__chat-streaming-ollama-cloud",
+   "test": "TestMatrix_ChatClient_OllamaCloudUpstream_Streaming",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "scenario__responses-round-trip",
+   "test": "TestMatrix_ResponsesClient_ResponsesUpstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "scenario__anthropic-streaming-round-trip",
+   "test": "TestMatrix_AnthropicClient_AnthropicUpstream_Streaming",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "scenario__chat-cross-anthropic",
+   "test": "TestMatrix_ChatClient_AnthropicUpstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "scenario__responses-cross-anthropic",
+   "test": "TestMatrix_ResponsesClient_AnthropicUpstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "scenario__ollama-native-round-trip",
+   "test": "TestMatrix_OllamaClient_OllamaUpstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "scenario__chat-cross-ollama-native",
+   "test": "TestMatrix_ChatClient_OllamaNativeUpstream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "scenario__chat-toolcall-responses",
+   "test": "TestMatrix_ChatClient_ResponsesUpstream_ToolCall",
+   "status": "green",
+   "note": ""
+  }
+ ]
+}

@@ -1,0 +1,35 @@
+{
+  "name": "openhands",
+  "label": "OpenHands",
+  "tier": "core",
+  "command": "openhands",
+  "install": "pipx install openhands-ai==0.59.0",
+  "tested": "0.59.0",
+  "runnable": false,
+  "runnable_note": "Plain-start matrix client (cli_plain.py); the shipped terminal CLI was retired from the openhands-ai line after 0.59.0 (docs: docs.openhands.dev/modules/usage/how-to/cli-mode)",
+  "env_keep": [
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "TERM",
+    "TMPDIR",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR",
+    "NODE_EXTRA_CA_CERTS"
+  ],
+  "scrub_env": [
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL"
+  ],
+  "files": {
+    "{{HOME}}/.openhands/settings.json": "{\n  \"language\": \"en\",\n  \"agent\": \"CodeActAgent\",\n  \"confirmation_mode\": false,\n  \"enable_default_condenser\": false,\n  \"enable_proactive_conversation_starters\": false,\n  \"enable_sound_notifications\": false,\n  \"enable_solvability_analysis\": false,\n  \"user_consents_to_analytics\": false\n}\n",
+    "{{HOME}}/.openhands/config.toml": "[llm]\nmodel = \"openai/{{MODEL}}\"\napi_key = \"{{CLIENT_KEY}}\"\nbase_url = \"{{BASE_URL}}/v1\"\nnative_tool_calling = true\n\n[sandbox]\ntrusted_dirs = [\"{{WORK_DIR}}\"]\n",
+    "{{HOME}}/.openhands/.cli_alias_setup_declined": ""
+  },
+  "canary": [
+    "~/.openhands"
+  ]
+}

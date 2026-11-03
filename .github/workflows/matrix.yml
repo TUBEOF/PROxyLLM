@@ -1,0 +1,96 @@
+name: matrix
+
+# Protocol conformance matrix: every client surface against every upstream
+# wire, with MockServer (an established open-source LLM mock server) producing
+# the provider's real response shape — streaming, tool calls and fault
+# profiles included. No provider key, no GPU.
+#
+# Local run:
+#   java -jar mockserver.jar -serverPort 1080
+#   MOCKSERVER_URL=http://127.0.0.1:1080 go test ./internal/e2e -run TestMatrix_ -v
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "internal/**"
+      - "cmd/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/matrix.yml"
+  pull_request:
+    paths:
+      - "internal/**"
+      - "cmd/**"
+      - "go.mod"
+      - "go.sum"
+      - ".github/workflows/matrix.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: matrix-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      mockserver:
+        image: mockserver/mockserver:9.2.0
+        ports:
+          - 1080:1080
+    env:
+      MOCKSERVER_URL: http://127.0.0.1:1080
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Manifest gate (cells and tests must agree)
+        run: python3 -I .github/test-matrix/check_manifest.py
+      - name: Protocol conformance matrix (run twice for determinism)
+        run: go test ./internal/e2e/ -run 'TestMatrix_' -v -count=2
+
+  cli-plain:
+    # M2: every CLI started the way a user starts it — the bare binary in a
+    # pseudo-terminal, only its own config pointing at the proxy, upstream
+    # = MockServer. Deterministic and keyless, like the conformance matrix.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      mockserver:
+        image: mockserver/mockserver:9.2.0
+        ports:
+          - 1080:1080
+    env:
+      MOCKSERVER_URL: http://127.0.0.1:1080
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26.13.0
+      - name: "Install CLIs (plain-start scope: codex, claude-code, crush)"
+        run: npm install -g @openai/codex @anthropic-ai/claude-code @charmland/crush
+      - name: Install OpenHands CLI (last released terminal CLI, pinned)
+        run: |
+          pipx install "openhands-ai==0.59.0"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Ensure tmux (the plain-start driver runs CLIs in a pseudo-terminal)
+        run: |
+          if ! command -v tmux >/dev/null; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq tmux
+          fi
+          tmux -V
+      - name: Build the proxy
+        run: env -u GOROOT make build
+      - name: Plain-start CLI matrix
+        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush,openhands --scenarios answer,recall
