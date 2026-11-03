@@ -79,8 +79,8 @@ jobs:
         with:
           node-version: 26.13.0
           cache: npm
-      - name: Install CLIs (plain-start scope: codex, claude-code)
-        run: npm install -g @openai/codex @anthropic-ai/claude-code
+      - name: "Install CLIs (plain-start scope: codex, claude-code, crush)"
+        run: npm install -g @openai/codex @anthropic-ai/claude-code @charmland/crush
       - name: Ensure tmux (the plain-start driver runs CLIs in a pseudo-terminal)
         run: |
           if ! command -v tmux >/dev/null; then
@@ -90,4 +90,4 @@ jobs:
       - name: Build the proxy
         run: env -u GOROOT make build
       - name: Plain-start CLI matrix
-        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code --scenarios answer,recall
+        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush --scenarios answer,recall

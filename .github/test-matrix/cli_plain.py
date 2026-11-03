@@ -124,17 +124,18 @@ def ms_reset(mockserver: str) -> None:
         pass
 
 
-# Observed wire facts (2026-11 codex 0.166 / claude-code 2.1.316): codex
-# buffers /v1/responses turns upstream (no "stream" key; plain-string message
-# content) and drives utility calls — task-title generation — as STREAMED
-# requests quoting the conversation; Claude streams every Messages turn and
-# sends the user prompt as its own text part. MockServer's LLM response
-# follows the expectation's streaming flag only, and its JSON matcher wants
-# exact leaf values, so each turn is pinned by its exact last user message
-# in the CLI's own shape, later turns ranked higher (their request carries
-# earlier prompts in history). The fallback buckets catch codex's utility
-# traffic so no upstream call 404s (the proxy would log the failure and fail
-# the clean-rows check).
+# Observed wire facts (2026-11 codex 0.166 / claude-code 2.1.316 / crush
+# 0.99.0): codex buffers /v1/responses turns upstream (no "stream" key; plain
+# string message content) and drives utility calls — task-title generation —
+# as STREAMED requests quoting the conversation; Claude streams every
+# Messages turn and sends the user prompt as its own text part; crush streams
+# chat completions with the user prompt as a plain string, and its title
+# calls stream too. MockServer's LLM response follows the expectation's
+# streaming flag only, and its JSON matcher wants exact leaf values, so each
+# turn is pinned by its exact last user message in the CLI's own shape, later
+# turns ranked higher (their request carries earlier prompts in history). The
+# fallback buckets catch the utility traffic so no upstream call 404s (the
+# proxy would log the failure and fail the clean-rows check).
 def _mock_expectation(mockserver: str, text: str, streaming: bool,
                       priority: int, times: int | None, matcher: dict | None) -> None:
     req: dict = {"method": "POST", "path": UPSTREAM_PATH}
@@ -161,13 +162,14 @@ def _mock_expectation(mockserver: str, text: str, streaming: bool,
 
 def mock_pinned(mockserver: str, cli: str, turns: list[tuple[str, str]], streaming: bool) -> None:
     for rank, (prompt, text) in enumerate(turns):
+        matcher: dict = {"messages": [{"role": "user", "content": prompt}]}
         if streaming:
-            matcher = {"stream": True,
-                       "messages": [{"role": "user", "content": [{"text": prompt}]}]}
+            matcher["stream"] = True
             priority = 150 + 10 * rank
         else:
-            matcher = {"messages": [{"role": "user", "content": prompt}]}
             priority = 140 + 10 * rank
+        if cli == "claude-code":  # the only part-array sender
+            matcher["messages"][0]["content"] = [{"text": prompt}]
         _mock_expectation(mockserver, text, streaming, priority, None, matcher)
 
 
@@ -214,7 +216,14 @@ def plain_command(manifest: Path) -> str:
 
 
 # A CLI is "ready" once its own chrome painted; each TUI names itself.
-READY_MARKERS = {"codex": "codex", "claude-code": "Claude"}
+READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush"}
+
+# How each CLI's model turns stream upstream, and what the catch-all bucket
+# answer must look like to absorb the utility traffic (title generation):
+# codex buffers turns but streams its title calls, claude-code streams
+# nothing but turns, crush streams everything.
+STREAMING = {"codex": False, "claude-code": True, "crush": True}
+FALLBACK_STREAMING = {"codex": True, "claude-code": False, "crush": True}
 
 # First-run dialogs some TUIs paint before the composer; each entry waits for
 # its pane text, then presses keys. claude-code 2.1.316's trust dialog
@@ -406,12 +415,8 @@ def scenario_answer(cli: str, manifest: Path, home: Path, base_url: str, key: st
     marker = "ECHO-" + secrets.token_hex(4)
     prompt = f"Reply with exactly: {marker}."
     ms_reset(mockserver)
-    if cli == "codex":
-        mock_pinned(mockserver, cli, [(prompt, marker)], streaming=False)
-        mock_fallback(mockserver, "ok", streaming=True)
-    else:
-        mock_pinned(mockserver, cli, [(prompt, marker)], streaming=True)
-        mock_fallback(mockserver, "ok", streaming=False)
+    mock_pinned(mockserver, cli, [(prompt, marker)], STREAMING[cli])
+    mock_fallback(mockserver, "ok", FALLBACK_STREAMING[cli])
     run_dir = home / "clients" / cli / "answer"
     if run_dir.exists():
         shutil.rmtree(run_dir)
@@ -442,12 +447,8 @@ def scenario_recall(cli: str, manifest: Path, home: Path, base_url: str, key: st
     t1 = "Please remember the number 4711."
     t2 = "Which number did I ask you to remember?"
     ms_reset(mockserver)
-    if cli == "codex":
-        mock_pinned(mockserver, cli, [(t1, "Noted."), (t2, "The number is 4711")], streaming=False)
-        mock_fallback(mockserver, "ok", streaming=True)
-    else:
-        mock_pinned(mockserver, cli, [(t1, "Noted."), (t2, "The number is 4711")], streaming=True)
-        mock_fallback(mockserver, "ok", streaming=False)
+    mock_pinned(mockserver, cli, [(t1, "Noted."), (t2, "The number is 4711")], STREAMING[cli])
+    mock_fallback(mockserver, "ok", FALLBACK_STREAMING[cli])
 
     run_dir = home / "clients" / cli / "recall"
     if run_dir.exists():
@@ -491,7 +492,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--home", required=True)
     parser.add_argument("--mockserver", required=True)
-    parser.add_argument("--clients", default="codex,claude-code")
+    parser.add_argument("--clients", default="codex,claude-code,crush")
     parser.add_argument("--scenarios", default="answer,recall")
     parser.add_argument("--binary", default=str(REPO / "proxyllm"))
     parser.add_argument("--port", type=int, default=18190)
