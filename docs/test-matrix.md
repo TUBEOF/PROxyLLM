@@ -72,10 +72,14 @@ Green today:
 runners only execute it.
 
 **Scenario and fault cells.** Streaming round trips per surface, the
-cross-protocol scenarios, the tool-call round trip, upstream 429/Retry-After
+cross-protocol scenarios, the tool-call round trip, the thinking round trip
+(enabled thinking reaches a thinking-capable upstream; the reasoning trace
+surfaces beside the final answer), upstream 429/Retry-After
 and mid-stream truncation (must surface as errors), the emulated
-web_search flow (Anthropic client, fully offline — MockServer also plays the
-Firecrawl v2 backend), count_tokens (local estimate, no upstream call), and
+web-tool flows (fully offline — MockServer also plays the Firecrawl v2
+backend): the Anthropic search cell, the chat-surface client-web-tool claim,
+the web_fetch cell (prior-context guard + document result), the plain-CLI
+tool injection, count_tokens (local estimate, no upstream call), and
 the negative control (a 200 with a wrong wire shape must fail the client).
 
 **Gates.** `TestMatrix_ManifestIsComplete` enforces the full cross product, a
@@ -86,9 +90,8 @@ Go tests agree in both directions, and the workflow runs the whole matrix
 with `-count=2` for determinism.
 
 Pending cells (the manifest names the reason for each; the fix loop owns them):
-- The chat-surface web-tool claim flow, web_fetch emulation, the
-  `previous_response_id` cell test (the fix itself is live from PR #79),
-  thinking, vision fallback, client cancel, the codex OAuth upstream and
+- The `previous_response_id` cell test (the fix itself is live from PR #79),
+  vision fallback, client cancel, the codex OAuth upstream and
   the decision surfaces.
 - M2: the 14 CLIs, plain start, full scenario set.
 

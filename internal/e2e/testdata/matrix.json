@@ -1144,15 +1144,15 @@
   },
   {
    "id": "web__emulated-search-chat-client",
-   "test": "",
-   "status": "pending",
-   "note": "client web-tool claim on the chat surface: cells follow with the web-emulation harness"
+   "test": "TestMatrix_WebEmulation_ChatClient_Search",
+   "status": "green",
+   "note": ""
   },
   {
    "id": "web__emulated-fetch",
-   "test": "",
-   "status": "pending",
-   "note": "web_fetch emulation cell follows with the web-emulation harness"
+   "test": "TestMatrix_WebEmulation_AnthropicClient_Fetch",
+   "status": "green",
+   "note": ""
   },
   {
    "id": "history__previous-response-id",
@@ -1162,9 +1162,9 @@
   },
   {
    "id": "thinking__anthropic-client",
-   "test": "",
-   "status": "pending",
-   "note": "needs a request that enables thinking; MockServer reasoningText is available"
+   "test": "TestMatrix_Thinking_AnthropicClient",
+   "status": "green",
+   "note": ""
   },
   {
    "id": "vision__blind-chain-caption",
