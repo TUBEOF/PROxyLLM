@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "internal/e2e/testdata/schemas/anthropic_message.json",
+  "title": "Anthropic Messages response (Message)",
+  "description": "The response object of POST /v1/messages. Anthropic publishes no machine-readable message schema: the official /anthropic_openapi.yaml spec download 404s since the reference moved to platform.claude.com (redirect to platform.claude.com/docs/anthropic_openapi.yaml verified 2026-11-03), the anthropics GitHub org ships no OpenAPI document, and the official SDKs are generated from an unpublicized spec. This schema is therefore transcribed from the current official reference (see .meta.json for the exact pages, access dates and the required-field cross-check against anthropic-sdk-go v1.84.0).",
+  "$defs": {
+    "Message": {
+      "type": "object",
+      "required": ["type", "id", "model", "role", "content", "stop_reason", "stop_sequence", "stop_details", "container", "diagnostics", "usage"],
+      "properties": {
+        "type": { "const": "message" },
+        "id": { "type": "string" },
+        "model": { "type": "string" },
+        "role": { "const": "assistant" },
+        "container": {
+          "anyOf": [
+            { "type": "object", "properties": { "id": { "type": "string" }, "expires_at": { "type": "string", "format": "date-time" }, "skills": { "type": "array" } } },
+            { "type": "null" }
+          ]
+        },
+        "diagnostics": {
+          "anyOf": [
+            { "type": "object", "properties": { "cache_miss_reason": { "anyOf": [ { "type": "object", "properties": { "cache_missed_input_tokens": { "type": "number" }, "type": { "type": "string" } } }, { "type": "null" } ] } } },
+            { "type": "null" }
+          ]
+        },
+        "content": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ContentBlock" }
+        },
+        "stop_reason": {
+          "anyOf": [
+            { "type": "string", "enum": ["end_turn", "max_tokens", "stop_sequence", "tool_use", "pause_turn", "refusal", "model_context_window_exceeded"] },
+            { "type": "null" }
+          ]
+        },
+        "stop_sequence": {
+          "anyOf": [ { "type": "string" }, { "type": "null" } ]
+        },
+        "stop_details": {
+          "anyOf": [
+            { "type": "object", "properties": { "type": { "type": "string" }, "category": { "anyOf": [ { "type": "string" }, { "type": "null" } ] }, "explanation": { "anyOf": [ { "type": "string" }, { "type": "null" } ] } } },
+            { "type": "null" }
+          ]
+        },
+        "usage": { "$ref": "#/$defs/Usage" }
+      }
+    },
+    "Usage": {
+      "type": "object",
+      "required": ["input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "cache_creation", "output_tokens", "output_tokens_details", "server_tool_use", "service_tier", "inference_geo", "speed"],
+      "properties": {
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "cache_creation_input_tokens": { "type": "integer", "minimum": 0 },
+        "cache_read_input_tokens": { "type": "integer", "minimum": 0 },
+        "cache_creation": {
+          "type": "object",
+          "required": ["ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens"],
+          "properties": { "ephemeral_5m_input_tokens": { "type": "integer" }, "ephemeral_1h_input_tokens": { "type": "integer" } }
+        },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens_details": {
+          "type": "object",
+          "required": ["thinking_tokens"],
+          "properties": { "thinking_tokens": { "type": "integer" } }
+        },
+        "server_tool_use": {
+          "type": "object",
+          "required": ["web_search_requests", "web_fetch_requests"],
+          "properties": { "web_search_requests": { "type": "integer" }, "web_fetch_requests": { "type": "integer" } }
+        },
+        "service_tier": { "type": "string" },
+        "inference_geo": { "type": "string" },
+        "speed": { "type": "string" }
+      }
+    },
+    "ContentBlock": {
+      "oneOf": [
+        { "$ref": "#/$defs/TextBlock" },
+        { "$ref": "#/$defs/ToolUseBlock" },
+        { "$ref": "#/$defs/ThinkingBlock" }
+      ]
+    },
+    "TextBlock": {
+      "type": "object",
+      "required": ["type", "text"],
+      "properties": { "type": { "const": "text" }, "text": { "type": "string" }, "citations": { "anyOf": [ { "type": "array" }, { "type": "null" } ] } }
+    },
+    "ToolUseBlock": {
+      "type": "object",
+      "required": ["type", "id", "name", "input"],
+      "properties": { "type": { "const": "tool_use" }, "id": { "type": "string" }, "name": { "type": "string" }, "input": { "type": "object" } }
+    },
+    "ThinkingBlock": {
+      "type": "object",
+      "required": ["type", "thinking", "signature"],
+      "properties": { "type": { "const": "thinking" }, "thinking": { "type": "string" }, "signature": { "type": "string" } }
+    }
+  },
+  "$ref": "#/$defs/Message"
+}

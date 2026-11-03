@@ -3,8 +3,8 @@
   "info": {
     "title": "PROxyLLM client API",
     "version": "1.23.0",
-    "summary": "OpenAI-compatible, Anthropic-compatible and decision surfaces of one proxy.",
-    "description": "PROxyLLM exposes three client-facing surfaces from one endpoint and translates between them, so any client shape can reach any configured upstream. Every /v1/* route authenticates with a client key (pk_<prefix>_<secret>). The operator-facing admin API (/api/admin/*) is session-authenticated and deliberately not described here; see docs/api/admin.md.",
+    "summary": "OpenAI-compatible, Anthropic-compatible, native Ollama, native Gemini and decision surfaces of one proxy.",
+    "description": "PROxyLLM exposes five client-facing surfaces from one endpoint and translates between them, so any client shape can reach any configured upstream. Every /v1/*, /api/* and /v1beta/* route authenticates with a client key (pk_<prefix>_<secret>). The Responses WebSocket transport (GET /v1/responses upgrade) is not expressible in OpenAPI 3.x; it follows the same request/response shapes as the POST endpoint and is described in docs/api/README.md. The operator-facing admin API (/api/admin/*) is session-authenticated and deliberately not described here; see docs/api/admin.md.",
     "license": { "name": "MIT", "identifier": "MIT" }
   },
   "servers": [
@@ -14,6 +14,8 @@
   "tags": [
     { "name": "OpenAI-compatible", "description": "Chat Completions and Responses shapes." },
     { "name": "Anthropic-compatible", "description": "Messages shape, what Claude Code speaks." },
+    { "name": "Ollama native", "description": "The native Ollama /api/chat and /api/tags shapes (NDJSON streaming)." },
+    { "name": "Gemini native", "description": "The native Gemini generateContent shapes (SSE streaming)." },
     { "name": "Decision", "description": "Typed questions scored against shared evidence; non-streaming by contract." }
   ],
   "paths": {
@@ -167,6 +169,104 @@
             }
           },
           "default": { "$ref": "#/components/responses/AnthropicError" }
+        }
+      }
+    },
+    "/api/chat": {
+      "post": {
+        "tags": ["Ollama native"],
+        "summary": "Ollama chat (JSON or NDJSON)",
+        "operationId": "ollamaChat",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OllamaChatRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One chat response object, or NDJSON lines of the same shape when stream is true.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/OllamaChatResponse" } },
+              "application/x-ndjson": { "schema": { "$ref": "#/components/schemas/OllamaChatResponse" } }
+            }
+          },
+          "default": {
+            "description": "Error in the Ollama envelope ({\"error\": \"...\"}).",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OllamaErrorBody" } } }
+          }
+        }
+      }
+    },
+    "/api/tags": {
+      "get": {
+        "tags": ["Ollama native"],
+        "summary": "Model rows in the Ollama tags shape",
+        "operationId": "ollamaTags",
+        "responses": {
+          "200": {
+            "description": "Model rows.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OllamaTags" } } }
+          }
+        }
+      }
+    },
+    "/v1beta/models/{model}:generateContent": {
+      "post": {
+        "tags": ["Gemini native"],
+        "summary": "Gemini generateContent (JSON)",
+        "operationId": "geminiGenerateContent",
+        "parameters": [
+          { "name": "model", "in": "path", "required": true, "schema": { "type": "string" }, "description": "The model segment of the URL; a model row ID or an alias." }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/GeminiGenerateContentRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A GenerateContentResponse.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GeminiGenerateContentResponse" } } }
+          },
+          "default": {
+            "description": "Error in the Gemini envelope.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GeminiErrorBody" } } }
+          }
+        }
+      }
+    },
+    "/v1beta/models/{model}:streamGenerateContent": {
+      "post": {
+        "tags": ["Gemini native"],
+        "summary": "Gemini generateContent (SSE, alt=sse)",
+        "operationId": "geminiStreamGenerateContent",
+        "parameters": [
+          { "name": "model", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "alt", "in": "query", "required": true, "schema": { "type": "string", "const": "sse" }, "description": "Selects the SSE transport; without it the request is not the streaming surface." }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/GeminiGenerateContentRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "One GenerateContentResponse per `data:` frame.",
+            "content": { "text/event-stream": { "schema": { "$ref": "#/components/schemas/GeminiGenerateContentResponse" } } }
+          },
+          "default": {
+            "description": "Error in the Gemini envelope.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GeminiErrorBody" } } }
+          }
         }
       }
     },
@@ -433,6 +533,208 @@
             "properties": {
               "web_search_requests": { "type": "integer" },
               "web_fetch_requests": { "type": "integer" }
+            }
+          }
+        }
+      },
+      "OllamaErrorBody": {
+        "type": "object",
+        "required": ["error"],
+        "properties": { "error": { "type": "string", "description": "A plain-text error message; the Ollama envelope." } }
+      },
+      "OllamaChatRequest": {
+        "type": "object",
+        "required": ["model", "messages"],
+        "properties": {
+          "model": { "type": "string", "description": "A model row ID or an alias." },
+          "messages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["role", "content"],
+              "properties": {
+                "role": { "type": "string", "enum": ["system", "user", "assistant", "tool"] },
+                "content": { "type": "string" },
+                "images": { "type": "array", "items": { "type": "string" }, "description": "Base64-encoded image payload." },
+                "thinking": { "type": "string", "description": "A thinking block sent back for the context." }
+              }
+            }
+          },
+          "stream": { "type": "boolean", "default": false, "description": "true selects NDJSON streaming." },
+          "think": { "oneOf": [{ "type": "boolean" }, { "type": "string", "enum": ["high", "medium", "low", "max"] }], "description": "Thinking control per the Ollama wire." },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["function"],
+              "properties": {
+                "function": {
+                  "type": "object",
+                  "required": ["name"],
+                  "properties": {
+                    "name": { "type": "string" },
+                    "description": { "type": "string" },
+                    "parameters": { "type": "object" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "additionalProperties": true
+      },
+      "OllamaChatResponse": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "description": "Echoes the model the client asked for." },
+          "created_at": { "type": "string", "format": "date-time" },
+          "message": {
+            "type": "object",
+            "properties": {
+              "role": { "type": "string", "const": "assistant" },
+              "content": { "type": "string", "description": "The full answer, or a fragment when streaming." },
+              "images": { "type": "array", "items": { "type": "string" } },
+              "thinking": { "type": "string", "description": "The model's thinking, when asked for." },
+              "tool_calls": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "function": {
+                      "type": "object",
+                      "required": ["name"],
+                      "properties": { "name": { "type": "string" }, "arguments": { "type": "object", "description": "Ollama carries arguments as a JSON object, not a string." } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "done": { "type": "boolean" },
+          "done_reason": { "type": "string", "description": "stop|length|load when done." },
+          "total_duration": { "type": "integer", "description": "Nanoseconds." },
+          "load_duration": { "type": "integer", "description": "Nanoseconds." },
+          "prompt_eval_count": { "type": "integer", "description": "Input tokens (usage.prompt_tokens)." },
+          "prompt_eval_cached_count": { "type": "integer", "description": "Cache-read tokens (usage.cached_tokens)." },
+          "prompt_eval_duration": { "type": "integer", "description": "Nanoseconds." },
+          "eval_count": { "type": "integer", "description": "Output tokens (usage.completion_tokens)." },
+          "eval_duration": { "type": "integer", "description": "Nanoseconds." }
+        }
+      },
+      "OllamaTags": {
+        "type": "object",
+        "required": ["models"],
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "model"],
+              "properties": {
+                "name": { "type": "string", "description": "The model row ID." },
+                "model": { "type": "string", "description": "The model row ID." }
+              }
+            }
+          }
+        }
+      },
+      "GeminiGenerateContentRequest": {
+        "type": "object",
+        "required": ["contents"],
+        "properties": {
+          "contents": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["parts"],
+              "properties": {
+                "role": { "type": "string", "enum": ["user", "model"] },
+                "parts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "text": { "type": "string" },
+                      "inlineData": { "type": "object" },
+                      "functionCall": { "type": "object" },
+                      "functionResponse": { "type": "object" }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "systemInstruction": { "type": "object", "description": "A role/parts content object." },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "functionDeclarations": { "type": "array", "items": { "type": "object" } },
+                "googleSearch": { "type": "object", "description": "Server-side web search; may be emulated through a web-tool account." },
+                "urlContext": { "type": "object" }
+              }
+            }
+          },
+          "generationConfig": { "type": "object", "properties": { "temperature": { "type": "number" }, "topP": { "type": "number" }, "maxOutputTokens": { "type": "integer" } }, "additionalProperties": true }
+        },
+        "additionalProperties": true
+      },
+      "GeminiGenerateContentResponse": {
+        "type": "object",
+        "properties": {
+          "candidates": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "content": {
+                  "type": "object",
+                  "properties": {
+                    "role": { "type": "string" },
+                    "parts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "text": { "type": "string" },
+                          "thought": { "type": "boolean", "description": "true marks a thinking fragment." },
+                          "functionCall": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "args": { "type": "object" } } },
+                          "functionResponse": { "type": "object" }
+                        }
+                      }
+                    }
+                  }
+                },
+                "finishReason": { "type": "string", "description": "STOP|MAX_TOKENS|SAFETY|... per the Gemini wire." },
+                "index": { "type": "integer" }
+              }
+            }
+          },
+          "usageMetadata": {
+            "type": "object",
+            "properties": {
+              "promptTokenCount": { "type": "integer" },
+              "candidatesTokenCount": { "type": "integer" },
+              "thoughtsTokenCount": { "type": "integer" },
+              "totalTokenCount": { "type": "integer" }
+            }
+          },
+          "modelVersion": { "type": "string", "description": "Echoes the model the client asked for." },
+          "responseId": { "type": "string" }
+        }
+      },
+      "GeminiErrorBody": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message", "status"],
+            "properties": {
+              "code": { "type": "integer", "description": "The HTTP status." },
+              "message": { "type": "string" },
+              "status": { "type": "string", "description": "The Google status enum, e.g. INVALID_ARGUMENT, UNAVAILABLE." }
             }
           }
         }

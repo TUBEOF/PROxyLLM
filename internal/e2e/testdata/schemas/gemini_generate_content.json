@@ -1,0 +1,1485 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "internal/e2e/testdata/schemas/gemini_generate_content.json",
+ "$ref": "#/$defs/GenerateContentResponse",
+ "$defs": {
+  "GenerateContentResponse": {
+   "description": "Response from the model supporting multiple candidate responses. Safety ratings and content filtering are reported for both prompt in `GenerateContentResponse.prompt_feedback` and for each candidate in `finish_reason` and in `safety_ratings`. The API: - Returns either all requested candidates or none of them - Returns no candidates at all only if there was something wrong with the prompt (check `prompt_feedback`) - Reports feedback on each candidate in `finish_reason` and `safety_ratings`.",
+   "type": "object",
+   "properties": {
+    "modelStatus": {
+     "description": "Output only. The current model status of this model.",
+     "readOnly": true,
+     "$ref": "#/$defs/ModelStatus"
+    },
+    "usageMetadata": {
+     "description": "Output only. Metadata on the generation requests' token usage.",
+     "readOnly": true,
+     "$ref": "#/$defs/UsageMetadata"
+    },
+    "promptFeedback": {
+     "description": "Returns the prompt's feedback related to the content filters.",
+     "$ref": "#/$defs/PromptFeedback"
+    },
+    "candidates": {
+     "type": "array",
+     "description": "Candidate responses from the model.",
+     "items": {
+      "$ref": "#/$defs/Candidate"
+     }
+    },
+    "modelVersion": {
+     "description": "Output only. The model version used to generate the response.",
+     "readOnly": true,
+     "type": "string"
+    },
+    "responseId": {
+     "description": "Output only. response_id is used to identify each response.",
+     "readOnly": true,
+     "type": "string"
+    }
+   }
+  },
+  "ModelStatus": {
+   "properties": {
+    "message": {
+     "description": "A message explaining the model status.",
+     "type": "string"
+    },
+    "modelStage": {
+     "enum": [
+      "MODEL_STAGE_UNSPECIFIED",
+      "UNSTABLE_EXPERIMENTAL",
+      "EXPERIMENTAL",
+      "PREVIEW",
+      "STABLE",
+      "LEGACY",
+      "DEPRECATED",
+      "RETIRED"
+     ],
+     "enumDescriptions": [
+      "Unspecified model stage.",
+      "The underlying model is subject to lots of tunings.",
+      "Models in this stage are for experimental purposes only.",
+      "Models in this stage are more mature than experimental models.",
+      "Models in this stage are considered stable and ready for production use.",
+      "If the model is on this stage, it means that this model is on the path to deprecation in near future. Only existing customers can use this model.",
+      "Models in this stage are deprecated. These models cannot be used.",
+      "Models in this stage are retired. These models cannot be used."
+     ],
+     "description": "The stage of the underlying model.",
+     "enumDeprecated": [
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+     ],
+     "type": "string"
+    },
+    "retirementTime": {
+     "type": "string",
+     "description": "The time at which the model will be retired.",
+     "format": "google-datetime"
+    }
+   },
+   "type": "object",
+   "description": "The status of the underlying model. This is used to indicate the stage of the underlying model and the retirement time if applicable."
+  },
+  "UsageMetadata": {
+   "description": "Metadata on the generation request's token usage.",
+   "properties": {
+    "promptTokenCount": {
+     "description": "Number of tokens in the prompt. When `cached_content` is set, this is still the total effective prompt size meaning this includes the number of tokens in the cached content.",
+     "format": "int32",
+     "type": "integer"
+    },
+    "cachedContentTokenCount": {
+     "description": "Number of tokens in the cached part of the prompt (the cached content)",
+     "format": "int32",
+     "type": "integer"
+    },
+    "toolUsePromptTokenCount": {
+     "readOnly": true,
+     "type": "integer",
+     "format": "int32",
+     "description": "Output only. Number of tokens present in tool-use prompt(s)."
+    },
+    "thoughtsTokenCount": {
+     "type": "integer",
+     "description": "Output only. Number of tokens of thoughts for thinking models.",
+     "format": "int32",
+     "readOnly": true
+    },
+    "serviceTier": {
+     "enumDescriptions": [
+      "Default service tier, which is standard.",
+      "Standard service tier.",
+      "Flex service tier.",
+      "Priority service tier."
+     ],
+     "description": "Output only. Service tier of the request.",
+     "type": "string",
+     "enum": [
+      "unspecified",
+      "standard",
+      "flex",
+      "priority"
+     ],
+     "readOnly": true
+    },
+    "candidatesTokensDetails": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/ModalityTokenCount"
+     },
+     "readOnly": true,
+     "description": "Output only. List of modalities that were returned in the response."
+    },
+    "cacheTokensDetails": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/ModalityTokenCount"
+     },
+     "description": "Output only. List of modalities of the cached content in the request input.",
+     "readOnly": true
+    },
+    "promptTokensDetails": {
+     "type": "array",
+     "description": "Output only. List of modalities that were processed in the request input.",
+     "readOnly": true,
+     "items": {
+      "$ref": "#/$defs/ModalityTokenCount"
+     }
+    },
+    "totalTokenCount": {
+     "description": "Total token count for the generation request (prompt + tool-use prompt + thoughts + response candidates).",
+     "format": "int32",
+     "type": "integer"
+    },
+    "candidatesTokenCount": {
+     "type": "integer",
+     "format": "int32",
+     "description": "Total number of tokens across all the generated response candidates."
+    },
+    "toolUsePromptTokensDetails": {
+     "items": {
+      "$ref": "#/$defs/ModalityTokenCount"
+     },
+     "readOnly": true,
+     "description": "Output only. List of modalities that were processed for tool-use request inputs.",
+     "type": "array"
+    }
+   },
+   "type": "object"
+  },
+  "ModalityTokenCount": {
+   "type": "object",
+   "properties": {
+    "modality": {
+     "enumDescriptions": [
+      "Unspecified modality.",
+      "Plain text.",
+      "Image.",
+      "Video.",
+      "Audio.",
+      "Document, e.g. PDF."
+     ],
+     "type": "string",
+     "enum": [
+      "MODALITY_UNSPECIFIED",
+      "TEXT",
+      "IMAGE",
+      "VIDEO",
+      "AUDIO",
+      "DOCUMENT"
+     ],
+     "description": "The modality associated with this token count."
+    },
+    "tokenCount": {
+     "type": "integer",
+     "format": "int32",
+     "description": "Number of tokens."
+    }
+   },
+   "description": "Represents token counting info for a single modality."
+  },
+  "PromptFeedback": {
+   "properties": {
+    "safetyRatings": {
+     "items": {
+      "$ref": "#/$defs/SafetyRating"
+     },
+     "description": "Ratings for safety of the prompt. There is at most one rating per category.",
+     "type": "array"
+    },
+    "blockReason": {
+     "enum": [
+      "BLOCK_REASON_UNSPECIFIED",
+      "SAFETY",
+      "OTHER",
+      "BLOCKLIST",
+      "PROHIBITED_CONTENT",
+      "IMAGE_SAFETY"
+     ],
+     "enumDescriptions": [
+      "Default value. This value is unused.",
+      "Prompt was blocked due to safety reasons. Inspect `safety_ratings` to understand which safety category blocked it.",
+      "Prompt was blocked due to unknown reasons.",
+      "Prompt was blocked due to the terms which are included from the terminology blocklist.",
+      "Prompt was blocked due to prohibited content.",
+      "Candidates blocked due to unsafe image generation content."
+     ],
+     "description": "Optional. If set, the prompt was blocked and no candidates are returned. Rephrase the prompt.",
+     "type": "string"
+    }
+   },
+   "description": "A set of the feedback metadata the prompt specified in `GenerateContentRequest.content`.",
+   "type": "object"
+  },
+  "SafetyRating": {
+   "description": "Safety rating for a piece of content. The safety rating contains the category of harm and the harm probability level in that category for a piece of content. Content is classified for safety across a number of harm categories and the probability of the harm classification is included here.",
+   "type": "object",
+   "properties": {
+    "category": {
+     "enum": [
+      "HARM_CATEGORY_UNSPECIFIED",
+      "HARM_CATEGORY_DEROGATORY",
+      "HARM_CATEGORY_TOXICITY",
+      "HARM_CATEGORY_VIOLENCE",
+      "HARM_CATEGORY_SEXUAL",
+      "HARM_CATEGORY_MEDICAL",
+      "HARM_CATEGORY_DANGEROUS",
+      "HARM_CATEGORY_HARASSMENT",
+      "HARM_CATEGORY_HATE_SPEECH",
+      "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+      "HARM_CATEGORY_DANGEROUS_CONTENT",
+      "HARM_CATEGORY_CIVIC_INTEGRITY",
+      "HARM_CATEGORY_JAILBREAK"
+     ],
+     "enumDescriptions": [
+      "Category is unspecified.",
+      "**PaLM** - Negative or harmful comments targeting identity and/or protected attribute. DEPRECATED: PaLM-only category, not supported by Gemini models.",
+      "**PaLM** - Content that is rude, disrespectful, or profane. DEPRECATED: PaLM-only category, not supported by Gemini models.",
+      "**PaLM** - Describes scenarios depicting violence against an individual or group, or general descriptions of gore. DEPRECATED: PaLM-only category, not supported by Gemini models.",
+      "**PaLM** - Contains references to sexual acts or other lewd content. DEPRECATED: PaLM-only category, not supported by Gemini models.",
+      "**PaLM** - Promotes unchecked medical advice. DEPRECATED: PaLM-only category, not supported by Gemini models.",
+      "**PaLM** - Dangerous content that promotes, facilitates, or encourages harmful acts. DEPRECATED: PaLM-only category, not supported by Gemini models.",
+      "**Gemini** - Harassment content.",
+      "**Gemini** - Hate speech and content.",
+      "**Gemini** - Sexually explicit content.",
+      "**Gemini** - Dangerous content.",
+      "**Gemini** - Content that may be used to harm civic integrity. DEPRECATED: use enable_enhanced_civic_answers instead.",
+      "**Gemini** - Prompts attempting to bypass or subvert the model's safety guidelines (jailbreak attempts)."
+     ],
+     "description": "Required. The category for this rating.",
+     "enumDeprecated": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false
+     ],
+     "type": "string"
+    },
+    "blocked": {
+     "description": "Was this content blocked because of this rating?",
+     "type": "boolean"
+    },
+    "probability": {
+     "enum": [
+      "HARM_PROBABILITY_UNSPECIFIED",
+      "NEGLIGIBLE",
+      "LOW",
+      "MEDIUM",
+      "HIGH"
+     ],
+     "enumDescriptions": [
+      "Probability is unspecified.",
+      "Content has a negligible chance of being unsafe.",
+      "Content has a low chance of being unsafe.",
+      "Content has a medium chance of being unsafe.",
+      "Content has a high chance of being unsafe."
+     ],
+     "description": "Required. The probability of harm for this content.",
+     "type": "string"
+    }
+   }
+  },
+  "Candidate": {
+   "type": "object",
+   "description": "A response candidate generated from the model.",
+   "properties": {
+    "safetyRatings": {
+     "description": "List of ratings for the safety of a response candidate. There is at most one rating per category.",
+     "items": {
+      "$ref": "#/$defs/SafetyRating"
+     },
+     "type": "array"
+    },
+    "groundingMetadata": {
+     "$ref": "#/$defs/GroundingMetadata",
+     "description": "Output only. Grounding metadata for the candidate. This field is populated for `GenerateContent` calls.",
+     "readOnly": true
+    },
+    "avgLogprobs": {
+     "format": "double",
+     "readOnly": true,
+     "description": "Output only. Average log probability score of the candidate.",
+     "type": "number"
+    },
+    "groundingAttributions": {
+     "description": "Output only. Attribution information for sources that contributed to a grounded answer. This field is populated for `GenerateAnswer` calls.",
+     "readOnly": true,
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/GroundingAttribution"
+     }
+    },
+    "citationMetadata": {
+     "$ref": "#/$defs/CitationMetadata",
+     "description": "Output only. Citation information for model-generated candidate. This field may be populated with recitation information for any text included in the `content`. These are passages that are \"recited\" from copyrighted material in the foundational LLM's training data.",
+     "readOnly": true
+    },
+    "logprobsResult": {
+     "readOnly": true,
+     "$ref": "#/$defs/LogprobsResult",
+     "description": "Output only. Log-likelihood scores for the response tokens and top tokens"
+    },
+    "content": {
+     "readOnly": true,
+     "$ref": "#/$defs/Content",
+     "description": "Output only. Generated content returned from the model."
+    },
+    "index": {
+     "type": "integer",
+     "description": "Output only. Index of the candidate in the list of response candidates.",
+     "format": "int32",
+     "readOnly": true
+    },
+    "tokenCount": {
+     "readOnly": true,
+     "format": "int32",
+     "type": "integer",
+     "description": "Output only. Token count for this candidate."
+    },
+    "continuationToken": {
+     "type": "string",
+     "format": "byte",
+     "description": "An optional opaque continuation token returned when `finish_reason` is `CONTINUATION`. Clients can pass this token in a subsequent `GenerateContentRequest` to continue generation."
+    },
+    "finishMessage": {
+     "type": "string",
+     "description": "Optional. Output only. Details the reason why the model stopped generating tokens. This is populated only when `finish_reason` is set.",
+     "readOnly": true
+    },
+    "finishReason": {
+     "type": "string",
+     "readOnly": true,
+     "enumDescriptions": [
+      "Default value. This value is unused.",
+      "Natural stop point of the model or provided stop sequence.",
+      "The maximum number of tokens as specified in the request was reached.",
+      "The response candidate content was flagged for safety reasons.",
+      "The response candidate content was flagged for recitation reasons.",
+      "The response candidate content was flagged for using an unsupported language.",
+      "Unknown reason.",
+      "Token generation stopped because the content contains forbidden terms.",
+      "Token generation stopped for potentially containing prohibited content.",
+      "Token generation stopped because the content potentially contains Sensitive Personally Identifiable Information (SPII).",
+      "The function call generated by the model is invalid.",
+      "Token generation stopped because generated images contain safety violations.",
+      "Image generation stopped because generated images has other prohibited content.",
+      "Image generation stopped because of other miscellaneous issue.",
+      "The model was expected to generate an image, but none was generated.",
+      "Image generation stopped due to recitation.",
+      "Model generated a tool call but no tools were enabled in the request.",
+      "Model called too many tools consecutively, thus the system exited execution.",
+      "Request has at least one thought signature missing.",
+      "Finished due to malformed response.",
+      "Request was filtered by an escalation rule.",
+      "Indicates that token generation stopped because the user account is limited or disabled due to Prohibited Use Policy (PUP) violations.",
+      "Token generation was stopped because the response reached the per-request token limit, but generation is not yet complete. The model response can be continued via a subsequent request using the returned `continuation_token`. Note, the `max_output_tokens` is cumulative across continuation hops and must be monotonically increased or omitted."
+     ],
+     "description": "Optional. Output only. The reason why the model stopped generating tokens. If empty, the model has not stopped generating tokens.",
+     "enum": [
+      "FINISH_REASON_UNSPECIFIED",
+      "STOP",
+      "MAX_TOKENS",
+      "SAFETY",
+      "RECITATION",
+      "LANGUAGE",
+      "OTHER",
+      "BLOCKLIST",
+      "PROHIBITED_CONTENT",
+      "SPII",
+      "MALFORMED_FUNCTION_CALL",
+      "IMAGE_SAFETY",
+      "IMAGE_PROHIBITED_CONTENT",
+      "IMAGE_OTHER",
+      "NO_IMAGE",
+      "IMAGE_RECITATION",
+      "UNEXPECTED_TOOL_CALL",
+      "TOO_MANY_TOOL_CALLS",
+      "MISSING_THOUGHT_SIGNATURE",
+      "MALFORMED_RESPONSE",
+      "ESCALATION",
+      "PUP_LIMITED_DISABLED",
+      "CONTINUATION"
+     ]
+    },
+    "urlContextMetadata": {
+     "description": "Output only. Metadata related to url context retrieval tool.",
+     "$ref": "#/$defs/UrlContextMetadata",
+     "readOnly": true
+    }
+   }
+  },
+  "GroundingMetadata": {
+   "type": "object",
+   "properties": {
+    "groundingSupports": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/GoogleAiGenerativelanguageV1betaGroundingSupport"
+     },
+     "description": "List of grounding support."
+    },
+    "webSearchQueries": {
+     "description": "Web search queries for the following-up web search.",
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    },
+    "retrievalMetadata": {
+     "$ref": "#/$defs/RetrievalMetadata",
+     "description": "Metadata related to retrieval in the grounding flow."
+    },
+    "googleMapsWidgetContextToken": {
+     "type": "string",
+     "description": "Optional. Resource name of the Google Maps widget context token that can be used with the PlacesContextElement widget in order to render contextual data. Only populated in the case that grounding with Google Maps is enabled."
+    },
+    "searchEntryPoint": {
+     "$ref": "#/$defs/SearchEntryPoint",
+     "description": "Optional. Google search entry for the following-up web searches."
+    },
+    "groundingChunks": {
+     "type": "array",
+     "description": "List of supporting references retrieved from specified grounding source. When streaming, this only contains the grounding chunks that have not been included in the grounding metadata of previous responses.",
+     "items": {
+      "$ref": "#/$defs/GroundingChunk"
+     }
+    },
+    "imageSearchQueries": {
+     "description": "Image search queries used for grounding.",
+     "items": {
+      "type": "string"
+     },
+     "type": "array"
+    }
+   },
+   "description": "Metadata returned to client when grounding is enabled."
+  },
+  "GoogleAiGenerativelanguageV1betaGroundingSupport": {
+   "properties": {
+    "segment": {
+     "description": "Segment of the content this support belongs to.",
+     "$ref": "#/$defs/GoogleAiGenerativelanguageV1betaSegment"
+    },
+    "confidenceScores": {
+     "description": "Optional. Confidence score of the support references. Ranges from 0 to 1. 1 is the most confident. This list must have the same size as the grounding_chunk_indices.",
+     "items": {
+      "format": "float",
+      "type": "number"
+     },
+     "type": "array"
+    },
+    "renderedParts": {
+     "type": "array",
+     "items": {
+      "type": "integer",
+      "format": "int32"
+     },
+     "description": "Output only. Indices into the `parts` field of the candidate's content. These indices specify which rendered parts are associated with this support source.",
+     "readOnly": true
+    },
+    "groundingChunkIndices": {
+     "items": {
+      "type": "integer",
+      "format": "int32"
+     },
+     "type": "array",
+     "description": "Optional. A list of indices (into 'grounding_chunk' in `response.candidate.grounding_metadata`) specifying the citations associated with the claim. For instance [1,3,4] means that grounding_chunk[1], grounding_chunk[3], grounding_chunk[4] are the retrieved content attributed to the claim. If the response is streaming, the grounding_chunk_indices refer to the indices across all responses. It is the client's responsibility to accumulate the grounding chunks from all responses (while maintaining the same order)."
+    }
+   },
+   "type": "object",
+   "description": "Grounding support."
+  },
+  "GoogleAiGenerativelanguageV1betaSegment": {
+   "type": "object",
+   "properties": {
+    "text": {
+     "type": "string",
+     "description": "The text corresponding to the segment from the response."
+    },
+    "partIndex": {
+     "format": "int32",
+     "description": "The index of a Part object within its parent Content object.",
+     "type": "integer"
+    },
+    "endIndex": {
+     "description": "End index in the given Part, measured in bytes. Offset from the start of the Part, exclusive, starting at zero.",
+     "format": "int32",
+     "type": "integer"
+    },
+    "startIndex": {
+     "format": "int32",
+     "description": "Start index in the given Part, measured in bytes. Offset from the start of the Part, inclusive, starting at zero.",
+     "type": "integer"
+    }
+   },
+   "description": "Segment of the content."
+  },
+  "RetrievalMetadata": {
+   "description": "Metadata related to retrieval in the grounding flow.",
+   "type": "object",
+   "properties": {
+    "googleSearchDynamicRetrievalScore": {
+     "type": "number",
+     "description": "Optional. Score indicating how likely information from google search could help answer the prompt. The score is in the range [0, 1], where 0 is the least likely and 1 is the most likely. This score is only populated when google search grounding and dynamic retrieval is enabled. It will be compared to the threshold to determine whether to trigger google search.",
+     "format": "float"
+    }
+   }
+  },
+  "SearchEntryPoint": {
+   "properties": {
+    "renderedContent": {
+     "description": "Optional. Web content snippet that can be embedded in a web page or an app webview.",
+     "type": "string"
+    },
+    "sdkBlob": {
+     "format": "byte",
+     "type": "string",
+     "description": "Optional. Base64 encoded JSON representing array of tuple."
+    }
+   },
+   "description": "Google search entry point.",
+   "type": "object"
+  },
+  "GroundingChunk": {
+   "description": "A `GroundingChunk` represents a segment of supporting evidence that grounds the model's response. It can be a chunk from the web, a retrieved context from a file, or information from Google Maps.",
+   "type": "object",
+   "properties": {
+    "image": {
+     "$ref": "#/$defs/Image",
+     "description": "Optional. Grounding chunk from image search."
+    },
+    "web": {
+     "description": "Grounding chunk from the web.",
+     "$ref": "#/$defs/Web"
+    },
+    "retrievedContext": {
+     "$ref": "#/$defs/RetrievedContext",
+     "description": "Optional. Grounding chunk from context retrieved by the file search tool."
+    },
+    "maps": {
+     "description": "Optional. Grounding chunk from Google Maps.",
+     "$ref": "#/$defs/Maps"
+    }
+   }
+  },
+  "Image": {
+   "type": "object",
+   "properties": {
+    "domain": {
+     "type": "string",
+     "description": "The root domain of the web page that the image is from, e.g. \"example.com\"."
+    },
+    "title": {
+     "description": "The title of the web page that the image is from.",
+     "type": "string"
+    },
+    "imageUri": {
+     "type": "string",
+     "description": "The image asset URL."
+    },
+    "sourceUri": {
+     "description": "The web page URI for attribution.",
+     "type": "string"
+    }
+   },
+   "description": "Chunk from image search."
+  },
+  "Web": {
+   "description": "Chunk from the web.",
+   "type": "object",
+   "properties": {
+    "title": {
+     "description": "Output only. Title of the chunk.",
+     "readOnly": true,
+     "type": "string"
+    },
+    "uri": {
+     "readOnly": true,
+     "description": "Output only. URI reference of the chunk.",
+     "type": "string"
+    }
+   }
+  },
+  "RetrievedContext": {
+   "properties": {
+    "customMetadata": {
+     "description": "Optional. User-provided metadata about the retrieved context.",
+     "items": {
+      "$ref": "#/$defs/GroundingChunkCustomMetadata"
+     },
+     "type": "array"
+    },
+    "text": {
+     "description": "Optional. Text of the chunk.",
+     "type": "string"
+    },
+    "pageNumber": {
+     "description": "Optional. Page number of the retrieved context, if applicable.",
+     "type": "integer",
+     "format": "int32"
+    },
+    "fileSearchStore": {
+     "description": "Optional. Name of the `FileSearchStore` containing the document. Example: `fileSearchStores/123`",
+     "type": "string"
+    },
+    "title": {
+     "type": "string",
+     "description": "Optional. Title of the document."
+    },
+    "uri": {
+     "description": "Optional. URI reference of the semantic retrieval document.",
+     "type": "string"
+    },
+    "mediaId": {
+     "description": "Optional. The media blob resource name for multimodal file search results. Format: fileSearchStores/{file_search_store_id}/media/{blob_id}",
+     "type": "string"
+    }
+   },
+   "type": "object",
+   "description": "Chunk from context retrieved by the file search tool."
+  },
+  "GroundingChunkCustomMetadata": {
+   "type": "object",
+   "properties": {
+    "stringValue": {
+     "type": "string",
+     "description": "Optional. The string value of the metadata."
+    },
+    "numericValue": {
+     "format": "float",
+     "type": "number",
+     "description": "Optional. The numeric value of the metadata. The expected range for this value depends on the specific `key` used."
+    },
+    "key": {
+     "type": "string",
+     "description": "The key of the metadata."
+    },
+    "stringListValue": {
+     "description": "Optional. A list of string values for the metadata.",
+     "$ref": "#/$defs/GroundingChunkStringList"
+    }
+   },
+   "description": "User provided metadata about the GroundingFact."
+  },
+  "GroundingChunkStringList": {
+   "description": "A list of string values.",
+   "properties": {
+    "values": {
+     "type": "array",
+     "description": "The string values of the list.",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "type": "object"
+  },
+  "Maps": {
+   "properties": {
+    "title": {
+     "description": "Title of the place.",
+     "type": "string"
+    },
+    "placeAnswerSources": {
+     "description": "Sources that provide answers about the features of a given place in Google Maps.",
+     "$ref": "#/$defs/PlaceAnswerSources"
+    },
+    "placeId": {
+     "description": "The ID of the place, in `places/{place_id}` format. A user can use this ID to look up that place.",
+     "type": "string"
+    },
+    "text": {
+     "type": "string",
+     "description": "Text description of the place answer."
+    },
+    "uri": {
+     "description": "URI reference of the place.",
+     "type": "string"
+    }
+   },
+   "description": "A grounding chunk from Google Maps. A Maps chunk corresponds to a single place.",
+   "type": "object"
+  },
+  "PlaceAnswerSources": {
+   "description": "Collection of sources that provide answers about the features of a given place in Google Maps. Each PlaceAnswerSources message corresponds to a specific place in Google Maps. The Google Maps tool used these sources in order to answer questions about features of the place (e.g: \"does Bar Foo have Wifi\" or \"is Foo Bar wheelchair accessible?\"). Currently we only support review snippets as sources.",
+   "type": "object",
+   "properties": {
+    "reviewSnippets": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/ReviewSnippet"
+     },
+     "description": "Snippets of reviews that are used to generate answers about the features of a given place in Google Maps."
+    }
+   }
+  },
+  "ReviewSnippet": {
+   "properties": {
+    "title": {
+     "type": "string",
+     "description": "Title of the review."
+    },
+    "googleMapsUri": {
+     "description": "A link that corresponds to the user review on Google Maps.",
+     "type": "string"
+    },
+    "reviewId": {
+     "description": "The ID of the review snippet.",
+     "type": "string"
+    }
+   },
+   "type": "object",
+   "description": "Encapsulates a snippet of a user review that answers a question about the features of a specific place in Google Maps."
+  },
+  "GroundingAttribution": {
+   "properties": {
+    "sourceId": {
+     "readOnly": true,
+     "description": "Output only. Identifier for the source contributing to this attribution.",
+     "$ref": "#/$defs/AttributionSourceId"
+    },
+    "content": {
+     "description": "Grounding source content that makes up this attribution.",
+     "$ref": "#/$defs/Content"
+    }
+   },
+   "description": "Attribution for a source that contributed to an answer.",
+   "type": "object"
+  },
+  "AttributionSourceId": {
+   "description": "Identifier for the source contributing to this attribution.",
+   "type": "object",
+   "properties": {
+    "groundingPassage": {
+     "$ref": "#/$defs/GroundingPassageId",
+     "description": "Identifier for an inline passage."
+    },
+    "semanticRetrieverChunk": {
+     "$ref": "#/$defs/SemanticRetrieverChunk",
+     "description": "Identifier for a `Chunk` fetched via Semantic Retriever."
+    }
+   }
+  },
+  "GroundingPassageId": {
+   "properties": {
+    "passageId": {
+     "description": "Output only. ID of the passage matching the `GenerateAnswerRequest`'s `GroundingPassage.id`.",
+     "type": "string",
+     "readOnly": true
+    },
+    "partIndex": {
+     "description": "Output only. Index of the part within the `GenerateAnswerRequest`'s `GroundingPassage.content`.",
+     "type": "integer",
+     "readOnly": true,
+     "format": "int32"
+    }
+   },
+   "type": "object",
+   "description": "Identifier for a part within a `GroundingPassage`."
+  },
+  "SemanticRetrieverChunk": {
+   "type": "object",
+   "properties": {
+    "source": {
+     "readOnly": true,
+     "description": "Output only. Name of the source matching the request's `SemanticRetrieverConfig.source`. Example: `corpora/123` or `corpora/123/documents/abc`",
+     "type": "string"
+    },
+    "chunk": {
+     "type": "string",
+     "description": "Output only. Name of the `Chunk` containing the attributed text. Example: `corpora/123/documents/abc/chunks/xyz`",
+     "readOnly": true
+    }
+   },
+   "description": "Identifier for a `Chunk` retrieved via Semantic Retriever specified in the `GenerateAnswerRequest` using `SemanticRetrieverConfig`."
+  },
+  "Content": {
+   "properties": {
+    "parts": {
+     "type": "array",
+     "description": "Ordered `Parts` that constitute a single message. Parts may have different MIME types.",
+     "items": {
+      "$ref": "#/$defs/Part"
+     }
+    },
+    "role": {
+     "type": "string",
+     "description": "Optional. The producer of the content. Must be either 'user' or 'model'. Useful to set for multi-turn conversations, otherwise can be left blank or unset."
+    }
+   },
+   "description": "The base structured datatype containing multi-part content of a message. A `Content` includes a `role` field designating the producer of the `Content` and a `parts` field containing multi-part data that contains the content of the message turn.",
+   "type": "object"
+  },
+  "Part": {
+   "properties": {
+    "text": {
+     "type": "string",
+     "description": "Inline text."
+    },
+    "mediaProcessing": {
+     "enumDescriptions": [
+      "Defaults to model-specific processing.",
+      "Fixed-rate frame extraction. All frames placed in context.",
+      "Model-driven dynamic navigation. Recommended for most use cases."
+     ],
+     "type": "string",
+     "description": "Optional. How the model processes this part's media for understanding. Only meaningful for video parts (`inline_data` or `file_data` with video mime). Non-video parts ignore this field.",
+     "enum": [
+      "MEDIA_PROCESSING_UNSPECIFIED",
+      "STATIC",
+      "AGENTIC"
+     ]
+    },
+    "executableCode": {
+     "$ref": "#/$defs/ExecutableCode",
+     "description": "Code generated by the model that is meant to be executed."
+    },
+    "audioTranscription": {
+     "description": "Optional. Audio (input or output) transcription. This is only set when this Part contains audio data.",
+     "$ref": "#/$defs/AudioTranscription"
+    },
+    "thoughtSignature": {
+     "description": "Optional. An opaque signature for the thought so it can be reused in subsequent requests.",
+     "format": "byte",
+     "type": "string"
+    },
+    "videoMetadata": {
+     "description": "Optional. Video metadata. The metadata should only be specified while the video data is presented in inline_data or file_data.",
+     "$ref": "#/$defs/VideoMetadata"
+    },
+    "toolCall": {
+     "$ref": "#/$defs/ToolCall",
+     "description": "Server-side tool call. This field is populated when the model predicts a tool invocation that should be executed on the server. The client is expected to echo this message back to the API."
+    },
+    "codeExecutionResult": {
+     "description": "Result of executing the `ExecutableCode`.",
+     "$ref": "#/$defs/CodeExecutionResult"
+    },
+    "functionCall": {
+     "$ref": "#/$defs/FunctionCall",
+     "description": "A predicted `FunctionCall` returned from the model that contains a string representing the `FunctionDeclaration.name` with the arguments and their values."
+    },
+    "speechMetadata": {
+     "$ref": "#/$defs/SpeechMetadata",
+     "description": "Optional. Metadata applied to text parts to customize how they should be spoken or synthesized, such as specifying speaker identity or speaking style."
+    },
+    "thought": {
+     "description": "Optional. Indicates if the part is thought from the model.",
+     "type": "boolean"
+    },
+    "functionResponse": {
+     "description": "The result output of a `FunctionCall` that contains a string representing the `FunctionDeclaration.name` and a structured JSON object containing any output from the function is used as context to the model.",
+     "$ref": "#/$defs/FunctionResponse"
+    },
+    "fileData": {
+     "$ref": "#/$defs/FileData",
+     "description": "URI based data."
+    },
+    "inlineData": {
+     "$ref": "#/$defs/Blob",
+     "description": "Inline media bytes."
+    },
+    "toolResponse": {
+     "$ref": "#/$defs/ToolResponse",
+     "description": "The output from a server-side `ToolCall` execution. This field is populated by the client with the results of executing the corresponding `ToolCall`."
+    },
+    "partMetadata": {
+     "description": "Custom metadata associated with the Part. Agents using genai.Part as content representation may need to keep track of the additional information. For example it can be name of a file/source from which the Part originates or a way to multiplex multiple Part streams.",
+     "type": "object",
+     "additionalProperties": {
+      "description": "Properties of the object."
+     }
+    },
+    "mediaResolution": {
+     "$ref": "#/$defs/V1mainMediaResolution",
+     "description": "Optional. Media resolution for the input media."
+    }
+   },
+   "description": "A datatype containing media that is part of a multi-part `Content` message. A `Part` consists of data which has an associated datatype. A `Part` can only contain one of the accepted types in `Part.data`. A `Part` must have a fixed IANA MIME type identifying the type and subtype of the media if the `inline_data` field is filled with raw bytes.",
+   "type": "object"
+  },
+  "ExecutableCode": {
+   "description": "Code generated by the model that is meant to be executed, and the result returned to the model. Only generated when using the `CodeExecution` tool, in which the code will be automatically executed, and a corresponding `CodeExecutionResult` will also be generated.",
+   "properties": {
+    "language": {
+     "enumDescriptions": [
+      "Unspecified language. This value should not be used.",
+      "Python >= 3.10, with numpy and simpy available. Python is the default language."
+     ],
+     "enum": [
+      "LANGUAGE_UNSPECIFIED",
+      "PYTHON"
+     ],
+     "description": "Required. Programming language of the `code`.",
+     "type": "string"
+    },
+    "id": {
+     "type": "string",
+     "description": "Optional. Unique identifier of the `ExecutableCode` part. The server returns the `CodeExecutionResult` with the matching `id`."
+    },
+    "code": {
+     "description": "Required. The code to be executed.",
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "AudioTranscription": {
+   "type": "object",
+   "properties": {
+    "words": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/WordInfo"
+     },
+     "description": "Optional. Detailed word-level transcriptions and timing details. Present when word_timestamp is set."
+    },
+    "text": {
+     "type": "string",
+     "description": "Required. The transcription text of this audio segment."
+    },
+    "speakerLabel": {
+     "description": "Optional. A label identifying the speaker of this audio segment (e.g. \"spk_1\", \"spk_2\"). Present when diarization is set.",
+     "type": "string"
+    }
+   },
+   "description": "The transcription of an audio part. For multi-speaker audio, each speaker segment is a separate Part with its own AudioTranscription carrying the speaker_label."
+  },
+  "WordInfo": {
+   "description": "Information about a single recognized word.",
+   "type": "object",
+   "properties": {
+    "endOffset": {
+     "description": "Optional. End offset in time of the word relative to the start of the audio.",
+     "type": "string",
+     "format": "google-duration"
+    },
+    "word": {
+     "type": "string",
+     "description": "Required. Transcript of the word."
+    },
+    "startOffset": {
+     "type": "string",
+     "description": "Optional. Start offset in time of the word relative to the start of the audio.",
+     "format": "google-duration"
+    }
+   }
+  },
+  "VideoMetadata": {
+   "properties": {
+    "fps": {
+     "type": "number",
+     "format": "double",
+     "description": "Optional. The frame rate of the video sent to the model. If not specified, the default value will be 1.0. The fps range is (0.0, 24.0]."
+    },
+    "endOffset": {
+     "type": "string",
+     "description": "Optional. The end offset of the video.",
+     "format": "google-duration"
+    },
+    "startOffset": {
+     "type": "string",
+     "format": "google-duration",
+     "description": "Optional. The start offset of the video."
+    }
+   },
+   "description": "Metadata describes the input video content. Set this in `Part.video_metadata` or `FunctionResponsePart.video_metadata` when `inline_data` or `file_data` contains video to configure static video preprocessing (such as time clipping, frame rate, maximum frame count, or extracted content layers).",
+   "type": "object"
+  },
+  "ToolCall": {
+   "type": "object",
+   "description": "A predicted server-side `ToolCall` returned from the model. This message contains information about a tool that the model wants to invoke. The client is NOT expected to execute this `ToolCall`. Instead, the client should pass this `ToolCall` back to the API in a subsequent turn within a `Content` message, along with the corresponding `ToolResponse`.",
+   "properties": {
+    "args": {
+     "description": "Optional. The tool call arguments. Example: {\"arg1\" : \"value1\", \"arg2\" : \"value2\" , ...}",
+     "type": "object",
+     "additionalProperties": {
+      "description": "Properties of the object."
+     }
+    },
+    "toolName": {
+     "type": "string",
+     "description": "Optional. The name of the tool that was called."
+    },
+    "toolType": {
+     "type": "string",
+     "description": "Required. The type of tool that was called.",
+     "enumDescriptions": [
+      "Unspecified tool type.",
+      "Google search tool, maps to Tool.google_search.search_types.web_search.",
+      "Image search tool, maps to Tool.google_search.search_types.image_search.",
+      "URL context tool, maps to Tool.url_context.",
+      "Google maps tool, maps to Tool.google_maps.",
+      "File search tool, maps to Tool.file_search.",
+      "Media processing tool types (e.g. video, audio, etc.), maps to invisible tools used for multimodal understanding like GOOGLE_UNDERSTANDING_VIDEO."
+     ],
+     "enum": [
+      "TOOL_TYPE_UNSPECIFIED",
+      "GOOGLE_SEARCH_WEB",
+      "GOOGLE_SEARCH_IMAGE",
+      "URL_CONTEXT",
+      "GOOGLE_MAPS",
+      "FILE_SEARCH",
+      "MEDIA_PROCESSING"
+     ]
+    },
+    "id": {
+     "type": "string",
+     "description": "Optional. Unique identifier of the tool call. The server returns the tool response with the matching `id`."
+    }
+   }
+  },
+  "CodeExecutionResult": {
+   "description": "Result of executing the `ExecutableCode`. Generated only when the `CodeExecution` tool is used.",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Optional. The identifier of the `ExecutableCode` part this result is for. Only populated if the corresponding `ExecutableCode` has an id."
+    },
+    "output": {
+     "type": "string",
+     "description": "Optional. Contains stdout when code execution is successful, stderr or other description otherwise."
+    },
+    "outcome": {
+     "description": "Required. Outcome of the code execution.",
+     "type": "string",
+     "enum": [
+      "OUTCOME_UNSPECIFIED",
+      "OUTCOME_OK",
+      "OUTCOME_FAILED",
+      "OUTCOME_DEADLINE_EXCEEDED"
+     ],
+     "enumDescriptions": [
+      "Unspecified status. This value should not be used.",
+      "Code execution completed successfully. `output` contains the stdout, if any.",
+      "Code execution failed. `output` contains the stderr and stdout, if any.",
+      "Code execution ran for too long, and was cancelled. There may or may not be a partial `output` present."
+     ]
+    }
+   },
+   "type": "object"
+  },
+  "FunctionCall": {
+   "properties": {
+    "args": {
+     "type": "object",
+     "description": "Optional. The function parameters and values in JSON object format.",
+     "additionalProperties": {
+      "description": "Properties of the object."
+     }
+    },
+    "id": {
+     "description": "Optional. Unique identifier of the function call. If populated, the client to execute the `function_call` and return the response with the matching `id`.",
+     "type": "string"
+    },
+    "name": {
+     "description": "Required. The name of the function to call. Must be a-z, A-Z, 0-9, or contain underscores and dashes, with a maximum length of 128.",
+     "type": "string"
+    }
+   },
+   "description": "A predicted `FunctionCall` returned from the model that contains a string representing the `FunctionDeclaration.name` with the arguments and their values.",
+   "type": "object"
+  },
+  "SpeechMetadata": {
+   "description": "Speech metadata for `text` parts.",
+   "type": "object",
+   "properties": {
+    "style": {
+     "description": "Optional. Optional style instruction for the speech synthesis.",
+     "type": "string"
+    },
+    "speaker": {
+     "type": "string",
+     "description": "Optional. Optional speaker name for multi-speaker synthesis."
+    }
+   }
+  },
+  "FunctionResponse": {
+   "description": "The result output from a `FunctionCall` that contains a string representing the `FunctionDeclaration.name` and a structured JSON object containing any output from the function is used as context to the model. This should contain the result of a`FunctionCall` made based on model prediction.",
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "string",
+     "description": "Optional. The identifier of the function call this response is for. Populated by the client to match the corresponding function call `id`."
+    },
+    "response": {
+     "type": "object",
+     "additionalProperties": {
+      "description": "Properties of the object."
+     },
+     "description": "Required. The function response in JSON object format. Callers can use any keys of their choice that fit the function's syntax to return the function output, e.g. \"output\", \"result\", etc. In particular, if the function call failed to execute, the response can have an \"error\" key to return error details to the model. Multimedia can be included by using a subobject containing a single \"$ref\" key whose value is the `inline_data.display_name` of a `FunctionResponsePart` holding the multimedia. See https://aistudio.google.com/docs/function-calling#multimodal."
+    },
+    "name": {
+     "type": "string",
+     "description": "Required. The name of the function to call. Must be a-z, A-Z, 0-9, or contain underscores and dashes, with a maximum length of 128."
+    },
+    "willContinue": {
+     "description": "Optional. Signals that function call continues, and more responses will be returned, turning the function call into a generator. Is only applicable to NON_BLOCKING function calls, is ignored otherwise. If set to false, future responses will not be considered. It is allowed to return empty `response` with `will_continue=False` to signal that the function call is finished. This may still trigger the model generation. To avoid triggering the generation and finish the function call, additionally set `scheduling` to `SILENT`.",
+     "type": "boolean"
+    },
+    "parts": {
+     "description": "Optional. Ordered `Parts` that constitute a function response. Parts may have different IANA MIME types.",
+     "items": {
+      "$ref": "#/$defs/FunctionResponsePart"
+     },
+     "type": "array"
+    },
+    "scheduling": {
+     "enumDescriptions": [
+      "This value is unused.",
+      "Only add the result to the conversation context, do not interrupt or trigger generation.",
+      "Add the result to the conversation context, and prompt to generate output without interrupting ongoing generation.",
+      "Add the result to the conversation context, interrupt ongoing generation and prompt to generate output."
+     ],
+     "type": "string",
+     "enum": [
+      "SCHEDULING_UNSPECIFIED",
+      "SILENT",
+      "WHEN_IDLE",
+      "INTERRUPT"
+     ],
+     "description": "Optional. Specifies how the response should be scheduled in the conversation. Only applicable to NON_BLOCKING function calls, is ignored otherwise. Defaults to WHEN_IDLE."
+    }
+   }
+  },
+  "FunctionResponsePart": {
+   "type": "object",
+   "description": "A datatype containing media that is part of a `FunctionResponse` message. A `FunctionResponsePart` consists of data which has an associated datatype. A `FunctionResponsePart` can only contain one of the accepted types in `FunctionResponsePart.data`. A `FunctionResponsePart` must have a fixed IANA MIME type identifying the type and subtype of the media if the `inline_data` field is filled with raw bytes.",
+   "properties": {
+    "fileData": {
+     "description": "URI based data.",
+     "$ref": "#/$defs/FunctionResponseFileData"
+    },
+    "mediaProcessing": {
+     "enum": [
+      "MEDIA_PROCESSING_UNSPECIFIED",
+      "STATIC",
+      "AGENTIC"
+     ],
+     "type": "string",
+     "enumDescriptions": [
+      "Defaults to model-specific processing.",
+      "Fixed-rate frame extraction. All frames placed in context.",
+      "Model-driven dynamic navigation. Recommended for most use cases."
+     ],
+     "description": "Optional. How the model processes this part's media for understanding. Only meaningful for video parts (`inline_data` or `file_data` with video mime). Non-video parts ignore this field."
+    },
+    "inlineData": {
+     "$ref": "#/$defs/FunctionResponseBlob",
+     "description": "Inline media bytes."
+    }
+   }
+  },
+  "FunctionResponseFileData": {
+   "type": "object",
+   "description": "URI based data for function response.",
+   "properties": {
+    "mimeType": {
+     "description": "The IANA standard MIME type of the source data.",
+     "type": "string"
+    },
+    "fileUri": {
+     "description": "Required. URI.",
+     "type": "string"
+    },
+    "displayName": {
+     "description": "Optional. Display name of the file. Used to provide a label or filename to distinguish file data.",
+     "type": "string"
+    }
+   }
+  },
+  "FunctionResponseBlob": {
+   "type": "object",
+   "properties": {
+    "data": {
+     "format": "byte",
+     "type": "string",
+     "description": "Raw bytes for media formats."
+    },
+    "displayName": {
+     "description": "Optional. Display name of the blob. Used to provide a label or filename to distinguish blobs.",
+     "type": "string"
+    },
+    "mimeType": {
+     "type": "string",
+     "description": "The IANA standard MIME type of the source data. Examples: - image/png - image/jpeg If an unsupported MIME type is provided, an error will be returned. For a complete list of supported types, see [Supported file formats](https://aistudio.google.com/docs/file-input-methods#supported-content-types)."
+    }
+   },
+   "description": "Raw media bytes for function response. Text should not be sent as raw bytes, use the 'FunctionResponse.response' field."
+  },
+  "FileData": {
+   "type": "object",
+   "properties": {
+    "mimeType": {
+     "description": "Optional. The IANA standard MIME type of the source data.",
+     "type": "string"
+    },
+    "displayName": {
+     "description": "Optional. Specifies the name used to refer to this file to the model (e.g. \"my_file.pdf\"). Used as the file reference identifier when `verbalization_mode` is set to `REFERENCE_ONLY`.",
+     "type": "string"
+    },
+    "fileUri": {
+     "type": "string",
+     "description": "Required. URI."
+    }
+   },
+   "description": "URI based data."
+  },
+  "Blob": {
+   "type": "object",
+   "description": "Raw media bytes. Text should not be sent as raw bytes, use the 'text' field.",
+   "properties": {
+    "data": {
+     "description": "Raw bytes for media formats.",
+     "type": "string",
+     "format": "byte"
+    },
+    "displayName": {
+     "description": "Optional. Specifies the name used to refer to this blob to the model (e.g. \"my_blob.png\"). Used as the blob reference identifier when `verbalization_mode` is set to `REFERENCE_ONLY`.",
+     "type": "string"
+    },
+    "mimeType": {
+     "description": "The IANA standard MIME type of the source data. Examples of supported types: - Images: image/png, image/jpeg, image/jpg, image/webp, image/heic, image/heif, image/gif, image/avif - Audio: audio/*, video/audio/s16le, video/audio/wav - Video: video/* - Text: text/plain, text/html, text/css, text/javascript, text/x-typescript, text/csv, text/markdown, text/x-python, text/xml, text/rtf, video/text/timestamp - Applications: application/x-javascript, application/x-typescript, application/x-python-code, application/json, application/x-ipynb+json, application/rtf, application/pdf For additional context, see [Supported file formats](https://aistudio.google.com/docs/file-input-methods#supported-content-types).",
+     "type": "string"
+    }
+   }
+  },
+  "ToolResponse": {
+   "type": "object",
+   "description": "The output from a server-side `ToolCall` execution. This message contains the results of a tool invocation that was initiated by a `ToolCall` from the model. The client should pass this `ToolResponse` back to the API in a subsequent turn within a `Content` message, along with the corresponding `ToolCall`.",
+   "properties": {
+    "response": {
+     "additionalProperties": {
+      "description": "Properties of the object."
+     },
+     "description": "Optional. The tool response.",
+     "type": "object"
+    },
+    "toolType": {
+     "enum": [
+      "TOOL_TYPE_UNSPECIFIED",
+      "GOOGLE_SEARCH_WEB",
+      "GOOGLE_SEARCH_IMAGE",
+      "URL_CONTEXT",
+      "GOOGLE_MAPS",
+      "FILE_SEARCH",
+      "MEDIA_PROCESSING"
+     ],
+     "description": "Required. The type of tool that was called, matching the `tool_type` in the corresponding `ToolCall`.",
+     "type": "string",
+     "enumDescriptions": [
+      "Unspecified tool type.",
+      "Google search tool, maps to Tool.google_search.search_types.web_search.",
+      "Image search tool, maps to Tool.google_search.search_types.image_search.",
+      "URL context tool, maps to Tool.url_context.",
+      "Google maps tool, maps to Tool.google_maps.",
+      "File search tool, maps to Tool.file_search.",
+      "Media processing tool types (e.g. video, audio, etc.), maps to invisible tools used for multimodal understanding like GOOGLE_UNDERSTANDING_VIDEO."
+     ]
+    },
+    "id": {
+     "type": "string",
+     "description": "Optional. The identifier of the tool call this response is for."
+    }
+   }
+  },
+  "V1mainMediaResolution": {
+   "description": "Media resolution for tokenization.",
+   "properties": {
+    "level": {
+     "description": "The tokenization quality used for given media. for Gemini API support .",
+     "type": "string",
+     "enumDescriptions": [
+      "Media resolution has not been set.",
+      "Media resolution set to low.",
+      "Media resolution set to medium.",
+      "Media resolution set to high.",
+      "Media resolution set to ultra high."
+     ],
+     "enum": [
+      "MEDIA_RESOLUTION_UNSPECIFIED",
+      "MEDIA_RESOLUTION_LOW",
+      "MEDIA_RESOLUTION_MEDIUM",
+      "MEDIA_RESOLUTION_HIGH",
+      "MEDIA_RESOLUTION_ULTRA_HIGH"
+     ]
+    }
+   },
+   "type": "object"
+  },
+  "CitationMetadata": {
+   "properties": {
+    "citationSources": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/CitationSource"
+     },
+     "description": "Citations to sources for a specific response."
+    }
+   },
+   "type": "object",
+   "description": "A collection of source attributions for a piece of content."
+  },
+  "CitationSource": {
+   "properties": {
+    "uri": {
+     "description": "Optional. URI that is attributed as a source for a portion of the text.",
+     "type": "string"
+    },
+    "startIndex": {
+     "description": "Optional. Start of segment of the response that is attributed to this source. Index indicates the start of the segment, measured in bytes.",
+     "format": "int32",
+     "type": "integer"
+    },
+    "endIndex": {
+     "format": "int32",
+     "description": "Optional. End of the attributed segment, exclusive.",
+     "type": "integer"
+    },
+    "license": {
+     "description": "Optional. License for the GitHub project that is attributed as a source for segment. License info is required for code citations.",
+     "type": "string"
+    }
+   },
+   "description": "A citation to a source for a portion of a specific response.",
+   "type": "object"
+  },
+  "LogprobsResult": {
+   "properties": {
+    "topCandidates": {
+     "items": {
+      "$ref": "#/$defs/TopCandidates"
+     },
+     "type": "array",
+     "description": "Length = total number of decoding steps."
+    },
+    "logProbabilitySum": {
+     "type": "number",
+     "format": "float",
+     "description": "Sum of log probabilities for all tokens."
+    },
+    "chosenCandidates": {
+     "description": "Length = total number of decoding steps. The chosen candidates may or may not be in top_candidates.",
+     "items": {
+      "$ref": "#/$defs/LogprobsResultCandidate"
+     },
+     "type": "array"
+    }
+   },
+   "type": "object",
+   "description": "Logprobs Result"
+  },
+  "TopCandidates": {
+   "type": "object",
+   "description": "Candidates with top log probabilities at each decoding step.",
+   "properties": {
+    "candidates": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/LogprobsResultCandidate"
+     },
+     "description": "Sorted by log probability in descending order."
+    }
+   }
+  },
+  "LogprobsResultCandidate": {
+   "properties": {
+    "token": {
+     "type": "string",
+     "description": "The candidate\u2019s token string value."
+    },
+    "logProbability": {
+     "format": "float",
+     "description": "The candidate's log probability.",
+     "type": "number"
+    },
+    "tokenId": {
+     "type": "integer",
+     "description": "The candidate\u2019s token id value.",
+     "format": "int32"
+    }
+   },
+   "type": "object",
+   "description": "Candidate for the logprobs token and score."
+  },
+  "UrlContextMetadata": {
+   "description": "Metadata related to url context retrieval tool.",
+   "type": "object",
+   "properties": {
+    "urlMetadata": {
+     "items": {
+      "$ref": "#/$defs/UrlMetadata"
+     },
+     "description": "List of url context.",
+     "type": "array"
+    }
+   }
+  },
+  "UrlMetadata": {
+   "description": "Context of the a single url retrieval.",
+   "type": "object",
+   "properties": {
+    "urlRetrievalStatus": {
+     "enumDescriptions": [
+      "Default value. This value is unused.",
+      "Url retrieval is successful.",
+      "Url retrieval is failed due to error.",
+      "Url retrieval is failed because the content is behind paywall.",
+      "Url retrieval is failed because the content is unsafe."
+     ],
+     "type": "string",
+     "enum": [
+      "URL_RETRIEVAL_STATUS_UNSPECIFIED",
+      "URL_RETRIEVAL_STATUS_SUCCESS",
+      "URL_RETRIEVAL_STATUS_ERROR",
+      "URL_RETRIEVAL_STATUS_PAYWALL",
+      "URL_RETRIEVAL_STATUS_UNSAFE"
+     ],
+     "description": "Status of the url retrieval."
+    },
+    "retrievedUrl": {
+     "type": "string",
+     "description": "Retrieved url by the tool."
+    }
+   }
+  }
+ }
+}

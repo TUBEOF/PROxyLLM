@@ -1,0 +1,12 @@
+{
+  "source": "https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta (discovery document revision 20261101)",
+  "spec_version": "https://developers.generativeai.google/api",
+  "wire": "Gemini",
+  "accessed": "2026-11-03",
+  "license": "CC-BY-4.0 (Google discovery document)",
+  "transformation": "mechanical conversion: transitive closure of GenerateContentResponse from the official Google discovery document; discovery refs 'Name' -> '#/$defs/Name', pseudo-type {'type': 'any'} -> {}, 'id' removed (it names the schema). No fields added or removed; closure covers 50 schemas.",
+  "extracted": [
+    "GenerateContentResponse"
+  ],
+  "root": "#/$defs/GenerateContentResponse"
+}

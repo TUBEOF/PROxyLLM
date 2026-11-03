@@ -1,0 +1,81 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "internal/e2e/testdata/schemas/ollama_chat_stream.json",
+ "$ref": "#/$defs/ChatStreamEvent",
+ "$defs": {
+  "ChatStreamEvent": {
+   "properties": {
+    "created_at": {
+     "description": "When this chunk was created (ISO 8601)",
+     "format": "date-time",
+     "type": "string"
+    },
+    "done": {
+     "description": "True for the final event in the stream",
+     "type": "boolean"
+    },
+    "message": {
+     "properties": {
+      "content": {
+       "description": "Partial assistant message text",
+       "type": "string"
+      },
+      "images": {
+       "description": "Partial base64-encoded images, when present",
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "role": {
+       "description": "Role of the message for this chunk",
+       "type": "string"
+      },
+      "thinking": {
+       "description": "Partial thinking text when `think` is enabled",
+       "type": "string"
+      },
+      "tool_calls": {
+       "description": "Partial tool calls, if any",
+       "items": {
+        "$ref": "#/$defs/ToolCall"
+       },
+       "type": "array"
+      }
+     },
+     "type": "object"
+    },
+    "model": {
+     "description": "Model name used for this stream event",
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "ToolCall": {
+   "properties": {
+    "function": {
+     "properties": {
+      "arguments": {
+       "description": "JSON object of arguments to pass to the function",
+       "type": "object"
+      },
+      "description": {
+       "description": "What the function does",
+       "type": "string"
+      },
+      "name": {
+       "description": "Name of the function to call",
+       "type": "string"
+      }
+     },
+     "required": [
+      "name"
+     ],
+     "type": "object"
+    }
+   },
+   "type": "object"
+  }
+ }
+}

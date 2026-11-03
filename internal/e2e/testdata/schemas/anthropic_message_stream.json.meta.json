@@ -1,0 +1,6 @@
+{
+  "fixture": "anthropic_message_stream.json",
+  "source": "https://platform.claude.com/docs/en/build-with-claude/streaming (the documented stream event list and each event's example data) cross-checked against anthropic-sdk-go v1.84.0 (RawMessageStreamEvent union members) and the MockServer ANTHROPIC stream framing",
+  "accessed": "2026-11-03",
+  "notes": "Same provenance situation as anthropic_message(.meta).json: no machine-readable official spec; event shapes follow the streaming reference's documented event types (message_start, content_block_start, content_block_delta, content_block_stop, message_delta, message_stop, ping, error) with example-derived keys; the message_start payload reuses the Message shape. Sub-objects inside events are typed only where the reference names them (delta variants, usage); unknown members stay permissive by 2020-12 default."
+}

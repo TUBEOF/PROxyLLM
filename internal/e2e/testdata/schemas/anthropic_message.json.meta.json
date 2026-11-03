@@ -1,0 +1,6 @@
+{
+  "fixture": "anthropic_message.json",
+  "source": "https://platform.claude.com/docs/en/api/messages/create (## Returns field list + Response (200) example) cross-checked against the official generated SDK github.com/anthropics/anthropic-sdk-go v1.84.0 (Message/Usage structs, `api:\"required\"` markers) and testdata/golden/anthropic/",
+  "accessed": "2026-11-03",
+  "notes": "Anthropic publishes no machine-readable Messages schema as of 2026-11-03: /anthropic_openapi.yaml 404s after the reference moved to platform.claude.com (docs.anthropic.com redirects to platform.claude.com/docs/anthropic_openapi.yaml, which returns 404); GitHub-code search over the anthropics org finds no OpenAPI document; the official SDKs bundle none. Requiredness therefore follows the official SDK's generated Message/Usage structs; field shapes follow the reference field list. Cells whose emission predates required-null fields (container, stop_details, diagnostics, usage sub-objects) carry that gap in their manifest note until the fix loop closes it."
+}

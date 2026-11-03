@@ -29,6 +29,24 @@ the result. A provider we hold no key for is still exercised end-to-end. Real
 cloud checks are a separate, optional layer and would need one key per family;
 they are not part of this matrix.
 
+## Schema validation (per cell)
+
+On top of the per-cell expectations, every pair cell schema-validates the exact
+client-facing response bytes the proxy emitted — non-streaming documents against
+the surface's document schema, streaming against the official per-frame schema
+(chunks, Responses events, Gemini frames, Ollama NDJSON lines). The schemas live
+in `internal/e2e/testdata/schemas/`, each with a `.meta.json` carrying the
+official source URL, version/commit and access date — the same provenance rule
+as the golden fixtures. Validation runs through
+`github.com/santhosh-tekuri/jsonschema/v6` (JSON Schema 2020-12) and fails the
+cell with named violations.
+
+Cells whose surface cannot fully pass the *current* official schema carry a
+`schema_note` in the manifest (`internal/e2e/testdata/matrix.json`): the gap is
+named field-by-field with its official source, the note is printed on every run,
+and the fix loop owns closing it (deleting the note re-enables full validation).
+A cell is never silently exempt: the note is the contract.
+
 ## Running locally
 
 ```bash
@@ -60,8 +78,9 @@ web_search flow (Anthropic client, fully offline — MockServer also plays the
 Firecrawl v2 backend), count_tokens (local estimate, no upstream call), and
 the negative control (a 200 with a wrong wire shape must fail the client).
 
-**Gates.** `TestMatrix_ManifestIsComplete` enforces the full cross product
-and a reason on every pending cell;
+**Gates.** `TestMatrix_ManifestIsComplete` enforces the full cross product, a
+reason on every pending cell and the `schema_note` rule (a green pair cell is
+either strict-validated or documents its gap precisely);
 `.github/test-matrix/check_manifest.py` enforces that the manifest and the
 Go tests agree in both directions, and the workflow runs the whole matrix
 with `-count=2` for determinism.

@@ -56,6 +56,9 @@ type matrixEnv struct {
 	key     string
 	openai  openaiclient.Client
 	anthrop anthropic.Client
+	// wire tees the client-facing response bytes at the proxy boundary (the
+	// schema validation reads them; see matrix_schema_test.go).
+	wire *wireCapture
 }
 
 // allCaps is the capability set a simulator-backed provider advertises: every
@@ -144,12 +147,13 @@ func buildMatrixEnv(t *testing.T, emuFactory func(base string) routing.Emulator,
 	t.Setenv("ANTHROPIC_AUTH_TOKEN", "")
 	t.Setenv("ANTHROPIC_BASE_URL", "")
 
-	srv := httptest.NewServer(auth.NewMiddleware(st).Wrap(h))
+	wire := &wireCapture{}
+	srv := httptest.NewServer(auth.NewMiddleware(st).Wrap(wire.Wrap(h)))
 	t.Cleanup(srv.Close)
 	t.Cleanup(func() { httpapi.WaitForPendingCaptures(5 * time.Second) })
 
 	return &matrixEnv{
-		ms: ms, store: st, srv: srv, key: key,
+		ms: ms, store: st, srv: srv, key: key, wire: wire,
 		openai: openaiclient.NewClient(
 			openaioption.WithBaseURL(srv.URL+"/v1"),
 			openaioption.WithAPIKey(key),

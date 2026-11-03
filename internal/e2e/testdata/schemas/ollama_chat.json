@@ -1,0 +1,172 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "internal/e2e/testdata/schemas/ollama_chat.json",
+ "$ref": "#/$defs/ChatResponse",
+ "$defs": {
+  "ChatResponse": {
+   "properties": {
+    "created_at": {
+     "description": "Timestamp of response creation (ISO 8601)",
+     "format": "date-time",
+     "type": "string"
+    },
+    "done": {
+     "description": "Indicates whether the chat response has finished",
+     "type": "boolean"
+    },
+    "done_reason": {
+     "description": "Reason the response finished",
+     "type": "string"
+    },
+    "eval_count": {
+     "description": "Number of tokens generated in the response",
+     "type": "integer"
+    },
+    "eval_duration": {
+     "description": "Time spent generating tokens in nanoseconds",
+     "type": "integer"
+    },
+    "load_duration": {
+     "description": "Time spent loading the model in nanoseconds",
+     "type": "integer"
+    },
+    "logprobs": {
+     "description": "Log probability information for the generated tokens when logprobs are enabled",
+     "items": {
+      "$ref": "#/$defs/Logprob"
+     },
+     "type": "array"
+    },
+    "message": {
+     "properties": {
+      "content": {
+       "description": "Assistant message text",
+       "type": "string"
+      },
+      "images": {
+       "description": "Optional base64-encoded images in the response",
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      "role": {
+       "description": "Always `assistant` for model responses",
+       "enum": [
+        "assistant"
+       ],
+       "type": "string"
+      },
+      "thinking": {
+       "description": "Optional deliberate thinking trace when `think` is enabled",
+       "type": "string"
+      },
+      "tool_calls": {
+       "description": "Tool calls requested by the assistant",
+       "items": {
+        "$ref": "#/$defs/ToolCall"
+       },
+       "type": "array"
+      }
+     },
+     "type": "object"
+    },
+    "model": {
+     "description": "Model name used to generate this message",
+     "type": "string"
+    },
+    "prompt_eval_cached_count": {
+     "description": "Number of prompt tokens read from the cache",
+     "type": "integer"
+    },
+    "prompt_eval_count": {
+     "description": "Number of tokens in the prompt",
+     "type": "integer"
+    },
+    "prompt_eval_duration": {
+     "description": "Time spent evaluating uncached prompt tokens in nanoseconds",
+     "type": "integer"
+    },
+    "total_duration": {
+     "description": "Total time spent generating in nanoseconds",
+     "type": "integer"
+    }
+   },
+   "type": "object"
+  },
+  "Logprob": {
+   "description": "Log probability information for a generated token",
+   "properties": {
+    "bytes": {
+     "description": "The raw byte representation of the token",
+     "items": {
+      "type": "integer"
+     },
+     "type": "array"
+    },
+    "logprob": {
+     "description": "The log probability of this token",
+     "type": "number"
+    },
+    "token": {
+     "description": "The text representation of the token",
+     "type": "string"
+    },
+    "top_logprobs": {
+     "description": "Most likely tokens and their log probabilities at this position",
+     "items": {
+      "$ref": "#/$defs/TokenLogprob"
+     },
+     "type": "array"
+    }
+   },
+   "type": "object"
+  },
+  "TokenLogprob": {
+   "description": "Log probability information for a single token alternative",
+   "properties": {
+    "bytes": {
+     "description": "The raw byte representation of the token",
+     "items": {
+      "type": "integer"
+     },
+     "type": "array"
+    },
+    "logprob": {
+     "description": "The log probability of this token",
+     "type": "number"
+    },
+    "token": {
+     "description": "The text representation of the token",
+     "type": "string"
+    }
+   },
+   "type": "object"
+  },
+  "ToolCall": {
+   "properties": {
+    "function": {
+     "properties": {
+      "arguments": {
+       "description": "JSON object of arguments to pass to the function",
+       "type": "object"
+      },
+      "description": {
+       "description": "What the function does",
+       "type": "string"
+      },
+      "name": {
+       "description": "Name of the function to call",
+       "type": "string"
+      }
+     },
+     "required": [
+      "name"
+     ],
+     "type": "object"
+    }
+   },
+   "type": "object"
+  }
+ }
+}
