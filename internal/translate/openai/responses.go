@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/tubeof/proxyllm/internal/translate"
 	"github.com/tubeof/proxyllm/internal/translate/ir"
@@ -279,50 +280,47 @@ func (ResponsesCodec) DecodeResponse(raw []byte) (ir.Response, error) {
 	return resp, nil
 }
 
-// EncodeResponse encodes an IR response into a Responses-API body.
+// EncodeResponse encodes an IR response into a Responses-API body. The
+// envelope reuses the streaming snapshot's shape (the same official schema
+// governs both), so every schema-required member is present.
 func (ResponsesCodec) EncodeResponse(resp ir.Response) ([]byte, error) {
-	w := responsesWireResponse{
-		ID:     resp.ID,
-		Object: "response",
-		Status: "completed",
-		Model:  resp.Model,
-		Usage:  responsesUsageToWire(resp.Usage),
-	}
+	status := "completed"
+	details := false
 	if resp.StopReason == ir.StopMaxTokens {
-		w.Status = "incomplete"
+		status = "incomplete"
+		details = true
 	}
+	w := responsesResponseEnvelope(status, resp.ID, resp.Model, time.Now().Unix())
+	w.Usage = responsesUsageToWire(resp.Usage)
+	if details {
+		reason := json.RawMessage(`{"reason":"max_output_tokens"}`)
+		w.IncompleteDetails = &reason
+	}
+	calls := 0
 	for _, p := range resp.Content {
 		switch pt := p.(type) {
 		case ir.TextPart:
-			w.Output = append(w.Output, responsesWireItem{
-				Type:   "message",
-				Status: "completed",
-				Role:   "assistant",
-				// An output message's content is a typed part array
-				// ([{"type":"output_text","text":...}]), never a plain string
-				// (a plain string is an *input* shorthand).
-				Content: &responsesWireContent{Parts: []responsesWirePart{
-					{Type: "output_text", Text: pt.Text},
-				}},
-			})
+			w.Output = append(w.Output, responsesMessageItem(pt.Text, w.Output))
 		case ir.ToolCallPart:
+			calls++
 			args := string(pt.Input)
 			if args == "" {
 				args = "{}"
 			}
+			callID := pt.ID
+			if callID == "" {
+				// id-less call (native Ollama upstreams): the official
+				// function_call item requires call_id — mint call_<n>.
+				callID = fmt.Sprintf("call_%d", calls-1)
+			}
 			w.Output = append(w.Output, responsesWireItem{
 				Type:      "function_call",
-				CallID:    pt.ID,
+				CallID:    callID,
 				Name:      pt.Name,
 				Arguments: args,
 			})
 		case ir.ThinkingPart:
-			item := responsesWireItem{Type: "reasoning"}
-			if pt.Thinking != "" {
-				item.Summary = []responsesWirePart{{Type: "summary_text", Text: pt.Thinking}}
-			}
-			item.EncryptedContent = pt.Signature
-			w.Output = append(w.Output, item)
+			w.Output = append(w.Output, responsesReasoningItem(pt.Thinking, pt.Signature, w.Output))
 		case ir.ServerToolUsePart:
 			// web_search rendering per the Responses contract: one item per
 			// use, status completed, the action carrying the query the model
@@ -357,6 +355,77 @@ func (ResponsesCodec) EncodeResponse(resp ir.Response) ([]byte, error) {
 	}
 	return raw, nil
 }
+
+// responsesResponseEnvelope builds the shared response envelope skeleton:
+// every member the official schema requires with its documented neutral
+// value (the streaming snapshots carry the identical set).
+func responsesResponseEnvelope(status, id, model string, createdAt int64) *responsesWireResponse {
+	return &responsesWireResponse{
+		ID:                id,
+		Object:            "response",
+		CreatedAt:         createdAt,
+		Status:            status,
+		Error:             nil,
+		IncompleteDetails: nil,
+		Instructions:      "",
+		Tools:             []json.RawMessage{},
+		ParallelToolCalls: true,
+		Metadata:          map[string]string{},
+		ToolChoice:        &responsesToolChoice{Str: strPtr("auto")},
+		Temperature:       floatPtr(1.0),
+		TopP:              floatPtr(1.0),
+		AccessPrograms:    nil,
+		Model:             model,
+		Output:            []responsesWireItem{},
+	}
+}
+
+// responsesMessageItem builds a completed message item; the item id is
+// minted per envelope (the official items carry ids).
+func responsesMessageItem(text string, soFar []responsesWireItem) responsesWireItem {
+	return responsesWireItem{
+		ID:     fmt.Sprintf("msg_%d", responsesItemsOfKind("message", soFar)),
+		Type:   "message",
+		Status: "completed",
+		Role:   "assistant",
+		// An output message's content is a typed part array
+		// ([{"type":"output_text","text":...}]), never a plain string
+		// (a plain string is an *input* shorthand).
+		Content: &responsesWireContent{Parts: []responsesWirePart{outputTextPart(text)}},
+	}
+}
+
+// responsesReasoningItem builds a reasoning item; encrypted_content is the
+// upstream-encrypted payload (rides verbatim, never fabricated). summary is
+// required on the official item: the accumulated summary text when present,
+// otherwise an empty array — the shape the in-flight wire uses.
+func responsesReasoningItem(thinking, signature string, soFar []responsesWireItem) responsesWireItem {
+	item := responsesWireItem{
+		ID:               fmt.Sprintf("rs_%d", responsesItemsOfKind("reasoning", soFar)),
+		Type:             "reasoning",
+		EncryptedContent: signature,
+	}
+	item.Summary = []responsesWirePart{}
+	if thinking != "" {
+		item.Summary = []responsesWirePart{{Type: "summary_text", Text: thinking}}
+	}
+	return item
+}
+
+// responsesItemsOfKind counts the items of one kind already built — the id
+// minting mirrors the streaming encoder's counters (msg_n / fc_n / rs_n).
+func responsesItemsOfKind(kind string, items []responsesWireItem) int {
+	n := 0
+	for _, it := range items {
+		if it.Type == kind {
+			n++
+		}
+	}
+	return n
+}
+
+func strPtr(s string) *string     { return &s }
+func floatPtr(f float64) *float64 { return &f }
 
 // NewResponsesStreamDecoder returns the Responses-API SSE stream decoder for r.
 func NewResponsesStreamDecoder(r io.Reader) translate.StreamDecoder {
@@ -423,10 +492,29 @@ func (c responsesWireContent) MarshalJSON() ([]byte, error) {
 }
 
 type responsesWirePart struct {
-	Type     string `json:"type"`
-	Text     string `json:"text,omitempty"`
+	Type string `json:"type"`
+	// text is required on both input_text and output_text parts; empty
+	// text stays present as "" (the OutputTextContent schema requires the
+	// key even for the degradation-empty message item).
+	Text     string `json:"text"`
 	ImageURL string `json:"image_url,omitempty"`
 	Detail   string `json:"detail,omitempty"`
+
+	// Annotations/Logprobs are schema-required members of an output_text
+	// part (the official example carries empty arrays). Pointers so the
+	// shared part struct omits both on *input* parts (InputTextContent has
+	// neither) and emits present-but-empty on output_text parts. Upstream
+	// citations/logprobs are not tracked by the IR this build carries.
+	Annotations *[]json.RawMessage `json:"annotations,omitempty"`
+	Logprobs    *[]json.RawMessage `json:"logprobs,omitempty"`
+}
+
+// outputTextPart renders the output_text part of a completed message item,
+// with the schema-required, officially-empty annotations/logprobs arrays.
+func outputTextPart(text string) responsesWirePart {
+	ann := []json.RawMessage{}
+	lp := []json.RawMessage{}
+	return responsesWirePart{Type: "output_text", Text: text, Annotations: &ann, Logprobs: &lp}
 }
 
 // responsesWireItem is one input or output item: message, function_call,
@@ -592,28 +680,50 @@ var responsesRequestFields = map[string]bool{
 	"type": true,
 }
 
+// responsesWireUsageDetails carries both details objects' counters: the
+// input-side details require cached_tokens + cache_write_tokens, the
+// output-side reasoning_tokens (official 2026-11 schema) — the extra keys
+// are permitted members of the other side's object, so one shared struct
+// keeps decode tolerant and encode complete.
 type responsesWireUsageDetails struct {
-	CachedTokens    int `json:"cached_tokens"`
-	ReasoningTokens int `json:"reasoning_tokens"`
+	CachedTokens     int `json:"cached_tokens"`
+	CacheWriteTokens int `json:"cache_write_tokens"`
+	ReasoningTokens  int `json:"reasoning_tokens"`
 }
 
 type responsesWireUsage struct {
-	InputTokens         int                        `json:"input_tokens"`
-	OutputTokens        int                        `json:"output_tokens"`
-	InputTokensDetails  *responsesWireUsageDetails `json:"input_tokens_details,omitempty"`
-	OutputTokensDetails *responsesWireUsageDetails `json:"output_tokens_details,omitempty"`
-	TotalTokens         int                        `json:"total_tokens"`
+	InputTokens         int                       `json:"input_tokens"`
+	OutputTokens        int                       `json:"output_tokens"`
+	InputTokensDetails  responsesWireUsageDetails `json:"input_tokens_details"`
+	OutputTokensDetails responsesWireUsageDetails `json:"output_tokens_details"`
+	TotalTokens         int                       `json:"total_tokens"`
 }
 
+// responsesWireResponse is the full client-facing response envelope.
+// Every member the official schema requires (access_programs, created_at,
+// error, incomplete_details, instructions, tools, parallel_tool_calls,
+// metadata, tool_choice, temperature, top_p — plus id/object/status/model/
+// output/usage) is present on the wire; unknown-when-untracked members emit
+// their documented neutral values (null / auto / 1.0 / true) exactly like
+// the streaming snapshots.
 type responsesWireResponse struct {
-	ID        string              `json:"id"`
-	Object    string              `json:"object,omitempty"`
-	CreatedAt int64               `json:"created_at,omitempty"`
-	Status    string              `json:"status"`
-	Error     *wireAPIError       `json:"error,omitempty"`
-	Model     string              `json:"model"`
-	Output    []responsesWireItem `json:"output"`
-	Usage     *responsesWireUsage `json:"usage,omitempty"`
+	ID                string               `json:"id"`
+	Object            string               `json:"object"`
+	CreatedAt         int64                `json:"created_at"`
+	Status            string               `json:"status"`
+	Error             *wireAPIError        `json:"error"`
+	IncompleteDetails *json.RawMessage     `json:"incomplete_details"`
+	Instructions      string               `json:"instructions"`
+	Tools             []json.RawMessage    `json:"tools"`
+	ParallelToolCalls bool                 `json:"parallel_tool_calls"`
+	Metadata          map[string]string    `json:"metadata"`
+	ToolChoice        *responsesToolChoice `json:"tool_choice"`
+	Temperature       *float64             `json:"temperature"`
+	TopP              *float64             `json:"top_p"`
+	AccessPrograms    *json.RawMessage     `json:"access_programs"`
+	Model             string               `json:"model"`
+	Output            []responsesWireItem  `json:"output"`
+	Usage             *responsesWireUsage  `json:"usage"`
 }
 
 // ---- conversions ----
@@ -936,29 +1046,25 @@ func responsesUsageFromWire(w *responsesWireUsage) ir.Usage {
 		return ir.Usage{}
 	}
 	u := ir.Usage{
-		InputTokens:  w.InputTokens,
-		OutputTokens: w.OutputTokens,
-	}
-	if w.InputTokensDetails != nil {
-		u.CacheReadInputTokens = w.InputTokensDetails.CachedTokens
-	}
-	if w.OutputTokensDetails != nil {
-		u.ReasoningTokens = w.OutputTokensDetails.ReasoningTokens
+		InputTokens:              w.InputTokens,
+		OutputTokens:             w.OutputTokens,
+		CacheReadInputTokens:     w.InputTokensDetails.CachedTokens,
+		CacheCreationInputTokens: w.InputTokensDetails.CacheWriteTokens,
+		ReasoningTokens:          w.OutputTokensDetails.ReasoningTokens,
 	}
 	return u
 }
 
+// responsesUsageToWire renders usage with the official detail objects always
+// present: cached_tokens ← IR cache reads, cache_write_tokens ← IR cache
+// writes, reasoning_tokens ← IR reasoning (explicit zeros when unreported).
 func responsesUsageToWire(u ir.Usage) *responsesWireUsage {
 	w := &responsesWireUsage{
-		InputTokens:  u.InputTokens,
-		OutputTokens: u.OutputTokens,
-		TotalTokens:  u.InputTokens + u.OutputTokens,
-	}
-	if u.CacheReadInputTokens != 0 {
-		w.InputTokensDetails = &responsesWireUsageDetails{CachedTokens: u.CacheReadInputTokens}
-	}
-	if u.ReasoningTokens != 0 {
-		w.OutputTokensDetails = &responsesWireUsageDetails{ReasoningTokens: u.ReasoningTokens}
+		InputTokens:         u.InputTokens,
+		OutputTokens:        u.OutputTokens,
+		InputTokensDetails:  responsesWireUsageDetails{CachedTokens: u.CacheReadInputTokens, CacheWriteTokens: u.CacheCreationInputTokens},
+		OutputTokensDetails: responsesWireUsageDetails{ReasoningTokens: u.ReasoningTokens},
+		TotalTokens:         u.InputTokens + u.OutputTokens,
 	}
 	return w
 }
