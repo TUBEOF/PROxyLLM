@@ -145,13 +145,18 @@ def ms_reset(mockserver: str) -> None:
 # (with stream_options.include_usage) and makes no utility calls; it appends
 # its whole-edit instructions to each user message at request time, so its
 # pinned matcher content is the prompt plus that fixed scaffold (see
-# AIDER_MESSAGE_SUFFIX). MockServer's LLM
-# response follows the expectation's streaming flag only, and its JSON
-# matcher wants exact leaf values, so each turn is pinned by its exact last
-# user message in the CLI's own shape, later turns ranked higher (their
-# request carries earlier prompts in history). The fallback buckets catch the
-# utility traffic so no upstream call 404s (the proxy would log the failure
-# and fail the clean-rows check).
+# AIDER_MESSAGE_SUFFIX). MockServer's LLM response follows the expectation's
+# streaming flag only, and its JSON matcher wants exact leaf values, so each
+# turn is pinned by its exact last user message in the CLI's own shape, later
+# turns ranked higher (their request carries earlier prompts in history). The
+# fallback buckets catch the utility traffic so no upstream call 404s (the
+# proxy would log the failure and fail the clean-rows check). Continue (cn)
+# 1.5.47 streams every model turn (plain-string user content after its system
+# agent prompt) and fires one CLOSED title-naming call after each turn; its
+# plain start has no onboarding keys — the seeded ~/.continue/
+# .onboarding_complete marker (a normal post-onboarding user's state) skips
+# the first-run Anthropic-key gate, and the config's custom openai model is
+# used with no Continue account.
 def _mock_expectation(mockserver: str, text: str, streaming: bool,
                       priority: int, times: int | None, matcher: dict | None) -> None:
     req: dict = {"method": "POST", "path": UPSTREAM_PATH}
@@ -298,6 +303,10 @@ READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
                  # only in its status strip, and the ClinePass modal paints the
                  # first chrome.
                  "cline": "What can I do for you?",
+                 # continue: the fresh composer's placeholder (the banner and
+                 # the status strip name the CLI; the placeholder is stable
+                 # across turns).
+                 "continue": "Ask anything, @ for context",
                  "open-interpreter": "Open Interpreter (v"}
 
 # How each CLI's model turns stream upstream, and what the catch-all bucket
@@ -314,12 +323,17 @@ READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
 # than Enter (ONBOARDING); with the modal gone the fresh composer's
 # placeholder is the ready state, and it accepts typed prompts without a
 # prompt-tail gate.
+# continue 1.5.47 (see the wire-facts note above) streams its turns and its
+# only utility call (an auto-title) is CLOSED, like gptme's — the marker seed
+# means the driver never answers an onboarding dialog.
 STREAMING = {"codex": False, "claude-code": True, "crush": True, "openhands": False,
              "gptme": True, "aider": True, "cline": True,
+             "continue": True,
              "open-interpreter": True}
 FALLBACK_STREAMING = {"codex": True, "claude-code": False, "crush": True,
                       "openhands": False, "gptme": False, "aider": True,
-                      "cline": True, "open-interpreter": True}
+                      "cline": True, "continue": False,
+                      "open-interpreter": True}
 
 # User-message markers that are runtime metadata, not model turns; see
 # turn_requests.
@@ -627,7 +641,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--home", required=True)
     parser.add_argument("--mockserver", required=True)
-    parser.add_argument("--clients", default="codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline")
+    parser.add_argument("--clients",
+                        default="codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue")
     parser.add_argument("--scenarios", default="answer,recall")
     parser.add_argument("--binary", default=str(REPO / "proxyllm"))
     parser.add_argument("--port", type=int, default=18190)
