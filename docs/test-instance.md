@@ -53,7 +53,19 @@ the image into the model request).
   answer evidence in the CLI's own output, passes a web task.
 - There is **no retry**. A model that declines the tool on one task fails
   that task; a suite that retries hides exactly the flakiness it exists to
-  catch.
+  catch. The one exception is the web-tool backend's **transient
+  unavailability**: a `web_search`/`web_fetch` task that failed on exactly
+  the emulation's transient unavailability — the trace shows the documented
+  `{"error_code":"unavailable"}` error the proxy answers when the emulator's
+  own upstream call failed (`emulator fetch failed` / `emulator search
+  failed`) **and** the CLI output echoes that error shape — runs the same
+  task once more, fresh and unchanged. The retry alone decides the task (a
+  retry that still fails keeps the failure), the cap is one per task, and
+  every other failure class — a declined tool, a missing canary, a protocol
+  defect — and every non-web feature never retries. Each check records
+  `attempts` (0 = never ran, 1 = one run, 2 = retried), `report.json`'s
+  schema is 4 (additive field bump), and the report's Notes column carries a
+  `retry 1/1 passed` (or `retry 1/1 still failed`) line per retried task.
 - A feature is skipped only when the adapter declares no headless path for
   it, and the report carries that reason.
 - A `499` request row is the CLI abandoning its own request (the proxy's own

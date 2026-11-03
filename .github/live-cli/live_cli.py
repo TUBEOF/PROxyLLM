@@ -19,8 +19,13 @@ Features (English prompts only, one feature per invocation):
 
 Evidence means proxy AND answer: a green trace with a broken client answer is
 exactly the failure this suite exists to catch. There is no retry — a model
-that declines the tool once is a failure, not noise. A CLI without a headless
-path for a feature is reported skipped WITH ITS REASON.
+that declines the tool once is a failure, not noise. The one exception is the
+web-tool backend's TRANSIENT unavailability (the proxy then answers the
+documented {"error_code":"unavailable"} error result): a web task that failed
+exactly there runs once more — same task, fresh run — and the retry alone
+decides the check; a retry that also fails stays fail. Nothing else ever
+retries. A CLI without a headless path for a feature is reported skipped WITH
+ITS REASON.
 """
 
 from __future__ import annotations
@@ -182,19 +187,19 @@ def render_markdown(report: dict) -> str:
         supported = sum(1 for c in cells if c != "skipped")
         passed = sum(1 for c in cells if c == "pass")
         overall = "FAIL" if "fail" in cells else "PASS"
-        notes = "; ".join(
-            f"{feature}: {why}"
-            for feature, why in sorted(info.get("skips", {}).items())
-        )
+        notes = [f"{feature}: {why}" for feature, why in sorted(info.get("skips", {}).items())]
+        notes += [f"{key}: {value}" for key, value in sorted(info.get("retries", {}).items())]
         lines.append(
             f"| `{cli}` | {info.get('version', 'unknown')} | "
             + " | ".join(cells)
-            + f" | **{overall} {passed}/{supported}** | {notes or '—'} |"
+            + f" | **{overall} {passed}/{supported}** | {'; '.join(notes) or '—'} |"
         )
     lines += [
         "",
         "`skipped` means the adapter has no headless path for that feature; "
-        "the Notes column carries the reason. Overall counts passed/supported "
+        "the Notes column carries the reason. `retry 1/1` marks a web task "
+        "that ran once more after the emulation answered the documented "
+        "transient-unavailable error. Overall counts passed/supported "
         "features and is FAIL when any supported feature failed — there is no "
         "partial status that hides a skip.",
     ]
@@ -367,6 +372,33 @@ def emulated_evidence(rows: list[tuple], family: str) -> str:
     return ""
 
 
+# The one retriable failure class: the emulation answered the DOCUMENTED
+# transient-unavailable error because the emulator's own upstream call
+# failed ("emulator fetch/search failed", self-recovering in the wild).
+# Narrow on purpose — a declined tool, a missing canary or a protocol
+# defect fails a task on the first try.
+UNAVAILABLE_RE = re.compile(r'error_code["\']?\s*[:=]\s*["\']?unavailable\b')
+
+
+def transient_unavailable_web(feature: str, detail: str, rows: list[tuple], stdout: str) -> bool:
+    """True when a web task failed on exactly that documented transient
+    unavailability: no successful emulated call, a trace showing the
+    emulator's failed upstream call, and the CLI's own output echoing the
+    same error_code shape the proxy sent the model. The trace is ground
+    truth; the text must agree, so a plain miss is never retried."""
+    if detail != f"no successful emulated_tool(to={feature}) with content":
+        return False
+    traced = any(
+        ev.get("type") == "emulated_tool"
+        and ev.get("to") == feature
+        and ("emulator fetch failed" in ev.get("reason", "")
+             or "emulator search failed" in ev.get("reason", ""))
+        for row in rows
+        for ev in trace_events(row)
+    )
+    return traced and UNAVAILABLE_RE.search(stdout) is not None
+
+
 def feature_evidence(
     feature: str, task: dict, rows: list[tuple], stdout: str
 ) -> tuple[str, str]:
@@ -427,69 +459,86 @@ def evaluate_feature(
     timeout: int,
     version: str,
 ) -> dict:
-    since = max_request_id(db)
-    log_at = log_size(proxy_log)
-    code, result, run_dir = run_phase(
-        home, base_url, key, adapter_dir, cli, feature,
-        task.get("prompts") or [task["prompt"]], model, image, timeout
-    )
-    # The request-log write is off the request path, and one CLI run makes
-    # several requests. Wait until no NEW row appeared for two polls: breaking
-    # on the first row misses the tool-using request that follows it (Claude
-    # Code's multi-turn runs failed exactly that way).
-    deadline = time.time() + 8
-    rows: list[tuple] = []
-    stable = 0
-    while time.time() < deadline:
-        fresh = request_rows(db, since)
-        if fresh and len(fresh) == len(rows):
-            stable += 1
-            if stable >= 2:
-                break
-        else:
-            stable = 0
-        rows = fresh
-        time.sleep(0.3)
-    errs = proxy_errors(proxy_log, log_at)
-    stdout = result.get("stdout") or ""
-    detail = str(result.get("status", "")) or f"exit={code}"
-    status = "pass"
-    if code == 3:
-        status, detail = "skipped_missing", f"CLI missing: {manifest.get('install', '')}"
-    elif code == 2:
-        status, detail = "skipped_unsupported", "adapter cannot run this feature"
-    elif code != 0 or result.get("status") not in (None, "", "pass"):
-        err = (result.get("stderr") or "").strip().splitlines()
-        out = stdout.strip().splitlines()
-        tail = (err[-1] if err else (out[-1] if out else ""))[-240:]
-        status, detail = "fail", f"CLI {detail}: {tail}"
-    elif not rows:
-        status, detail = "fail", "no request_logs row"
-    # A 499 row is the CLIENT abandoning its own request (the proxy's own
-    # rule: abandoned is neither success nor failure). CLIs fire-and-cancel
-    # auxiliary calls (titles, prewarm); only a run with no completed row at
-    # all is a failure.
-    completed = [row for row in rows if int(row[1]) != 499]
-    if status == "pass" and not completed:
-        status, detail = "fail", "no request_logs row completed (every row was client-abandoned)"
-    if status == "pass":
-        for row in completed:
-            if int(row[1]) != 200:
-                status, detail = "fail", f"request status {row[1]}"
-                break
-            if row[2]:
-                status, detail = "fail", f"error_redacted: {row[2]}"
-                break
-            for ev in trace_events(row):
-                if ev.get("type") in ("failed", "rejected"):
-                    status, detail = "fail", f"trace {ev.get('type')}: {ev.get('reason', '')}"
+    def attempt() -> tuple[str, str, list[tuple], str, Path]:
+        since = max_request_id(db)
+        log_at = log_size(proxy_log)
+        code, result, run_dir = run_phase(
+            home, base_url, key, adapter_dir, cli, feature,
+            task.get("prompts") or [task["prompt"]], model, image, timeout
+        )
+        # The request-log write is off the request path, and one CLI run makes
+        # several requests. Wait until no NEW row appeared for two polls: breaking
+        # on the first row misses the tool-using request that follows it (Claude
+        # Code's multi-turn runs failed exactly that way).
+        deadline = time.time() + 8
+        rows: list[tuple] = []
+        stable = 0
+        while time.time() < deadline:
+            fresh = request_rows(db, since)
+            if fresh and len(fresh) == len(rows):
+                stable += 1
+                if stable >= 2:
                     break
-            if status != "pass":
-                break
-    if status == "pass" and feature != "hello":
-        status, detail = feature_evidence(feature, task, rows, stdout)
-    if status == "pass" and errs:
-        status, detail = "fail", f"proxy log ERROR: {errs[0][:200]}"
+            else:
+                stable = 0
+            rows = fresh
+            time.sleep(0.3)
+        errs = proxy_errors(proxy_log, log_at)
+        stdout = result.get("stdout") or ""
+        detail = str(result.get("status", "")) or f"exit={code}"
+        status = "pass"
+        if code == 3:
+            status, detail = "skipped_missing", f"CLI missing: {manifest.get('install', '')}"
+        elif code == 2:
+            status, detail = "skipped_unsupported", "adapter cannot run this feature"
+        elif code != 0 or result.get("status") not in (None, "", "pass"):
+            err = (result.get("stderr") or "").strip().splitlines()
+            out = stdout.strip().splitlines()
+            tail = (err[-1] if err else (out[-1] if out else ""))[-240:]
+            status, detail = "fail", f"CLI {detail}: {tail}"
+        elif not rows:
+            status, detail = "fail", "no request_logs row"
+        # A 499 row is the CLIENT abandoning its own request (the proxy's own
+        # rule: abandoned is neither success nor failure). CLIs fire-and-cancel
+        # auxiliary calls (titles, prewarm); only a run with no completed row at
+        # all is a failure.
+        completed = [row for row in rows if int(row[1]) != 499]
+        if status == "pass" and not completed:
+            status, detail = "fail", "no request_logs row completed (every row was client-abandoned)"
+        if status == "pass":
+            for row in completed:
+                if int(row[1]) != 200:
+                    status, detail = "fail", f"request status {row[1]}"
+                    break
+                if row[2]:
+                    status, detail = "fail", f"error_redacted: {row[2]}"
+                    break
+                for ev in trace_events(row):
+                    if ev.get("type") in ("failed", "rejected"):
+                        status, detail = "fail", f"trace {ev.get('type')}: {ev.get('reason', '')}"
+                        break
+                if status != "pass":
+                    break
+        if status == "pass" and feature != "hello":
+            status, detail = feature_evidence(feature, task, rows, stdout)
+        if status == "pass" and errs:
+            status, detail = "fail", f"proxy log ERROR: {errs[0][:200]}"
+        return status, detail, rows, stdout, run_dir
+
+    status, detail, rows, stdout, run_dir = attempt()
+    attempts = 1
+    # The suite's only retry: the web-tool backend's transient failure the
+    # proxy answered with the documented unavailable error (see
+    # transient_unavailable_web) — one more run of the same task, whose
+    # result alone decides; a retry that also fails keeps its own detail.
+    if transient_unavailable_web(feature, detail, rows, stdout):
+        print(
+            f"{cli:14s} {feature:11s} {task['name']:22s} "
+            f"transient web-tool unavailability — retrying once",
+            flush=True,
+        )
+        attempts = 2
+        status, detail, _, _, run_dir = attempt()
     return {
         "feature": feature,
         "task": task["name"],
@@ -498,6 +547,7 @@ def evaluate_feature(
         "detail": detail,
         "version": version,
         "run_dir": str(run_dir.relative_to(home)),
+        "attempts": attempts,
     }
 
 
@@ -547,14 +597,16 @@ def main() -> int:
         manifest = adapters.get(cli)
         if not manifest:
             checks.append({"feature": "*", "task": "*", "cli": cli, "status": "fail",
-                           "detail": "unknown adapter", "version": "unknown"})
+                           "detail": "unknown adapter", "version": "unknown",
+                           "attempts": 0})
             continue
         for feature in FEATURES:
             supported, why = feature_supported(manifest, feature)
             if not supported:
                 checks.append({"feature": feature, "task": "*", "cli": cli,
                                "status": "skipped_unsupported", "detail": why,
-                               "version": versions.get(cli, "unknown")})
+                               "version": versions.get(cli, "unknown"),
+                               "attempts": 0})
                 continue
             model = inst["resolved"]["blind"] if feature == "vision" else inst["resolved"]["chat"]
             for task in TASKS[feature]:
@@ -568,6 +620,7 @@ def main() -> int:
                         "status": "skipped_unsupported",
                         "detail": f"needs {needed}: {feature_supported(manifest, needed)[1]}",
                         "version": versions.get(cli, "unknown"),
+                        "attempts": 0,
                     })
                     continue
                 print(f"{cli:14s} {feature:11s} {task['name']:22s} running", flush=True)
@@ -601,6 +654,7 @@ def main() -> int:
                                     "status": "skipped_unsupported",
                                     "detail": "aborted: proxy provider in health cooldown (upstream quota/availability)",
                                     "version": versions.get(cli, "unknown"),
+                                    "attempts": 0,
                                 })
                     aborted = (
                         "Run aborted after repeated health-cooldown failures of the proxy's "
@@ -632,8 +686,15 @@ def main() -> int:
         entry["phases"][check["feature"]] = (
             "fail" if "fail" in (current, check["status"]) else "pass"
         )
+        # The Notes column names every web task that needed its one retry,
+        # and how that retry ended.
+        if check.get("attempts", 1) >= 2:
+            entry.setdefault("retries", {})[f"{check['feature']} ({check['task']})"] = (
+                "retry 1/1 passed" if check["status"] == "pass"
+                else "retry 1/1 still failed"
+            )
     report = {
-        "schema": 3,
+        "schema": 4,
         "run_id": run_id,
         "started_at": started,
         "finished_at": finished,
