@@ -135,7 +135,11 @@ func buildMatrixEnv(t *testing.T, emuFactory func(base string) routing.Emulator,
 		Emulator:     emu,
 		RetrySleeper: func(time.Duration) {},
 	})
-	h := httpapi.New(httpapi.Params{Store: st, Router: router, Executor: exec})
+	// The shipped claim mapping rides with the assembly, as the server wires
+	// it (loadClientWebTools): a client function tool the mapping names is
+	// the proxy's to serve through the emulator pool.
+	h := httpapi.New(httpapi.Params{Store: st, Router: router, Executor: exec,
+		ClientWebTools: httpapi.DefaultClientWebTools()})
 
 	st.SetKeyHasher(storage.NewKeyHasher([]byte(testMasterKey)))
 	_, key, err := auth.CreateClientKey(ctx, st, "matrix-test")
