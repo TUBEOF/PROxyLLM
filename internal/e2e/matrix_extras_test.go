@@ -13,6 +13,9 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 	openaiclient "github.com/openai/openai-go/v3"
+	"github.com/openai/openai-go/v3/responses"
+
+	"github.com/tubeof/proxyllm/internal/storage"
 )
 
 // TestMatrix_Meta_NegativeControl_BadUpstreamShape proves the cells have
@@ -144,6 +147,109 @@ func TestMatrix_WebEmulation_AnthropicClient_Search(t *testing.T) {
 	}
 	if auth := searchReq.Headers["Authorization"]; len(auth) == 0 || !strings.HasPrefix(auth[0], "Bearer ") {
 		t.Errorf("web-tool Authorization = %v, want the account's Bearer key", auth)
+	}
+}
+
+// TestMatrix_WebEmulation_InjectWebTools_PlainClient runs the plain-CLI
+// scenario inject_web_tools exists for (codex started WITHOUT --search asks a
+// weather question): the client declares NO tools, the model row's compat
+// blob injects the emulated web families, the simulated upstream calls
+// web_search, the emulator answers through MockServer's Firecrawl wire, and
+// the final answer carries the source. The injected defs must be visible in
+// the FIRST upstream round's wire bytes.
+func TestMatrix_WebEmulation_InjectWebTools_PlainClient(t *testing.T) {
+	ctx := context.Background()
+	up := upstream{ID: "codex-plain", Type: "custom-openai"}
+	e := newMatrixEnvEmulated(t, up)
+	if err := e.store.PutModel(ctx, storage.Model{
+		ID: up.ID, ProviderID: up.ID, Name: up.ID,
+		Compat: json.RawMessage(`{"inject_web_tools":true}`),
+	}); err != nil {
+		t.Fatalf("seed model row: %v", err)
+	}
+
+	// Round 1: the upstream model calls the injected web_search tool. Exactly
+	// once, so the follow-up dispatch matches the next expectation.
+	e.ms.Upsert(t, map[string]any{
+		"httpRequest": map[string]any{"method": "POST", "path": "/v1/chat/completions"},
+		"httpLlmResponse": map[string]any{
+			"provider": "OPENAI",
+			"model":    up.ID,
+			"completion": map[string]any{
+				"stopReason": "tool_calls",
+				"toolCalls": []map[string]any{{
+					"id":        "call_inj_1",
+					"name":      "web_search",
+					"arguments": `{"query":"weather in Cologne"}`,
+				}},
+			},
+		},
+		"times": map[string]any{"remainingTimes": 1, "unlimited": false},
+	})
+	// The web-tool backend (Firecrawl v2 wire) answers the search.
+	e.ms.Upsert(t, map[string]any{
+		"httpRequest":  map[string]any{"method": "POST", "path": "/v2/search"},
+		"httpResponse": map[string]any{"statusCode": 200, "body": `{"success":true,"data":{"web":[{"title":"Cologne forecast","url":"https://example.test/cologne","description":"12C sunny tomorrow"}]}}`},
+	})
+	// Round 2: the model answers with the search result.
+	e.ms.Upsert(t, map[string]any{
+		"httpRequest": map[string]any{"method": "POST", "path": "/v1/chat/completions"},
+		"httpLlmResponse": map[string]any{
+			"provider":   "OPENAI",
+			"model":      up.ID,
+			"completion": map[string]any{"text": "Tomorrow in Cologne: 12C sunny, see https://example.test/cologne"},
+		},
+	})
+
+	resp, err := e.openai.Responses.New(ctx, responses.ResponseNewParams{
+		Model: up.ID,
+		Input: responses.ResponseNewParamsInputUnion{OfString: openaiclient.String("weather in Cologne tomorrow?")},
+	})
+	if err != nil {
+		t.Fatalf("responses create: %v", err)
+	}
+	text := resp.OutputText()
+	if !strings.Contains(text, "12C sunny") {
+		t.Fatalf("final answer carries no result: %q", text)
+	}
+	if !strings.Contains(text, "https://example.test/cologne") {
+		t.Fatalf("final answer carries no source citation: %q", text)
+	}
+
+	// The FIRST upstream round must carry the injected tool defs in its wire
+	// bytes — a client that declared no tools still sees them offered.
+	reqs := e.ms.Requests(t)
+	var first map[string]any
+	var chatCount int
+	for _, r := range reqs {
+		if r.Path != "/v1/chat/completions" {
+			continue
+		}
+		chatCount++
+		if first == nil {
+			first = upstreamJSON(t, r)
+		}
+	}
+	if chatCount != 2 {
+		t.Fatalf("upstream /v1/chat/completions requests = %d, want 2 (call + re-dispatch)", chatCount)
+	}
+	raw, _ := json.Marshal(first["tools"])
+	if first["tools"] == nil || !strings.Contains(string(raw), "web_search") || !strings.Contains(string(raw), "web_fetch") {
+		t.Fatalf("round-1 upstream request declares tools = %s, want the injected web_search and web_fetch defs", raw)
+	}
+
+	// The web-tool backend received the model's query.
+	var searchReq map[string]any
+	for _, r := range reqs {
+		if r.Path == "/v2/search" {
+			searchReq = upstreamJSON(t, r)
+		}
+	}
+	if searchReq == nil {
+		t.Fatal("the web-tool backend received no /v2/search request")
+	}
+	if searchReq["query"] != "weather in Cologne" {
+		t.Errorf("web-tool query = %v, want the model's query", searchReq["query"])
 	}
 }
 
