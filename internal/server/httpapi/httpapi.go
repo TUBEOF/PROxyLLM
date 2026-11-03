@@ -63,6 +63,12 @@ type api struct {
 	// clientWebTools is the live client-tool → family mapping (immutable
 	// snapshot, swapped by SetClientWebTools on settings writes).
 	clientWebTools atomic.Value // map[string]string
+
+	// history holds the Responses turns a client may chain with
+	// previous_response_id. The POST surface is stateless like every other
+	// one, so this bounded process-wide store is the only place an earlier
+	// turn exists (the WebSocket transport keeps its own per-connection one).
+	history *responseHistory
 }
 
 // API is the assembled client-facing handler (New's return): the mux itself,
@@ -103,7 +109,8 @@ func normalizeClientWebTools(m map[string]string) map[string]string {
 
 // New assembles the client-facing HTTP handler.
 func New(p Params) *API {
-	a := &api{store: p.Store, router: p.Router, executor: p.Executor, stream: p.Stream}
+	a := &api{store: p.Store, router: p.Router, executor: p.Executor, stream: p.Stream,
+		history: newResponseHistory(httpHistoryLimit)}
 	a.clientWebTools.Store(normalizeClientWebTools(p.ClientWebTools))
 
 	mux := http.NewServeMux()

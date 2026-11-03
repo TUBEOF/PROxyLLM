@@ -7,7 +7,6 @@ package httpapi
 
 import (
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/tubeof/proxyllm/internal/auth"
@@ -15,6 +14,16 @@ import (
 	"github.com/tubeof/proxyllm/internal/translate/ir"
 	"github.com/tubeof/proxyllm/internal/translate/openai"
 )
+
+// httpHistoryLimit bounds the process-wide previous_response_id store. One
+// entry is a full conversation, so the cap is deliberately small: a client
+// that chains more turns than this gets the documented 404, never unbounded
+// memory growth.
+const httpHistoryLimit = 64
+
+// historyKey scopes one client's response ids: an id minted for one client
+// key must never resolve for another.
+func historyKey(keyID, responseID string) string { return keyID + "\x00" + responseID }
 
 // handleResponses serves POST /v1/responses (streaming + non-streaming).
 func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
@@ -40,6 +49,28 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	keyID := auth.ClientKeyIDFromContext(ctx)
+
+	// A previous_response_id chains this turn onto an earlier one. The proxy
+	// asks no upstream to retain a response, so the earlier turn exists only
+	// in this process's bounded history; an id it does not hold is the
+	// documented "not found", never a silent answer from an orphaned turn
+	// (which is what a client sees when its tool result arrives without the
+	// tool call that produced it).
+	if req.PreviousResponseID != "" {
+		prior, ok := a.history.get(historyKey(keyID, req.PreviousResponseID))
+		if !ok {
+			ew.write(w, http.StatusNotFound, "invalid_request_error",
+				"previous response with this previous_response_id is not available; send the full input")
+			a.writeRequestLog(ctx, keyID, req.Model, "", http.StatusNotFound, 0,
+				nil, nil, "previous_response_id not found")
+			return
+		}
+		req.Messages = append(prior, req.Messages...)
+		// The id is the proxy's own mint: forwarding it to an upstream that
+		// never issued it earns a 400 (the WebSocket path strips it for the
+		// same reason).
+		req.PreviousResponseID = ""
+	}
 
 	if err := routing.RequireMessages(req); err != nil {
 		_, _ = a.writeRouteError(w, ew, err)
@@ -89,6 +120,10 @@ func (a *api) handleResponses(w http.ResponseWriter, r *http.Request) {
 
 	// Echo the requested model name (see messages.go).
 	resp.Model = req.Model
+	// Remember the turn so the client can chain it with previous_response_id.
+	a.history.put(historyKey(keyID, resp.ID),
+		append(append([]ir.Message{}, req.Messages...),
+			ir.Message{Role: ir.RoleAssistant, Parts: resp.Content}))
 	// Capture the answer the client is about to receive (see capture.go).
 	captureResponse(ctx, resp)
 	out, err := openai.ResponsesCodec{}.EncodeResponse(resp)
@@ -134,12 +169,13 @@ func (a *api) streamResponses(w http.ResponseWriter, r *http.Request, keyID stri
 	defer cancel()
 
 	enc := openai.NewResponsesStreamEncoder(w)
-	var terminalUsage *ir.Usage
-	var streamErr *ir.UpstreamError
-	var answer strings.Builder
-	relayStream(ctx, ch, enc, &terminalUsage, &streamErr, req.Model, &answer)
+	parts, answer, terminalUsage, streamErr := relayWSStream(ctx, ch, enc, req.Model)
+	// Remember the turn so the client can chain it with previous_response_id.
+	a.history.put(historyKey(keyID, enc.ResponseID()),
+		append(append([]ir.Message{}, req.Messages...),
+			ir.Message{Role: ir.RoleAssistant, Parts: parts}))
 	// Capture the answer the client streamed (see capture.go).
-	captureResponseText(ctx, req.Model, answer.String())
+	captureResponseText(ctx, req.Model, answer)
 	// Mid-stream outcome correction (4a): dispatch success was reported
 	// at ExecuteStream; a stream that failed mid-stream still counts as
 	// a breaker failure.
