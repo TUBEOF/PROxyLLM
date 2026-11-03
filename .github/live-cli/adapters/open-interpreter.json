@@ -1,0 +1,37 @@
+{
+  "name": "open-interpreter",
+  "label": "Open Interpreter",
+  "tier": "core",
+  "command": "interpreter",
+  "install": "release tarball from openinterpreter/openinterpreter rust-v0.0.58 (see the matrix.yml install step)",
+  "tested": "0.0.58",
+  "runnable": false,
+  "runnable_note": "Plain-start matrix client (cli_plain.py); the Rust Open Interpreter tracks Codex (no pipx/npm package) — install is the pinned GitHub release tarball (docs: openinterpreter.com/docs/terminal/providers)",
+  "env_keep": [
+    "PATH",
+    "LANG",
+    "LC_ALL",
+    "TERM",
+    "TMPDIR",
+    "SSL_CERT_FILE",
+    "SSL_CERT_DIR"
+  ],
+  "scrub_env": [
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "INTERPRETER_HOME",
+    "CODEX_HOME"
+  ],
+  "env": {
+    "PROXYLLM_CLIENT_KEY": "{{CLIENT_KEY}}"
+  },
+  "files": {
+    "{{HOME}}/.openinterpreter/config.toml": "model = \"{{MODEL}}\"\nmodel_provider = \"proxyllm\"\n\n[model_providers.proxyllm]\nname = \"PROxyLLM\"\nbase_url = \"{{BASE_URL}}/v1\"\nenv_key = \"PROXYLLM_CLIENT_KEY\"\nwire_api = \"chat\"\n"
+  },
+  "canary": [
+    "~/.openinterpreter"
+  ]
+}

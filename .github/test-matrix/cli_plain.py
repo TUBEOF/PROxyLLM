@@ -125,7 +125,8 @@ def ms_reset(mockserver: str) -> None:
 
 
 # Observed wire facts (2026-11 codex 0.166 / claude-code 2.1.316 / crush
-# 0.99.0 / openhands 0.59.0 / gptme 0.36.0): codex buffers /v1/responses turns
+# 0.99.0 / openhands 0.59.0 / gptme 0.36.0 / open-interpreter 0.0.58): codex
+# buffers /v1/responses turns
 # upstream (no "stream" key; plain string message content) and drives utility
 # calls — task-title generation — as STREAMED requests quoting the
 # conversation; Claude streams every Messages turn and sends the user prompt
@@ -136,7 +137,11 @@ def ms_reset(mockserver: str) -> None:
 # utility calls, but the CodeAct runtime appends a <RUNTIME_INFORMATION> user
 # message after the prompt on the first turn only; gptme wraps every message
 # content (system included) in typed text parts, streams its model turns and
-# fires one closed auto-naming call after the first reply. MockServer's LLM
+# fires one closed auto-naming call after the first reply; open-interpreter
+# (the Codex fork, wire_api = "chat") streams every upstream call it makes —
+# model turns carry its guidance stacks (<skills_instructions>,
+# <environment_context> user messages before the prompt) plus one streamed
+# title call after the first turn. MockServer's LLM
 # response follows the expectation's streaming flag only, and its JSON
 # matcher wants exact leaf values, so each turn is pinned by its exact last
 # user message in the CLI's own shape, later turns ranked higher (their
@@ -242,7 +247,8 @@ def plain_command(manifest: Path) -> str:
 # be the composer prompt itself — text typed earlier is discarded.
 READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
                  "openhands": "OpenHands CLI v",
-                 "gptme": "User:"}
+                 "gptme": "User:",
+                 "open-interpreter": "Open Interpreter (v"}
 
 # How each CLI's model turns stream upstream, and what the catch-all bucket
 # answer must look like to absorb the utility traffic (title generation):
@@ -250,10 +256,12 @@ READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
 # nothing but turns, crush streams everything, openhands never streams its
 # turns and makes no utility calls, gptme streams turns but not its one
 # auto-naming call (a closed chat completion after the first reply).
+# open-interpreter is a Codex fork and streams everything it sends upstream
+# (model turns and title calls alike, over wire_api = "chat").
 STREAMING = {"codex": False, "claude-code": True, "crush": True, "openhands": False,
-             "gptme": True}
+             "gptme": True, "open-interpreter": True}
 FALLBACK_STREAMING = {"codex": True, "claude-code": False, "crush": True,
-                      "openhands": False, "gptme": False}
+                      "openhands": False, "gptme": False, "open-interpreter": True}
 
 # User-message markers that are runtime metadata, not model turns; see
 # turn_requests.
@@ -272,6 +280,11 @@ ONBOARDING = {
     ],
     "gptme": [
         ("New conversation or load previous?", ["Enter"]),
+    ],
+    # open-interpreter's trust dialog is Codex's folder gate; "Trust and
+    # continue" is preselected, so Enter accepts it.
+    "open-interpreter": [
+        ("Trust this folder", ["Enter"]),
     ],
 }
 
@@ -551,7 +564,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--home", required=True)
     parser.add_argument("--mockserver", required=True)
-    parser.add_argument("--clients", default="codex,claude-code,crush,openhands,gptme")
+    parser.add_argument("--clients", default="codex,claude-code,crush,openhands,gptme,open-interpreter")
     parser.add_argument("--scenarios", default="answer,recall")
     parser.add_argument("--binary", default=str(REPO / "proxyllm"))
     parser.add_argument("--port", type=int, default=18190)
