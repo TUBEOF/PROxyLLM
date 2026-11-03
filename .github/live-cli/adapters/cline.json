@@ -3,8 +3,8 @@
   "label": "Cline CLI",
   "tier": "tier2",
   "command": "cline",
-  "install": "npm install -g cline",
-  "tested": "latest",
+  "install": "npm install -g cline@3.0.74",
+  "tested": "3.0.74",
   "runnable": true,
   "env_keep": [
     "PATH",
@@ -24,7 +24,9 @@
     "ANTHROPIC_BASE_URL"
   ],
   "files": {
-    "{{DATA_DIR}}/cline/settings/providers.json": "{\"version\":1,\"lastUsedProvider\":\"openai-compatible\",\"modes\":{},\"providers\":{\"openai-compatible\":{\"settings\":{\"provider\":\"openai-compatible\",\"apiKey\":\"{{CLIENT_KEY}}\",\"model\":\"{{MODEL}}\",\"baseUrl\":\"{{BASE_URL}}/v1\"},\"updatedAt\":\"2026-10-25T00:00:00.000Z\",\"tokenSource\":\"manual\"}}}"
+    "{{DATA_DIR}}/cline/settings/providers.json": "{\"version\":1,\"lastUsedProvider\":\"openai-compatible\",\"modes\":{},\"providers\":{\"openai-compatible\":{\"settings\":{\"provider\":\"openai-compatible\",\"apiKey\":\"{{CLIENT_KEY}}\",\"model\":\"{{MODEL}}\",\"baseUrl\":\"{{BASE_URL}}/v1\"},\"updatedAt\":\"2026-10-25T00:00:00.000Z\",\"tokenSource\":\"manual\"}}}",
+    "{{HOME}}/.cline/data/settings/providers.json": "{\"version\":1,\"lastUsedProvider\":\"openai-compatible\",\"modes\":{},\"providers\":{\"openai-compatible\":{\"settings\":{\"provider\":\"openai-compatible\",\"apiKey\":\"{{CLIENT_KEY}}\",\"model\":\"{{MODEL}}\",\"baseUrl\":\"{{BASE_URL}}/v1\"},\"updatedAt\":\"2026-10-25T00:00:00.000Z\",\"tokenSource\":\"manual\"}}}",
+    "{{HOME}}/.cline/data/settings/global-settings.json": "{\"telemetryOptOut\":true,\"autoUpdateEnabled\":false}"
   },
   "args": [
     "{{PROMPT}}",

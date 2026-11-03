@@ -294,6 +294,10 @@ READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
                  "openhands": "OpenHands CLI v",
                  "gptme": "User:",
                  "aider": "Aider v",
+                 # cline's fresh composer placeholder; the pane names the model
+                 # only in its status strip, and the ClinePass modal paints the
+                 # first chrome.
+                 "cline": "What can I do for you?",
                  "open-interpreter": "Open Interpreter (v"}
 
 # How each CLI's model turns stream upstream, and what the catch-all bucket
@@ -304,12 +308,18 @@ READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
 # auto-naming call (a closed chat completion after the first reply).
 # open-interpreter is a Codex fork and streams everything it sends upstream
 # (model turns and title calls alike, over wire_api = "chat"), as does aider
-# (which makes no utility calls at all).
+# (which makes no utility calls at all). cline 3.0.74 streams every model
+# turn it makes (plain-string user content) and makes no utility calls; its
+# only first-run screen is the ClinePass intro modal, closed by any key other
+# than Enter (ONBOARDING); with the modal gone the fresh composer's
+# placeholder is the ready state, and it accepts typed prompts without a
+# prompt-tail gate.
 STREAMING = {"codex": False, "claude-code": True, "crush": True, "openhands": False,
-             "gptme": True, "aider": True, "open-interpreter": True}
+             "gptme": True, "aider": True, "cline": True,
+             "open-interpreter": True}
 FALLBACK_STREAMING = {"codex": True, "claude-code": False, "crush": True,
                       "openhands": False, "gptme": False, "aider": True,
-                      "open-interpreter": True}
+                      "cline": True, "open-interpreter": True}
 
 # User-message markers that are runtime metadata, not model turns; see
 # turn_requests.
@@ -320,6 +330,8 @@ RUNTIME_HINTS = {"openhands": "<RUNTIME_INFORMATION>"}
 # defaults to "No, exit" — the Down moves it to "Yes, I trust this folder";
 # a blind Enter there exits the CLI with an empty pane. gptme's picker
 # ("New conversation") is preselected, so Enter starts the chat.
+# cline's ClinePass intro modal closes on any key EXCEPT Enter — Enter opens
+# the subscription URL in a browser, so Escape closes it.
 ONBOARDING = {
     "claude-code": [
         ("Choose the text style", ["Enter"]),
@@ -333,6 +345,9 @@ ONBOARDING = {
     # continue" is preselected, so Enter accepts it.
     "open-interpreter": [
         ("Trust this folder", ["Enter"]),
+    ],
+    "cline": [
+        ("Try ClinePass", ["Escape"]),
     ],
 }
 
@@ -612,7 +627,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--home", required=True)
     parser.add_argument("--mockserver", required=True)
-    parser.add_argument("--clients", default="codex,claude-code,crush,openhands,gptme,open-interpreter,aider")
+    parser.add_argument("--clients", default="codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline")
     parser.add_argument("--scenarios", default="answer,recall")
     parser.add_argument("--binary", default=str(REPO / "proxyllm"))
     parser.add_argument("--port", type=int, default=18190)

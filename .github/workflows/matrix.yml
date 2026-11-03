@@ -99,6 +99,8 @@ jobs:
         run: |
           pipx install --python 3.12 "aider-chat==0.86.2"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: Install cline CLI (pinned)
+        run: npm install -g cline@3.0.74
       - name: Ensure tmux (the plain-start driver runs CLIs in a pseudo-terminal)
         run: |
           if ! command -v tmux >/dev/null; then
@@ -108,4 +110,4 @@ jobs:
       - name: Build the proxy
         run: env -u GOROOT make build
       - name: Plain-start CLI matrix
-        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush,openhands,gptme,open-interpreter,aider --scenarios answer,recall
+        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline --scenarios answer,recall
