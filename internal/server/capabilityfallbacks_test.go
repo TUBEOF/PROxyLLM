@@ -137,13 +137,22 @@ func TestServer_LearnedVisionGapStopsRetryingTheBlindModel(t *testing.T) {
 		t.Fatalf("turn 1: status %d, body %s", status, body)
 	}
 
-	// The gap is learned into the blind model's row — the write half.
-	row, err := st.GetModel(ctx, "mock-blind/chat-model")
-	if err != nil {
-		t.Fatalf("get model: %v", err)
-	}
-	if !strings.Contains(string(row.Capabilities), `"vision":false`) {
-		t.Fatalf("capabilities = %s, want the learned vision:false", row.Capabilities)
+	// The gap is learned into the blind model's row — the write half. The
+	// write is async by design (learnCapabilityGap keeps the store off the
+	// request path), so poll for it, as the caption-rescue test below does.
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		row, err := st.GetModel(ctx, "mock-blind/chat-model")
+		if err != nil {
+			t.Fatalf("get model: %v", err)
+		}
+		if strings.Contains(string(row.Capabilities), `"vision":false`) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("capabilities = %s, want the learned vision:false", row.Capabilities)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 
 	// Turn 2: same conversation, same image.
