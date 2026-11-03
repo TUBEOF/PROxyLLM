@@ -19,12 +19,15 @@ Features (English prompts only, one feature per invocation):
 
 Evidence means proxy AND answer: a green trace with a broken client answer is
 exactly the failure this suite exists to catch. There is no retry — a model
-that declines the tool once is a failure, not noise. The one exception is the
-web-tool backend's TRANSIENT unavailability (the proxy then answers the
-documented {"error_code":"unavailable"} error result): a web task that failed
-exactly there runs once more — same task, fresh run — and the retry alone
-decides the check; a retry that also fails stays fail. Nothing else ever
-retries. A CLI without a headless path for a feature is reported skipped WITH
+that declines the tool once is a failure, not noise. The two exceptions each
+run a failed web task once more — same task, fresh run — with the retry alone
+deciding the check (a retry that also fails stays fail): the web-tool
+backend's TRANSIENT unavailability (the proxy then answers the documented
+{"error_code":"unavailable"} error result), and the model's PLAIN MISS of a
+web_search call — its stream ends a completed turn without any web_search
+invocation, a verdict only the two stream formats that record tool items
+(codex --json, claude-code stream-json) can reach. Nothing else ever retries.
+A CLI without a headless path for a feature is reported skipped WITH
 ITS REASON.
 """
 
@@ -198,8 +201,10 @@ def render_markdown(report: dict) -> str:
         "",
         "`skipped` means the adapter has no headless path for that feature; "
         "the Notes column carries the reason. `retry 1/1` marks a web task "
-        "that ran once more after the emulation answered the documented "
-        "transient-unavailable error. Overall counts passed/supported "
+        "that ran once more after the model plainly answered without calling "
+        "the family's tool (plain miss) or after the emulation answered the "
+        "documented transient-unavailable error — the note names the class. "
+        "Overall counts passed/supported "
         "features and is FAIL when any supported feature failed — there is no "
         "partial status that hides a skip.",
     ]
@@ -372,11 +377,12 @@ def emulated_evidence(rows: list[tuple], family: str) -> str:
     return ""
 
 
-# The one retriable failure class: the emulation answered the DOCUMENTED
-# transient-unavailable error because the emulator's own upstream call
-# failed ("emulator fetch/search failed", self-recovering in the wild).
-# Narrow on purpose — a declined tool, a missing canary or a protocol
-# defect fails a task on the first try.
+# One of the two retriable failure classes: the emulation answered the
+# DOCUMENTED transient-unavailable error because the emulator's own upstream
+# call failed ("emulator fetch/search failed", self-recovering in the wild).
+# The other class — the model plain-missing the tool call — is plain_miss_web
+# below. Both are single-shot; a missing canary or a protocol defect always
+# fails a task on the first try.
 UNAVAILABLE_RE = re.compile(r'error_code["\']?\s*[:=]\s*["\']?unavailable\b')
 
 
@@ -385,7 +391,10 @@ def transient_unavailable_web(feature: str, detail: str, rows: list[tuple], stdo
     unavailability: no successful emulated call, a trace showing the
     emulator's failed upstream call, and the CLI's own output echoing the
     same error_code shape the proxy sent the model. The trace is ground
-    truth; the text must agree, so a plain miss is never retried."""
+    truth; the text must agree, which keeps the two retry classes distinct —
+    a plain miss (no emulated call at all) never matches here, and a
+    transient failure (the tool ran, the emulated backend failed) is no
+    answer defect."""
     if detail != f"no successful emulated_tool(to={feature}) with content":
         return False
     traced = any(
@@ -397,6 +406,67 @@ def transient_unavailable_web(feature: str, detail: str, rows: list[tuple], stdo
         for ev in trace_events(row)
     )
     return traced and UNAVAILABLE_RE.search(stdout) is not None
+
+
+def _stream_docs(stdout: str) -> list[dict]:
+    """The JSON stream formats write one object per line; skip anything else.
+    A line that does not parse is noise and only ever keeps the detector
+    conservative (it cannot make a retry more likely)."""
+    docs: list[dict] = []
+    for line in stdout.splitlines():
+        s = line.strip()
+        if not (s.startswith("{") and s.endswith("}")):
+            continue
+        try:
+            docs.append(json.loads(s))
+        except json.JSONDecodeError:
+            continue
+    return docs
+
+
+def plain_miss_web(cli: str, feature: str, detail: str, stdout: str) -> bool:
+    """True when a web task failed on a MODEL plain miss: the CLI's own
+    stream ended a completed turn without ever recording an invocation of
+    the family's tool — the model says "I'll search…" and then answers
+    without calling it (run 41684909774, codex weather-cologne). Known only
+    for the two stream formats that record tool items:
+
+      codex --json        web_search items (item.started/completed) per
+                          invocation, `turn.completed` ending the turn
+      claude-code
+      stream-json         a `WebSearch` tool_use or `web_search`
+                          server_tool_use block inside assistant events, a
+                          `result` event with subtype `success` per turn
+
+    The web-fetch CLIs (cline, continue, kimi, opencode) record no tool
+    items in their streams, so their stdout can never prove a miss and they
+    stay unretried. A stream whose completed turn is missing is parse
+    uncertainty and never retries; the presence of any tool item disproves
+    the miss."""
+    detail_miss = f"no successful emulated_tool(to={feature}) with content"
+    if feature != "web_search" or detail != detail_miss:
+        return False
+    docs = _stream_docs(stdout)
+    if cli == "codex":
+        done = any(e.get("type") == "turn.completed" for e in docs)
+        invoked = any(
+            (e.get("item") or {}).get("type", "").startswith("web_search")
+            for e in docs
+        )
+    elif cli == "claude-code":
+        done = any(
+            e.get("type") == "result" and e.get("subtype") == "success" for e in docs
+        )
+        invoked = any(
+            (b.get("name") or "").replace("_", "").lower() == "websearch"
+            for e in docs
+            if e.get("type") == "assistant"
+            for b in (e.get("message") or {}).get("content") or []
+            if isinstance(b, dict) and b.get("type") in ("tool_use", "server_tool_use")
+        )
+    else:
+        return False
+    return done and not invoked
 
 
 def feature_evidence(
@@ -527,19 +597,25 @@ def evaluate_feature(
 
     status, detail, rows, stdout, run_dir = attempt()
     attempts = 1
-    # The suite's only retry: the web-tool backend's transient failure the
-    # proxy answered with the documented unavailable error (see
-    # transient_unavailable_web) — one more run of the same task, whose
-    # result alone decides; a retry that also fails keeps its own detail.
+    # The suite's only retries, each running the task once more with the
+    # retry alone deciding (a retry that fails keeps its own detail): the
+    # web-tool backend's transient failure the proxy answered with the
+    # documented unavailable error (transient_unavailable_web), and the
+    # model's plain tool miss (plain_miss_web).
+    retry_kind = ""
     if transient_unavailable_web(feature, detail, rows, stdout):
+        retry_kind = "transient unavailability"
+    elif plain_miss_web(cli, feature, detail, stdout):
+        retry_kind = "plain miss"
+    if retry_kind:
         print(
             f"{cli:14s} {feature:11s} {task['name']:22s} "
-            f"transient web-tool unavailability — retrying once",
+            f"{retry_kind} — retrying once",
             flush=True,
         )
         attempts = 2
         status, detail, _, _, run_dir = attempt()
-    return {
+    check = {
         "feature": feature,
         "task": task["name"],
         "cli": cli,
@@ -549,6 +625,9 @@ def evaluate_feature(
         "run_dir": str(run_dir.relative_to(home)),
         "attempts": attempts,
     }
+    if retry_kind:
+        check["retry"] = retry_kind
+    return check
 
 
 def main() -> int:
@@ -687,11 +766,12 @@ def main() -> int:
             "fail" if "fail" in (current, check["status"]) else "pass"
         )
         # The Notes column names every web task that needed its one retry,
-        # and how that retry ended.
+        # and how that retry ended, with the failure class that triggered it.
         if check.get("attempts", 1) >= 2:
+            kind = check.get("retry", "transient unavailability")
             entry.setdefault("retries", {})[f"{check['feature']} ({check['task']})"] = (
-                "retry 1/1 passed" if check["status"] == "pass"
-                else "retry 1/1 still failed"
+                f"retry 1/1 {'passed' if check['status'] == 'pass' else 'still failed'}"
+                f" ({kind})"
             )
     report = {
         "schema": 4,
