@@ -3,8 +3,8 @@
   "label": "Aider",
   "tier": "recommended",
   "command": "aider",
-  "install": "uv tool install aider-chat --python 3.12",
-  "tested": "latest",
+  "install": "pipx install --python 3.12 aider-chat==0.86.2",
+  "tested": "0.86.2",
   "runnable": true,
   "env_keep": [
     "PATH",
@@ -25,11 +25,11 @@
   ],
   "env": {
     "OPENAI_API_BASE": "{{BASE_URL}}/v1",
-    "OPENAI_API_KEY": "{{CLIENT_KEY}}",
-    "AIDER_NO_AUTO_COMMITS": "1"
+    "OPENAI_API_KEY": "{{CLIENT_KEY}}"
   },
   "files": {
-    "{{CONFIG_DIR}}/aider/aider.conf.yml": "openai-api-base: \"{{BASE_URL}}/v1\"\nopenai-api-key: \"{{CLIENT_KEY}}\"\n"
+    "{{CONFIG_DIR}}/aider/aider.conf.yml": "openai-api-base: \"{{BASE_URL}}/v1\"\nopenai-api-key: \"{{CLIENT_KEY}}\"\n",
+    "{{HOME}}/.aider.conf.yml": "model: openai/{{MODEL}}\nauto-commits: false\ncheck-update: false\nshow-release-notes: false\ngit: false\nanalytics: false\nshow-model-warnings: false\n"
   },
   "args": [
     "--config",
