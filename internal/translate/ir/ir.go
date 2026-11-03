@@ -413,6 +413,24 @@ type Usage struct {
 	WebSearchRequests int `json:"web_search_requests,omitempty"`
 	WebFetchRequests  int `json:"web_fetch_requests,omitempty"`
 
+	// The Anthropic cache_creation TTL split (schema v1.84 shapes:
+	// cache_creation.ephemeral_5m_input_tokens / _1h). Older upstream wire
+	// shapes report the same counters flat (ephemeral_5m_input_tokens); a
+	// decoder fills both from whichever key it sees. json:"-": these ride
+	// codec-to-surface emission and must not leak into route_trace's
+	// marshaled usage (additive-codec-only change).
+	Ephemeral5mInputTokens int `json:"-"`
+	Ephemeral1hInputTokens int `json:"-"`
+
+	// Serving metadata echoed verbatim from an Anthropic upstream usage
+	// object (service_tier / inference_geo / speed; JSON "-" for the same
+	// route_trace reason). Unset when the upstream wire carries none —
+	// the Anthropic emission then renders the reference's neutral values
+	// (standard/standard/global), never a fabricated count or tier.
+	ServiceTier  string `json:"-"`
+	InferenceGeo string `json:"-"`
+	Speed        string `json:"-"`
+
 	// Estimated marks heuristic counts (count_tokens fallback).
 	Estimated bool `json:"-"`
 }

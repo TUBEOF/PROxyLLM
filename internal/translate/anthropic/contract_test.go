@@ -2,6 +2,7 @@ package anthropic_test
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -289,6 +290,99 @@ func TestEncodeResponse_FromIR(t *testing.T) {
 	}
 	if got.Usage.InputTokens != 10 || got.Usage.OutputTokens != 5 || got.Usage.CacheReadInputTokens != 100 {
 		t.Errorf("round trip usage = %+v", got.Usage)
+	}
+}
+
+// TestEncodeResponse_SchemaParity pins the members the official Message
+// schema requires (reference 2026-11-03 + anthropic-sdk-go v1.84 required
+// markers, testdata/schemas/anthropic_message.json): container/stop_details/
+// diagnostics as explicit nulls when not used, stop_sequence (null when
+// unset), and the usage sub-objects with the reference's neutral serving
+// values.
+func TestEncodeResponse_SchemaParity(t *testing.T) {
+	raw, err := anth.Codec{}.EncodeResponse(ir.Response{
+		ID:    "msg_1",
+		Model: "claude-sonnet-5",
+		Content: []ir.Part{
+			ir.TextPart{Text: "hi"},
+		},
+		StopReason: ir.StopEndTurn,
+		Usage:      ir.Usage{InputTokens: 3, OutputTokens: 2},
+	})
+	if err != nil {
+		t.Fatalf("EncodeResponse: %v", err)
+	}
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for key, want := range map[string]string{
+		"container":     "null",
+		"stop_details":  "null",
+		"diagnostics":   "null",
+		"stop_sequence": "null",
+		"stop_reason":   `"end_turn"`,
+	} {
+		if got := string(doc[key]); got != want {
+			t.Errorf("%s = %s, want %s\nraw: %s", key, got, want, raw)
+		}
+	}
+	var usage struct {
+		CacheCreation struct {
+			Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens"`
+			Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens"`
+		} `json:"cache_creation"`
+		OutputTokensDetails struct {
+			ThinkingTokens int `json:"thinking_tokens"`
+		} `json:"output_tokens_details"`
+		ServerToolUse struct {
+			WebSearchRequests int `json:"web_search_requests"`
+			WebFetchRequests  int `json:"web_fetch_requests"`
+		} `json:"server_tool_use"`
+		ServiceTier  string `json:"service_tier"`
+		InferenceGeo string `json:"inference_geo"`
+		Speed        string `json:"speed"`
+	}
+	if err := json.Unmarshal(doc["usage"], &usage); err != nil {
+		t.Fatalf("usage unmarshal: %v (%s)", err, doc["usage"])
+	}
+	if usage.ServiceTier != "standard" || usage.Speed != "standard" || usage.InferenceGeo != "global" {
+		t.Errorf("serving metadata = %q/%q/%q, want standard/standard/global (reference defaults)", usage.ServiceTier, usage.InferenceGeo, usage.Speed)
+	}
+}
+
+// An Anthropic upstream's serving metadata and cache TTL split ride the IR
+// verbatim: decode fills them, and a same-protocol re-encode echoes them.
+func TestEncodeResponse_UsageEchoesUpstreamServing(t *testing.T) {
+	upstream := []byte(`{"id":"msg_u","type":"message","role":"assistant","model":"claude-sonnet-5","content":[
+		{"type":"text","text":"ok"}
+	],"stop_reason":"end_turn","usage":{
+		"input_tokens":10,"output_tokens":5,
+		"cache_creation_input_tokens":7,"cache_read_input_tokens":0,
+		"cache_creation":{"ephemeral_5m_input_tokens":7,"ephemeral_1h_input_tokens":2},
+		"output_tokens_details":{"thinking_tokens":11},
+		"server_tool_use":{"web_search_requests":1,"web_fetch_requests":0},
+		"service_tier":"priority","inference_geo":"us","speed":"fast"
+	}}`)
+	got, err := anth.Codec{}.DecodeResponse(upstream)
+	if err != nil {
+		t.Fatalf("DecodeResponse: %v", err)
+	}
+	if got.Usage.CacheCreationInputTokens != 7 || got.Usage.Ephemeral5mInputTokens != 7 || got.Usage.Ephemeral1hInputTokens != 2 || got.Usage.ReasoningTokens != 11 ||
+		got.Usage.ServiceTier != "priority" || got.Usage.InferenceGeo != "us" || got.Usage.Speed != "fast" ||
+		got.Usage.WebSearchRequests != 1 || got.Usage.WebFetchRequests != 0 {
+		t.Fatalf("usage IR = %+v", got.Usage)
+	}
+	raw, err := anth.Codec{}.EncodeResponse(got)
+	if err != nil {
+		t.Fatalf("EncodeResponse: %v", err)
+	}
+	if !strings.Contains(string(raw), `"service_tier":"priority"`) ||
+		!strings.Contains(string(raw), `"inference_geo":"us"`) ||
+		!strings.Contains(string(raw), `"speed":"fast"`) ||
+		!strings.Contains(string(raw), `"ephemeral_1h_input_tokens":2`) ||
+		!strings.Contains(string(raw), `"thinking_tokens":11`) {
+		t.Errorf("re-encoded usage lost the upstream serving metadata: %s", raw)
 	}
 }
 

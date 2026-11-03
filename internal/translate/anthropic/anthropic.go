@@ -194,46 +194,74 @@ func (Codec) DecodeResponse(raw []byte) (ir.Response, error) {
 }
 
 // EncodeResponse encodes an IR response into an Anthropic Messages body.
+// The body IS the Message object the streaming message_start carries, so
+// both surfaces share one struct (wireStartMessage — every member the
+// schema requires, nulls explicit; see its comment).
 func (Codec) EncodeResponse(resp ir.Response) ([]byte, error) {
-	w := wireResponse{
+	reason := resp.StopReason
+	if reason == "" {
+		// Non-streaming stop_reason is always non-null on the official
+		// surface; end_turn is the documented natural-stop fallback.
+		reason = ir.StopEndTurn
+	}
+	var seq *string
+	if resp.StopSequence != "" {
+		seq = &resp.StopSequence
+	}
+	msg := wireStartMessage{
 		ID:           resp.ID,
 		Type:         "message",
 		Role:         "assistant",
 		Model:        resp.Model,
-		StopReason:   resp.StopReason,
-		StopSequence: resp.StopSequence,
-		Usage:        usageToWire(resp.Usage),
+		StopReason:   &reason,
+		StopSequence: seq,
+		// No container was created, no refusal detail and no cache
+		// diagnostics: the required members carry explicit nulls.
+		Container:   nil,
+		StopDetails: nil,
+		Diagnostics: nil,
+		Usage:       usageToWire(usageWithServingDefaults(resp.Usage)),
 	}
+	calls := 0
 	for _, p := range resp.Content {
 		switch pt := p.(type) {
 		case ir.TextPart:
-			w.Content = append(w.Content, wireBlock{Type: "text", Text: pt.Text})
+			msg.Content = append(msg.Content, wireBlock{Type: "text", Text: pt.Text})
 		case ir.ThinkingPart:
 			// Signatures ride verbatim — never fabricated.
-			w.Content = append(w.Content, wireBlock{
+			msg.Content = append(msg.Content, wireBlock{
 				Type:      "thinking",
 				Thinking:  pt.Thinking,
 				Signature: pt.Signature,
 			})
 		case ir.ToolCallPart:
-			w.Content = append(w.Content, wireBlock{
+			id := pt.ID
+			if id == "" {
+				// id-less call (native Ollama upstreams): the official
+				// tool_use block requires an id — mint the nth of this
+				// response (deterministic; the client replays it as
+				// tool_use_id).
+				id = fmt.Sprintf("toolu_%d", calls)
+				calls++
+			}
+			msg.Content = append(msg.Content, wireBlock{
 				Type:  "tool_use",
-				ID:    pt.ID,
+				ID:    id,
 				Name:  pt.Name,
 				Input: pt.Input,
 			})
 		case ir.ServerToolUsePart:
-			w.Content = append(w.Content, wireBlock{
+			msg.Content = append(msg.Content, wireBlock{
 				Type:  "server_tool_use",
 				ID:    pt.ID,
 				Name:  pt.Name,
 				Input: pt.Input,
 			})
 		case ir.ServerToolResultPart:
-			w.Content = append(w.Content, serverToolResultToWire(pt))
+			msg.Content = append(msg.Content, serverToolResultToWire(pt))
 		}
 	}
-	raw, err := json.Marshal(w)
+	raw, err := json.Marshal(msg)
 	if err != nil {
 		return nil, fmt.Errorf("anthropic: encode response: %w", err)
 	}
@@ -465,18 +493,43 @@ type wireResponse struct {
 
 // wireUsage mirrors the Anthropic usage object (cache fields plus the
 // server-tool counters): cache fields are explicit zeros on the wire,
-// server-tool counters nest under server_tool_use.
+// server-tool counters nest under server_tool_use. The SDK v1.84 schema
+// also requires the cache_creation TTL breakdown, output_tokens_details,
+// and the serving metadata strings on every usage object.
 type wireUsage struct {
-	InputTokens              int                `json:"input_tokens"`
-	OutputTokens             int                `json:"output_tokens"`
-	CacheCreationInputTokens int                `json:"cache_creation_input_tokens"`
-	CacheReadInputTokens     int                `json:"cache_read_input_tokens"`
-	ServerToolUse            *wireServerToolUse `json:"server_tool_use,omitempty"`
+	InputTokens              int                  `json:"input_tokens"`
+	OutputTokens             int                  `json:"output_tokens"`
+	CacheCreationInputTokens int                  `json:"cache_creation_input_tokens"`
+	CacheReadInputTokens     int                  `json:"cache_read_input_tokens"`
+	CacheCreation            *wireCacheCreation   `json:"cache_creation"`
+	OutputTokensDetails      *wireOutputTokensDet `json:"output_tokens_details"`
+	ServerToolUse            *wireServerToolUse   `json:"server_tool_use"`
+	ServiceTier              string               `json:"service_tier"`
+	InferenceGeo             string               `json:"inference_geo"`
+	Speed                    string               `json:"speed"`
+	// Ephemeral* decode the LEGACY flat counters (older wire shapes /
+	// golden fixtures); a decoder prefers the nested cache_creation object
+	// when present. With omitempty they never re-emit on a modern encode.
+	Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens,omitempty"`
+	Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens,omitempty"`
+}
+
+// wireCacheCreation is the cache_creation TTL breakdown
+// (ephemeral_5m_input_tokens / ephemeral_1h_input_tokens, both required).
+type wireCacheCreation struct {
+	Ephemeral5mInputTokens int `json:"ephemeral_5m_input_tokens"`
+	Ephemeral1hInputTokens int `json:"ephemeral_1h_input_tokens"`
+}
+
+// wireOutputTokensDetails is the output_tokens_details breakdown
+// (thinking_tokens, required).
+type wireOutputTokensDet struct {
+	ThinkingTokens int `json:"thinking_tokens"`
 }
 
 type wireServerToolUse struct {
-	WebSearchRequests int `json:"web_search_requests,omitempty"`
-	WebFetchRequests  int `json:"web_fetch_requests,omitempty"`
+	WebSearchRequests int `json:"web_search_requests"`
+	WebFetchRequests  int `json:"web_fetch_requests"`
 }
 
 func (w wireUsage) toIR() ir.Usage {
@@ -485,6 +538,21 @@ func (w wireUsage) toIR() ir.Usage {
 		OutputTokens:             w.OutputTokens,
 		CacheCreationInputTokens: w.CacheCreationInputTokens,
 		CacheReadInputTokens:     w.CacheReadInputTokens,
+		ServiceTier:              w.ServiceTier,
+		InferenceGeo:             w.InferenceGeo,
+		Speed:                    w.Speed,
+	}
+	// Nested cache_creation (v1.84+); the flat legacy counters fill the
+	// same IR fields when the object is absent.
+	if w.CacheCreation != nil {
+		u.Ephemeral5mInputTokens = w.CacheCreation.Ephemeral5mInputTokens
+		u.Ephemeral1hInputTokens = w.CacheCreation.Ephemeral1hInputTokens
+	} else {
+		u.Ephemeral5mInputTokens = w.Ephemeral5mInputTokens
+		u.Ephemeral1hInputTokens = w.Ephemeral1hInputTokens
+	}
+	if w.OutputTokensDetails != nil {
+		u.ReasoningTokens = w.OutputTokensDetails.ThinkingTokens
 	}
 	if w.ServerToolUse != nil {
 		u.WebSearchRequests = w.ServerToolUse.WebSearchRequests
@@ -493,20 +561,49 @@ func (w wireUsage) toIR() ir.Usage {
 	return u
 }
 
+// usageToWire renders the schema-required usage object: the TTL breakdown,
+// output_tokens_details and server_tool_use are present even at zero. The
+// serving metadata strings ride the IR verbatim ("" when the upstream wire
+// carried none — the streaming IR round trip stays identity); the
+// non-streaming surface applies the reference's neutral serving values on
+// top (usageWithServingDefaults, platform.claude.com/docs/en/api/messages/
+// create accessed 2026-11-03).
 func usageToWire(u ir.Usage) wireUsage {
-	w := wireUsage{
+	return wireUsage{
 		InputTokens:              u.InputTokens,
 		OutputTokens:             u.OutputTokens,
 		CacheCreationInputTokens: u.CacheCreationInputTokens,
 		CacheReadInputTokens:     u.CacheReadInputTokens,
-	}
-	if u.WebSearchRequests != 0 || u.WebFetchRequests != 0 {
-		w.ServerToolUse = &wireServerToolUse{
+		CacheCreation: &wireCacheCreation{
+			Ephemeral5mInputTokens: u.Ephemeral5mInputTokens,
+			Ephemeral1hInputTokens: u.Ephemeral1hInputTokens,
+		},
+		OutputTokensDetails: &wireOutputTokensDet{ThinkingTokens: u.ReasoningTokens},
+		ServerToolUse: &wireServerToolUse{
 			WebSearchRequests: u.WebSearchRequests,
 			WebFetchRequests:  u.WebFetchRequests,
-		}
+		},
+		ServiceTier:  u.ServiceTier,
+		InferenceGeo: u.InferenceGeo,
+		Speed:        u.Speed,
 	}
-	return w
+}
+
+// usageWithServingDefaults fills unset serving metadata with the reference's
+// neutral values for the non-streaming Message surface (whose schema
+// requires the keys with plain strings): standard tier, standard speed,
+// global region — the documented defaults, never a fabricated count.
+func usageWithServingDefaults(u ir.Usage) ir.Usage {
+	if u.ServiceTier == "" {
+		u.ServiceTier = "standard"
+	}
+	if u.Speed == "" {
+		u.Speed = "standard"
+	}
+	if u.InferenceGeo == "" {
+		u.InferenceGeo = "global"
+	}
+	return u
 }
 
 // ---- conversions ----
