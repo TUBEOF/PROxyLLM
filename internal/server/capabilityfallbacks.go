@@ -149,9 +149,20 @@ func resolveWebToolFallbacks(ctx context.Context, store *storage.Store, logger *
 	return s, f, nil
 }
 
-// learnTimeout bounds one learning write; a slow store must not pile up
-// goroutines behind the failover path.
+// learnTimeout bounds all attempts of one learning write; a slow store must
+// not pile up goroutines behind the failover path.
 const learnTimeout = 5 * time.Second
+
+// learnRetries and learnRetryPause bound one observation's write attempts.
+// The write is a read-modify-write transaction, and under WAL write
+// contention (payload capture, the request-log row of the very response that
+// produced the gap) an attempt can lose its read snapshot between SELECT and
+// UPDATE — an error busy_timeout cannot absorb, because the transaction must
+// restart to see the newer snapshot. The failure is transient, so a short
+// growing pause between retries absorbs it; losing every attempt still logs,
+// and the fact re-observes itself on the next gap either way.
+const learnRetries = 4
+const learnRetryPause = 25 * time.Millisecond
 
 // learnConcurrency caps the in-flight learning writes: a sustained flood
 // of capability-gap requests must not grow goroutines (each holds a store
@@ -174,15 +185,30 @@ func (s *Server) learnCapabilityGap(entry routing.ChainEntry) {
 	select {
 	case learnSlots <- struct{}{}:
 	default:
-		return // write slot busy — drop this observation (opportunistic learning)
+		// write slot busy — drop this observation (opportunistic learning),
+		// observably: a drop is shed load by design, not a silent loss.
+		s.logger.Warn("capability-gap learning dropped: write slots busy",
+			"provider", entry.ProviderID, "model", entry.Model)
+		return
 	}
 	go func() {
 		defer func() { <-learnSlots }()
 		ctx, cancel := context.WithTimeout(context.Background(), learnTimeout)
 		defer cancel()
-		if err := s.store.MergeLearnedCapability(ctx, entry.ProviderID, entry.Model, "vision", false); err != nil {
-			s.logger.Error("capability-gap learning failed (model row left unchanged)",
-				"provider", entry.ProviderID, "error", err)
+		var err error
+		for attempt := 0; attempt < learnRetries; attempt++ {
+			err = s.store.MergeLearnedCapability(ctx, entry.ProviderID, entry.Model, "vision", false)
+			if err == nil {
+				return
+			}
+			if ctx.Err() != nil {
+				break // the deadline is spent — another attempt cannot win it
+			}
+			if attempt < learnRetries-1 {
+				time.Sleep(time.Duration(attempt+1) * learnRetryPause)
+			}
 		}
+		s.logger.Error("capability-gap learning failed (model row left unchanged)",
+			"provider", entry.ProviderID, "error", err)
 	}()
 }
