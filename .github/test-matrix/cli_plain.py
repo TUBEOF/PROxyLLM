@@ -172,7 +172,20 @@ def ms_reset(mockserver: str) -> None:
 # calls; no Kimi account: the seed config's custom OpenAI provider
 # (`type = "openai"`) is the documented no-login path, and the fresh home's
 # workspace trust dialog preselects "Trust and continue", accepted with
-# Enter (ONBOARDING).
+# Enter (ONBOARDING). qwen 0.26.6 streams every call it makes — the model
+# turns plus one [SUGGESTION MODE] call (next-input suggestion) and one
+# managed-memory extraction call ([Managed memory has TWO directories])
+# right after each turn; those utility calls quote the conversation but
+# their LAST message never carries the prompt, so turn_requests sees
+# exactly the real turns, and the fallback bucket absorbs them. The first
+# turn's user message is a stack of <system-reminder> text parts around the
+# typed prompt (pinned as a part-array sender — MockServer's LOOSE matching
+# accepts the one-part subset); later turns carry the typed prompt as a
+# plain string message (PART_ARRAY_FIRST_TURN). No account and no dialogs:
+# the env-only OpenAI-compatible config (OPENAI_API_KEY + OPENAI_BASE_URL +
+# OPENAI_MODEL, the documented no-login path) selects auth type "openai" and
+# skips the auth picker, folder trust is disabled by default, and
+# OPENAI_MODEL fills the model slot (/model changes it).
 def _mock_expectation(mockserver: str, text: str, streaming: bool,
                       priority: int, times: int | None, matcher: dict | None) -> None:
     req: dict = {"method": "POST", "path": UPSTREAM_PATH}
@@ -201,8 +214,10 @@ def _mock_expectation(mockserver: str, text: str, streaming: bool,
 # plain string; the pinned matcher holds the prompt in the text part.
 # gptme sends arrays of typed parts to the OpenAI endpoint, but the proxy
 # forwards its turns as plain strings — the matcher must match the forwarded
-# shape, so only claude-code is pinned as a part-array sender here.
-PART_ARRAY = {"claude-code"}
+# shape, so only claude-code and qwen are pinned as part-array senders here
+# (for qwen the prompt is one of several <system-reminder> text parts in the
+# array; the LOOSE one-part subset still pins the turn).
+PART_ARRAY = {"claude-code", "qwen"}
 
 
 # CLIs that wrap the typed prompt in a larger user message on the wire:
@@ -241,6 +256,13 @@ WRAPS_PROMPT = {"aider": True}
 PREFIX_TURN = {"goose"}
 
 
+# CLIs whose typed prompt reaches the wire as a part ARRAY on the first turn
+# but as a plain string afterwards (qwen 0.26.6 stacks its startup
+# <system-reminder> context around the first prompt only): the part-array
+# matcher pins the first turn, later turns pin the plain string.
+PART_ARRAY_FIRST_TURN = {"qwen"}
+
+
 def last_user_content(cli: str, prompt: str) -> str:
     """The user message content the CLI puts on the wire for one typed prompt."""
     if WRAPS_PROMPT.get(cli):
@@ -270,7 +292,8 @@ def mock_pinned(mockserver: str, cli: str, turns: list[tuple[str, str]], streami
             priority = 150 + 10 * rank
         else:
             priority = 140 + 10 * rank
-        if cli in PART_ARRAY:
+        first = cli in PART_ARRAY_FIRST_TURN
+        if cli in PART_ARRAY and (rank == 0 or not first):
             matcher["messages"][0]["content"] = [{"text": prompt}]
         _mock_expectation(mockserver, text, streaming, priority, None, matcher)
 
@@ -349,6 +372,11 @@ READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
                  # dialog is accepted; the composer's own ">" never closes a
                  # turn, so the banner is the stable fresh-start chrome.
                  "kimi": "Welcome to Kimi Code!",
+                 # qwen paints its welcome box before the composer can take
+                 # keys — typed text is dropped at that point — so the ready
+                 # marker is the fresh composer's placeholder (stable across
+                 # turns), like continue's.
+                 "qwen": "Type your message or @path/to/file",
                  "open-interpreter": "Open Interpreter (v"}
 
 # How each CLI's model turns stream upstream, and what the catch-all bucket
@@ -374,12 +402,16 @@ STREAMING = {"codex": False, "claude-code": True, "crush": True, "openhands": Fa
              # kimi streams its model turns and makes no utility calls (no
              # title generation upstream); the fallback bucket streams too.
              "kimi": True,
+             # qwen streams everything it sends upstream, including the
+             # managed-memory extraction call that follows each turn.
+             "qwen": True,
              "open-interpreter": True}
 FALLBACK_STREAMING = {"codex": True, "claude-code": False, "crush": True,
                       "openhands": False, "gptme": False, "aider": True,
                       "cline": True, "continue": False, "goose": True,
                       "kimi": True,
-                      "open-interpreter": True}
+                      "open-interpreter": True,
+                      "qwen": True}
 
 # User-message markers that are runtime metadata, not model turns; see
 # turn_requests. openhands's CodeAct runtime inserts a <RUNTIME_INFORMATION>
@@ -696,7 +728,7 @@ def main() -> int:
     parser.add_argument("--home", required=True)
     parser.add_argument("--mockserver", required=True)
     parser.add_argument("--clients",
-                        default="codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue,goose,kimi")
+                        default="codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue,goose,kimi,qwen")
     parser.add_argument("--scenarios", default="answer,recall")
     parser.add_argument("--binary", default=str(REPO / "proxyllm"))
     parser.add_argument("--port", type=int, default=18190)
