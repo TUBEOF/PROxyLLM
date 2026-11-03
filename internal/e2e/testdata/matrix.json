@@ -31,8 +31,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official OpenAI spec (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires `created`, per-choice `logprobs` and the usage counts (prompt/completion/total tokens) on every chat.completion; the chat surface's non-stream codec (internal/translate/openai openai.go EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-chat__openai-chat__text__stream",
@@ -50,8 +49,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official OpenAI spec (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires `created`, per-choice `logprobs` and the usage counts (prompt/completion/total tokens) on every chat.completion; the chat surface's non-stream codec (internal/translate/openai openai.go EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-chat__openai-chat__tools__stream",
@@ -69,8 +67,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official OpenAI spec (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires `created`, per-choice `logprobs` and the usage counts (prompt/completion/total tokens) on every chat.completion; the chat surface's non-stream codec (internal/translate/openai openai.go EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-chat__openai-responses__text__stream",
@@ -88,8 +85,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official OpenAI spec (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires `created`, per-choice `logprobs` and the usage counts (prompt/completion/total tokens) on every chat.completion; the chat surface's non-stream codec (internal/translate/openai openai.go EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-chat__openai-responses__tools__stream",
@@ -107,8 +103,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official OpenAI spec (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires `created`, per-choice `logprobs` and the usage counts (prompt/completion/total tokens) on every chat.completion; the chat surface's non-stream codec (internal/translate/openai openai.go EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-chat__anthropic-messages__text__stream",
@@ -126,8 +121,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official OpenAI spec (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires `created`, per-choice `logprobs` and the usage counts (prompt/completion/total tokens) on every chat.completion; the chat surface's non-stream codec (internal/translate/openai openai.go EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-chat__anthropic-messages__tools__stream",
@@ -145,8 +139,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official OpenAI spec (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires `created`, per-choice `logprobs` and the usage counts (prompt/completion/total tokens) on every chat.completion; the chat surface's non-stream codec (internal/translate/openai openai.go EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-chat__ollama-native__text__stream",
@@ -164,8 +157,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official OpenAI spec (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires `created`, per-choice `logprobs` and the usage counts (prompt/completion/total tokens) on every chat.completion; the chat surface's non-stream codec (internal/translate/openai openai.go EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-chat__ollama-native__tools__stream",
@@ -183,8 +175,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official OpenAI spec (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires `created`, per-choice `logprobs` and the usage counts (prompt/completion/total tokens) on every chat.completion; the chat surface's non-stream codec (internal/translate/openai openai.go EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-chat__ollama-cloud__text__stream",
@@ -202,8 +193,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official OpenAI spec (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires `created`, per-choice `logprobs` and the usage counts (prompt/completion/total tokens) on every chat.completion; the chat surface's non-stream codec (internal/translate/openai openai.go EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-chat__ollama-cloud__tools__stream",
@@ -221,8 +211,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official OpenAI spec (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires `created`, per-choice `logprobs` and the usage counts (prompt/completion/total tokens) on every chat.completion; the chat surface's non-stream codec (internal/translate/openai openai.go EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-chat__gemini-native__text__stream",
@@ -240,8 +229,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official OpenAI spec (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires `created`, per-choice `logprobs` and the usage counts (prompt/completion/total tokens) on every chat.completion; the chat surface's non-stream codec (internal/translate/openai openai.go EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-chat__gemini-native__tools__stream",
@@ -259,8 +247,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Response (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires envelope fields (access_programs, created_at, error, incomplete_details, instructions, tools, tool_choice, temperature, top_p, parallel_tool_calls, metadata), message items with `id`, output_text parts with `annotations`/`logprobs`, and usage with input_tokens_details/output_tokens_details; the Responses HTTP emission (ResponsesCodec.EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__openai-chat__text__stream",
@@ -269,8 +256,7 @@
    "feature": "text",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 per-frame gaps vs openai-openapi 2.3.0 @ 73e5f9e (accessed 2026-11-03): snapshots want `access_programs`, output_text deltas want `logprobs`, content parts want `annotations`/`logprobs`, usage wants input_tokens_details/output_tokens_details. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__openai-chat__tools__nonstream",
@@ -279,8 +265,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Response (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires envelope fields (access_programs, created_at, error, incomplete_details, instructions, tools, tool_choice, temperature, top_p, parallel_tool_calls, metadata), message items with `id`, output_text parts with `annotations`/`logprobs`, and usage with input_tokens_details/output_tokens_details; the Responses HTTP emission (ResponsesCodec.EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__openai-chat__tools__stream",
@@ -289,8 +274,7 @@
    "feature": "tools",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 per-frame gaps vs openai-openapi 2.3.0 @ 73e5f9e (accessed 2026-11-03): snapshots want `access_programs`, output_text deltas want `logprobs`, content parts want `annotations`/`logprobs`, usage wants input_tokens_details/output_tokens_details. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__openai-responses__text__nonstream",
@@ -299,8 +283,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Response (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires envelope fields (access_programs, created_at, error, incomplete_details, instructions, tools, tool_choice, temperature, top_p, parallel_tool_calls, metadata), message items with `id`, output_text parts with `annotations`/`logprobs`, and usage with input_tokens_details/output_tokens_details; the Responses HTTP emission (ResponsesCodec.EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__openai-responses__text__stream",
@@ -309,8 +292,7 @@
    "feature": "text",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 per-frame gaps vs openai-openapi 2.3.0 @ 73e5f9e (accessed 2026-11-03): snapshots want `access_programs`, output_text deltas want `logprobs`, content parts want `annotations`/`logprobs`, usage wants input_tokens_details/output_tokens_details. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__openai-responses__tools__nonstream",
@@ -319,8 +301,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Response (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires envelope fields (access_programs, created_at, error, incomplete_details, instructions, tools, tool_choice, temperature, top_p, parallel_tool_calls, metadata), message items with `id`, output_text parts with `annotations`/`logprobs`, and usage with input_tokens_details/output_tokens_details; the Responses HTTP emission (ResponsesCodec.EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__openai-responses__tools__stream",
@@ -329,8 +310,7 @@
    "feature": "tools",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 per-frame gaps vs openai-openapi 2.3.0 @ 73e5f9e (accessed 2026-11-03): snapshots want `access_programs`, output_text deltas want `logprobs`, content parts want `annotations`/`logprobs`, usage wants input_tokens_details/output_tokens_details. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__anthropic-messages__text__nonstream",
@@ -339,8 +319,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Response (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires envelope fields (access_programs, created_at, error, incomplete_details, instructions, tools, tool_choice, temperature, top_p, parallel_tool_calls, metadata), message items with `id`, output_text parts with `annotations`/`logprobs`, and usage with input_tokens_details/output_tokens_details; the Responses HTTP emission (ResponsesCodec.EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__anthropic-messages__text__stream",
@@ -349,8 +328,7 @@
    "feature": "text",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 per-frame gaps vs openai-openapi 2.3.0 @ 73e5f9e (accessed 2026-11-03): snapshots want `access_programs`, output_text deltas want `logprobs`, content parts want `annotations`/`logprobs`, usage wants input_tokens_details/output_tokens_details. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__anthropic-messages__tools__nonstream",
@@ -359,8 +337,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Response (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires envelope fields (access_programs, created_at, error, incomplete_details, instructions, tools, tool_choice, temperature, top_p, parallel_tool_calls, metadata), message items with `id`, output_text parts with `annotations`/`logprobs`, and usage with input_tokens_details/output_tokens_details; the Responses HTTP emission (ResponsesCodec.EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__anthropic-messages__tools__stream",
@@ -369,8 +346,7 @@
    "feature": "tools",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 per-frame gaps vs openai-openapi 2.3.0 @ 73e5f9e (accessed 2026-11-03): snapshots want `access_programs`, output_text deltas want `logprobs`, content parts want `annotations`/`logprobs`, usage wants input_tokens_details/output_tokens_details. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__ollama-native__text__nonstream",
@@ -379,8 +355,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Response (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires envelope fields (access_programs, created_at, error, incomplete_details, instructions, tools, tool_choice, temperature, top_p, parallel_tool_calls, metadata), message items with `id`, output_text parts with `annotations`/`logprobs`, and usage with input_tokens_details/output_tokens_details; the Responses HTTP emission (ResponsesCodec.EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__ollama-native__text__stream",
@@ -389,8 +364,7 @@
    "feature": "text",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 per-frame gaps vs openai-openapi 2.3.0 @ 73e5f9e (accessed 2026-11-03): snapshots want `access_programs`, output_text deltas want `logprobs`, content parts want `annotations`/`logprobs`, usage wants input_tokens_details/output_tokens_details. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__ollama-native__tools__nonstream",
@@ -399,8 +373,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Response (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires envelope fields (access_programs, created_at, error, incomplete_details, instructions, tools, tool_choice, temperature, top_p, parallel_tool_calls, metadata), message items with `id`, output_text parts with `annotations`/`logprobs`, and usage with input_tokens_details/output_tokens_details; the Responses HTTP emission (ResponsesCodec.EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__ollama-native__tools__stream",
@@ -409,8 +382,7 @@
    "feature": "tools",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 per-frame gaps vs openai-openapi 2.3.0 @ 73e5f9e (accessed 2026-11-03): snapshots want `access_programs`, output_text deltas want `logprobs`, content parts want `annotations`/`logprobs`, usage wants input_tokens_details/output_tokens_details. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__ollama-cloud__text__nonstream",
@@ -419,8 +391,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Response (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires envelope fields (access_programs, created_at, error, incomplete_details, instructions, tools, tool_choice, temperature, top_p, parallel_tool_calls, metadata), message items with `id`, output_text parts with `annotations`/`logprobs`, and usage with input_tokens_details/output_tokens_details; the Responses HTTP emission (ResponsesCodec.EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__ollama-cloud__text__stream",
@@ -429,8 +400,7 @@
    "feature": "text",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 per-frame gaps vs openai-openapi 2.3.0 @ 73e5f9e (accessed 2026-11-03): snapshots want `access_programs`, output_text deltas want `logprobs`, content parts want `annotations`/`logprobs`, usage wants input_tokens_details/output_tokens_details. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__ollama-cloud__tools__nonstream",
@@ -439,8 +409,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Response (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires envelope fields (access_programs, created_at, error, incomplete_details, instructions, tools, tool_choice, temperature, top_p, parallel_tool_calls, metadata), message items with `id`, output_text parts with `annotations`/`logprobs`, and usage with input_tokens_details/output_tokens_details; the Responses HTTP emission (ResponsesCodec.EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__ollama-cloud__tools__stream",
@@ -449,8 +418,7 @@
    "feature": "tools",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 per-frame gaps vs openai-openapi 2.3.0 @ 73e5f9e (accessed 2026-11-03): snapshots want `access_programs`, output_text deltas want `logprobs`, content parts want `annotations`/`logprobs`, usage wants input_tokens_details/output_tokens_details. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__gemini-native__text__nonstream",
@@ -459,8 +427,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Response (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires envelope fields (access_programs, created_at, error, incomplete_details, instructions, tools, tool_choice, temperature, top_p, parallel_tool_calls, metadata), message items with `id`, output_text parts with `annotations`/`logprobs`, and usage with input_tokens_details/output_tokens_details; the Responses HTTP emission (ResponsesCodec.EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__gemini-native__text__stream",
@@ -469,8 +436,7 @@
    "feature": "text",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 per-frame gaps vs openai-openapi 2.3.0 @ 73e5f9e (accessed 2026-11-03): snapshots want `access_programs`, output_text deltas want `logprobs`, content parts want `annotations`/`logprobs`, usage wants input_tokens_details/output_tokens_details. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__gemini-native__tools__nonstream",
@@ -479,8 +445,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Response (openai-openapi 2.3.0 @ 73e5f9e, accessed 2026-11-03) requires envelope fields (access_programs, created_at, error, incomplete_details, instructions, tools, tool_choice, temperature, top_p, parallel_tool_calls, metadata), message items with `id`, output_text parts with `annotations`/`logprobs`, and usage with input_tokens_details/output_tokens_details; the Responses HTTP emission (ResponsesCodec.EncodeResponse) predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "openai-responses__gemini-native__tools__stream",
@@ -489,8 +454,7 @@
    "feature": "tools",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 per-frame gaps vs openai-openapi 2.3.0 @ 73e5f9e (accessed 2026-11-03): snapshots want `access_programs`, output_text deltas want `logprobs`, content parts want `annotations`/`logprobs`, usage wants input_tokens_details/output_tokens_details. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__openai-chat__text__nonstream",
@@ -499,8 +463,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Message (reference docs 2026-11-03 + anthropic-sdk-go v1.84 required markers) requires `container`, `stop_details`, `diagnostics`, `stop_sequence` (null when unset) and usage fields (cache_creation, output_tokens_details, server_tool_use, service_tier, inference_geo, speed); the Messages emission carries the 2023-06-01-version subset. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__openai-chat__text__stream",
@@ -509,8 +472,7 @@
    "feature": "text",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 message_start carries the same Message required set as the non-stream surface (container, stop_details, diagnostics, usage sub-objects; official SDK v1.84 + reference 2026-11-03); the stream start snapshot predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__openai-chat__tools__nonstream",
@@ -519,8 +481,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Message (reference docs 2026-11-03 + anthropic-sdk-go v1.84 required markers) requires `container`, `stop_details`, `diagnostics`, `stop_sequence` (null when unset) and usage fields (cache_creation, output_tokens_details, server_tool_use, service_tier, inference_geo, speed); the Messages emission carries the 2023-06-01-version subset. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__openai-chat__tools__stream",
@@ -529,8 +490,7 @@
    "feature": "tools",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 message_start carries the same Message required set as the non-stream surface (container, stop_details, diagnostics, usage sub-objects; official SDK v1.84 + reference 2026-11-03); the stream start snapshot predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__openai-responses__text__nonstream",
@@ -539,8 +499,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Message (reference docs 2026-11-03 + anthropic-sdk-go v1.84 required markers) requires `container`, `stop_details`, `diagnostics`, `stop_sequence` (null when unset) and usage fields (cache_creation, output_tokens_details, server_tool_use, service_tier, inference_geo, speed); the Messages emission carries the 2023-06-01-version subset. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__openai-responses__text__stream",
@@ -549,8 +508,7 @@
    "feature": "text",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 message_start carries the same Message required set as the non-stream surface (container, stop_details, diagnostics, usage sub-objects; official SDK v1.84 + reference 2026-11-03); the stream start snapshot predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__openai-responses__tools__nonstream",
@@ -559,8 +517,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Message (reference docs 2026-11-03 + anthropic-sdk-go v1.84 required markers) requires `container`, `stop_details`, `diagnostics`, `stop_sequence` (null when unset) and usage fields (cache_creation, output_tokens_details, server_tool_use, service_tier, inference_geo, speed); the Messages emission carries the 2023-06-01-version subset. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__openai-responses__tools__stream",
@@ -569,8 +526,7 @@
    "feature": "tools",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 message_start carries the same Message required set as the non-stream surface (container, stop_details, diagnostics, usage sub-objects; official SDK v1.84 + reference 2026-11-03); the stream start snapshot predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__anthropic-messages__text__nonstream",
@@ -579,8 +535,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Message (reference docs 2026-11-03 + anthropic-sdk-go v1.84 required markers) requires `container`, `stop_details`, `diagnostics`, `stop_sequence` (null when unset) and usage fields (cache_creation, output_tokens_details, server_tool_use, service_tier, inference_geo, speed); the Messages emission carries the 2023-06-01-version subset. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__anthropic-messages__text__stream",
@@ -589,8 +544,7 @@
    "feature": "text",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 message_start carries the same Message required set as the non-stream surface (container, stop_details, diagnostics, usage sub-objects; official SDK v1.84 + reference 2026-11-03); the stream start snapshot predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__anthropic-messages__tools__nonstream",
@@ -599,8 +553,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Message (reference docs 2026-11-03 + anthropic-sdk-go v1.84 required markers) requires `container`, `stop_details`, `diagnostics`, `stop_sequence` (null when unset) and usage fields (cache_creation, output_tokens_details, server_tool_use, service_tier, inference_geo, speed); the Messages emission carries the 2023-06-01-version subset. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__anthropic-messages__tools__stream",
@@ -609,8 +562,7 @@
    "feature": "tools",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 message_start carries the same Message required set as the non-stream surface (container, stop_details, diagnostics, usage sub-objects; official SDK v1.84 + reference 2026-11-03); the stream start snapshot predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__ollama-native__text__nonstream",
@@ -619,8 +571,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Message (reference docs 2026-11-03 + anthropic-sdk-go v1.84 required markers) requires `container`, `stop_details`, `diagnostics`, `stop_sequence` (null when unset) and usage fields (cache_creation, output_tokens_details, server_tool_use, service_tier, inference_geo, speed); the Messages emission carries the 2023-06-01-version subset. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__ollama-native__text__stream",
@@ -629,8 +580,7 @@
    "feature": "text",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 message_start carries the same Message required set as the non-stream surface (container, stop_details, diagnostics, usage sub-objects; official SDK v1.84 + reference 2026-11-03); the stream start snapshot predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__ollama-native__tools__nonstream",
@@ -639,8 +589,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Message (reference docs 2026-11-03 + anthropic-sdk-go v1.84 required markers) requires `container`, `stop_details`, `diagnostics`, `stop_sequence` (null when unset) and usage fields (cache_creation, output_tokens_details, server_tool_use, service_tier, inference_geo, speed); the Messages emission carries the 2023-06-01-version subset. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__ollama-native__tools__stream",
@@ -649,8 +598,7 @@
    "feature": "tools",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 message_start carries the same Message required set as the non-stream surface (container, stop_details, diagnostics, usage sub-objects; official SDK v1.84 + reference 2026-11-03); the stream start snapshot predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__ollama-cloud__text__nonstream",
@@ -659,8 +607,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Message (reference docs 2026-11-03 + anthropic-sdk-go v1.84 required markers) requires `container`, `stop_details`, `diagnostics`, `stop_sequence` (null when unset) and usage fields (cache_creation, output_tokens_details, server_tool_use, service_tier, inference_geo, speed); the Messages emission carries the 2023-06-01-version subset. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__ollama-cloud__text__stream",
@@ -669,8 +616,7 @@
    "feature": "text",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 message_start carries the same Message required set as the non-stream surface (container, stop_details, diagnostics, usage sub-objects; official SDK v1.84 + reference 2026-11-03); the stream start snapshot predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__ollama-cloud__tools__nonstream",
@@ -679,8 +625,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Message (reference docs 2026-11-03 + anthropic-sdk-go v1.84 required markers) requires `container`, `stop_details`, `diagnostics`, `stop_sequence` (null when unset) and usage fields (cache_creation, output_tokens_details, server_tool_use, service_tier, inference_geo, speed); the Messages emission carries the 2023-06-01-version subset. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__ollama-cloud__tools__stream",
@@ -689,8 +634,7 @@
    "feature": "tools",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 message_start carries the same Message required set as the non-stream surface (container, stop_details, diagnostics, usage sub-objects; official SDK v1.84 + reference 2026-11-03); the stream start snapshot predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__gemini-native__text__nonstream",
@@ -699,8 +643,7 @@
    "feature": "text",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Message (reference docs 2026-11-03 + anthropic-sdk-go v1.84 required markers) requires `container`, `stop_details`, `diagnostics`, `stop_sequence` (null when unset) and usage fields (cache_creation, output_tokens_details, server_tool_use, service_tier, inference_geo, speed); the Messages emission carries the 2023-06-01-version subset. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__gemini-native__text__stream",
@@ -709,8 +652,7 @@
    "feature": "text",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 message_start carries the same Message required set as the non-stream surface (container, stop_details, diagnostics, usage sub-objects; official SDK v1.84 + reference 2026-11-03); the stream start snapshot predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__gemini-native__tools__nonstream",
@@ -719,8 +661,7 @@
    "feature": "tools",
    "mode": "nonstream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 the current official Message (reference docs 2026-11-03 + anthropic-sdk-go v1.84 required markers) requires `container`, `stop_details`, `diagnostics`, `stop_sequence` (null when unset) and usage fields (cache_creation, output_tokens_details, server_tool_use, service_tier, inference_geo, speed); the Messages emission carries the 2023-06-01-version subset. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "anthropic-messages__gemini-native__tools__stream",
@@ -729,8 +670,7 @@
    "feature": "tools",
    "mode": "stream",
    "status": "green",
-   "note": "",
-   "schema_note": "schema: not yet strict \u2014 message_start carries the same Message required set as the non-stream surface (container, stop_details, diagnostics, usage sub-objects; official SDK v1.84 + reference 2026-11-03); the stream start snapshot predates those. Fix loop owns the additive parity."
+   "note": ""
   },
   {
    "id": "ollama-native__openai-chat__text__nonstream",
