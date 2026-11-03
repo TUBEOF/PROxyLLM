@@ -165,7 +165,14 @@ def ms_reset(mockserver: str) -> None:
 # assistant reply in the history (stored verbatim) discriminates the turns.
 # Its wizard-shaped config seed (GOOSE_TELEMETRY_ENABLED: false plus
 # active_provider/providers.openai, the state a user's completed configure
-# run has) makes the plain start skip every first-run dialog.
+# run has) makes the plain start skip every first-run dialog. kimi 2.4.1
+# streams every model turn (plain string user content, Kimi Code's own agent
+# system prompt and 24 function tools around it, the <system-reminder> date
+# turn after the first prompt — see RUNTIME_HINTS) and makes no utility
+# calls; no Kimi account: the seed config's custom OpenAI provider
+# (`type = "openai"`) is the documented no-login path, and the fresh home's
+# workspace trust dialog preselects "Trust and continue", accepted with
+# Enter (ONBOARDING).
 def _mock_expectation(mockserver: str, text: str, streaming: bool,
                       priority: int, times: int | None, matcher: dict | None) -> None:
     req: dict = {"method": "POST", "path": UPSTREAM_PATH}
@@ -338,6 +345,10 @@ READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
                  # goose: the first-run banner's start state, printed once
                  # before the composer paints; "goose is ready" stays.
                  "goose": "goose is ready",
+                 # kimi: the welcome box names the CLI right after the trust
+                 # dialog is accepted; the composer's own ">" never closes a
+                 # turn, so the banner is the stable fresh-start chrome.
+                 "kimi": "Welcome to Kimi Code!",
                  "open-interpreter": "Open Interpreter (v"}
 
 # How each CLI's model turns stream upstream, and what the catch-all bucket
@@ -360,15 +371,22 @@ READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
 STREAMING = {"codex": False, "claude-code": True, "crush": True, "openhands": False,
              "gptme": True, "aider": True, "cline": True,
              "continue": True, "goose": True,
+             # kimi streams its model turns and makes no utility calls (no
+             # title generation upstream); the fallback bucket streams too.
+             "kimi": True,
              "open-interpreter": True}
 FALLBACK_STREAMING = {"codex": True, "claude-code": False, "crush": True,
                       "openhands": False, "gptme": False, "aider": True,
                       "cline": True, "continue": False, "goose": True,
+                      "kimi": True,
                       "open-interpreter": True}
 
 # User-message markers that are runtime metadata, not model turns; see
-# turn_requests.
-RUNTIME_HINTS = {"openhands": "<RUNTIME_INFORMATION>"}
+# turn_requests. openhands's CodeAct runtime inserts a <RUNTIME_INFORMATION>
+# user turn after the prompt; kimi 2.4.1 appends its <system-reminder>
+# date-restatement user turn after the prompt on the session's first turn.
+RUNTIME_HINTS = {"openhands": "<RUNTIME_INFORMATION>",
+                 "kimi": "<system-reminder>"}
 
 # First-run dialogs some TUIs paint before the composer; each entry waits for
 # its pane text, then presses keys. claude-code 2.1.316's trust dialog
@@ -393,6 +411,11 @@ ONBOARDING = {
     ],
     "cline": [
         ("Try ClinePass", ["Escape"]),
+    ],
+    # kimi's workspace trust gate on every fresh home: "Trust and continue" is
+    # the preselected row, so Enter accepts it (Esc would exit the CLI).
+    "kimi": [
+        ("Trust this folder?", ["Enter"]),
     ],
 }
 
@@ -673,7 +696,7 @@ def main() -> int:
     parser.add_argument("--home", required=True)
     parser.add_argument("--mockserver", required=True)
     parser.add_argument("--clients",
-                        default="codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue,goose")
+                        default="codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue,goose,kimi")
     parser.add_argument("--scenarios", default="answer,recall")
     parser.add_argument("--binary", default=str(REPO / "proxyllm"))
     parser.add_argument("--port", type=int, default=18190)

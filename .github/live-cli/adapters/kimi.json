@@ -3,8 +3,8 @@
   "label": "Kimi Code CLI",
   "tier": "recommended",
   "command": "kimi",
-  "install": "npm install -g @moonshot-ai/kimi-code",
-  "tested": "latest",
+  "install": "npm install -g @moonshot-ai/kimi-code@2.4.1",
+  "tested": "2.4.1",
   "runnable": true,
   "env_keep": [
     "PATH",
@@ -23,13 +23,12 @@
     "ANTHROPIC_AUTH_TOKEN",
     "ANTHROPIC_BASE_URL",
     "KIMI_API_KEY",
-    "KIMI_BASE_URL"
+    "KIMI_BASE_URL",
+    "KIMI_CODE_HOME",
+    "KIMI_CODE_TRUST_WORKSPACE"
   ],
-  "env": {
-    "KIMI_SHARE_DIR": "{{HOME}}/.kimi-code"
-  },
   "files": {
-    "{{HOME}}/.kimi-code/config.toml": "default_model = \"proxy-chat\"\n\n[providers.proxyllm]\ntype = \"openai_legacy\"\nbase_url = \"{{BASE_URL}}/v1\"\napi_key = \"{{CLIENT_KEY}}\"\n\n[models.proxy-chat]\nprovider = \"proxyllm\"\nmodel = \"{{MODEL}}\"\nprotocol = \"openai\"\nmax_context_size = 128000\ncapabilities = []\n"
+    "{{HOME}}/.kimi-code/config.toml": "default_model = \"proxy-chat\"\ntelemetry = false\n\n[providers.proxyllm]\ntype = \"openai\"\nbase_url = \"{{BASE_URL}}/v1\"\napi_key = \"{{CLIENT_KEY}}\"\n\n[models.proxy-chat]\nprovider = \"proxyllm\"\nmodel = \"{{MODEL}}\"\nmax_context_size = 128000\n"
   },
   "args": [
     "-p",
@@ -41,6 +40,7 @@
   ],
   "canary": [
     "~/.kimi",
+    "~/.kimi-code",
     "~/.config/kimi"
   ],
   "features": {
