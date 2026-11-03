@@ -78,7 +78,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 26.13.0
-          cache: npm
       - name: "Install CLIs (plain-start scope: codex, claude-code, crush)"
         run: npm install -g @openai/codex @anthropic-ai/claude-code @charmland/crush
       - name: Ensure tmux (the plain-start driver runs CLIs in a pseudo-terminal)
