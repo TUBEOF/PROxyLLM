@@ -1167,9 +1167,9 @@
   },
   {
    "id": "vision__blind-chain-caption",
-   "test": "",
-   "status": "pending",
-   "note": "needs the vision fallback harness (image + caption model wiring)"
+   "test": "TestMatrix_Vision_BlindChainCaption",
+   "status": "green",
+   "note": ""
   },
   {
    "id": "cancel__client-abort",
@@ -1184,15 +1184,15 @@
   },
   {
    "id": "decision__systemone",
-   "test": "",
-   "status": "pending",
-   "note": "decision surfaces have dedicated tests; matrix cell pending"
+   "test": "TestMatrix_Decision_SystemOne",
+   "status": "green",
+   "note": ""
   },
   {
    "id": "decision__openai-decisions",
-   "test": "",
-   "status": "pending",
-   "note": "decision surfaces have dedicated tests; matrix cell pending"
+   "test": "TestMatrix_Decision_OpenAIDecisions",
+   "status": "green",
+   "note": ""
   },
   {
    "id": "scenario__chat-streaming-ollama-cloud",
