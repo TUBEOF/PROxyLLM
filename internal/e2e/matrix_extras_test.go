@@ -2,11 +2,13 @@ package e2e
 
 // Matrix extras: the cells outside the pair cross product — the web-tool
 // emulation flow (fully offline: MockServer serves the Firecrawl v2 wire as
-// the web-tool backend), the Anthropic count_tokens surface, and the negative
-// control that proves a wrong upstream shape cannot pass a cell silently.
+// the web-tool backend), the Anthropic count_tokens surface, the codex OAuth
+// upstream, and the negative control that proves a wrong upstream shape
+// cannot pass a cell silently.
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -15,7 +17,9 @@ import (
 	openaiclient "github.com/openai/openai-go/v3"
 	"github.com/openai/openai-go/v3/responses"
 
+	"github.com/tubeof/proxyllm/internal/provider/codex"
 	"github.com/tubeof/proxyllm/internal/storage"
+	"github.com/tubeof/proxyllm/internal/testutil/mockserver"
 )
 
 // TestMatrix_Meta_NegativeControl_BadUpstreamShape proves the cells have
@@ -549,5 +553,125 @@ func TestMatrix_AnthropicClient_CountTokens(t *testing.T) {
 	}
 	if reqs := e.ms.Requests(t); len(reqs) != 0 {
 		t.Fatalf("upstream requests = %d, want 0 (count_tokens is estimated locally)", len(reqs))
+	}
+}
+
+// recordedHeader reads one header off a recorded request case-insensitively
+// (MockServer echoes the casing it received).
+func recordedHeader(r mockserver.Recorded, name string) []string {
+	for k, v := range r.Headers {
+		if strings.EqualFold(k, name) {
+			return v
+		}
+	}
+	return nil
+}
+
+// TestMatrix_Upstream_CodexOauth binds the codex-oauth upstream cell: a chat
+// request routes to a codex-oauth account whose seeded access token has
+// EXPIRED, so the proxy must rotate against the issuer first — the JSON
+// refresh grant to MockServer's scripted /oauth/token — and then carry the
+// OAuth-minted bearer, plus the account id lifted from the rotated id_token's
+// claim, on the ChatGPT-backend request at /codex/responses. The second
+// request reuses the minted token without a second issuer round trip. A
+// fresh env, store and MockServer log per run keep the flow deterministic
+// under -count=2.
+func TestMatrix_Upstream_CodexOauth(t *testing.T) {
+	ctx := context.Background()
+	up := upstream{ID: "codex-oauth-up", Type: "codex-oauth"}
+	e := newMatrixEnv(t, up)
+
+	const (
+		mintedAccess   = "codex-minted-access"
+		rotatedRefresh = "codex-rotated-refresh"
+		accountID      = "acct-matrix-codex"
+	)
+	// A structurally valid id_token whose payload names the account (test
+	// fixture, never a credential).
+	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"chatgpt_account_id":"` + accountID + `"}`))
+	idToken := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256","typ":"JWT"}`)) + "." + payload + ".sig"
+
+	// The issuer answers the refresh grant with the rotated token triple.
+	e.ms.Upsert(t, map[string]any{
+		"httpRequest":  map[string]any{"method": "POST", "path": "/oauth/token"},
+		"httpResponse": map[string]any{"statusCode": 200, "body": `{"access_token":"` + mintedAccess + `","refresh_token":"` + rotatedRefresh + `","id_token":"` + idToken + `"}`},
+	})
+	// The ChatGPT backend answers the Responses wire — the codex provider
+	// always dispatches streamed and assembles, so the completion streams.
+	e.ms.Upsert(t, expectation("OPENAI_RESPONSES", up.ID, "/codex/responses",
+		chatCompletion("codex oauth answer", true)))
+
+	ask := func() string {
+		resp, err := e.openai.Chat.Completions.New(ctx, openaiclient.ChatCompletionNewParams{
+			Model:    up.ID,
+			Messages: []openaiclient.ChatCompletionMessageParamUnion{openaiclient.UserMessage("hi")},
+		})
+		if err != nil {
+			t.Fatalf("chat completion: %v", err)
+		}
+		if len(resp.Choices) == 0 {
+			t.Fatal("client answer carries no choices")
+		}
+		return resp.Choices[0].Message.Content
+	}
+	for i := 1; i <= 2; i++ {
+		if got := ask(); !strings.Contains(got, "codex oauth answer") {
+			t.Fatalf("client answer %d = %q, want the upstream text", i, got)
+		}
+	}
+
+	// The issuer saw EXACTLY one refresh grant — the first request rotated
+	// the expired token, the second reused the minted one — and the backend
+	// saw the minted bearer plus the id_token's account id on every request.
+	var tokenReqs, backendReqs int
+	for _, r := range e.ms.Requests(t) {
+		switch r.Path {
+		case "/oauth/token":
+			tokenReqs++
+			body := upstreamJSON(t, r)
+			if body["grant_type"] != "refresh_token" {
+				t.Errorf("refresh grant_type = %v, want refresh_token", body["grant_type"])
+			}
+			if body["refresh_token"] != codexOAuthSeedRefresh {
+				t.Errorf("refresh_token = %v, want the seeded one", body["refresh_token"])
+			}
+			if body["client_id"] != codex.OAuthClientID {
+				t.Errorf("refresh client_id = %v, want the pinned codex client id", body["client_id"])
+			}
+		case "/codex/responses":
+			backendReqs++
+			if auth := recordedHeader(r, "Authorization"); len(auth) == 0 || auth[0] != "Bearer "+mintedAccess {
+				t.Errorf("backend Authorization = %v, want the OAuth-minted bearer", auth)
+			}
+			if acct := recordedHeader(r, "Chatgpt-Account-Id"); len(acct) == 0 || acct[0] != accountID {
+				t.Errorf("backend Chatgpt-Account-Id = %v, want the id_token's account claim", acct)
+			}
+			body := upstreamJSON(t, r)
+			if body["stream"] != true {
+				t.Errorf("backend body stream = %v, want true (the backend has no non-streaming mode)", body["stream"])
+			}
+			if body["model"] != up.ID {
+				t.Errorf("backend body model = %v, want %q", body["model"], up.ID)
+			}
+			if raw, _ := json.Marshal(body); strings.Contains(string(raw), codexOAuthSeedAccess) {
+				t.Errorf("backend request leaks the seeded expired token: %s", raw)
+			}
+		}
+	}
+	if tokenReqs != 1 {
+		t.Fatalf("issuer /oauth/token requests = %d, want 1 (rotation, then reuse)", tokenReqs)
+	}
+	if backendReqs != 2 {
+		t.Fatalf("backend /codex/responses requests = %d, want 2", backendReqs)
+	}
+
+	// The rotation persisted: the store holds the minted pair, not the seeds.
+	access, err := e.store.GetProviderToken(ctx, up.ID, codex.KindAccessToken)
+	if err != nil || string(access.Secret) != mintedAccess {
+		t.Errorf("stored access token = %v (err %v), want the minted one", access, err)
+	}
+	refresh, err := e.store.GetProviderToken(ctx, up.ID, codex.KindRefreshToken)
+	if err != nil || string(refresh.Secret) != rotatedRefresh {
+		t.Errorf("stored refresh token = %v (err %v), want the rotated one", refresh, err)
 	}
 }

@@ -93,7 +93,11 @@ description replaces it and the same chain re-dispatches; the learned
 `vision:false` lands in the blind model row), and the two decision surfaces
 driven with the golden decision fixtures through their upstream providers
 (`ollama-cloud` on the System One wire, `openai-decisions` on the Decisions
-API).
+API), and the codex OAuth upstream (the account's seeded access token is
+expired, so the first request forces the issuer rotation — MockServer also
+plays the issuer's `/oauth/token` — and the freshly minted bearer plus the
+id_token's account claim ride the ChatGPT backend request; the second request
+reuses the minted token without another rotation).
 
 **Gates.** `TestMatrix_ManifestIsComplete` enforces the full cross product, a
 reason on every pending cell and the `schema_note` rule (a green pair cell is
@@ -103,7 +107,6 @@ Go tests agree in both directions, and the workflow runs the whole matrix
 with `-count=2` for determinism.
 
 Pending cells (the manifest names the reason for each; the fix loop owns them):
-- The codex OAuth upstream.
 - M2: the 14 CLIs, plain start, full scenario set.
 
 Out of scope (no client or product path uses them): embeddings, audio, images,

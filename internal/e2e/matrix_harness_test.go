@@ -26,6 +26,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/config"
 	"github.com/tubeof/proxyllm/internal/provider"
 	anthropicprovider "github.com/tubeof/proxyllm/internal/provider/anthropic"
+	"github.com/tubeof/proxyllm/internal/provider/codex"
 	"github.com/tubeof/proxyllm/internal/provider/custom"
 	geminiprovider "github.com/tubeof/proxyllm/internal/provider/gemini"
 	"github.com/tubeof/proxyllm/internal/provider/ollamacloud"
@@ -43,7 +44,7 @@ import (
 // proxy speaks to it, and BaseURL points at the simulator.
 type upstream struct {
 	ID      string
-	Type    string // custom-openai | openai-responses | anthropic | ollama-native | ollama-cloud | gemini | openai-decisions
+	Type    string // custom-openai | openai-responses | anthropic | ollama-native | ollama-cloud | gemini | openai-decisions | codex-oauth
 	BaseURL string
 	Caps    provider.Capabilities
 }
@@ -109,6 +110,13 @@ func buildMatrixEnv(t *testing.T, emuFactory func(base string) routing.Emulator,
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
+	// The secret envelope the store requires for token rows (ADR-007): a
+	// codex-oauth upstream persists its OAuth token triple.
+	envelope, err := storage.NewEnvelope(make([]byte, 32))
+	if err != nil {
+		t.Fatalf("test envelope: %v", err)
+	}
+	st.SetEnvelope(envelope)
 
 	reg := provider.NewRegistry()
 	rules := make([]routing.Rule, 0, len(ups))
@@ -122,7 +130,7 @@ func buildMatrixEnv(t *testing.T, emuFactory func(base string) routing.Emulator,
 		if err := st.EnsureProvider(ctx, u.ID, u.Type, u.ID); err != nil {
 			t.Fatalf("seed provider %s: %v", u.ID, err)
 		}
-		reg.Register(buildUpstream(u))
+		reg.Register(buildUpstream(ctx, u, st))
 		rules = append(rules, routing.Rule{
 			MatchModel: u.ID, Chain: []string{u.ID}, Priority: 100, Enabled: true,
 		})
@@ -185,8 +193,17 @@ func buildMatrixEnv(t *testing.T, emuFactory func(base string) routing.Emulator,
 	}
 }
 
+// The pre-provisioned codex-oauth account's token values: the harness plays an
+// operator whose login predates the run and whose access token has EXPIRED,
+// so every codex-oauth cell must rotate against the issuer (MockServer, under
+// the same base URL) before the first request rides.
+const (
+	codexOAuthSeedAccess  = "codex-seeded-expired-access"
+	codexOAuthSeedRefresh = "codex-seeded-refresh"
+)
+
 // buildUpstream maps an upstream spec onto the production provider type.
-func buildUpstream(u upstream) provider.Provider {
+func buildUpstream(ctx context.Context, u upstream, st *storage.Store) provider.Provider {
 	const apiKey = "simulated-key"
 	switch u.Type {
 	case "custom-openai":
@@ -205,6 +222,25 @@ func buildUpstream(u upstream) provider.Provider {
 		return ollamacloud.New(u.ID, u.BaseURL, apiKey, u.Caps)
 	case "gemini":
 		return geminiprovider.New(u.ID, u.BaseURL, apiKey, u.Caps)
+	case "codex-oauth":
+		// The account is pre-provisioned as a previous operator login: an
+		// EXPIRED access token plus its refresh token, seeded before the
+		// provider is built (HasCredential is cached at construction), so
+		// the first request must rotate against the issuer — MockServer
+		// also plays it at {BaseURL}/oauth/token, scripted by the cell.
+		expired := time.Now().Add(-time.Minute).Unix()
+		if err := st.PutProviderTokens(ctx,
+			storage.ProviderToken{ProviderID: u.ID, Kind: codex.KindAccessToken, Secret: []byte(codexOAuthSeedAccess), ExpiresAt: &expired},
+			storage.ProviderToken{ProviderID: u.ID, Kind: codex.KindRefreshToken, Secret: []byte(codexOAuthSeedRefresh)},
+		); err != nil {
+			panic("matrix: seed codex-oauth tokens: " + err.Error())
+		}
+		return codex.New(codex.ProviderConfig{
+			ID: u.ID, BaseURL: u.BaseURL, Capabilities: u.Caps,
+			Auth: codex.NewAuthClient(codex.AuthConfig{
+				Issuer: u.BaseURL, Store: st, ProviderID: u.ID,
+			}),
+		})
 	default:
 		panic("matrix: unknown upstream type " + u.Type)
 	}
