@@ -476,10 +476,43 @@ def tmux(*args: str, check: bool = True) -> str:
     return out.stdout
 
 
-def tmux_spawn(name: str, cwd: Path, env: dict, command: list[str]) -> None:
+def tmux_spawn(name: str, cwd: Path, env: dict, command: list[str], run_dir: Path) -> None:
     argv = ["env", *[f"{k}={v}" for k, v in env.items()], *command]
     quoted = " ".join("'" + a.replace("'", "'\\''") + "'" for a in argv)
-    tmux("new-session", "-d", "-s", name, "-x", str(PANE_COLS), "-y", str(PANE_ROWS), "-c", str(cwd), quoted)
+    # The evidence must be attached before the CLI starts, or a client that
+    # dies instantly wins the race (and a dead pane takes its tmux session
+    # down, leaving the job nothing to upload): the window is created on a
+    # placeholder process, remain-on-exit keeps the dead screen capturable,
+    # pipe-pane tees every byte the pty got (stdout+stderr as the user sees
+    # it) into the run dir, and only then is the placeholder swapped for the
+    # real command — so a boot-time crash or stall leaves its console output
+    # behind. A crashed earlier driver run may have left this cell's session
+    # behind; kill it so the name is free again (no-op on a fresh CI box).
+    tmux("kill-session", "-t", name, check=False)
+    tmux("new-session", "-d", "-s", name, "-x", str(PANE_COLS), "-y", str(PANE_ROWS), "-c", str(cwd), "sleep 30")
+    tmux("set-option", "-t", name, "remain-on-exit", "on")
+    pane_log = run_dir / "pane.log"
+    tmux("pipe-pane", "-t", name, f"cat >> '{pane_log}'")
+    tmux("respawn-pane", "-k", "-t", name, quoted)
+
+
+def collect_logs(run_dir: Path) -> None:
+    """Copy the log files each CLI wrote under its own home/config tree into
+    the cell's run dir, so the artifact carries a client's own boot log
+    (e.g. continue's core log) next to the pane stream."""
+    logs = run_dir / "client-logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    for base in ("home", "config", "data", "cache"):
+        root = run_dir / base
+        if not root.is_dir():
+            continue
+        for log in root.rglob("*.log"):
+            try:
+                rel = str(log.relative_to(root))
+                target = logs / f"{base}--{rel}".replace(os.sep, "-")
+                shutil.copy2(log, target)
+            except OSError:
+                pass  # a mid-write log file is not worth failing the cell over
 
 
 def tmux_send(name: str, text: str) -> None:
@@ -596,6 +629,17 @@ def prepare(manifest_path: Path, run_dir: Path, base_url: str, key: str, model: 
             # A TUI cannot run without a terminal type; a driver context
             # frequently has none.
             env["TERM"] = "xterm-256color"
+        elif keep in ("LANG", "LC_ALL"):
+            # A CI runner has neither set, and some CLIs branch on the
+            # locale: aider builds its "Reply in <language>." line from it
+            # at runtime, so with none the line vanishes from the wire and
+            # the pinned matcher falls through. The default must resolve to
+            # a real language name — C.UTF-8 does not (aider's
+            # normalize_language maps C to None, verified against the
+            # installed aider 0.86), so use the standard Ubuntu user session
+            # locale, only when nothing is set (never overriding an
+            # operator's real locale).
+            env[keep] = "en_US.UTF-8"
     for k, v in (manifest.get("env") or {}).items():
         env[k] = run_cli.render(str(v), dirs)
     env.update({
@@ -657,7 +701,7 @@ def scenario_answer(cli: str, manifest: Path, home: Path, base_url: str, key: st
         shutil.rmtree(run_dir)
     env, cwd = prepare(manifest, run_dir, base_url, key, MODEL)
     name = f"plain-{cli}-answer"
-    tmux_spawn(name, cwd, env, [plain_command(manifest)])
+    tmux_spawn(name, cwd, env, [plain_command(manifest)], run_dir)
     try:
         onboard(name, cli)
         wait_pane(name, READY_MARKERS.get(cli, cli), 45, "startup")  # the TUI painted its chrome
@@ -666,6 +710,7 @@ def scenario_answer(cli: str, manifest: Path, home: Path, base_url: str, key: st
         # must appear on both, so two occurrences prove the model replied.
         wait_pane_count(name, marker, 2, 120, "answer")
     finally:
+        collect_logs(run_dir)
         tmux("kill-session", "-t", name, check=False)
     rows = wait_proxy_rows(home, 1)
     bad = [r for r in rows if r[1] not in (200, 499)]
@@ -690,7 +735,7 @@ def scenario_recall(cli: str, manifest: Path, home: Path, base_url: str, key: st
         shutil.rmtree(run_dir)
     env, cwd = prepare(manifest, run_dir, base_url, key, MODEL)
     name = f"plain-{cli}-recall"
-    tmux_spawn(name, cwd, env, [plain_command(manifest)])
+    tmux_spawn(name, cwd, env, [plain_command(manifest)], run_dir)
     try:
         onboard(name, cli)
         wait_pane(name, READY_MARKERS.get(cli, cli), 45, "startup")
@@ -702,6 +747,7 @@ def scenario_recall(cli: str, manifest: Path, home: Path, base_url: str, key: st
         # regardless.
         wait_pane_count(name, "4711", 2, 120, "recall turn 2")
     finally:
+        collect_logs(run_dir)
         tmux("kill-session", "-t", name, check=False)
 
     rows = wait_proxy_rows(home, 2)
