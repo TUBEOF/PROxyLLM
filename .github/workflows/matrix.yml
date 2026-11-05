@@ -127,3 +127,17 @@ jobs:
         run: env -u GOROOT make build
       - name: Plain-start CLI matrix
         run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue,goose,kimi,qwen --scenarios answer,recall
+      - name: Upload CLI matrix evidence (panes, client logs, proxy log)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-plain-matrix
+          # The driver writes per-cell pane.log + client-logs/ under the run
+          # dirs and the proxy log under logs/; only those are uploaded, not
+          # the CLI homes (cache dirs can be hundreds of MB).
+          path: |
+            /tmp/plain-matrix/logs/
+            /tmp/plain-matrix/clients/*/*/*.log
+            /tmp/plain-matrix/clients/*/*/client-logs/
+          if-no-files-found: ignore
+          retention-days: 7
