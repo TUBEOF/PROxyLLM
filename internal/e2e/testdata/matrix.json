@@ -1178,9 +1178,9 @@
   },
   {
    "id": "upstream__codex-oauth",
-   "test": "",
-   "status": "pending",
-   "note": "codex provider needs OAuth token plumbing in the harness"
+   "test": "TestMatrix_Upstream_CodexOauth",
+   "status": "green",
+   "note": ""
   },
   {
    "id": "decision__systemone",
