@@ -103,10 +103,12 @@ def configure(home: Path, port: int, mockserver: str) -> str:
         "provider_id": "acc-sim", "name": MODEL, "capabilities": {}, "compat": {},
     })
     # Claude Code's env pins model names (claude-sonnet-4-6, ...); the alias
-    # row routes every claude-* name onto the simulated upstream.
+    # row routes every claude-* name onto the simulated upstream. opencode's
+    # seed config names its provider model "proxy-chat" (the id the live
+    # suite aliases the same way), so it rides the same row.
     admin.put(client, "/api/admin/settings", {
         "key": "model_aliases",
-        "value": json.dumps({"claude-*": MODEL, MODEL: MODEL}, separators=(",", ":"), sort_keys=True),
+        "value": json.dumps({"claude-*": MODEL, "proxy-chat": MODEL, MODEL: MODEL}, separators=(",", ":"), sort_keys=True),
     })
     payload = admin.post(client, "/api/admin/keys", {"name": "cli-plain"})
     key = payload.get("key", "")
@@ -185,7 +187,18 @@ def ms_reset(mockserver: str) -> None:
 # the env-only OpenAI-compatible config (OPENAI_API_KEY + OPENAI_BASE_URL +
 # OPENAI_MODEL, the documented no-login path) selects auth type "openai" and
 # skips the auth picker, folder trust is disabled by default, and
-# OPENAI_MODEL fills the model slot (/model changes it).
+# OPENAI_MODEL fills the model slot (/model changes it). opencode 1.19.5
+# streams every call it makes — the model turns (11 function tools around
+# its system prompt, the typed prompt as a plain-string last message) plus
+# one title call right after the first prompt; the title call quotes the
+# conversation with the prompt as its OWN last message, so content pinning
+# cannot tell the two apart, but it sends no tool definitions — turns are
+# pinned STRUCTURALLY like goose's, and turn_requests requires tools for it
+# (TOOLS_PINNED). No opencode account and no first-run dialogs: the config's
+# custom provider (@ai-sdk/openai-compatible with options.apiKey) is the
+# documented no-login path, and the fresh TUI starts straight into the
+# composer with the seeded model; assistant replies are stored verbatim, so
+# the structural rank matcher's history pin holds.
 def _mock_expectation(mockserver: str, text: str, streaming: bool,
                       priority: int, times: int | None, matcher: dict | None) -> None:
     req: dict = {"method": "POST", "path": UPSTREAM_PATH}
@@ -271,11 +284,19 @@ def last_user_content(cli: str, prompt: str) -> str:
 
 
 # CLIs whose turns cannot be pinned by exact user-message content (goose
-# appends <turn-context> with a per-turn timestamp): their matcher is the
-# structural discriminator instead — a real turn is the request that carries
-# tool definitions, and turn >= 2 carries the previous turn's (verbatim)
-# assistant reply in the history. See the wire-facts note above.
-STRUCTURE_PINNED = {"goose"}
+# appends <turn-context> with a per-turn timestamp; opencode's title call
+# quotes the prompt as its own last message but sends no tools): their
+# matcher is the structural discriminator instead — a real turn is the
+# request that carries tool definitions, and turn >= 2 carries the previous
+# turn's (verbatim) assistant reply in the history. See the wire-facts note
+# above.
+STRUCTURE_PINNED = {"goose", "opencode"}
+
+
+# CLIs whose ONLY upstream requests carrying tool definitions are their real
+# model turns (see STRUCTURE_PINNED): turn_requests skips the tool-less
+# utility calls whose last message is the prompt itself.
+TOOLS_PINNED = {"opencode"}
 
 
 def mock_pinned(mockserver: str, cli: str, turns: list[tuple[str, str]], streaming: bool) -> None:
@@ -316,6 +337,8 @@ def turn_requests(reqs: list[dict], prompt: str, cli: str = "") -> list[dict]:
         if r.get("path") != UPSTREAM_PATH:
             continue
         payload = (r.get("body") or {}).get("json") or {}
+        if cli in TOOLS_PINNED and not (payload.get("tools") or []):
+            continue  # a utility call without tools (opencode's title call)
         msgs = payload.get("messages") or []
         hint = RUNTIME_HINTS.get(cli)
         if hint:
@@ -377,6 +400,10 @@ READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
                  # marker is the fresh composer's placeholder (stable across
                  # turns), like continue's.
                  "qwen": "Type your message or @path/to/file",
+                 # opencode paints its banner then the composer directly (no
+                 # auth, no theme picker with a config-seeded provider), so
+                 # the fresh composer's placeholder is the ready state.
+                 "opencode": "Ask anything",
                  "open-interpreter": "Open Interpreter (v"}
 
 # How each CLI's model turns stream upstream, and what the catch-all bucket
@@ -405,13 +432,16 @@ STREAMING = {"codex": False, "claude-code": True, "crush": True, "openhands": Fa
              # qwen streams everything it sends upstream, including the
              # managed-memory extraction call that follows each turn.
              "qwen": True,
+             # opencode streams its model turns and its one title call.
+             "opencode": True,
              "open-interpreter": True}
 FALLBACK_STREAMING = {"codex": True, "claude-code": False, "crush": True,
                       "openhands": False, "gptme": False, "aider": True,
                       "cline": True, "continue": False, "goose": True,
                       "kimi": True,
                       "open-interpreter": True,
-                      "qwen": True}
+                      "qwen": True,
+                      "opencode": True}
 
 # User-message markers that are runtime metadata, not model turns; see
 # turn_requests. openhands's CodeAct runtime inserts a <RUNTIME_INFORMATION>
@@ -774,7 +804,7 @@ def main() -> int:
     parser.add_argument("--home", required=True)
     parser.add_argument("--mockserver", required=True)
     parser.add_argument("--clients",
-                        default="codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue,goose,kimi,qwen")
+                        default="codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue,goose,kimi,qwen,opencode")
     parser.add_argument("--scenarios", default="answer,recall")
     parser.add_argument("--binary", default=str(REPO / "proxyllm"))
     parser.add_argument("--port", type=int, default=18190)

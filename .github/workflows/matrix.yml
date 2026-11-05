@@ -117,6 +117,8 @@ jobs:
         run: npm install -g @moonshot-ai/kimi-code@2.4.1
       - name: Install Qwen Code CLI (pinned)
         run: npm install -g @qwen-code/qwen-code@0.26.6
+      - name: Install OpenCode CLI (pinned)
+        run: npm install -g opencode-ai@1.19.5
       - name: Ensure tmux (the plain-start driver runs CLIs in a pseudo-terminal)
         run: |
           if ! command -v tmux >/dev/null; then
@@ -126,7 +128,7 @@ jobs:
       - name: Build the proxy
         run: env -u GOROOT make build
       - name: Plain-start CLI matrix
-        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue,goose,kimi,qwen --scenarios answer,recall
+        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue,goose,kimi,qwen,opencode --scenarios answer,recall
       - name: Upload CLI matrix evidence (panes, client logs, proxy log)
         if: always()
         uses: actions/upload-artifact@v7
