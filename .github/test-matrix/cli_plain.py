@@ -371,6 +371,30 @@ def plain_command(manifest: Path) -> str:
     return json.loads(manifest.read_text()).get("command", "")
 
 
+# TEMPORARY boot-gate diagnostic (revert after the root cause is identified):
+# continue 1.5.47 stalls in CI before the composer mounts and the runner
+# trace proves it is not outbound network (beacon resolves, one data:-URL wasm
+# fetch, then silence) — so with DIAG_STRACE set, the continue cell's cn runs
+# under strace (syscall/futex/epoll/child-spawn evidence) whose log lands in
+# the run dir and rides the existing *.log artifact glob. Only continue takes
+# this branch; every other client spawns exactly as before.
+def spawn_command(cli: str, manifest: Path, run_dir: Path) -> list[str]:
+    argv = [plain_command(manifest)]
+    if cli != "continue":
+        return argv
+    diag = os.environ.get("DIAG_STRACE", "")
+    if not diag or diag == "0":
+        return argv
+    if not (strace := shutil.which("strace")):
+        print("DIAG_STRACE: strace not on PATH; running cn without it", flush=True)
+        return argv
+    return [strace, "-f", "-qq",
+            "-e", "trace=execve,clone,clone3,fork,vfork,connect,accept,accept4,"
+                  "read,poll,ppoll,futex,openat,open,flock,getcwd,uname,"
+                  "faccessat,faccessat2,newfstatat,epoll_wait", "-s", "160",
+            "-o", str(run_dir / "cn.strace.log"), *argv]
+
+
 # A CLI is "ready" once its own chrome painted; each TUI names itself.
 # gptme flushes stdin before entering its read loop, so its ready marker must
 # be the composer prompt itself — text typed earlier is discarded. aider
@@ -731,7 +755,7 @@ def scenario_answer(cli: str, manifest: Path, home: Path, base_url: str, key: st
         shutil.rmtree(run_dir)
     env, cwd = prepare(manifest, run_dir, base_url, key, MODEL)
     name = f"plain-{cli}-answer"
-    tmux_spawn(name, cwd, env, [plain_command(manifest)], run_dir)
+    tmux_spawn(name, cwd, env, spawn_command(cli, manifest, run_dir), run_dir)
     try:
         onboard(name, cli)
         wait_pane(name, READY_MARKERS.get(cli, cli), 45, "startup")  # the TUI painted its chrome
@@ -765,7 +789,7 @@ def scenario_recall(cli: str, manifest: Path, home: Path, base_url: str, key: st
         shutil.rmtree(run_dir)
     env, cwd = prepare(manifest, run_dir, base_url, key, MODEL)
     name = f"plain-{cli}-recall"
-    tmux_spawn(name, cwd, env, [plain_command(manifest)], run_dir)
+    tmux_spawn(name, cwd, env, spawn_command(cli, manifest, run_dir), run_dir)
     try:
         onboard(name, cli)
         wait_pane(name, READY_MARKERS.get(cli, cli), 45, "startup")

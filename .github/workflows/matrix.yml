@@ -128,6 +128,12 @@ jobs:
       - name: Build the proxy
         run: env -u GOROOT make build
       - name: Plain-start CLI matrix
+        env:
+          # TEMPORARY (revert after the root cause is identified): cn stalls in
+          # CI before the composer mounts with no network wait; DIAG_STRACE
+          # makes the driver run continue's cn under strace, whose
+          # cn.strace.log rides the *.log artifact glob below.
+          DIAG_STRACE: "1"
         run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue,goose,kimi,qwen,opencode --scenarios answer,recall
       - name: Upload CLI matrix evidence (panes, client logs, proxy log)
         if: always()
