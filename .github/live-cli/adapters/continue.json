@@ -25,7 +25,10 @@
   ],
   "env": {
     "CONTINUE_CLI_ENABLE_TELEMETRY": "0",
-    "CONTINUE_CLI_AUTO_UPDATED": "1"
+    "CONTINUE_CLI_AUTO_UPDATED": "1",
+    "NODE_USE_ENV_PROXY": "1",
+    "HTTP_PROXY": "http://127.0.0.1:9",
+    "HTTPS_PROXY": "http://127.0.0.1:9"
   },
   "files": {
     "{{CONFIG_DIR}}/continue/config.yaml": "name: proxyllm\nversion: 0.0.1\nschema: v1\nmodels:\n  - name: proxy-chat\n    provider: openai\n    model: {{MODEL}}\n    apiBase: {{BASE_URL}}/v1\n    apiKey: {{CLIENT_KEY}}\n    useResponsesApi: false\n",
