@@ -28,12 +28,14 @@
     "CONTINUE_CLI_AUTO_UPDATED": "1",
     "NODE_USE_ENV_PROXY": "1",
     "HTTP_PROXY": "http://127.0.0.1:9",
-    "HTTPS_PROXY": "http://127.0.0.1:9"
+    "HTTPS_PROXY": "http://127.0.0.1:9",
+    "NODE_OPTIONS": "--require {{RUN_DIR}}/beacon-kill.js"
   },
   "files": {
     "{{CONFIG_DIR}}/continue/config.yaml": "name: proxyllm\nversion: 0.0.1\nschema: v1\nmodels:\n  - name: proxy-chat\n    provider: openai\n    model: {{MODEL}}\n    apiBase: {{BASE_URL}}/v1\n    apiKey: {{CLIENT_KEY}}\n    useResponsesApi: false\n",
     "{{HOME}}/.continue/config.yaml": "name: proxyllm\nversion: 0.0.1\nschema: v1\nmodels:\n  - name: proxy-chat\n    provider: openai\n    model: {{MODEL}}\n    apiBase: {{BASE_URL}}/v1\n    apiKey: {{CLIENT_KEY}}\n    useResponsesApi: false\n",
-    "{{HOME}}/.continue/.onboarding_complete": "2026-01-01T00:00:00.000Z"
+    "{{HOME}}/.continue/.onboarding_complete": "2026-01-01T00:00:00.000Z",
+    "{{RUN_DIR}}/beacon-kill.js": "// continue's composer waits on a boot beacon to api.continue.dev that can\n// hang on a sandboxed runner (the env-proxy seeds were inert there) and\n// never mounts. Resolve that one host instantly — RESOLVE, never reject,\n// so no unhandled rejection — and pass every other URL through.\nconst realFetch = globalThis.fetch;\nglobalThis.fetch = (input, init) => {\n  const url = typeof input === \"string\" ? input : input && (input.url ?? String(input));\n  if (typeof url === \"string\" && url.includes(\"api.continue.dev\")) {\n    console.error(\"[beacon-kill] api.continue.dev resolved instantly\");\n    return Promise.resolve(new Response(\"[]\"));\n  }\n  return realFetch(input, init);\n};\n"
   },
   "args": [
     "-p",
