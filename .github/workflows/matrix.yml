@@ -103,8 +103,6 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: Install cline CLI (pinned)
         run: npm install -g cline@3.0.74
-      - name: Install Continue CLI (pinned)
-        run: npm install -g @continuedev/cli@1.5.47
       - name: Install goose CLI (pinned release tarball; the download script ends in an interactive configure step that reads /dev/tty)
         run: |
           curl -fsSL https://github.com/aaif-goose/goose/releases/download/v1.57.0/goose-x86_64-unknown-linux-gnu.tar.bz2 -o /tmp/goose.tar.bz2
@@ -128,13 +126,15 @@ jobs:
       - name: Build the proxy
         run: env -u GOROOT make build
       - name: Plain-start CLI matrix
-        env:
-          # TEMPORARY (revert after the root cause is identified): cn stalls in
-          # CI before the composer mounts with no network wait; DIAG_STRACE
-          # makes the driver run continue's cn under strace, whose
-          # cn.strace.log rides the *.log artifact glob below.
-          DIAG_STRACE: "1"
-        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue,goose,kimi,qwen,opencode --scenarios answer,recall
+        # continue is local-only (docs/test-matrix.md): cn 1.5.47's
+        # plain-start TUI never mounts its composer on ubuntu-24.04 runners
+        # (Ink paints exactly 2 frames then stalls; no blocked syscall, no
+        # network wait) while it mounts locally in every variant — frame
+        # probe #114, strace #113, boot trace #112/#111, deep dives
+        # #108–#115. Locally verified green: 2x full 26/26 on the #114
+        # lineage incl. node 26/27 variance. Re-entry: pane artifacts under
+        # cli-plain-matrix proving the composer mounts.
+        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,goose,kimi,qwen,opencode --scenarios answer,recall
       - name: Upload CLI matrix evidence (panes, client logs, proxy log)
         if: always()
         uses: actions/upload-artifact@v7

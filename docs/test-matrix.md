@@ -107,7 +107,31 @@ Go tests agree in both directions, and the workflow runs the whole matrix
 with `-count=2` for determinism.
 
 Pending cells (the manifest names the reason for each; the fix loop owns them):
-- M2: the 14 CLIs, plain start, full scenario set.
+- M2: the CLIs, plain start, beyond the `answer`/`recall` scenario set.
+
+## M2 — the plain-start CLI matrix (cli-plain)
+
+The `cli-plain` job in `.github/workflows/matrix.yml` drives
+`.github/test-matrix/cli_plain.py`: 13 CLIs total, 12 of them in CI, each
+started exactly the way a user starts it — the bare binary in a tmux
+pseudo-terminal, only its own config pointing at the proxy — against
+MockServer. The `--scenarios answer,recall` set runs in CI today (single
+answer, recall-with-history); the wider scenario set is pending. continue is
+excluded from the CI run and runs locally only.
+
+**Why continue is not in the CI run.** cn 1.5.47's plain-start TUI never
+mounts its composer on `ubuntu-24.04` runners: Ink paints exactly two stdout
+frames, then the render loop emits nothing for the whole 45 s window while
+the input effects keep running — no blocked syscall, no network wait — while
+locally it mounts in every variant (node versions, locales, terminal sizes).
+Scope: the plain-start TUI only; the headless M1 conformance cells are green
+in CI throughout. Evidence chain: frame probe #114, strace #113, boot trace
+#112/#111, deep dives #108–#115. Locally verified green: two full 26/26 runs
+(13 clients × answer/recall) on the #114 lineage, including node 26 and 27.
+The driver still accepts `--clients continue` for local runs. Re-entry
+criterion: re-add `continue` when @continuedev/cli (pinned at 1.5.47) mounts
+its composer on the runner image — the pane artifacts under the
+`cli-plain-matrix` artifact prove any fix.
 
 Out of scope (no client or product path uses them): embeddings, audio, images,
 moderations, files, batches, Realtime/Live WebSocket, legacy completions,
