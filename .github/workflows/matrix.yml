@@ -18,7 +18,6 @@ on:
       - "go.mod"
       - "go.sum"
       - ".github/test-matrix/**"
-      - ".github/live-cli/adapters/**"
       - ".github/workflows/matrix.yml"
   pull_request:
     paths:
@@ -27,7 +26,6 @@ on:
       - "go.mod"
       - "go.sum"
       - ".github/test-matrix/**"
-      - ".github/live-cli/adapters/**"
       - ".github/workflows/matrix.yml"
   workflow_dispatch:
 

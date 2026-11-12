@@ -26,9 +26,8 @@ Makefile AND `ci.yml`; bump both together.
   default CI.
 - Playwright screenshot baselines: rendered in CI only; the assertion suite
   runs locally with `--project=desktop-chrome`.
-- Live CLI workflow: `.github/workflows/live-cli.yml` runs on path-filtered
-  pushes/PRs against the protected `live-cli` environment; procedure in
-  `docs/test-instance.md`.
+- Real-CLI matrix: `.github/workflows/matrix.yml` runs M1 and the sharded M2
+  plain-start cells; procedure and skip reasons in `docs/test-matrix.md`.
 
 ## Pull requests
 

@@ -140,19 +140,14 @@ They read their targets from the environment:
 `PROXYLLM_SMOKE_CODEX_{REFRESH_TOKEN,ISSUER,BACKEND}` for a Codex account.
 They never assert on token values and never echo an upstream body.
 
-### Live CLI workflow
+### Conformance and CLI matrices
 
-The real-CLI suite runs as `.github/workflows/live-cli.yml` against an
-ephemeral instance built from the current sources. It is path-filtered to the
-wire, provider, routing, server and auth areas, and needs the protected
-`live-cli` GitHub environment with `OLLAMA_CLOUD_API_KEY`. The workflow runs
-the Hello, image-fallback, web-search and web-fetch phases for every supported
-CLI and fails when an expected proxy fallback is missing.
-
-The stable procedure, the four phases, the hard assertions and the report
-shape are in [Live CLI workflow](test-instance.md). The reusable scripts live
-under `.github/live-cli/`; `python3 -I .github/live-cli/live_cli.py --home
-<dir>` reproduces a run against an already configured instance.
+The protocol conformance matrix (M1) and the plain-start CLI matrix (M2) run
+as `.github/workflows/matrix.yml`, keyless against MockServer. M2 starts every
+supported CLI the way a user starts it and runs the manifest's cells per
+shard. The cells, skip reasons, shards and evidence rules are in
+[Protocol conformance matrix](test-matrix.md); the driver is
+`.github/test-matrix/cli_plain.py`.
 
 ## Performance
 
@@ -178,12 +173,10 @@ release rather than every pull request.
 
 ## Release
 
-A release is a tag. The workflow runs the real-CLI suite on the tagged
+A release is a tag. The workflow runs the perf-budget gate on the tagged
 commit, builds the SPA, runs GoReleaser (per-OS archives plus a multi-arch
-container image), and publishes the GitHub release; the perf-budget gate runs
-before any of it. The release job downloads the live-CLI report and appends
-its per-CLI table — phase results and the exact tested CLI versions — to the
-release notes. A failing CLI phase blocks the release.
+container image), and publishes the GitHub release. The real-CLI matrix runs
+on every push and PR through `matrix.yml`, before the tag.
 
 1. Merge everything that should ship to `main`, with CI green.
 2. Tag `vX.Y.Z` (annotated or not — the workflow triggers on `v*`) and push

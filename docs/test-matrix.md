@@ -183,8 +183,7 @@ the input effects keep running — no blocked syscall, no network wait — while
 locally it mounts in every variant (node versions, locales, terminal sizes).
 Scope: the plain-start TUI only; the headless M1 conformance cells are green
 in CI throughout. Evidence chain: frame probe #114, strace #113, boot trace
-#112/#111, deep dives #108–#115. The headless `live-cli` adapter stays (that
-suite still runs it); the plain-start matrix does not carry a local-only
+#112/#111, deep dives #108–#115. The plain-start matrix carries no local-only
 exception. Re-entry: add `continue` to `cli_matrix.json` when
 @continuedev/cli (pinned at 1.5.47) mounts its composer on the runner image —
 the pane artifacts prove any fix.
