@@ -48,7 +48,7 @@ def validate(manifest: dict, scenarios_available: set[str], workflow_text: str) 
     if len(set(scenarios)) != len(scenarios):
         problems.append("scenarios contain duplicates")
     for client in clients:
-        if not (REPO / ".github/live-cli/adapters" / f"{client}.json").exists():
+        if not (REPO / ".github/test-matrix/adapters" / f"{client}.json").exists():
             problems.append(f"client {client!r} has no adapter manifest")
 
     pairs: dict[tuple[str, str], dict] = {}

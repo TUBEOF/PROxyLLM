@@ -24,6 +24,7 @@ import json
 import os
 import secrets
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
@@ -33,21 +34,11 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 
-# run_cli.py owns the adapter-isolation contract (env scrub, config rendering,
-# canary); the plain driver reuses its renderer and mirrors its bootstrap.
-_spec = importlib.util.spec_from_file_location("run_cli", REPO / ".github/live-cli/run_cli.py")
-run_cli = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(run_cli)
-
-_spec = importlib.util.spec_from_file_location("admin", REPO / ".github/live-cli/admin.py")
+# The admin API client lives next to this driver; importlib keeps it loadable
+# under `python3 -I`, which does not put the script directory on sys.path.
+_spec = importlib.util.spec_from_file_location("admin", HERE / "admin.py")
 admin = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(admin)
-
-# The live suite owns the request-log row slicing and the read-only DB helper;
-# the plain driver reuses them so fault rows cannot poison a later cell.
-_spec = importlib.util.spec_from_file_location("live_cli", REPO / ".github/live-cli/live_cli.py")
-live_cli = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(live_cli)
 
 MODEL = "sim-model"
 WEB_MODEL = "web-sim"
@@ -128,8 +119,8 @@ def configure(home: Path, port: int, mockserver: str) -> str:
     admin.put(client, "/api/admin/providers/acc-firecrawl/enabled", {"enabled": True})
     # Claude Code's env pins model names (claude-sonnet-4-6, ...); the alias
     # row routes every claude-* name onto the simulated upstream. opencode's
-    # seed config names its provider model "proxy-chat" (the id the live
-    # suite aliases the same way), so it rides the same row.
+    # seed config names its provider model "proxy-chat" (the id the alias
+    # row maps the same way), so it rides the same row.
     admin.put(client, "/api/admin/settings", {
         "key": "model_aliases",
         "value": json.dumps({"claude-*": MODEL, "proxy-chat": MODEL, MODEL: MODEL}, separators=(",", ":"), sort_keys=True),
@@ -779,7 +770,13 @@ def finish_cell(name: str, run_dir: Path) -> None:
         pass
 
 
-# --- CLI bootstrap (mirrors run_cli's isolation contract) --------------------
+# --- CLI bootstrap -----------------------------------------------------------
+
+
+def render(value: str, ctx: dict[str, str]) -> str:
+    for key, val in ctx.items():
+        value = value.replace("{{" + key + "}}", str(val))
+    return value
 
 
 def prepare(manifest_path: Path, run_dir: Path, base_url: str, key: str,
@@ -828,7 +825,7 @@ def prepare(manifest_path: Path, run_dir: Path, base_url: str, key: str,
             # operator's real locale).
             env[keep] = "en_US.UTF-8"
     for k, v in (manifest.get("env") or {}).items():
-        env[k] = run_cli.render(str(v), dirs)
+        env[k] = render(str(v), dirs)
     env.update({
         "HOME": dirs["HOME"],
         "XDG_CONFIG_HOME": dirs["CONFIG_DIR"],
@@ -839,9 +836,9 @@ def prepare(manifest_path: Path, run_dir: Path, base_url: str, key: str,
         "no_proxy": "127.0.0.1,localhost",
     })
     for rel, content in (manifest.get("files") or {}).items():
-        target = Path(run_cli.render(rel, dirs))
+        target = Path(render(rel, dirs))
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(run_cli.render(str(content), dirs))
+        target.write_text(render(str(content), dirs))
         target.chmod(0o600)
     return env, Path(dirs["WORK_DIR"])
 
@@ -849,11 +846,26 @@ def prepare(manifest_path: Path, run_dir: Path, base_url: str, key: str,
 # --- proxy evidence ----------------------------------------------------------
 
 
+def ro_connect(db: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
+    conn.execute("PRAGMA query_only=ON")
+    return conn
+
+
+def max_request_id(db: Path) -> int:
+    conn = ro_connect(db)
+    try:
+        row = conn.execute("SELECT COALESCE(MAX(id), 0) FROM request_logs").fetchone()
+        return int(row[0])
+    finally:
+        conn.close()
+
+
 def proxy_rows(home: Path, since: int = 0) -> list[tuple]:
     """Request-log rows after the per-cell baseline; a deliberate fault row
     from an earlier cell can therefore never poison a later clean-row check."""
     db = home / "data" / "proxyllm.db"
-    conn = live_cli.ro_connect(db)
+    conn = ro_connect(db)
     try:
         return conn.execute(
             "SELECT id, status, error_redacted FROM request_logs WHERE id > ? ORDER BY id",
@@ -866,11 +878,11 @@ def wait_proxy_quiet(home: Path, timeout: float = 10, quiet: float = 3.0) -> int
     """Wait until the request log stops growing; return its current max id."""
     db = home / "data" / "proxyllm.db"
     deadline = time.time() + timeout
-    last = live_cli.max_request_id(db)
+    last = max_request_id(db)
     stable_since = time.time()
     while time.time() < deadline:
         time.sleep(0.2)
-        now = live_cli.max_request_id(db)
+        now = max_request_id(db)
         if now != last:
             last = now
             stable_since = time.time()
@@ -882,8 +894,8 @@ def wait_proxy_quiet(home: Path, timeout: float = 10, quiet: float = 3.0) -> int
 
 def wait_proxy_rows(home: Path, since: int, at_least: int, timeout: float = 15) -> list[tuple]:
     """The request-log write is off the request path, so the row can lag the
-    answer the CLI already rendered (the live suite polls for the same
-    reason). Only rows after `since` count."""
+    answer the CLI already rendered (the write is asynchronous). Only rows
+    after `since` count."""
     deadline = time.time() + timeout
     rows = []
     while time.time() < deadline:
@@ -1516,7 +1528,7 @@ def main() -> int:
         key = configure(home, args.port, args.mockserver)
         failures = []
         for cli, scenario in cells:
-            adapter = REPO / ".github/live-cli/adapters" / f"{cli}.json"
+            adapter = REPO / ".github/test-matrix/adapters" / f"{cli}.json"
             if not adapter.exists():
                 raise SystemExit(f"no adapter manifest for {cli}")
             label = f"{cli}/{scenario}"
