@@ -3,8 +3,8 @@
   "label": "Codex CLI",
   "tier": "core",
   "command": "codex",
-  "install": "npm install -g @openai/codex",
-  "tested": "latest",
+  "install": "npm install -g @openai/codex@0.166.0",
+  "tested": "0.166.0",
   "runnable": true,
   "env_keep": [
     "PATH",
