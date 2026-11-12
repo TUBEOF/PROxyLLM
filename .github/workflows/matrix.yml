@@ -57,17 +57,36 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-      - name: Gate self-tests (negative controls)
-        run: python3 -I .github/test-matrix/test_gates.py
       - name: Manifest gate (cells and tests must agree)
         run: python3 -I .github/test-matrix/check_manifest.py
       - name: Protocol conformance matrix (run twice for determinism)
         run: go test ./internal/e2e/ -run 'TestMatrix_' -v -count=2
 
+  cli-matrix-gate:
+    # The M2 manifest, the driver's SCENARIOS and the workflow must agree; a
+    # missing client/scenario pair is a failure, never a silent skip.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Gate self-tests (negative controls)
+        run: python3 -I .github/test-matrix/test_gates.py
+      - name: CLI matrix manifest gate
+        run: python3 -I .github/test-matrix/check_cli_manifest.py
+
   cli-plain:
     # M2: every CLI started the way a user starts it — the bare binary in a
     # pseudo-terminal, only its own config pointing at the proxy, upstream
     # = MockServer. Deterministic and keyless, like the conformance matrix.
+    # The manifest decides the cells; each shard gets its own runner, home,
+    # port and artifact name.
+    needs: cli-matrix-gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: basic
+            port: 18190
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     services:
@@ -134,26 +153,19 @@ jobs:
       - name: Build the proxy
         run: env -u GOROOT make build
       - name: Plain-start CLI matrix
-        # continue is local-only (docs/test-matrix.md): cn 1.5.47's
-        # plain-start TUI never mounts its composer on ubuntu-24.04 runners
-        # (Ink paints exactly 2 frames then stalls; no blocked syscall, no
-        # network wait) while it mounts locally in every variant — frame
-        # probe #114, strace #113, boot trace #112/#111, deep dives
-        # #108–#115. Locally verified green: 2x full 26/26 on the #114
-        # lineage incl. node 26/27 variance. Re-entry: pane artifacts under
-        # cli-plain-matrix proving the composer mounts.
-        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --mockserver "$MOCKSERVER_URL" --clients codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,goose,kimi,qwen,opencode --scenarios answer,recall
-      - name: Upload CLI matrix evidence (panes, client logs, proxy log)
+        run: python3 -I .github/test-matrix/cli_plain.py --home /tmp/plain-matrix --port ${{ matrix.port }} --mockserver "$MOCKSERVER_URL" --shard ${{ matrix.shard }}
+      - name: Upload CLI matrix evidence (panes, client logs, proxy log, results)
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: cli-plain-matrix
-          # The driver writes per-cell pane.log + client-logs/ under the run
-          # dirs and the proxy log under logs/; only those are uploaded, not
-          # the CLI homes (cache dirs can be hundreds of MB).
+          name: cli-plain-${{ matrix.shard }}
+          # The driver writes per-cell pane.log, result.json and client-logs/
+          # under the run dirs and the proxy log under logs/; only those are
+          # uploaded, not the CLI homes (cache dirs can be hundreds of MB).
           path: |
             /tmp/plain-matrix/logs/
             /tmp/plain-matrix/clients/*/*/*.log
             /tmp/plain-matrix/clients/*/*/client-logs/
+            /tmp/plain-matrix/clients/*/*/result.json
           if-no-files-found: ignore
           retention-days: 7

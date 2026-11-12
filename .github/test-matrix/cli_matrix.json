@@ -1,0 +1,1171 @@
+{
+  "schema": 1,
+  "clients": [
+    "codex",
+    "claude-code",
+    "crush",
+    "openhands",
+    "gptme",
+    "aider",
+    "cline",
+    "goose",
+    "kimi",
+    "qwen",
+    "opencode",
+    "open-interpreter"
+  ],
+  "scenarios": [
+    "answer",
+    "recall",
+    "multi_turn",
+    "large_output",
+    "web_turn2",
+    "tool_loop",
+    "thinking",
+    "fault_429",
+    "fault_529",
+    "fault_quota",
+    "fault_truncated",
+    "fault_malformed_sse",
+    "cancel_resume",
+    "previous_response_id",
+    "vision",
+    "decisions"
+  ],
+  "shards": {
+    "basic": [
+      "answer",
+      "recall"
+    ]
+  },
+  "cells": [
+    {
+      "client": "codex",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "codex",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "codex",
+      "scenario": "multi_turn",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "codex",
+      "scenario": "large_output",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "codex",
+      "scenario": "web_turn2",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "codex",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+    },
+    {
+      "client": "codex",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+    },
+    {
+      "client": "codex",
+      "scenario": "fault_429",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "codex",
+      "scenario": "fault_529",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "codex",
+      "scenario": "fault_quota",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "codex",
+      "scenario": "fault_truncated",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "codex",
+      "scenario": "fault_malformed_sse",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "codex",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "codex",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+    },
+    {
+      "client": "codex",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+    },
+    {
+      "client": "codex",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "multi_turn",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "large_output",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "web_turn2",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "fault_429",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "fault_529",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "fault_quota",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "fault_truncated",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "fault_malformed_sse",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "crush",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "crush",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "crush",
+      "scenario": "multi_turn",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "crush",
+      "scenario": "large_output",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "crush",
+      "scenario": "web_turn2",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "crush",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+    },
+    {
+      "client": "crush",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+    },
+    {
+      "client": "crush",
+      "scenario": "fault_429",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "crush",
+      "scenario": "fault_529",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "crush",
+      "scenario": "fault_quota",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "crush",
+      "scenario": "fault_truncated",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "crush",
+      "scenario": "fault_malformed_sse",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "crush",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "crush",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+    },
+    {
+      "client": "crush",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+    },
+    {
+      "client": "crush",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "openhands",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "openhands",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "openhands",
+      "scenario": "multi_turn",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "openhands",
+      "scenario": "large_output",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "openhands",
+      "scenario": "web_turn2",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "openhands",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+    },
+    {
+      "client": "openhands",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+    },
+    {
+      "client": "openhands",
+      "scenario": "fault_429",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "openhands",
+      "scenario": "fault_529",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "openhands",
+      "scenario": "fault_quota",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "openhands",
+      "scenario": "fault_truncated",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "openhands",
+      "scenario": "fault_malformed_sse",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "openhands",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "openhands",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+    },
+    {
+      "client": "openhands",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+    },
+    {
+      "client": "openhands",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "gptme",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "gptme",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "gptme",
+      "scenario": "multi_turn",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "gptme",
+      "scenario": "large_output",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "gptme",
+      "scenario": "web_turn2",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "gptme",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+    },
+    {
+      "client": "gptme",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+    },
+    {
+      "client": "gptme",
+      "scenario": "fault_429",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "gptme",
+      "scenario": "fault_529",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "gptme",
+      "scenario": "fault_quota",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "gptme",
+      "scenario": "fault_truncated",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "gptme",
+      "scenario": "fault_malformed_sse",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "gptme",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "gptme",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+    },
+    {
+      "client": "gptme",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+    },
+    {
+      "client": "gptme",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "aider",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "aider",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "aider",
+      "scenario": "multi_turn",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "aider",
+      "scenario": "large_output",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "aider",
+      "scenario": "web_turn2",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "aider",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+    },
+    {
+      "client": "aider",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+    },
+    {
+      "client": "aider",
+      "scenario": "fault_429",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "aider",
+      "scenario": "fault_529",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "aider",
+      "scenario": "fault_quota",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "aider",
+      "scenario": "fault_truncated",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "aider",
+      "scenario": "fault_malformed_sse",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "aider",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "aider",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+    },
+    {
+      "client": "aider",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+    },
+    {
+      "client": "aider",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "cline",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "cline",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "cline",
+      "scenario": "multi_turn",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "cline",
+      "scenario": "large_output",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "cline",
+      "scenario": "web_turn2",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "cline",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+    },
+    {
+      "client": "cline",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+    },
+    {
+      "client": "cline",
+      "scenario": "fault_429",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "cline",
+      "scenario": "fault_529",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "cline",
+      "scenario": "fault_quota",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "cline",
+      "scenario": "fault_truncated",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "cline",
+      "scenario": "fault_malformed_sse",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "cline",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "cline",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+    },
+    {
+      "client": "cline",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+    },
+    {
+      "client": "cline",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "goose",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "goose",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "goose",
+      "scenario": "multi_turn",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "goose",
+      "scenario": "large_output",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "goose",
+      "scenario": "web_turn2",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "goose",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+    },
+    {
+      "client": "goose",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+    },
+    {
+      "client": "goose",
+      "scenario": "fault_429",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "goose",
+      "scenario": "fault_529",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "goose",
+      "scenario": "fault_quota",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "goose",
+      "scenario": "fault_truncated",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "goose",
+      "scenario": "fault_malformed_sse",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "goose",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "goose",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+    },
+    {
+      "client": "goose",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+    },
+    {
+      "client": "goose",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "kimi",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "kimi",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "kimi",
+      "scenario": "multi_turn",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "kimi",
+      "scenario": "large_output",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "kimi",
+      "scenario": "web_turn2",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "kimi",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+    },
+    {
+      "client": "kimi",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+    },
+    {
+      "client": "kimi",
+      "scenario": "fault_429",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "kimi",
+      "scenario": "fault_529",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "kimi",
+      "scenario": "fault_quota",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "kimi",
+      "scenario": "fault_truncated",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "kimi",
+      "scenario": "fault_malformed_sse",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "kimi",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "kimi",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+    },
+    {
+      "client": "kimi",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+    },
+    {
+      "client": "kimi",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "qwen",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "qwen",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "qwen",
+      "scenario": "multi_turn",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "qwen",
+      "scenario": "large_output",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "qwen",
+      "scenario": "web_turn2",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "qwen",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+    },
+    {
+      "client": "qwen",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+    },
+    {
+      "client": "qwen",
+      "scenario": "fault_429",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "qwen",
+      "scenario": "fault_529",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "qwen",
+      "scenario": "fault_quota",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "qwen",
+      "scenario": "fault_truncated",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "qwen",
+      "scenario": "fault_malformed_sse",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "qwen",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "qwen",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+    },
+    {
+      "client": "qwen",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+    },
+    {
+      "client": "qwen",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "opencode",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "opencode",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "opencode",
+      "scenario": "multi_turn",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "opencode",
+      "scenario": "large_output",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "opencode",
+      "scenario": "web_turn2",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "opencode",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+    },
+    {
+      "client": "opencode",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+    },
+    {
+      "client": "opencode",
+      "scenario": "fault_429",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "opencode",
+      "scenario": "fault_529",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "opencode",
+      "scenario": "fault_quota",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "opencode",
+      "scenario": "fault_truncated",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "opencode",
+      "scenario": "fault_malformed_sse",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "opencode",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "opencode",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+    },
+    {
+      "client": "opencode",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+    },
+    {
+      "client": "opencode",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "multi_turn",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "large_output",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "web_turn2",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "fault_429",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "fault_529",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "fault_quota",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "fault_truncated",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "fault_malformed_sse",
+      "status": "skipped",
+      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "not implemented yet (session scenarios, Phase 4c)"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    }
+  ]
+}

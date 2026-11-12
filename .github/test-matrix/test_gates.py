@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_manifest
+import check_cli_manifest
 
 
 class CheckCellTests(unittest.TestCase):
@@ -47,6 +48,42 @@ class CheckCellTests(unittest.TestCase):
             {"TestMatrix_TextPairs"},
         )
         self.assertTrue(problems)
+
+
+class CheckCLIManifestTests(unittest.TestCase):
+    def manifest(self) -> dict:
+        return {
+            "schema": 1,
+            "clients": ["codex"],
+            "scenarios": ["answer"],
+            "shards": {"basic": ["answer"]},
+            "cells": [{"client": "codex", "scenario": "answer", "status": "green"}],
+        }
+
+    def test_valid_manifest_passes(self) -> None:
+        problems = check_cli_manifest.validate(self.manifest(), {"answer"}, "shard: basic")
+        self.assertEqual(problems, [])
+
+    def test_missing_pair_is_rejected(self) -> None:
+        manifest = self.manifest()
+        manifest["cells"] = []
+        self.assertTrue(check_cli_manifest.validate(manifest, {"answer"}, "shard: basic"))
+
+    def test_skipped_without_reason_is_rejected(self) -> None:
+        manifest = self.manifest()
+        manifest["cells"][0] = {"client": "codex", "scenario": "answer", "status": "skipped"}
+        self.assertTrue(check_cli_manifest.validate(manifest, {"answer"}, "shard: basic"))
+
+    def test_green_scenario_without_function_is_rejected(self) -> None:
+        self.assertTrue(check_cli_manifest.validate(self.manifest(), set(), "shard: basic"))
+
+    def test_green_scenario_without_shard_is_rejected(self) -> None:
+        manifest = self.manifest()
+        manifest["shards"] = {}
+        self.assertTrue(check_cli_manifest.validate(manifest, {"answer"}, "shard: basic"))
+
+    def test_shard_missing_from_workflow_is_rejected(self) -> None:
+        self.assertTrue(check_cli_manifest.validate(self.manifest(), {"answer"}, ""))
 
 
 if __name__ == "__main__":

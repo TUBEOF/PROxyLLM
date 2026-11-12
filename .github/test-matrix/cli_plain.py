@@ -24,7 +24,6 @@ import json
 import os
 import secrets
 import shutil
-import sqlite3
 import subprocess
 import sys
 import time
@@ -44,9 +43,16 @@ _spec = importlib.util.spec_from_file_location("admin", REPO / ".github/live-cli
 admin = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(admin)
 
+# The live suite owns the request-log row slicing and the read-only DB helper;
+# the plain driver reuses them so fault rows cannot poison a later cell.
+_spec = importlib.util.spec_from_file_location("live_cli", REPO / ".github/live-cli/live_cli.py")
+live_cli = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(live_cli)
+
 MODEL = "sim-model"
 PANE_COLS, PANE_ROWS = 140, 44
 UPSTREAM_PATH = "/v1/chat/completions"
+CLI_MANIFEST = HERE / "cli_matrix.json"
 
 
 # --- proxy lifecycle -------------------------------------------------------
@@ -152,13 +158,8 @@ def ms_reset(mockserver: str) -> None:
 # turn is pinned by its exact last user message in the CLI's own shape, later
 # turns ranked higher (their request carries earlier prompts in history). The
 # fallback buckets catch the utility traffic so no upstream call 404s (the
-# proxy would log the failure and fail the clean-rows check). Continue (cn)
-# 1.5.47 streams every model turn (plain-string user content after its system
-# agent prompt) and fires one CLOSED title-naming call after each turn; its
-# plain start has no onboarding keys — the seeded ~/.continue/
-# .onboarding_complete marker (a normal post-onboarding user's state) skips
-# the first-run Anthropic-key gate, and the config's custom openai model is
-# used with no Continue account. goose 1.57.0 streams every call it makes
+# proxy would log the failure and fail the clean-rows check). goose 1.57.0
+# streams every call it makes
 # (model turns and one title call per turn, always with stream_options); its
 # last user message carries the typed prompt plus a <turn-context> block
 # whose per-turn timestamp cannot be pinned, so its turns are pinned
@@ -199,17 +200,7 @@ def ms_reset(mockserver: str) -> None:
 # documented no-login path, and the fresh TUI starts straight into the
 # composer with the seeded model; assistant replies are stored verbatim, so
 # the structural rank matcher's history pin holds.
-def _mock_expectation(mockserver: str, text: str, streaming: bool,
-                      priority: int, times: int | None, matcher: dict | None) -> None:
-    req: dict = {"method": "POST", "path": UPSTREAM_PATH}
-    if matcher:
-        req["body"] = {"type": "JSON", "json": matcher, "matchType": "LOOSE"}
-    body: dict = {"httpRequest": req,
-                  "httpLlmResponse": {"provider": "OPENAI", "model": MODEL,
-                                      "completion": {"text": text, "streaming": streaming}},
-                  "priority": priority}
-    if times is not None:
-        body["times"] = {"remainingTimes": times, "unlimited": False}
+def _put_expectation(mockserver: str, body: dict, label: str) -> None:
     try:
         call = urllib.request.Request(
             mockserver + "/mockserver/expectation",
@@ -217,10 +208,42 @@ def _mock_expectation(mockserver: str, text: str, streaming: bool,
             headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(call, timeout=5) as r:
             if r.status != 201:
-                raise SystemExit(f"expectation {text!r} -> HTTP {r.status}")
+                raise SystemExit(f"expectation {label!r} -> HTTP {r.status}")
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", "replace")[:300]
-        raise SystemExit(f"expectation {text!r} -> HTTP {exc.code}: {detail}") from exc
+        raise SystemExit(f"expectation {label!r} -> HTTP {exc.code}: {detail}") from exc
+
+
+def _mock_expectation(mockserver: str, completion: dict, priority: int,
+                      times: int | None = None, matcher: dict | None = None,
+                      path: str = UPSTREAM_PATH, provider: str = "OPENAI",
+                      model: str = MODEL, chaos: dict | None = None) -> None:
+    req: dict = {"method": "POST", "path": path}
+    if matcher:
+        req["body"] = {"type": "JSON", "json": matcher, "matchType": "LOOSE"}
+    llm: dict = {"provider": provider, "model": model, "completion": completion}
+    if chaos:
+        llm["chaos"] = chaos
+    body: dict = {"httpRequest": req, "httpLlmResponse": llm, "priority": priority}
+    if times is not None:
+        body["times"] = {"remainingTimes": times, "unlimited": False}
+    _put_expectation(mockserver, body, str(completion.get("text", "")))
+
+
+def mock_http_response(mockserver: str, path: str, status: int, body: str,
+                       priority: int, times: int | None = None,
+                       matcher: dict | None = None,
+                       headers: list[dict] | None = None) -> None:
+    req: dict = {"method": "POST", "path": path}
+    if matcher:
+        req["body"] = {"type": "JSON", "json": matcher, "matchType": "LOOSE"}
+    response: dict = {"statusCode": status, "body": body}
+    if headers:
+        response["headers"] = headers
+    doc: dict = {"httpRequest": req, "httpResponse": response, "priority": priority}
+    if times is not None:
+        doc["times"] = {"remainingTimes": times, "unlimited": False}
+    _put_expectation(mockserver, doc, f"HTTP {status} {path}")
 
 
 # Senders wrapping message content in an array of typed parts instead of a
@@ -316,25 +339,28 @@ def mock_pinned(mockserver: str, cli: str, turns: list[tuple[str, str]], streami
         first = cli in PART_ARRAY_FIRST_TURN
         if cli in PART_ARRAY and (rank == 0 or not first):
             matcher["messages"][0]["content"] = [{"text": prompt}]
-        _mock_expectation(mockserver, text, streaming, priority, None, matcher)
+        _mock_expectation(mockserver, {"text": text, "streaming": streaming}, priority, matcher=matcher)
 
 
 def mock_fallback(mockserver: str, text: str, streaming: bool) -> None:
-    _mock_expectation(mockserver, text, streaming, 10, None,
-                      {"stream": True} if streaming else None)
+    _mock_expectation(mockserver, {"text": text, "streaming": streaming}, 10,
+                      matcher={"stream": True} if streaming else None)
 
 
-def turn_requests(reqs: list[dict], prompt: str, cli: str = "") -> list[dict]:
+def turn_requests(reqs: list[dict], prompt: str, cli: str = "",
+                  path: str = UPSTREAM_PATH, tool_result: bool = False) -> list[dict]:
     """Real model turns, not utility calls: upstream requests whose LAST
     message carries the prompt as an exact message or text part (codex's
     title calls quote the conversation, so containment would count them).
     Runtime-metadata user messages some CLIs append after the prompt —
     openhands's CodeAct runtime inserts one <RUNTIME_INFORMATION> turn —
     never carry the prompt, so the cli's hint drops them from the LAST
-    message check."""
+    message check. With tool_result, the turn after a tool call is the one
+    whose last message is the tool result (OpenAI role=tool, Anthropic
+    tool_result part) and whose body carries the prompt somewhere."""
     out = []
     for r in reqs:
-        if r.get("path") != UPSTREAM_PATH:
+        if r.get("path") != path:
             continue
         payload = (r.get("body") or {}).get("json") or {}
         if cli in TOOLS_PINNED and not (payload.get("tools") or []):
@@ -343,10 +369,20 @@ def turn_requests(reqs: list[dict], prompt: str, cli: str = "") -> list[dict]:
         hint = RUNTIME_HINTS.get(cli)
         if hint:
             msgs = [m for m in msgs if hint not in str(m.get("content") or "")]
-        if not msgs or msgs[-1].get("role") != "user":
+        if not msgs:
             continue
         last = msgs[-1]
         content = last.get("content")
+        if tool_result:
+            is_tool = last.get("role") in ("tool", "function") or (
+                isinstance(content, list)
+                and any(isinstance(p, dict) and p.get("type") == "tool_result" for p in content)
+            )
+            if is_tool and prompt in json.dumps(payload):
+                out.append(r)
+            continue
+        if last.get("role") != "user":
+            continue
         if isinstance(content, str):
             if content == prompt or (WRAPS_PROMPT.get(cli) and content.startswith(prompt)) \
                     or (cli in PREFIX_TURN and content.startswith(prompt)):
@@ -384,10 +420,6 @@ READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
                  # only in its status strip, and the ClinePass modal paints the
                  # first chrome.
                  "cline": "What can I do for you?",
-                 # continue: the fresh composer's placeholder (the banner and
-                 # the status strip name the CLI; the placeholder is stable
-                 # across turns).
-                 "continue": "Ask anything, @ for context",
                  # goose: the first-run banner's start state, printed once
                  # before the composer paints; "goose is ready" stays.
                  "goose": "goose is ready",
@@ -398,7 +430,7 @@ READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
                  # qwen paints its welcome box before the composer can take
                  # keys — typed text is dropped at that point — so the ready
                  # marker is the fresh composer's placeholder (stable across
-                 # turns), like continue's.
+                 # turns).
                  "qwen": "Type your message or @path/to/file",
                  # opencode paints its banner then the composer directly (no
                  # auth, no theme picker with a config-seeded provider), so
@@ -420,12 +452,9 @@ READY_MARKERS = {"codex": "codex", "claude-code": "Claude", "crush": "crush",
 # than Enter (ONBOARDING); with the modal gone the fresh composer's
 # placeholder is the ready state, and it accepts typed prompts without a
 # prompt-tail gate.
-# continue 1.5.47 (see the wire-facts note above) streams its turns and its
-# only utility call (an auto-title) is CLOSED, like gptme's — the marker seed
-# means the driver never answers an onboarding dialog.
 STREAMING = {"codex": False, "claude-code": True, "crush": True, "openhands": False,
              "gptme": True, "aider": True, "cline": True,
-             "continue": True, "goose": True,
+             "goose": True,
              # kimi streams its model turns and makes no utility calls (no
              # title generation upstream); the fallback bucket streams too.
              "kimi": True,
@@ -437,7 +466,7 @@ STREAMING = {"codex": False, "claude-code": True, "crush": True, "openhands": Fa
              "open-interpreter": True}
 FALLBACK_STREAMING = {"codex": True, "claude-code": False, "crush": True,
                       "openhands": False, "gptme": False, "aider": True,
-                      "cline": True, "continue": False, "goose": True,
+                      "cline": True, "goose": True,
                       "kimi": True,
                       "open-interpreter": True,
                       "qwen": True,
@@ -521,6 +550,7 @@ def tmux_spawn(name: str, cwd: Path, env: dict, command: list[str], run_dir: Pat
     tmux("kill-session", "-t", name, check=False)
     tmux("new-session", "-d", "-s", name, "-x", str(PANE_COLS), "-y", str(PANE_ROWS), "-c", str(cwd), "sleep 30")
     tmux("set-option", "-t", name, "remain-on-exit", "on")
+    tmux("set-option", "-t", name, "history-limit", "10000")
     pane_log = run_dir / "pane.log"
     tmux("pipe-pane", "-t", name, f"cat >> '{pane_log}'")
     tmux("respawn-pane", "-k", "-t", name, quoted)
@@ -528,8 +558,8 @@ def tmux_spawn(name: str, cwd: Path, env: dict, command: list[str], run_dir: Pat
 
 def collect_logs(run_dir: Path) -> None:
     """Copy the log files each CLI wrote under its own home/config tree into
-    the cell's run dir, so the artifact carries a client's own boot log
-    (e.g. continue's core log) next to the pane stream."""
+    the cell's run dir, so the artifact carries a client's own boot log (e.g.
+    a TUI's core log) next to the pane stream."""
     logs = run_dir / "client-logs"
     logs.mkdir(parents=True, exist_ok=True)
     for base in ("home", "config", "data", "cache"):
@@ -552,6 +582,11 @@ def tmux_send(name: str, text: str) -> None:
 
 def tmux_pane(name: str) -> str:
     return tmux("capture-pane", "-p", "-t", name, check=False)
+
+
+def tmux_pane_scroll(name: str) -> str:
+    """Scrollback capture with wrapped lines joined, for large-output cells."""
+    return tmux("capture-pane", "-p", "-J", "-S", "-4000", "-t", name, check=False)
 
 
 # Some CLIs flush stdin when they repaint the composer after every turn, so
@@ -692,25 +727,45 @@ def prepare(manifest_path: Path, run_dir: Path, base_url: str, key: str, model: 
 # --- proxy evidence ----------------------------------------------------------
 
 
-def proxy_rows(home: Path) -> list[tuple]:
+def proxy_rows(home: Path, since: int = 0) -> list[tuple]:
+    """Request-log rows after the per-cell baseline; a deliberate fault row
+    from an earlier cell can therefore never poison a later clean-row check."""
     db = home / "data" / "proxyllm.db"
-    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
+    conn = live_cli.ro_connect(db)
     try:
-        conn.execute("PRAGMA query_only=ON")
         return conn.execute(
-            "SELECT id, status, error_redacted FROM request_logs ORDER BY id").fetchall()
+            "SELECT id, status, error_redacted FROM request_logs WHERE id > ? ORDER BY id",
+            (since,)).fetchall()
     finally:
         conn.close()
 
 
-def wait_proxy_rows(home: Path, at_least: int, timeout: float = 15) -> list[tuple]:
+def wait_proxy_quiet(home: Path, timeout: float = 10, quiet: float = 1.0) -> int:
+    """Wait until the request log stops growing; return its current max id."""
+    db = home / "data" / "proxyllm.db"
+    deadline = time.time() + timeout
+    last = live_cli.max_request_id(db)
+    stable_since = time.time()
+    while time.time() < deadline:
+        time.sleep(0.2)
+        now = live_cli.max_request_id(db)
+        if now != last:
+            last = now
+            stable_since = time.time()
+            continue
+        if time.time() - stable_since >= quiet:
+            break
+    return last
+
+
+def wait_proxy_rows(home: Path, since: int, at_least: int, timeout: float = 15) -> list[tuple]:
     """The request-log write is off the request path, so the row can lag the
     answer the CLI already rendered (the live suite polls for the same
-    reason)."""
+    reason). Only rows after `since` count."""
     deadline = time.time() + timeout
     rows = []
     while time.time() < deadline:
-        rows = proxy_rows(home)
+        rows = proxy_rows(home, since)
         if len(rows) >= at_least:
             return rows
         time.sleep(0.3)
@@ -720,7 +775,8 @@ def wait_proxy_rows(home: Path, at_least: int, timeout: float = 15) -> list[tupl
 # --- scenarios ----------------------------------------------------------------
 
 
-def scenario_answer(cli: str, manifest: Path, home: Path, base_url: str, key: str, mockserver: str, port: int) -> None:
+def scenario_answer(cli: str, manifest: Path, home: Path, base_url: str, key: str,
+                    mockserver: str, port: int, since: int) -> None:
     marker = "ECHO-" + secrets.token_hex(4)
     prompt = f"Reply with exactly: {marker}."
     ms_reset(mockserver)
@@ -742,7 +798,7 @@ def scenario_answer(cli: str, manifest: Path, home: Path, base_url: str, key: st
     finally:
         collect_logs(run_dir)
         tmux("kill-session", "-t", name, check=False)
-    rows = wait_proxy_rows(home, 1)
+    rows = wait_proxy_rows(home, since, 1)
     bad = [r for r in rows if r[1] not in (200, 499)]
     if not rows:
         raise AssertionError("answer: the proxy logged no request row")
@@ -753,7 +809,8 @@ def scenario_answer(cli: str, manifest: Path, home: Path, base_url: str, key: st
         raise AssertionError(f"answer: upstream turn requests = {len(real)}, want exactly 1")
 
 
-def scenario_recall(cli: str, manifest: Path, home: Path, base_url: str, key: str, mockserver: str, port: int) -> None:
+def scenario_recall(cli: str, manifest: Path, home: Path, base_url: str, key: str,
+                    mockserver: str, port: int, since: int) -> None:
     t1 = "Please remember the number 4711."
     t2 = "Which number did I ask you to remember?"
     ms_reset(mockserver)
@@ -780,7 +837,7 @@ def scenario_recall(cli: str, manifest: Path, home: Path, base_url: str, key: st
         collect_logs(run_dir)
         tmux("kill-session", "-t", name, check=False)
 
-    rows = wait_proxy_rows(home, 2)
+    rows = wait_proxy_rows(home, since, 2)
     bad = [r for r in rows if r[1] not in (200, 499) or (r[1] != 499 and r[2])]
     if len(rows) < 2:
         raise AssertionError(f"recall: the proxy logged {len(rows)} row(s), want 2")
@@ -799,13 +856,97 @@ def scenario_recall(cli: str, manifest: Path, home: Path, base_url: str, key: st
 SCENARIOS = {"answer": scenario_answer, "recall": scenario_recall}
 
 
+def load_cli_manifest(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def select_cells(manifest: dict, shard: str | None,
+                 clients: str | None, scenarios: str | None) -> list[tuple[str, str]]:
+    """The manifest is the source of truth; explicit --clients/--scenarios are
+    a local override that ignores cell statuses. A missing shard or scenario is
+    a failure, never a silent empty run."""
+    by_key = {(c["client"], c["scenario"]): c for c in manifest["cells"]}
+    if clients or scenarios:
+        wanted_clients = [c.strip() for c in
+                          (clients or ",".join(manifest["clients"])).split(",") if c.strip()]
+        wanted_scenarios = [s.strip() for s in
+                           (scenarios or ",".join(manifest["scenarios"])).split(",") if s.strip()]
+        unknown = [s for s in wanted_scenarios if s not in SCENARIOS]
+        if unknown:
+            raise SystemExit(f"unknown scenario(s): {', '.join(unknown)}")
+        out = []
+        for cli in wanted_clients:
+            for scenario in wanted_scenarios:
+                if (cli, scenario) not in by_key:
+                    raise SystemExit(f"no manifest cell for {cli}/{scenario}")
+                out.append((cli, scenario))
+        return out
+
+    if shard:
+        shard_scenarios = manifest["shards"].get(shard)
+        if not shard_scenarios:
+            raise SystemExit(f"unknown or empty shard {shard!r}")
+    else:
+        shard_scenarios = None
+    out = []
+    for cell in manifest["cells"]:
+        if cell["status"] != "green":
+            continue
+        if shard_scenarios is not None and cell["scenario"] not in shard_scenarios:
+            continue
+        out.append((cell["client"], cell["scenario"]))
+    if not out:
+        raise SystemExit("manifest selection is empty")
+    return out
+
+
+def upstream_tool_names(reqs: list[dict]) -> list[str]:
+    """The first upstream request's declared tool names; the seed-discovery
+    evidence for the CLI tool-loop scenario."""
+    for request in reqs:
+        payload = (request.get("body") or {}).get("json") or {}
+        tools = payload.get("tools") or []
+        if tools:
+            return [t.get("function", {}).get("name") or t.get("name")
+                    for t in tools if isinstance(t, dict)]
+    return []
+
+
+def write_result(cli: str, scenario: str, home: Path, mockserver: str,
+                 since: int, started: float, error: str) -> None:
+    """One machine-readable cell report next to the pane and client logs."""
+    run_dir = home / "clients" / cli / scenario
+    run_dir.mkdir(parents=True, exist_ok=True)
+    pane_tail = ""
+    pane_log = run_dir / "pane.log"
+    if pane_log.exists():
+        pane_tail = pane_log.read_bytes()[-4096:].decode("utf-8", "replace")
+    requests = ms_requests(mockserver)
+    rows = proxy_rows(home, since)
+    result = {
+        "cli": cli,
+        "scenario": scenario,
+        "status": "fail" if error else "pass",
+        "error": error,
+        "duration_seconds": round(time.time() - started, 2),
+        "pane_tail": pane_tail,
+        "upstream_requests": len(requests),
+        "upstream_tools": upstream_tool_names(requests),
+        "proxy_rows": [{"status": row[1], "error": row[2]} for row in rows],
+    }
+    (run_dir / "result.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--home", required=True)
     parser.add_argument("--mockserver", required=True)
-    parser.add_argument("--clients",
-                        default="codex,claude-code,crush,openhands,gptme,open-interpreter,aider,cline,continue,goose,kimi,qwen,opencode")
-    parser.add_argument("--scenarios", default="answer,recall")
+    parser.add_argument("--manifest", default=str(CLI_MANIFEST))
+    parser.add_argument("--shard", default=None)
+    parser.add_argument("--clients", default=None,
+                        help="local override: comma-separated clients, ignores manifest statuses")
+    parser.add_argument("--scenarios", default=None,
+                        help="local override: comma-separated scenarios, ignores manifest statuses")
     parser.add_argument("--binary", default=str(REPO / "proxyllm"))
     parser.add_argument("--port", type=int, default=18190)
     args = parser.parse_args()
@@ -822,25 +963,40 @@ def main() -> int:
     if not binary.exists():
         raise SystemExit(f"proxy binary {binary} missing; run make build first")
 
+    manifest_doc = load_cli_manifest(Path(args.manifest))
+    cells = select_cells(manifest_doc, args.shard, args.clients, args.scenarios)
+
     kill_codex_daemons()
     proxy = start_proxy(home, binary, args.port)
     try:
         key = configure(home, args.port, args.mockserver)
         failures = []
-        for cli in [c.strip() for c in args.clients.split(",") if c.strip()]:
-            manifest = REPO / ".github/live-cli/adapters" / f"{cli}.json"
-            if not manifest.exists():
+        for cli, scenario in cells:
+            adapter = REPO / ".github/live-cli/adapters" / f"{cli}.json"
+            if not adapter.exists():
                 raise SystemExit(f"no adapter manifest for {cli}")
-            for scenario in [s.strip() for s in args.scenarios.split(",") if s.strip()]:
-                label = f"{cli}/{scenario}"
-                print(f"{label:32s} running", flush=True)
+            label = f"{cli}/{scenario}"
+            print(f"{label:32s} running", flush=True)
+            since = wait_proxy_quiet(home)
+            started = time.time()
+            error = ""
+            try:
+                SCENARIOS[scenario](cli, adapter, home, f"http://127.0.0.1:{args.port}",
+                                    key, args.mockserver, args.port, since)
+            except AssertionError as exc:
+                error = str(exc)
+                print(f"{label:32s} FAIL  {error}", flush=True)
+                failures.append(label)
+            except BaseException as exc:
+                error = f"driver abort: {exc}"
+                raise
+            else:
+                print(f"{label:32s} pass", flush=True)
+            finally:
                 try:
-                    SCENARIOS[scenario](cli, manifest, home, f"http://127.0.0.1:{args.port}", key, args.mockserver, args.port)
-                except AssertionError as exc:
-                    print(f"{label:32s} FAIL  {exc}", flush=True)
-                    failures.append(label)
-                else:
-                    print(f"{label:32s} pass", flush=True)
+                    write_result(cli, scenario, home, args.mockserver, since, started, error)
+                except Exception as exc:  # evidence must never mask the cell verdict
+                    print(f"{label:32s} result.json failed: {exc}", flush=True)
         if failures:
             print(f"plain-start matrix: FAIL ({', '.join(failures)})")
             return 1

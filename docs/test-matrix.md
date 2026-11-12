@@ -122,31 +122,46 @@ document fail the schema gate; the golden response passes), and
 including the duplicate-claim rule.
 
 Pending cells (the manifest names the reason for each; the fix loop owns them):
-- M2: the CLIs, plain start, beyond the `answer`/`recall` scenario set.
+- M2: scenarios beyond `answer`/`recall` are named skipped, with a reason, in
+  `.github/test-matrix/cli_matrix.json`; the scenario implementation phases
+  flip them green.
 
 ## M2 — the plain-start CLI matrix (cli-plain)
 
 The `cli-plain` job in `.github/workflows/matrix.yml` drives
-`.github/test-matrix/cli_plain.py`: 13 CLIs total, 12 of them in CI, each
-started exactly the way a user starts it — the bare binary in a tmux
-pseudo-terminal, only its own config pointing at the proxy — against
-MockServer. The `--scenarios answer,recall` set runs in CI today (single
-answer, recall-with-history); the wider scenario set is pending. continue is
-excluded from the CI run and runs locally only.
+`.github/test-matrix/cli_plain.py`: 12 CLIs, each started exactly the way a
+user starts it — the bare binary in a tmux pseudo-terminal, only its own
+config pointing at the proxy — against MockServer.
 
-**Why continue is not in the CI run.** cn 1.5.47's plain-start TUI never
+**The manifest is the source of truth.** `.github/test-matrix/cli_matrix.json`
+enumerates every client × scenario pair, status `green` or `skipped`; a skipped
+cell carries its reason. `check_cli_manifest.py` fails on a missing pair, a
+green scenario without a `SCENARIOS` function, a scenario function that is
+green nowhere, a green cell outside a shard, or a shard the workflow does not
+wire. `test_gates.py` is the gate's negative self-test. Today `answer` and
+`recall` are green (the `basic` shard); the wider scenario set is skipped with
+its reason, so the omission is visible on every run instead of silent.
+
+**Shards and evidence.** The workflow runs one job per manifest shard, each
+with its own runner, home, port and `cli-plain-<shard>` artifact, and
+`fail-fast: false`; a failing cell cannot hide another. Every cell writes
+`result.json` next to its `pane.log` and `client-logs/` — status, duration,
+pane tail, upstream request count, declared tool names, and the request-log
+rows since the cell's baseline. A deliberate fault row from one cell can
+therefore never poison a later cell's clean-row check.
+
+**Why continue is not in the matrix.** cn 1.5.47's plain-start TUI never
 mounts its composer on `ubuntu-24.04` runners: Ink paints exactly two stdout
 frames, then the render loop emits nothing for the whole 45 s window while
 the input effects keep running — no blocked syscall, no network wait — while
 locally it mounts in every variant (node versions, locales, terminal sizes).
 Scope: the plain-start TUI only; the headless M1 conformance cells are green
 in CI throughout. Evidence chain: frame probe #114, strace #113, boot trace
-#112/#111, deep dives #108–#115. Locally verified green: two full 26/26 runs
-(13 clients × answer/recall) on the #114 lineage, including node 26 and 27.
-The driver still accepts `--clients continue` for local runs. Re-entry
-criterion: re-add `continue` when @continuedev/cli (pinned at 1.5.47) mounts
-its composer on the runner image — the pane artifacts under the
-`cli-plain-matrix` artifact prove any fix.
+#112/#111, deep dives #108–#115. The headless `live-cli` adapter stays (that
+suite still runs it); the plain-start matrix does not carry a local-only
+exception. Re-entry: add `continue` to `cli_matrix.json` when
+@continuedev/cli (pinned at 1.5.47) mounts its composer on the runner image —
+the pane artifacts prove any fix.
 
 Out of scope (no client or product path uses them): embeddings, audio, images,
 moderations, files, batches, Realtime/Live WebSocket, legacy completions,
