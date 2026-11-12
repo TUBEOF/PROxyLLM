@@ -417,14 +417,12 @@
     {
       "client": "gptme",
       "scenario": "multi_turn",
-      "status": "skipped",
-      "note": "multi-turn scenario not yet verified for this adapter"
+      "status": "green"
     },
     {
       "client": "gptme",
       "scenario": "large_output",
-      "status": "skipped",
-      "note": "large-output scenario not yet verified for this adapter"
+      "status": "green"
     },
     {
       "client": "gptme",
@@ -505,14 +503,13 @@
     {
       "client": "aider",
       "scenario": "multi_turn",
-      "status": "skipped",
-      "note": "multi-turn scenario not yet verified for this adapter"
+      "status": "green"
     },
     {
       "client": "aider",
       "scenario": "large_output",
       "status": "skipped",
-      "note": "large-output scenario not yet verified for this adapter"
+      "note": "aider's TUI does not render the 20 KB tail in the visible pane; rerun when the pane capture proves it"
     },
     {
       "client": "aider",
@@ -593,14 +590,12 @@
     {
       "client": "cline",
       "scenario": "multi_turn",
-      "status": "skipped",
-      "note": "multi-turn scenario not yet verified for this adapter"
+      "status": "green"
     },
     {
       "client": "cline",
       "scenario": "large_output",
-      "status": "skipped",
-      "note": "large-output scenario not yet verified for this adapter"
+      "status": "green"
     },
     {
       "client": "cline",
@@ -681,14 +676,12 @@
     {
       "client": "goose",
       "scenario": "multi_turn",
-      "status": "skipped",
-      "note": "multi-turn scenario not yet verified for this adapter"
+      "status": "green"
     },
     {
       "client": "goose",
       "scenario": "large_output",
-      "status": "skipped",
-      "note": "large-output scenario not yet verified for this adapter"
+      "status": "green"
     },
     {
       "client": "goose",
@@ -769,14 +762,12 @@
     {
       "client": "kimi",
       "scenario": "multi_turn",
-      "status": "skipped",
-      "note": "multi-turn scenario not yet verified for this adapter"
+      "status": "green"
     },
     {
       "client": "kimi",
       "scenario": "large_output",
-      "status": "skipped",
-      "note": "large-output scenario not yet verified for this adapter"
+      "status": "green"
     },
     {
       "client": "kimi",
@@ -857,14 +848,12 @@
     {
       "client": "qwen",
       "scenario": "multi_turn",
-      "status": "skipped",
-      "note": "multi-turn scenario not yet verified for this adapter"
+      "status": "green"
     },
     {
       "client": "qwen",
       "scenario": "large_output",
-      "status": "skipped",
-      "note": "large-output scenario not yet verified for this adapter"
+      "status": "green"
     },
     {
       "client": "qwen",
@@ -945,14 +934,12 @@
     {
       "client": "opencode",
       "scenario": "multi_turn",
-      "status": "skipped",
-      "note": "multi-turn scenario not yet verified for this adapter"
+      "status": "green"
     },
     {
       "client": "opencode",
       "scenario": "large_output",
-      "status": "skipped",
-      "note": "large-output scenario not yet verified for this adapter"
+      "status": "green"
     },
     {
       "client": "opencode",
@@ -1033,14 +1020,12 @@
     {
       "client": "open-interpreter",
       "scenario": "multi_turn",
-      "status": "skipped",
-      "note": "multi-turn scenario not yet verified for this adapter"
+      "status": "green"
     },
     {
       "client": "open-interpreter",
       "scenario": "large_output",
-      "status": "skipped",
-      "note": "large-output scenario not yet verified for this adapter"
+      "status": "green"
     },
     {
       "client": "open-interpreter",

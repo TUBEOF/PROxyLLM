@@ -141,8 +141,9 @@ green nowhere, a green cell outside a shard, or a shard the workflow does not
 wire. `test_gates.py` is the gate's negative self-test. Today `answer`,
 `recall`, `fault_429`, `fault_529`, `fault_quota` (all clients), the
 `fault_truncated`/`fault_malformed_sse` pair (streaming clients), `web_turn2`
-(all clients), `tool_loop` (crush, openhands) and `multi_turn`/`large_output`
-(verified clients) are green across the `basic`, `faults`, `faults_stream`,
+(all clients), `tool_loop` (crush, openhands), `multi_turn` (all clients) and
+`large_output` (all but aider, whose TUI does not render the 20 KB tail) are
+green across the `basic`, `faults`, `faults_stream`,
 `web`, `tools` and `long` shards; the remaining scenarios are skipped with
 their reason, so the omission is visible on every run instead of silent.
 
@@ -154,8 +155,9 @@ affordance — M1's client-abort cell covers the proxy), `previous_response_id`
 (these clients send full history; `recall` plus the M1 Responses chain cover
 the contract), vision (no verified plain-start image attach; the M1 blind-chain
 cell covers the caption fallback), decisions (no CLI surface; M1 drives System
-One and OpenAI Decisions), and `tool_loop` on the CLIs whose tool seed or
-approval flow is not verified yet.
+One and OpenAI Decisions), `tool_loop` on the CLIs whose tool seed or
+approval flow is not verified yet, and `large_output` on aider (its TUI does
+not render the 20 KB tail in the visible pane).
 
 Each fault cell gets its own provider account (the breaker and quota cooldowns
 are keyed by account, so sharing one would poison the next cell), and the CLI's
