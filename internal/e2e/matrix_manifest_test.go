@@ -65,47 +65,60 @@ func loadMatrix(t *testing.T) matrixManifest {
 // and every non-pending pair cell claimable by the runners. This is the
 // completeness gate — a matrix that quietly drops a combination fails here.
 func TestMatrix_ManifestIsComplete(t *testing.T) {
-	m := loadMatrix(t)
+	for _, problem := range validateManifest(loadMatrix(t)) {
+		t.Error(problem)
+	}
+}
+
+// validateManifest is the completeness gate as a pure predicate, so the
+// negative-control test exercises every rule the gate uses.
+func validateManifest(m matrixManifest) []string {
+	var problems []string
+	add := func(format string, args ...any) {
+		problems = append(problems, fmt.Sprintf(format, args...))
+	}
 	if m.Schema != 2 {
-		t.Fatalf("manifest schema = %d, want 2", m.Schema)
+		add("manifest schema = %d, want 2", m.Schema)
 	}
 	if len(m.Clients) == 0 || len(m.Upstreams) == 0 || len(m.Features) == 0 || len(m.Modes) == 0 {
-		t.Fatal("manifest axes must not be empty")
+		add("manifest axes must not be empty")
 	}
 
 	seen := map[string]matrixCell{}
 	for _, c := range m.Cells {
 		if c.ID == "" {
-			t.Fatal("a cell carries no id")
+			add("a cell carries no id")
+			continue
 		}
 		if prev, dup := seen[c.ID]; dup {
-			t.Fatalf("duplicate cell id %q (%+v vs %+v)", c.ID, prev, c)
+			add("duplicate cell id %q (%+v vs %+v)", c.ID, prev, c)
+			continue
 		}
 		seen[c.ID] = c
 		switch c.Status {
 		case "green":
 			if c.Note != "" {
-				t.Errorf("green cell %q carries a note: %q", c.ID, c.Note)
+				add("green cell %q carries a note: %q", c.ID, c.Note)
 			}
 			if c.SchemaNote != "" {
 				// A documented schema gap is only meaningful on a pair cell
 				// the runners execute, and must state itself precisely.
 				if !strings.HasPrefix(c.SchemaNote, "schema: not yet strict — ") {
-					t.Errorf("schema_note on %q must describe the not-yet-strict state (got %q)", c.ID, c.SchemaNote)
+					add("schema_note on %q must describe the not-yet-strict state (got %q)", c.ID, c.SchemaNote)
 				}
 				if c.Client == "" || c.Feature == "" || c.Mode == "" {
-					t.Errorf("schema_note on %q rides a pair cell, not an extra", c.ID)
+					add("schema_note on %q rides a pair cell, not an extra", c.ID)
 				}
 			}
 		case "pending":
 			if c.Note == "" {
-				t.Errorf("pending cell %q carries no reason", c.ID)
+				add("pending cell %q carries no reason", c.ID)
 			}
 			if c.SchemaNote != "" {
-				t.Errorf("pending cell %q carries a schema_note; only green pair cells document gaps", c.ID)
+				add("pending cell %q carries a schema_note; only green pair cells document gaps", c.ID)
 			}
 		default:
-			t.Errorf("cell %q status = %q, want green|pending", c.ID, c.Status)
+			add("cell %q status = %q, want green|pending", c.ID, c.Status)
 		}
 	}
 
@@ -117,7 +130,7 @@ func TestMatrix_ManifestIsComplete(t *testing.T) {
 				for _, mode := range m.Modes {
 					id := cellID(client, upstream, feature, mode)
 					if _, ok := seen[id]; !ok {
-						t.Errorf("missing cell %q — the cross product must be complete", id)
+						add("missing cell %q — the cross product must be complete", id)
 					}
 				}
 			}
@@ -125,9 +138,110 @@ func TestMatrix_ManifestIsComplete(t *testing.T) {
 	}
 
 	for _, c := range m.Extras {
-		if c.ID == "" || (c.Status == "pending" && c.Note == "") {
-			t.Errorf("invalid extra cell: %+v", c)
+		if c.ID == "" {
+			add("an extra carries no id")
 		}
+		if c.SchemaNote != "" {
+			add("extra %q carries a schema_note; only green pair cells document gaps", c.ID)
+		}
+		switch c.Status {
+		case "green":
+			if c.Test == "" {
+				add("green extra %q names no test", c.ID)
+			}
+			if c.Note != "" {
+				add("green extra %q carries a note: %q", c.ID, c.Note)
+			}
+		case "pending":
+			if c.Note == "" {
+				add("pending extra %q carries no reason", c.ID)
+			}
+			if c.Test != "" {
+				add("pending extra %q names a test %q; a pending cell cannot have one", c.ID, c.Test)
+			}
+		default:
+			add("extra %q status = %q, want green|pending", c.ID, c.Status)
+		}
+	}
+	return problems
+}
+
+// TestMatrix_Meta_ManifestValidatorHasTeeth feeds the validator one broken
+// manifest per rule and requires every mutation to be reported.
+func TestMatrix_Meta_ManifestValidatorHasTeeth(t *testing.T) {
+	base := loadMatrix(t)
+	if got := validateManifest(base); len(got) != 0 {
+		t.Fatalf("real manifest reports problems: %v", got)
+	}
+	mutate := func(f func(*matrixManifest)) []string {
+		m := base
+		m.Clients = append([]string(nil), base.Clients...)
+		m.Upstreams = append([]string(nil), base.Upstreams...)
+		m.Features = append([]string(nil), base.Features...)
+		m.Modes = append([]string(nil), base.Modes...)
+		m.Cells = append([]matrixCell(nil), base.Cells...)
+		m.Extras = append([]matrixCell(nil), base.Extras...)
+		f(&m)
+		return validateManifest(m)
+	}
+	if got := mutate(func(m *matrixManifest) { m.Schema = 1 }); len(got) == 0 {
+		t.Error("wrong schema was not rejected")
+	}
+	if got := mutate(func(m *matrixManifest) { m.Clients = nil }); len(got) == 0 {
+		t.Error("empty axis was not rejected")
+	}
+	if got := mutate(func(m *matrixManifest) {
+		m.Cells = append(m.Cells, m.Cells[0])
+	}); len(got) == 0 {
+		t.Error("duplicate id was not rejected")
+	}
+	if got := mutate(func(m *matrixManifest) { m.Cells = m.Cells[1:] }); len(got) == 0 {
+		t.Error("missing cross-product cell was not rejected")
+	}
+	if got := mutate(func(m *matrixManifest) {
+		for i := range m.Cells {
+			if m.Cells[i].Status == "green" {
+				m.Cells[i].Note = "unexpected"
+				break
+			}
+		}
+	}); len(got) == 0 {
+		t.Error("green cell with a note was not rejected")
+	}
+	if got := mutate(func(m *matrixManifest) {
+		m.Cells = append(m.Cells, matrixCell{ID: "pending-x", Status: "pending"})
+	}); len(got) == 0 {
+		t.Error("pending cell without a reason was not rejected")
+	}
+	if got := mutate(func(m *matrixManifest) {
+		for i := range m.Cells {
+			if m.Cells[i].Status == "green" && m.Cells[i].Client != "" {
+				m.Cells[i].SchemaNote = "not the prefix"
+				break
+			}
+		}
+	}); len(got) == 0 {
+		t.Error("schema_note with the wrong prefix was not rejected")
+	}
+	if got := mutate(func(m *matrixManifest) {
+		m.Extras[0].SchemaNote = "schema: not yet strict — x"
+	}); len(got) == 0 {
+		t.Error("schema_note on an extra was not rejected")
+	}
+	if got := mutate(func(m *matrixManifest) {
+		m.Cells = append(m.Cells, matrixCell{ID: "bad-x", Status: "maybe"})
+	}); len(got) == 0 {
+		t.Error("unknown cell status was not rejected")
+	}
+	if got := mutate(func(m *matrixManifest) { m.Extras[0].Test = "" }); len(got) == 0 {
+		t.Error("green extra without a test was not rejected")
+	}
+	if got := mutate(func(m *matrixManifest) {
+		m.Extras = append(m.Extras, matrixCell{
+			ID: "pending-extra", Status: "pending", Note: "why", Test: "TestX",
+		})
+	}); len(got) == 0 {
+		t.Error("pending extra naming a test was not rejected")
 	}
 }
 

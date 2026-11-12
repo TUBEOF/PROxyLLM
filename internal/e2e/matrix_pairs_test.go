@@ -10,6 +10,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -123,33 +124,123 @@ func runPairCell(t *testing.T, cell matrixCell, completion map[string]any) {
 
 	res := drivePairClient(t, e, cell)
 
-	if cell.Feature == "text" {
-		if !strings.Contains(res.text, wantText) {
-			t.Fatalf("%s: client text = %q, want %q", cell.ID, res.text, wantText)
-		}
-	} else {
-		if res.toolName != toolName || !strings.Contains(res.toolArgs, "Paris") {
-			t.Fatalf("%s: tool call = %s/%s, want %s with the Paris arguments",
-				cell.ID, res.toolName, res.toolArgs, toolName)
-		}
+	if v := pairTextViolation(cell, res); v != "" {
+		t.Fatalf("%s", v)
+	}
+	if v := pairToolViolation(cell, res); v != "" {
+		t.Fatalf("%s", v)
 	}
 
 	body := e.upstreamBody(t, path)
-	if cell.Upstream == "gemini-native" {
-		// The model rides the URL path on the Gemini wire; the exact-path
-		// fetch above already proved where the request went.
-	} else if body["model"] != cell.Upstream {
-		t.Errorf("%s: upstream model = %v, want %s", cell.ID, body["model"], cell.Upstream)
+	if v := pairModelViolation(cell, body); v != "" {
+		t.Errorf("%s", v)
 	}
-	if cell.Feature == "tools" {
-		if tools, _ := body["tools"].([]any); len(tools) == 0 {
-			t.Errorf("%s: upstream request carries no tools: %v", cell.ID, body)
-		}
+	if v := pairToolsViolation(cell, body); v != "" {
+		t.Errorf("%s", v)
 	}
 
 	// WP6: the emitted client-facing bytes must also satisfy the surface's
 	// official wire schema.
 	validatePairCellResponse(t, cell, e)
+}
+
+// pairTextViolation is the text assertion as a pure predicate, so the
+// negative-control meta-test exercises the same rule the runner uses.
+func pairTextViolation(cell matrixCell, res pairResult) string {
+	if cell.Feature != "text" {
+		return ""
+	}
+	want := "answer:" + cell.ID
+	if !strings.Contains(res.text, want) {
+		return fmt.Sprintf("%s: client text = %q, want %q", cell.ID, res.text, want)
+	}
+	return ""
+}
+
+// pairToolViolation is the tool-call assertion as a pure predicate.
+func pairToolViolation(cell matrixCell, res pairResult) string {
+	if cell.Feature != "tools" {
+		return ""
+	}
+	if res.toolName != toolName || !strings.Contains(res.toolArgs, "Paris") {
+		return fmt.Sprintf("%s: tool call = %s/%s, want %s with the Paris arguments",
+			cell.ID, res.toolName, res.toolArgs, toolName)
+	}
+	return ""
+}
+
+// pairModelViolation is the upstream-model assertion as a pure predicate. The
+// Gemini wire carries the model in the URL path, so its cells have no body
+// model to assert.
+func pairModelViolation(cell matrixCell, body map[string]any) string {
+	if cell.Upstream == "gemini-native" {
+		return ""
+	}
+	if body["model"] != cell.Upstream {
+		return fmt.Sprintf("%s: upstream model = %v, want %s", cell.ID, body["model"], cell.Upstream)
+	}
+	return ""
+}
+
+// pairToolsViolation is the declared-tools assertion as a pure predicate.
+func pairToolsViolation(cell matrixCell, body map[string]any) string {
+	if cell.Feature != "tools" {
+		return ""
+	}
+	if tools, _ := body["tools"].([]any); len(tools) == 0 {
+		return fmt.Sprintf("%s: upstream request carries no tools: %v", cell.ID, body)
+	}
+	return ""
+}
+
+// TestMatrix_Meta_PairCellAssertionsHaveTeeth proves every pair-cell assertion
+// rejects a wrong value and accepts the right one. Without this, a helper
+// that always returns "" would keep the whole matrix green.
+func TestMatrix_Meta_PairCellAssertionsHaveTeeth(t *testing.T) {
+	textCell := matrixCell{
+		ID: "openai-chat__openai-chat__text__stream", Client: "openai-chat",
+		Upstream: "openai-chat", Feature: "text", Mode: "stream",
+	}
+	if v := pairTextViolation(textCell, pairResult{text: "answer:" + textCell.ID}); v != "" {
+		t.Errorf("positive text control: %s", v)
+	}
+	if v := pairTextViolation(textCell, pairResult{text: "wrong"}); v == "" {
+		t.Error("wrong text was not rejected")
+	}
+
+	toolCell := matrixCell{
+		ID: "openai-chat__openai-chat__tools__stream", Client: "openai-chat",
+		Upstream: "openai-chat", Feature: "tools", Mode: "stream",
+	}
+	if v := pairToolViolation(toolCell, pairResult{toolName: toolName, toolArgs: toolArgs}); v != "" {
+		t.Errorf("positive tool control: %s", v)
+	}
+	if v := pairToolViolation(toolCell, pairResult{toolName: "wrong_tool", toolArgs: toolArgs}); v == "" {
+		t.Error("wrong tool name was not rejected")
+	}
+	if v := pairToolViolation(toolCell, pairResult{toolName: toolName, toolArgs: `{"city":"Rome"}`}); v == "" {
+		t.Error("wrong tool arguments were not rejected")
+	}
+
+	goodBody := map[string]any{
+		"model": textCell.Upstream,
+		"tools": []any{map[string]any{"type": "function"}},
+	}
+	if v := pairModelViolation(textCell, goodBody); v != "" {
+		t.Errorf("positive model control: %s", v)
+	}
+	if v := pairModelViolation(textCell, map[string]any{"model": "other"}); v == "" {
+		t.Error("wrong upstream model was not rejected")
+	}
+	if v := pairToolsViolation(toolCell, goodBody); v != "" {
+		t.Errorf("positive tools control: %s", v)
+	}
+	if v := pairToolsViolation(toolCell, map[string]any{"model": toolCell.Upstream}); v == "" {
+		t.Error("missing tools were not rejected")
+	}
+	if v := pairToolsViolation(textCell, map[string]any{}); v != "" {
+		t.Errorf("text cell must not assert tools: %s", v)
+	}
 }
 
 // pairResult is what a client driver reports back.

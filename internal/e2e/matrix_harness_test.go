@@ -57,6 +57,7 @@ type matrixEnv struct {
 	srv     *httptest.Server
 	key     string
 	exec    *routing.Executor
+	health  *routing.HealthTracker
 	openai  openaiclient.Client
 	anthrop anthropic.Client
 	// wire tees the client-facing response bytes at the proxy boundary (the
@@ -179,7 +180,7 @@ func buildMatrixEnv(t *testing.T, emuFactory func(base string) routing.Emulator,
 	t.Cleanup(func() { httpapi.WaitForPendingCaptures(5 * time.Second) })
 
 	return &matrixEnv{
-		ms: ms, store: st, srv: srv, key: key, exec: exec, wire: wire,
+		ms: ms, store: st, srv: srv, key: key, exec: exec, health: health, wire: wire,
 		openai: openaiclient.NewClient(
 			openaioption.WithBaseURL(srv.URL+"/v1"),
 			openaioption.WithAPIKey(key),

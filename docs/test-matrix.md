@@ -74,8 +74,15 @@ runners only execute it.
 **Scenario and fault cells.** Streaming round trips per surface, the
 cross-protocol scenarios, the tool-call round trip, the thinking round trip
 (enabled thinking reaches a thinking-capable upstream; the reasoning trace
-surfaces beside the final answer), upstream 429/Retry-After
-and mid-stream truncation (must surface as errors), the emulated
+surfaces beside the final answer), upstream 429/Retry-After, the 529
+overload status (fail over, never a same-provider retry), mid-stream
+truncation and malformed SSE (both must surface as terminal errors; the
+malformed frame rides a raw Gemini SSE body because MockServer appends its
+broken chunk after the terminal sentinel on sentinel-terminated wires),
+MockServer's stateful quota window (the first request is served, the next one
+over the limit is 429), the proxy's `insufficient_quota` cooldown (the first
+call surfaces 402, the next is refused with 503 + Retry-After and never
+reaches the upstream again), the emulated
 web-tool flows (fully offline — MockServer also plays the Firecrawl v2
 backend): the Anthropic search cell, the chat-surface client-web-tool claim,
 the web_fetch cell (prior-context guard + document result), the plain-CLI
@@ -105,6 +112,14 @@ either strict-validated or documents its gap precisely);
 `.github/test-matrix/check_manifest.py` enforces that the manifest and the
 Go tests agree in both directions, and the workflow runs the whole matrix
 with `-count=2` for determinism.
+
+**Meta-gates.** Three negative controls prove the suite can go red:
+`TestMatrix_Meta_PairCellAssertionsHaveTeeth` (every pair assertion rejects a
+wrong value), `TestMatrix_Meta_WireSchemaHasTeeth` (invalid JSON and an invalid
+document fail the schema gate; the golden response passes), and
+`TestMatrix_Meta_ManifestValidatorHasTeeth` (one broken manifest per rule).
+`.github/test-matrix/test_gates.py` is the gate's own negative self-test,
+including the duplicate-claim rule.
 
 Pending cells (the manifest names the reason for each; the fix loop owns them):
 - M2: the CLIs, plain start, beyond the `answer`/`recall` scenario set.

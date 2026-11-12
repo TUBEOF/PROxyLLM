@@ -57,6 +57,8 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
+      - name: Gate self-tests (negative controls)
+        run: python3 -I .github/test-matrix/test_gates.py
       - name: Manifest gate (cells and tests must agree)
         run: python3 -I .github/test-matrix/check_manifest.py
       - name: Protocol conformance matrix (run twice for determinism)

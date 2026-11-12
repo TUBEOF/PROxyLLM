@@ -12,8 +12,11 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	openaiclient "github.com/openai/openai-go/v3"
+
+	"github.com/tubeof/proxyllm/internal/storage"
 )
 
 // ollamaPost sends one raw Ollama-native chat request to the proxy (the client
@@ -223,6 +226,251 @@ func TestMatrix_ChatClient_UpstreamTruncatedStream(t *testing.T) {
 	}
 	if stream.Err() == nil {
 		t.Fatal("a truncated upstream stream completed without an error")
+	}
+}
+
+// 11. Fault: the upstream answers 529 (the Anthropic overload status the
+// OpenAI-compatible wire also uses). It is a server error, so the proxy fails
+// over without a same-provider retry; a single-provider chain surfaces the 529
+// and never fabricates an answer.
+func TestMatrix_ChatClient_UpstreamOverloaded529(t *testing.T) {
+	ctx := context.Background()
+	up := upstream{ID: "overloaded-up", Type: "ollama-cloud"}
+	e := newMatrixEnv(t, up)
+	e.ms.Upsert(t, map[string]any{
+		"httpRequest": map[string]any{"method": "POST", "path": "/v1/chat/completions"},
+		"httpLlmResponse": map[string]any{
+			"provider": "OPENAI",
+			"model":    up.ID,
+			"completion": map[string]any{
+				"text": "never delivered",
+			},
+			"chaos": map[string]any{
+				"errorStatus":      529,
+				"errorProbability": 1.0,
+				"retryAfter":       "1",
+			},
+		},
+	})
+
+	_, err := e.openai.Chat.Completions.New(ctx, openaiclient.ChatCompletionNewParams{
+		Model:    up.ID,
+		Messages: []openaiclient.ChatCompletionMessageParamUnion{openaiclient.UserMessage("hi")},
+	})
+	if err == nil {
+		t.Fatal("client received an answer from an overloaded upstream")
+	}
+	var apiErr *openaiclient.Error
+	if !asOpenAIError(err, &apiErr) {
+		t.Fatalf("error = %v, want the SDK's API error", err)
+	}
+	if apiErr.StatusCode != 529 {
+		t.Errorf("status = %d, want the upstream's 529", apiErr.StatusCode)
+	}
+	if n := countUpstreamRequests(t, e, "/v1/chat/completions"); n != 1 {
+		t.Errorf("upstream requests = %d, want exactly 1 (server errors fail over, never retry)", n)
+	}
+}
+
+// 12. Fault: the upstream stream carries a malformed SSE frame. MockServer
+// appends its malformed chunk after the terminal sentinel for sentinel-
+// terminated wires, which those decoders never read — so the fault rides a
+// GEMINI upstream (no sentinel) served as a raw SSE body with the broken frame
+// before the terminal. The client must see the partial answer and a terminal
+// error, never a clean success.
+func TestMatrix_ChatClient_UpstreamMalformedStream(t *testing.T) {
+	ctx := context.Background()
+	up := upstream{ID: "gemini-malformed-up", Type: "gemini"}
+	// pairWire keys off the manifest id "gemini-native"; this upstream has its
+	// own id, so build the same path convention directly.
+	path := "/v1beta/models/" + up.ID + ":streamGenerateContent"
+
+	run := func(t *testing.T, body string) (string, error) {
+		t.Helper()
+		e := newMatrixEnv(t, up)
+		e.ms.Upsert(t, map[string]any{
+			"httpRequest": map[string]any{"method": "POST", "path": path},
+			"httpResponse": map[string]any{
+				"statusCode": 200,
+				"headers": []map[string]any{{
+					"name": "Content-Type", "values": []string{"text/event-stream"},
+				}},
+				"body": body,
+			},
+		})
+		stream := e.openai.Chat.Completions.NewStreaming(ctx, openaiclient.ChatCompletionNewParams{
+			Model:    up.ID,
+			Messages: []openaiclient.ChatCompletionMessageParamUnion{openaiclient.UserMessage("hi")},
+		})
+		defer func() { _ = stream.Close() }()
+		var text strings.Builder
+		for stream.Next() {
+			if choices := stream.Current().Choices; len(choices) > 0 {
+				text.WriteString(choices[0].Delta.Content)
+			}
+		}
+		if n := countUpstreamRequests(t, e, path); n != 1 {
+			t.Errorf("upstream requests = %d, want exactly 1", n)
+		}
+		return text.String(), stream.Err()
+	}
+
+	t.Run("fault", func(t *testing.T) {
+		text, err := run(t, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"partial-\"}]}}]}\n\n"+
+			"data: {not json\n\n")
+		if !strings.Contains(text, "partial-") {
+			t.Fatalf("client text = %q, want the partial delta before the malformed frame", text)
+		}
+		if err == nil {
+			t.Fatal("a malformed upstream SSE stream completed without an error")
+		}
+	})
+
+	t.Run("control", func(t *testing.T) {
+		text, err := run(t, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"complete\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":1,\"candidatesTokenCount\":1,\"totalTokenCount\":2}}\n\n")
+		if err != nil {
+			t.Fatalf("clean Gemini stream errored: %v", err)
+		}
+		if !strings.Contains(text, "complete") {
+			t.Fatalf("client text = %q, want the clean answer", text)
+		}
+	})
+}
+
+// 13. Fault: MockServer's stateful request-count quota. The first request is
+// served, the next one over the limit gets 429; the proxy retries the same
+// provider inside its budget, so the upstream sees at least two requests and
+// the client ends with a typed error, never a fabricated answer.
+func TestMatrix_ChatClient_UpstreamQuotaWindow(t *testing.T) {
+	ctx := context.Background()
+	up := upstream{ID: "quota-window-up", Type: "ollama-cloud"}
+	e := newMatrixEnv(t, up)
+	e.ms.Upsert(t, map[string]any{
+		"httpRequest": map[string]any{"method": "POST", "path": "/v1/chat/completions"},
+		"httpLlmResponse": map[string]any{
+			"provider": "OPENAI",
+			"model":    up.ID,
+			"completion": map[string]any{
+				"text": "served before the quota window closed",
+			},
+			"chaos": map[string]any{
+				"quotaName":         "matrix-quota-window",
+				"quotaLimit":        1,
+				"quotaWindowMillis": 60000,
+			},
+		},
+	})
+
+	first, err := e.openai.Chat.Completions.New(ctx, openaiclient.ChatCompletionNewParams{
+		Model:    up.ID,
+		Messages: []openaiclient.ChatCompletionMessageParamUnion{openaiclient.UserMessage("hi")},
+	})
+	if err != nil {
+		t.Fatalf("first request inside the quota window: %v", err)
+	}
+	if len(first.Choices) == 0 || !strings.Contains(first.Choices[0].Message.Content, "served before") {
+		t.Fatalf("first answer = %+v, want the served completion", first.Choices)
+	}
+
+	_, err = e.openai.Chat.Completions.New(ctx, openaiclient.ChatCompletionNewParams{
+		Model:    up.ID,
+		Messages: []openaiclient.ChatCompletionMessageParamUnion{openaiclient.UserMessage("again")},
+	})
+	if err == nil {
+		t.Fatal("client received an answer after the quota window closed")
+	}
+	var apiErr *openaiclient.Error
+	if !asOpenAIError(err, &apiErr) {
+		t.Fatalf("error = %v, want the SDK's API error", err)
+	}
+	if apiErr.StatusCode != http.StatusTooManyRequests {
+		t.Errorf("status = %d, want 429 from the quota window", apiErr.StatusCode)
+	}
+	if n := countUpstreamRequests(t, e, "/v1/chat/completions"); n < 2 {
+		t.Errorf("upstream requests = %d, want at least 2 (served + quota rejection)", n)
+	}
+}
+
+// 14. Proxy quota class: an insufficient_quota rejection cools the account
+// directly. The first call surfaces 402; the next call is refused by the
+// health gate with the OpenAI overload mapping (503 + Retry-After) and never
+// reaches the upstream again.
+func TestMatrix_ChatClient_InsufficientQuotaCooldown(t *testing.T) {
+	ctx := context.Background()
+	up := upstream{ID: "quota-cooldown-up", Type: "custom-openai"}
+	e := newMatrixEnv(t, up)
+	e.ms.Upsert(t, map[string]any{
+		"httpRequest": map[string]any{"method": "POST", "path": "/v1/chat/completions"},
+		"httpResponse": map[string]any{
+			"statusCode": 402,
+			"headers": []map[string]any{{
+				"name": "Retry-After", "values": []string{"30"},
+			}},
+			"body": `{"error":{"message":"quota exhausted","type":"insufficient_quota","code":"insufficient_quota"}}`,
+		},
+	})
+
+	_, err := e.openai.Chat.Completions.New(ctx, openaiclient.ChatCompletionNewParams{
+		Model:    up.ID,
+		Messages: []openaiclient.ChatCompletionMessageParamUnion{openaiclient.UserMessage("hi")},
+	})
+	if err == nil {
+		t.Fatal("client received an answer from an insufficient-quota upstream")
+	}
+	var firstErr *openaiclient.Error
+	if !asOpenAIError(err, &firstErr) {
+		t.Fatalf("first error = %v, want the SDK's API error", err)
+	}
+	if firstErr.StatusCode != http.StatusPaymentRequired {
+		t.Errorf("first status = %d, want 402", firstErr.StatusCode)
+	}
+	if !e.health.Cooldown(up.ID) {
+		t.Error("account is not in a quota cooldown after insufficient_quota")
+	}
+	if got := e.health.State(up.ID).Reason; got != "quota_exhausted" {
+		t.Errorf("health reason = %q, want quota_exhausted", got)
+	}
+
+	_, err = e.openai.Chat.Completions.New(ctx, openaiclient.ChatCompletionNewParams{
+		Model:    up.ID,
+		Messages: []openaiclient.ChatCompletionMessageParamUnion{openaiclient.UserMessage("again")},
+	})
+	if err == nil {
+		t.Fatal("client received an answer while the account was quota-cooled")
+	}
+	var secondErr *openaiclient.Error
+	if !asOpenAIError(err, &secondErr) {
+		t.Fatalf("second error = %v, want the SDK's API error", err)
+	}
+	if secondErr.StatusCode != http.StatusServiceUnavailable {
+		t.Errorf("second status = %d, want 503 (overload mapping)", secondErr.StatusCode)
+	}
+	if secondErr.Response == nil || secondErr.Response.Header.Get("Retry-After") == "" {
+		t.Error("second response carries no Retry-After header")
+	}
+	if n := countUpstreamRequests(t, e, "/v1/chat/completions"); n != 1 {
+		t.Errorf("upstream requests = %d, want exactly 1 (the cooled account must not be re-paid)", n)
+	}
+
+	// The log rows tell the story: the 402 attempt, then the 503 gate refusal.
+	deadline := time.Now().Add(5 * time.Second)
+	var rows []storage.RequestLog
+	for time.Now().Before(deadline) {
+		got, listErr := e.store.ListRequestLogs(ctx, 8)
+		if listErr != nil {
+			t.Fatalf("list request logs: %v", listErr)
+		}
+		rows = rowsOf(got, up.ID)
+		if len(rows) >= 2 {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if len(rows) < 2 {
+		t.Fatalf("request rows = %d, want at least 2 (402 then 503)", len(rows))
+	}
+	if rows[0].Status != http.StatusServiceUnavailable || rows[1].Status != http.StatusPaymentRequired {
+		t.Errorf("row statuses (newest first) = %d,%d, want 503,402", rows[0].Status, rows[1].Status)
 	}
 }
 
