@@ -138,9 +138,33 @@ enumerates every client × scenario pair, status `green` or `skipped`; a skipped
 cell carries its reason. `check_cli_manifest.py` fails on a missing pair, a
 green scenario without a `SCENARIOS` function, a scenario function that is
 green nowhere, a green cell outside a shard, or a shard the workflow does not
-wire. `test_gates.py` is the gate's negative self-test. Today `answer` and
-`recall` are green (the `basic` shard); the wider scenario set is skipped with
-its reason, so the omission is visible on every run instead of silent.
+wire. `test_gates.py` is the gate's negative self-test. Today `answer`,
+`recall`, `fault_429`, `fault_529`, `fault_quota` (all clients), the
+`fault_truncated`/`fault_malformed_sse` pair (streaming clients), `web_turn2`
+(all clients), `tool_loop` (crush, openhands) and `multi_turn`/`large_output`
+(verified clients) are green across the `basic`, `faults`, `faults_stream`,
+`web`, `tools` and `long` shards; the remaining scenarios are skipped with
+their reason, so the omission is visible on every run instead of silent.
+
+**What is skipped and why.** The manifest carries the exact reason on every
+skipped cell; the recurring ones are: extended thinking (Claude Code's plain
+TUI sends no `thinking` field even with a budget env — M1's Anthropic thinking
+cell covers the proxy path), cancel/resume (no verified plain-start TUI
+affordance — M1's client-abort cell covers the proxy), `previous_response_id`
+(these clients send full history; `recall` plus the M1 Responses chain cover
+the contract), vision (no verified plain-start image attach; the M1 blind-chain
+cell covers the caption fallback), decisions (no CLI surface; M1 drives System
+One and OpenAI Decisions), and `tool_loop` on the CLIs whose tool seed or
+approval flow is not verified yet.
+
+Each fault cell gets its own provider account (the breaker and quota cooldowns
+are keyed by account, so sharing one would poison the next cell), and the CLI's
+in-flight retries drain before the next cell resets MockServer. The quota cell
+proves the CLI surfaces the 402 and then probes the same model directly: the
+cooled account answers the probe with the surface's overload status (503 on
+OpenAI, 529 on Anthropic) without reaching the upstream again. `fault_429`
+accepts either recovery through a retry or an honest 429 row — what it never
+accepts is a fabricated answer.
 
 **Shards and evidence.** The workflow runs one job per manifest shard, each
 with its own runner, home, port and `cli-plain-<shard>` artifact, and

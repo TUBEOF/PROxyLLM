@@ -50,9 +50,12 @@ live_cli = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(live_cli)
 
 MODEL = "sim-model"
+WEB_MODEL = "web-sim"
 PANE_COLS, PANE_ROWS = 140, 44
 UPSTREAM_PATH = "/v1/chat/completions"
 CLI_MANIFEST = HERE / "cli_matrix.json"
+ADMIN_CLIENT: admin.AdminClient | None = None
+ALIAS_MODEL = ""
 
 
 # --- proxy lifecycle -------------------------------------------------------
@@ -92,12 +95,14 @@ def start_proxy(home: Path, binary: Path, port: int) -> subprocess.Popen:
 
 def configure(home: Path, port: int, mockserver: str) -> str:
     """Admin-configure the instance against MockServer; returns the client key."""
+    global ADMIN_CLIENT
     client = admin.AdminClient(f"http://127.0.0.1:{port}", str(home / "run" / "admin-cookies.txt"))
     user = "matrix-admin"
     password = secrets.token_hex(16)
     env_path = home / ".env"
     env_path.write_text(f"ADMIN_USER={user}\nADMIN_PASSWORD={password}\n")
     client.login(str(env_path), user, password)
+    ADMIN_CLIENT = client
     admin.put(client, "/api/admin/providers/acc-sim", {
         "type": "custom-openai",
         "name": "Simulated upstream",
@@ -108,6 +113,19 @@ def configure(home: Path, port: int, mockserver: str) -> str:
     admin.put(client, "/api/admin/models/" + MODEL, {
         "provider_id": "acc-sim", "name": MODEL, "capabilities": {}, "compat": {},
     })
+    # The web scenario's model injects the emulated web tools into the model
+    # request; MockServer also plays the Firecrawl v2 backend.
+    admin.put(client, "/api/admin/models/" + WEB_MODEL, {
+        "provider_id": "acc-sim", "name": WEB_MODEL,
+        "capabilities": {}, "compat": {"inject_web_tools": True},
+    })
+    admin.put(client, "/api/admin/providers/acc-firecrawl", {
+        "type": "firecrawl",
+        "name": "Simulated web tools",
+        "config": {"base_url": mockserver},
+        "api_key": "simulated-key",
+    })
+    admin.put(client, "/api/admin/providers/acc-firecrawl/enabled", {"enabled": True})
     # Claude Code's env pins model names (claude-sonnet-4-6, ...); the alias
     # row routes every claude-* name onto the simulated upstream. opencode's
     # seed config names its provider model "proxy-chat" (the id the live
@@ -121,6 +139,42 @@ def configure(home: Path, port: int, mockserver: str) -> str:
     if not key:
         raise SystemExit("client key creation returned no key")
     return key
+
+
+def fresh_upstream(mockserver: str, scenario: str, cli: str) -> str:
+    """One provider account per fault cell: the breaker and quota cooldowns are
+    keyed by account, so sharing one would poison the next cell."""
+    if ADMIN_CLIENT is None:
+        raise SystemExit("admin client not configured")
+    tag = f"{scenario}-{cli}".replace("_", "-")
+    account = f"acc-{tag}"
+    model = f"{tag}-sim"
+    admin.put(ADMIN_CLIENT, f"/api/admin/providers/{account}", {
+        "type": "custom-openai",
+        "name": f"Simulated {tag}",
+        "config": {"base_url": mockserver + "/v1"},
+        "api_key": "simulated-key",
+    })
+    admin.put(ADMIN_CLIENT, f"/api/admin/providers/{account}/enabled", {"enabled": True})
+    admin.put(ADMIN_CLIENT, "/api/admin/models/" + model, {
+        "provider_id": account, "name": model, "capabilities": {}, "compat": {},
+    })
+    return model
+
+
+def set_aliases(model: str) -> None:
+    """Point the claude-* names at one model. Claude Code validates its model
+    names locally, so the cell maps a recognized name instead of overriding
+    the env with a synthetic one. The GET refreshes the CSRF token the
+    client must echo on the write."""
+    if ADMIN_CLIENT is None:
+        raise SystemExit("admin client not configured")
+    admin.get_json(ADMIN_CLIENT, "/api/admin/settings")
+    aliases = {"claude-*": model, "proxy-chat": model, MODEL: model, WEB_MODEL: WEB_MODEL}
+    admin.put(ADMIN_CLIENT, "/api/admin/settings", {
+        "key": "model_aliases",
+        "value": json.dumps(aliases, separators=(",", ":"), sort_keys=True),
+    })
 
 
 # --- MockServer expectations ------------------------------------------------
@@ -322,29 +376,49 @@ STRUCTURE_PINNED = {"goose", "opencode"}
 TOOLS_PINNED = {"opencode"}
 
 
-def mock_pinned(mockserver: str, cli: str, turns: list[tuple[str, str]], streaming: bool) -> None:
-    for rank, (prompt, text) in enumerate(turns):
-        matcher: dict = {"messages": [{"role": "user", "content": last_user_content(cli, prompt)}]}
-        if cli in STRUCTURE_PINNED:
-            matcher = {"tools": [{"type": "function"}]}
-            if streaming:
-                matcher["stream"] = True
-            if rank:
-                matcher["messages"] = [{"role": "assistant", "content": turns[rank - 1][1]}]
+def pinned_matcher(cli: str, prompt: str, rank: int,
+                   turns: list[tuple[str, str]], streaming: bool) -> dict:
+    """The MockServer matcher a real turn's last user message must satisfy."""
+    matcher: dict = {"messages": [{"role": "user", "content": last_user_content(cli, prompt)}]}
+    if cli in STRUCTURE_PINNED:
+        matcher = {"tools": [{"type": "function"}]}
         if streaming:
-            matcher.setdefault("stream", True)
-            priority = 150 + 10 * rank
-        else:
-            priority = 140 + 10 * rank
-        first = cli in PART_ARRAY_FIRST_TURN
-        if cli in PART_ARRAY and (rank == 0 or not first):
-            matcher["messages"][0]["content"] = [{"text": prompt}]
-        _mock_expectation(mockserver, {"text": text, "streaming": streaming}, priority, matcher=matcher)
+            matcher["stream"] = True
+        if rank:
+            matcher["messages"] = [{"role": "assistant", "content": turns[rank - 1][1]}]
+    if streaming:
+        matcher.setdefault("stream", True)
+    first = cli in PART_ARRAY_FIRST_TURN
+    if cli in PART_ARRAY and (rank == 0 or not first):
+        matcher["messages"][0]["content"] = [{"text": prompt}]
+    return matcher
 
 
-def mock_fallback(mockserver: str, text: str, streaming: bool) -> None:
+def mock_pinned(mockserver: str, cli: str, turns: list[tuple[str, str]], streaming: bool,
+                model: str = MODEL) -> None:
+    for rank, (prompt, text) in enumerate(turns):
+        matcher = pinned_matcher(cli, prompt, rank, turns, streaming)
+        priority = (150 if streaming else 140) + 10 * rank
+        _mock_expectation(mockserver, {"text": text, "streaming": streaming}, priority,
+                          matcher=matcher, model=model)
+
+
+def mock_pinned_dual(mockserver: str, cli: str, turns: list[tuple[str, str]],
+                     model: str) -> None:
+    """Install both wire modes for a synthetic model: the CLI's stream choice
+    is not guaranteed, and a stream matcher must not pin the wrong shape."""
+    for rank, (prompt, text) in enumerate(turns):
+        _mock_expectation(mockserver, {"text": text, "streaming": True},
+                          170 + 10 * rank, model=model,
+                          matcher=pinned_matcher(cli, prompt, rank, turns, True))
+        _mock_expectation(mockserver, {"text": text, "streaming": False},
+                          165 + 10 * rank, model=model,
+                          matcher=pinned_matcher(cli, prompt, rank, turns, False))
+
+
+def mock_fallback(mockserver: str, text: str, streaming: bool, model: str = MODEL) -> None:
     _mock_expectation(mockserver, {"text": text, "streaming": streaming}, 10,
-                      matcher={"stream": True} if streaming else None)
+                      matcher={"stream": True} if streaming else None, model=model)
 
 
 def turn_requests(reqs: list[dict], prompt: str, cli: str = "",
@@ -648,6 +722,15 @@ def wait_pane(name: str, marker: str, timeout: float, what: str) -> str:
     raise AssertionError(f"{what}: pane never showed {marker!r}; last pane:\n{last}")
 
 
+def wait_pane_optional(name: str, marker: str, timeout: float) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if marker in tmux_pane(name):
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def onboard(name: str, cli: str) -> None:
     """Walk the CLI's first-run dialogs; nothing to do when it starts clean."""
     for marker, keys in ONBOARDING.get(cli, ()):
@@ -658,10 +741,49 @@ def onboard(name: str, cli: str) -> None:
     time.sleep(1.5)
 
 
+def start_cell(cli: str, manifest: Path, home: Path, base_url: str, key: str,
+               label: str, model: str = MODEL) -> tuple[str, Path]:
+    """Spawn one plain-start cell and wait for its chrome and composer."""
+    global ALIAS_MODEL
+    if cli in ("claude-code", "opencode"):
+        # Both send a fixed wire model name the proxy resolves through the
+        # alias map; every other adapter renders the cell's model directly.
+        set_aliases(model)
+        ALIAS_MODEL = model
+    run_dir = home / "clients" / cli / label
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    env, cwd = prepare(manifest, run_dir, base_url, key, model)
+    name = f"plain-{cli}-{label}"
+    tmux_spawn(name, cwd, env, [plain_command(manifest)], run_dir)
+    onboard(name, cli)
+    wait_pane(name, READY_MARKERS.get(cli, cli), 45, "startup")
+    return name, run_dir
+
+
+def finish_cell(name: str, run_dir: Path) -> None:
+    global ALIAS_MODEL
+    collect_logs(run_dir)
+    tmux("kill-session", "-t", name, check=False)
+    if run_dir.parent.name == "codex":
+        kill_codex_daemons()
+    if ALIAS_MODEL:
+        set_aliases(MODEL)
+        ALIAS_MODEL = ""
+    # Let the killed client's in-flight retries drain before the next cell
+    # resets MockServer; otherwise one cell's retry can consume the next
+    # cell's one-shot fault expectation and mis-attribute its request row.
+    try:
+        wait_proxy_quiet(run_dir.parents[2])
+    except Exception:
+        pass
+
+
 # --- CLI bootstrap (mirrors run_cli's isolation contract) --------------------
 
 
-def prepare(manifest_path: Path, run_dir: Path, base_url: str, key: str, model: str) -> tuple[dict, Path]:
+def prepare(manifest_path: Path, run_dir: Path, base_url: str, key: str,
+            model: str) -> tuple[dict, Path]:
     manifest = json.loads(manifest_path.read_text())
     dirs = {
         "RUN_DIR": str(run_dir),
@@ -740,7 +862,7 @@ def proxy_rows(home: Path, since: int = 0) -> list[tuple]:
         conn.close()
 
 
-def wait_proxy_quiet(home: Path, timeout: float = 10, quiet: float = 1.0) -> int:
+def wait_proxy_quiet(home: Path, timeout: float = 10, quiet: float = 3.0) -> int:
     """Wait until the request log stops growing; return its current max id."""
     db = home / "data" / "proxyllm.db"
     deadline = time.time() + timeout
@@ -854,6 +976,428 @@ def scenario_recall(cli: str, manifest: Path, home: Path, base_url: str, key: st
 
 
 SCENARIOS = {"answer": scenario_answer, "recall": scenario_recall}
+
+
+# --- proxy-driven scenarios ---------------------------------------------------
+
+
+def direct_chat_probe(base_url: str, key: str, model: str) -> int:
+    """One raw client request through the proxy; returns the HTTP status."""
+    body = json.dumps({
+        "model": model,
+        "messages": [{"role": "user", "content": "probe"}],
+    }).encode()
+    req = urllib.request.Request(
+        base_url + "/v1/chat/completions", data=body, method="POST",
+        headers={"Content-Type": "application/json", "Authorization": "Bearer " + key})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+
+
+def scenario_fault_429(cli: str, manifest: Path, home: Path, base_url: str, key: str,
+                       mockserver: str, port: int, since: int) -> None:
+    """A one-shot 429 on the real turn: the CLI must either recover through a
+    retry or surface an honest error — never fabricate an answer."""
+    marker = "RETRY-" + secrets.token_hex(4)
+    prompt = "Tell me the answer."
+    streaming = STREAMING[cli]
+    scenario_model = fresh_upstream(mockserver, "fault_429", cli)
+    ms_reset(mockserver)
+    matcher = pinned_matcher(cli, prompt, 0, [(prompt, marker)], streaming)
+    _mock_expectation(mockserver, {"text": "never delivered", "streaming": streaming},
+                      200, times=1, matcher=matcher, model=scenario_model,
+                      chaos={"errorStatus": 429, "errorProbability": 1.0, "retryAfter": "1"})
+    mock_pinned(mockserver, cli, [(prompt, marker)], streaming, model=scenario_model)
+    mock_fallback(mockserver, "ok", FALLBACK_STREAMING[cli], model=scenario_model)
+
+    name, run_dir = start_cell(cli, manifest, home, base_url, key, "fault_429",
+                               model=scenario_model)
+    try:
+        submit(name, cli, prompt)
+        recovered = wait_pane_optional(name, marker, 180)
+    finally:
+        finish_cell(name, run_dir)
+
+    rows = wait_proxy_rows(home, since, 1, timeout=90)
+    if not any(r[1] == 200 for r in rows):
+        rows = wait_proxy_rows(home, since, 2, timeout=90)
+    has_success = any(r[1] == 200 for r in rows)
+    has_rate_limit = any(r[1] == 429 for r in rows)
+    if recovered and not has_success:
+        raise AssertionError(f"fault_429: the CLI rendered an answer with no successful row: {rows}")
+    if not recovered and not has_rate_limit:
+        raise AssertionError(f"fault_429: no recovery and no honest 429 row: {rows}")
+    if not turn_requests(ms_requests(mockserver), prompt, cli):
+        raise AssertionError("fault_429: the upstream saw no turn request")
+
+
+def scenario_fault_529(cli: str, manifest: Path, home: Path, base_url: str, key: str,
+                       mockserver: str, port: int, since: int) -> None:
+    """A one-shot 529 is a server error: fail over, never retry the same
+    provider, never fabricate an answer."""
+    marker = "OVERLOAD-" + secrets.token_hex(4)
+    prompt = "Tell me the answer."
+    streaming = STREAMING[cli]
+    scenario_model = fresh_upstream(mockserver, "fault_529", cli)
+    ms_reset(mockserver)
+    # No matcher: whichever request the CLI makes first gets the 529; a retry
+    # gets 404 (no fallback), so a fabricated answer is impossible.
+    _mock_expectation(mockserver, {"text": marker, "streaming": streaming},
+                      200, times=1, model=scenario_model,
+                      chaos={"errorStatus": 529, "errorProbability": 1.0, "retryAfter": "1"})
+
+    name, run_dir = start_cell(cli, manifest, home, base_url, key, "fault_529",
+                               model=scenario_model)
+    try:
+        submit(name, cli, prompt)
+        rows = wait_proxy_rows(home, since, 1, timeout=90)
+        time.sleep(2)
+        pane = tmux_pane(name)
+    finally:
+        finish_cell(name, run_dir)
+
+    if marker in pane:
+        raise AssertionError("fault_529: the CLI rendered a fabricated answer")
+    if not any(r[1] == 529 for r in rows):
+        raise AssertionError(f"fault_529: no 529 request-log row: {rows}")
+    real = turn_requests(ms_requests(mockserver), prompt, cli)
+    if not real:
+        raise AssertionError("fault_529: the upstream saw no turn request")
+
+
+def scenario_fault_quota(cli: str, manifest: Path, home: Path, base_url: str, key: str,
+                         mockserver: str, port: int, since: int) -> None:
+    """An insufficient_quota rejection cools the account: the CLI's first call
+    surfaces 402, and a direct probe of the same model is refused by the
+    cooldown (503 on OpenAI surfaces, 529 on Anthropic) without reaching the
+    upstream again."""
+    p1 = "Hello there."
+    scenario_model = fresh_upstream(mockserver, "fault_quota", cli)
+    ms_reset(mockserver)
+    # No matcher: whichever request the CLI makes first gets the 402; the
+    # direct probe then proves the account cooldown, independent of whether
+    # the TUI survives the error.
+    mock_http_response(mockserver, UPSTREAM_PATH, 402,
+                       '{"error":{"message":"quota exhausted","type":"insufficient_quota","code":"insufficient_quota"}}',
+                       200, times=1,
+                       headers=[{"name": "Retry-After", "values": ["30"]}])
+
+    name, run_dir = start_cell(cli, manifest, home, base_url, key, "fault_quota",
+                               model=scenario_model)
+    try:
+        submit(name, cli, p1)
+        rows = wait_proxy_rows(home, since, 1, timeout=90)
+        if not any(r[1] == 402 for r in rows):
+            raise AssertionError(f"fault_quota: no 402 request-log row: {rows}")
+        # Probe inside the 30 s cooldown; a CLI that keeps retrying can push a
+        # later probe past the window and get a plain upstream 404 instead.
+        probe = direct_chat_probe(base_url, key, scenario_model)
+        if probe not in (503, 529):
+            raise AssertionError(f"fault_quota: cooldown probe = {probe}, want 503/529")
+    finally:
+        finish_cell(name, run_dir)
+
+    rows = wait_proxy_rows(home, since, 2, timeout=30)
+    if not any(r[1] in (503, 529) for r in rows):
+        raise AssertionError(f"fault_quota: no cooldown request-log row: {rows}")
+
+
+def scenario_fault_truncated(cli: str, manifest: Path, home: Path, base_url: str, key: str,
+                             mockserver: str, port: int, since: int) -> None:
+    """A mid-stream truncation must surface as an error, never a complete
+    answer; the tail marker must never render."""
+    marker = "TRUNC-TAIL-" + secrets.token_hex(4)
+    prompt = "Give me a long answer."
+    text = ("partial-start " * 20) + marker
+    scenario_model = fresh_upstream(mockserver, "fault_truncated", cli)
+    ms_reset(mockserver)
+    matcher = pinned_matcher(cli, prompt, 0, [(prompt, marker)], True)
+    _mock_expectation(mockserver, {"text": text, "streaming": True}, 150, times=1,
+                      matcher=matcher, model=scenario_model,
+                      chaos={"truncateMode": "MID_STREAM", "truncateAtFraction": 0.5,
+                             "malformedSse": False})
+
+    name, run_dir = start_cell(cli, manifest, home, base_url, key, "fault_truncated",
+                               model=scenario_model)
+    try:
+        submit(name, cli, prompt)
+        rows = wait_proxy_rows(home, since, 1, timeout=90)
+        time.sleep(2)
+        pane = tmux_pane(name)
+    finally:
+        finish_cell(name, run_dir)
+
+    if marker in pane:
+        raise AssertionError("fault_truncated: the CLI rendered the truncated tail as a complete answer")
+    if not any(r[1] not in (200, 499) or r[2] for r in rows):
+        raise AssertionError(f"fault_truncated: no error request-log row: {rows}")
+    real = turn_requests(ms_requests(mockserver), prompt, cli)
+    if not real:
+        raise AssertionError("fault_truncated: the upstream saw no turn request")
+
+
+def scenario_fault_malformed_sse(cli: str, manifest: Path, home: Path, base_url: str, key: str,
+                                 mockserver: str, port: int, since: int) -> None:
+    """A malformed SSE frame mid-stream must terminate the answer with an
+    error; the raw body also proves the proxy reads every frame, not only the
+    final sentinel."""
+    marker = "MALFORMED-" + secrets.token_hex(4)
+    prompt = "Give me a long answer."
+    scenario_model = fresh_upstream(mockserver, "fault_malformed_sse", cli)
+    body = (
+        'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,'
+        '"model":"' + scenario_model + '","choices":[{"index":0,"delta":{"content":"partial-"},'
+        '"finish_reason":null}]}\n\n'
+        "data: {not json\n\n"
+    )
+    ms_reset(mockserver)
+    matcher = pinned_matcher(cli, prompt, 0, [(prompt, marker)], True)
+    mock_http_response(mockserver, UPSTREAM_PATH, 200, body, 150, times=1, matcher=matcher,
+                       headers=[{"name": "Content-Type", "values": ["text/event-stream"]}])
+
+    name, run_dir = start_cell(cli, manifest, home, base_url, key, "fault_malformed_sse",
+                               model=scenario_model)
+    try:
+        submit(name, cli, prompt)
+        rows = wait_proxy_rows(home, since, 1, timeout=90)
+        time.sleep(2)
+        pane = tmux_pane(name)
+    finally:
+        finish_cell(name, run_dir)
+
+    if marker in pane:
+        raise AssertionError("fault_malformed_sse: the CLI rendered a fabricated answer")
+    if not any(r[1] not in (200, 499) or r[2] for r in rows):
+        raise AssertionError(f"fault_malformed_sse: no error request-log row: {rows}")
+    real = turn_requests(ms_requests(mockserver), prompt, cli)
+    if not real:
+        raise AssertionError("fault_malformed_sse: the upstream saw no turn request")
+
+
+def scenario_web_turn2(cli: str, manifest: Path, home: Path, base_url: str, key: str,
+                       mockserver: str, port: int, since: int) -> None:
+    """A web search on turn 2: the model row injects the web tools, the proxy
+    serves the model's web_search through the Firecrawl emulator (MockServer),
+    re-dispatches with the result, and the CLI renders the cited answer."""
+    marker = "WEB-" + secrets.token_hex(4)
+    t1 = "Hello there."
+    t2 = "Search the web for the weather in Cologne tomorrow."
+    final = f"{marker} see https://example.test/cologne"
+    streaming = STREAMING[cli]
+    ms_reset(mockserver)
+    mock_pinned_dual(mockserver, cli, [(t1, "Hello.")], WEB_MODEL)
+    tool_call = {
+        "stopReason": "tool_calls",
+        "toolCalls": [{
+            "id": "call_web_1",
+            "name": "web_search",
+            "arguments": '{"query":"weather in Cologne"}',
+        }],
+    }
+    turns = [(t1, "Hello."), (t2, "")]
+    _mock_expectation(mockserver, dict(tool_call, streaming=True), 210, times=1,
+                      matcher=pinned_matcher(cli, t2, 1, turns, True), model=WEB_MODEL)
+    _mock_expectation(mockserver, dict(tool_call, streaming=False), 209, times=1,
+                      matcher=pinned_matcher(cli, t2, 1, turns, False), model=WEB_MODEL)
+    mock_http_response(mockserver, "/v2/search", 200,
+                       '{"success":true,"data":{"web":[{"title":"Cologne forecast",'
+                       '"url":"https://example.test/cologne","description":"12C sunny tomorrow"}]}}',
+                       100)
+    # The re-dispatch is the request whose history carries the tool result.
+    # The proxy's OpenAI-chat rewrite uses a user message (Anthropic tool
+    # results) or a tool message (OpenAI tool results), so pin both roles.
+    tool_result = json.dumps({
+        "tool_use_id": "call_web_1",
+        "content": [{
+            "url": "https://example.test/cologne",
+            "title": "Cologne forecast",
+            "content": "12C sunny tomorrow",
+        }],
+    }, separators=(",", ":"))
+    for priority, role, stream in ((220, "user", True), (219, "user", False),
+                                   (218, "tool", True), (217, "tool", False)):
+        matcher = {"messages": [{"role": role, "content": tool_result}]}
+        if stream:
+            matcher["stream"] = True
+        _mock_expectation(mockserver, {"text": final, "streaming": stream},
+                          priority, matcher=matcher, model=WEB_MODEL)
+    _mock_expectation(mockserver, {"text": "ok", "streaming": True}, 12, model=WEB_MODEL,
+                      matcher={"stream": True})
+    _mock_expectation(mockserver, {"text": "ok", "streaming": False}, 11, model=WEB_MODEL)
+
+    name, run_dir = start_cell(cli, manifest, home, base_url, key, "web_turn2", model=WEB_MODEL)
+    try:
+        submit(name, cli, t1)
+        wait_pane(name, "Hello.", 120, "web turn 1")
+        submit(name, cli, t2)
+        wait_pane(name, marker, 180, "web turn 2")
+    finally:
+        finish_cell(name, run_dir)
+
+    reqs = ms_requests(mockserver)
+    real1 = turn_requests(reqs, t1, cli)
+    real2 = turn_requests(reqs, t2, cli)
+    if not real1 or not real2:
+        raise AssertionError(
+            f"web_turn2: upstream turn requests: turn1={len(real1)}, turn2={len(real2)}, want at least 1 each")
+    if not any(r.get("path") == "/v2/search" for r in reqs):
+        raise AssertionError("web_turn2: the emulated search backend received no request")
+    redispatch = [r for r in reqs if r.get("path") == UPSTREAM_PATH
+                  and "example.test/cologne" in json.dumps(r.get("body"))]
+    if not redispatch:
+        raise AssertionError("web_turn2: no re-dispatched chat request carries the search result")
+    rows = wait_proxy_rows(home, since, 1)
+    bad = [r for r in rows if r[1] not in (200, 499) or (r[1] != 499 and r[2])]
+    if not rows:
+        raise AssertionError("web_turn2: the proxy logged no request row")
+    if bad:
+        raise AssertionError(f"web_turn2: proxy rows not clean: {bad}")
+
+
+# The CLI's own tool that reads the seeded work/notes.txt. The file's marker
+# must ride the tool result back into the re-dispatched conversation.
+TOOL_LOOP_SEEDS = {
+    "crush": {
+        "name": "view",
+        "arguments": json.dumps({"file_path": "notes.txt"}),
+    },
+    "openhands": {
+        "name": "execute_bash",
+        "arguments": json.dumps({"command": "cat notes.txt"}),
+    },
+}
+
+
+def scenario_tool_loop(cli: str, manifest: Path, home: Path, base_url: str, key: str,
+                       mockserver: str, port: int, since: int) -> None:
+    """The CLI executes its own tool (read notes.txt), the tool result rides
+    back into the conversation, and the model answers from it."""
+    seed = TOOL_LOOP_SEEDS[cli]
+    marker = "TOOL-" + secrets.token_hex(4)
+    prompt = "Read notes.txt and tell me the marker."
+    streaming = STREAMING[cli]
+    ms_reset(mockserver)
+    matcher = pinned_matcher(cli, prompt, 0, [(prompt, marker)], streaming)
+    _mock_expectation(mockserver, {
+        "stopReason": "tool_calls",
+        "toolCalls": [{
+            "id": "call_tool_1",
+            "name": seed["name"],
+            "arguments": seed["arguments"],
+        }],
+        "streaming": streaming,
+    }, 150, times=1, matcher=matcher, model=MODEL)
+    _mock_expectation(mockserver, {"text": marker, "streaming": streaming}, 130, model=MODEL)
+    mock_fallback(mockserver, "ok", FALLBACK_STREAMING[cli], model=MODEL)
+
+    name, run_dir = start_cell(cli, manifest, home, base_url, key, "tool_loop", model=MODEL)
+    try:
+        submit(name, cli, prompt)
+        wait_pane(name, marker, 180, "tool loop answer")
+    finally:
+        finish_cell(name, run_dir)
+
+    reqs = ms_requests(mockserver)
+    with_result = turn_requests(reqs, prompt, cli, tool_result=True)
+    if not with_result:
+        raise AssertionError("tool_loop: no re-dispatched request carries a tool result")
+    if not any("PROXYLLM-LIVE-MARKER-7Q" in json.dumps(r.get("body")) for r in with_result):
+        raise AssertionError("tool_loop: the tool result carries no file marker (the CLI did not run the tool)")
+    rows = wait_proxy_rows(home, since, 1)
+    if not rows:
+        raise AssertionError("tool_loop: the proxy logged no request row")
+    bad = [r for r in rows if r[1] not in (200, 499) or (r[1] != 499 and r[2])]
+    if bad:
+        raise AssertionError(f"tool_loop: proxy rows not clean: {bad}")
+
+
+TURN_WORDS = ["ALPHA", "BRAVO", "CHARLIE", "DELTA", "ECHO",
+              "FOXTROT", "GOLF", "HOTEL", "INDIA"]
+
+
+def scenario_multi_turn(cli: str, manifest: Path, home: Path, base_url: str, key: str,
+                        mockserver: str, port: int, since: int) -> None:
+    """Nine remembered words plus a final recall: the last upstream request
+    must carry the whole history, not just the final prompt."""
+    tail = "DONE-" + secrets.token_hex(4)
+    prompts = [f"Remember this word: {word}." for word in TURN_WORDS]
+    answers = [f"Noted {word}." for word in TURN_WORDS]
+    final_prompt = "List every word I asked you to remember."
+    final_answer = " ".join(TURN_WORDS) + " " + tail
+    ms_reset(mockserver)
+    turns = list(zip(prompts, answers)) + [(final_prompt, final_answer)]
+    mock_pinned(mockserver, cli, turns, STREAMING[cli])
+    mock_fallback(mockserver, "ok", FALLBACK_STREAMING[cli])
+
+    name, run_dir = start_cell(cli, manifest, home, base_url, key, "multi_turn", model=MODEL)
+    try:
+        for prompt, answer in zip(prompts, answers):
+            submit(name, cli, prompt)
+            wait_pane(name, answer, 120, "multi_turn note")
+        submit(name, cli, final_prompt)
+        wait_pane(name, tail, 180, "multi_turn final")
+    finally:
+        finish_cell(name, run_dir)
+
+    finals = turn_requests(ms_requests(mockserver), final_prompt, cli)
+    if not finals:
+        raise AssertionError("multi_turn: no upstream request carries the final prompt")
+    body = json.dumps(finals[-1].get("body"))
+    missing = [word for word in TURN_WORDS if word not in body]
+    if missing:
+        raise AssertionError(f"multi_turn: the final upstream request is missing history: {missing}")
+    rows = wait_proxy_rows(home, since, 1)
+    if not rows:
+        raise AssertionError("multi_turn: the proxy logged no request row")
+    bad = [r for r in rows if r[1] not in (200, 499) or (r[1] != 499 and r[2])]
+    if bad:
+        raise AssertionError(f"multi_turn: proxy rows not clean: {bad}")
+
+
+def scenario_large_output(cli: str, manifest: Path, home: Path, base_url: str, key: str,
+                          mockserver: str, port: int, since: int) -> None:
+    """A large, unicode-heavy answer ends with a marker; the CLI must render
+    the tail, not truncate the answer silently."""
+    tail = "TAIL-" + secrets.token_hex(4)
+    text = ("L" * 20000) + "\nUnicode: 日本語 émoji 🚀 combining é\n" + tail
+    prompt = "Give me the large text."
+    ms_reset(mockserver)
+    _mock_expectation(mockserver, {"text": text, "streaming": STREAMING[cli]}, 150,
+                      matcher=pinned_matcher(cli, prompt, 0, [(prompt, tail)], STREAMING[cli]),
+                      model=MODEL)
+    mock_fallback(mockserver, "ok", FALLBACK_STREAMING[cli])
+
+    name, run_dir = start_cell(cli, manifest, home, base_url, key, "large_output", model=MODEL)
+    try:
+        submit(name, cli, prompt)
+        wait_pane(name, tail, 180, "large output tail")
+    finally:
+        finish_cell(name, run_dir)
+
+    if not turn_requests(ms_requests(mockserver), prompt, cli):
+        raise AssertionError("large_output: the upstream saw no turn request")
+    rows = wait_proxy_rows(home, since, 1)
+    if not rows:
+        raise AssertionError("large_output: the proxy logged no request row")
+    bad = [r for r in rows if r[1] not in (200, 499) or (r[1] != 499 and r[2])]
+    if bad:
+        raise AssertionError(f"large_output: proxy rows not clean: {bad}")
+
+
+SCENARIOS.update({
+    "fault_429": scenario_fault_429,
+    "fault_529": scenario_fault_529,
+    "fault_quota": scenario_fault_quota,
+    "fault_truncated": scenario_fault_truncated,
+    "fault_malformed_sse": scenario_fault_malformed_sse,
+    "web_turn2": scenario_web_turn2,
+    "tool_loop": scenario_tool_loop,
+    "multi_turn": scenario_multi_turn,
+    "large_output": scenario_large_output,
+})
 
 
 def load_cli_manifest(path: Path) -> dict:

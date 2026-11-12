@@ -36,6 +36,25 @@
     "basic": [
       "answer",
       "recall"
+    ],
+    "faults": [
+      "fault_429",
+      "fault_529",
+      "fault_quota"
+    ],
+    "faults_stream": [
+      "fault_truncated",
+      "fault_malformed_sse"
+    ],
+    "web": [
+      "web_turn2"
+    ],
+    "tools": [
+      "tool_loop"
+    ],
+    "long": [
+      "multi_turn",
+      "large_output"
     ]
   },
   "cells": [
@@ -52,80 +71,74 @@
     {
       "client": "codex",
       "scenario": "multi_turn",
-      "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "status": "green"
     },
     {
       "client": "codex",
       "scenario": "large_output",
-      "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "status": "green"
     },
     {
       "client": "codex",
       "scenario": "web_turn2",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "codex",
       "scenario": "tool_loop",
       "status": "skipped",
-      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+      "note": "tool-call seed/approval not verified for this adapter"
     },
     {
       "client": "codex",
       "scenario": "thinking",
       "status": "skipped",
-      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
     },
     {
       "client": "codex",
       "scenario": "fault_429",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "codex",
       "scenario": "fault_529",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "codex",
       "scenario": "fault_quota",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "codex",
       "scenario": "fault_truncated",
       "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "note": "non-streaming upstream: no SSE fault to inject"
     },
     {
       "client": "codex",
       "scenario": "fault_malformed_sse",
       "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "note": "non-streaming upstream: no SSE fault to inject"
     },
     {
       "client": "codex",
       "scenario": "cancel_resume",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
     },
     {
       "client": "codex",
       "scenario": "previous_response_id",
       "status": "skipped",
-      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
     },
     {
       "client": "codex",
       "scenario": "vision",
       "status": "skipped",
-      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
     },
     {
       "client": "codex",
@@ -146,80 +159,72 @@
     {
       "client": "claude-code",
       "scenario": "multi_turn",
-      "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "status": "green"
     },
     {
       "client": "claude-code",
       "scenario": "large_output",
-      "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "status": "green"
     },
     {
       "client": "claude-code",
       "scenario": "web_turn2",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "claude-code",
       "scenario": "tool_loop",
       "status": "skipped",
-      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+      "note": "tool-call seed/approval not verified for this adapter"
     },
     {
       "client": "claude-code",
       "scenario": "thinking",
       "status": "skipped",
-      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
     },
     {
       "client": "claude-code",
       "scenario": "fault_429",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "claude-code",
       "scenario": "fault_529",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "claude-code",
       "scenario": "fault_quota",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "claude-code",
       "scenario": "fault_truncated",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "claude-code",
       "scenario": "fault_malformed_sse",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "claude-code",
       "scenario": "cancel_resume",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
     },
     {
       "client": "claude-code",
       "scenario": "previous_response_id",
       "status": "skipped",
-      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
     },
     {
       "client": "claude-code",
       "scenario": "vision",
       "status": "skipped",
-      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
     },
     {
       "client": "claude-code",
@@ -240,80 +245,71 @@
     {
       "client": "crush",
       "scenario": "multi_turn",
-      "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "status": "green"
     },
     {
       "client": "crush",
       "scenario": "large_output",
-      "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "status": "green"
     },
     {
       "client": "crush",
       "scenario": "web_turn2",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "crush",
       "scenario": "tool_loop",
-      "status": "skipped",
-      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+      "status": "green"
     },
     {
       "client": "crush",
       "scenario": "thinking",
       "status": "skipped",
-      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
     },
     {
       "client": "crush",
       "scenario": "fault_429",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "crush",
       "scenario": "fault_529",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "crush",
       "scenario": "fault_quota",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "crush",
       "scenario": "fault_truncated",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "crush",
       "scenario": "fault_malformed_sse",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "crush",
       "scenario": "cancel_resume",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
     },
     {
       "client": "crush",
       "scenario": "previous_response_id",
       "status": "skipped",
-      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
     },
     {
       "client": "crush",
       "scenario": "vision",
       "status": "skipped",
-      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
     },
     {
       "client": "crush",
@@ -334,80 +330,73 @@
     {
       "client": "openhands",
       "scenario": "multi_turn",
-      "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "status": "green"
     },
     {
       "client": "openhands",
       "scenario": "large_output",
-      "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "status": "green"
     },
     {
       "client": "openhands",
       "scenario": "web_turn2",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "openhands",
       "scenario": "tool_loop",
-      "status": "skipped",
-      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+      "status": "green"
     },
     {
       "client": "openhands",
       "scenario": "thinking",
       "status": "skipped",
-      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
     },
     {
       "client": "openhands",
       "scenario": "fault_429",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "openhands",
       "scenario": "fault_529",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "openhands",
       "scenario": "fault_quota",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "openhands",
       "scenario": "fault_truncated",
       "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "note": "non-streaming upstream: no SSE fault to inject"
     },
     {
       "client": "openhands",
       "scenario": "fault_malformed_sse",
       "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "note": "non-streaming upstream: no SSE fault to inject"
     },
     {
       "client": "openhands",
       "scenario": "cancel_resume",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
     },
     {
       "client": "openhands",
       "scenario": "previous_response_id",
       "status": "skipped",
-      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
     },
     {
       "client": "openhands",
       "scenario": "vision",
       "status": "skipped",
-      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
     },
     {
       "client": "openhands",
@@ -429,79 +418,73 @@
       "client": "gptme",
       "scenario": "multi_turn",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "multi-turn scenario not yet verified for this adapter"
     },
     {
       "client": "gptme",
       "scenario": "large_output",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "large-output scenario not yet verified for this adapter"
     },
     {
       "client": "gptme",
       "scenario": "web_turn2",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "gptme",
       "scenario": "tool_loop",
       "status": "skipped",
-      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+      "note": "tool-call seed/approval not verified for this adapter"
     },
     {
       "client": "gptme",
       "scenario": "thinking",
       "status": "skipped",
-      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
     },
     {
       "client": "gptme",
       "scenario": "fault_429",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "gptme",
       "scenario": "fault_529",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "gptme",
       "scenario": "fault_quota",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "gptme",
       "scenario": "fault_truncated",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "gptme",
       "scenario": "fault_malformed_sse",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "gptme",
       "scenario": "cancel_resume",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
     },
     {
       "client": "gptme",
       "scenario": "previous_response_id",
       "status": "skipped",
-      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
     },
     {
       "client": "gptme",
       "scenario": "vision",
       "status": "skipped",
-      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
     },
     {
       "client": "gptme",
@@ -523,79 +506,73 @@
       "client": "aider",
       "scenario": "multi_turn",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "multi-turn scenario not yet verified for this adapter"
     },
     {
       "client": "aider",
       "scenario": "large_output",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "large-output scenario not yet verified for this adapter"
     },
     {
       "client": "aider",
       "scenario": "web_turn2",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "aider",
       "scenario": "tool_loop",
       "status": "skipped",
-      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+      "note": "tool-call seed/approval not verified for this adapter"
     },
     {
       "client": "aider",
       "scenario": "thinking",
       "status": "skipped",
-      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
     },
     {
       "client": "aider",
       "scenario": "fault_429",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "aider",
       "scenario": "fault_529",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "aider",
       "scenario": "fault_quota",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "aider",
       "scenario": "fault_truncated",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "aider",
       "scenario": "fault_malformed_sse",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "aider",
       "scenario": "cancel_resume",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
     },
     {
       "client": "aider",
       "scenario": "previous_response_id",
       "status": "skipped",
-      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
     },
     {
       "client": "aider",
       "scenario": "vision",
       "status": "skipped",
-      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
     },
     {
       "client": "aider",
@@ -617,79 +594,73 @@
       "client": "cline",
       "scenario": "multi_turn",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "multi-turn scenario not yet verified for this adapter"
     },
     {
       "client": "cline",
       "scenario": "large_output",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "large-output scenario not yet verified for this adapter"
     },
     {
       "client": "cline",
       "scenario": "web_turn2",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "cline",
       "scenario": "tool_loop",
       "status": "skipped",
-      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+      "note": "tool-call seed/approval not verified for this adapter"
     },
     {
       "client": "cline",
       "scenario": "thinking",
       "status": "skipped",
-      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
     },
     {
       "client": "cline",
       "scenario": "fault_429",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "cline",
       "scenario": "fault_529",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "cline",
       "scenario": "fault_quota",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "cline",
       "scenario": "fault_truncated",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "cline",
       "scenario": "fault_malformed_sse",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "cline",
       "scenario": "cancel_resume",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
     },
     {
       "client": "cline",
       "scenario": "previous_response_id",
       "status": "skipped",
-      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
     },
     {
       "client": "cline",
       "scenario": "vision",
       "status": "skipped",
-      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
     },
     {
       "client": "cline",
@@ -711,79 +682,73 @@
       "client": "goose",
       "scenario": "multi_turn",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "multi-turn scenario not yet verified for this adapter"
     },
     {
       "client": "goose",
       "scenario": "large_output",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "large-output scenario not yet verified for this adapter"
     },
     {
       "client": "goose",
       "scenario": "web_turn2",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "goose",
       "scenario": "tool_loop",
       "status": "skipped",
-      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+      "note": "tool-call seed/approval not verified for this adapter"
     },
     {
       "client": "goose",
       "scenario": "thinking",
       "status": "skipped",
-      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
     },
     {
       "client": "goose",
       "scenario": "fault_429",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "goose",
       "scenario": "fault_529",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "goose",
       "scenario": "fault_quota",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "goose",
       "scenario": "fault_truncated",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "goose",
       "scenario": "fault_malformed_sse",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "goose",
       "scenario": "cancel_resume",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
     },
     {
       "client": "goose",
       "scenario": "previous_response_id",
       "status": "skipped",
-      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
     },
     {
       "client": "goose",
       "scenario": "vision",
       "status": "skipped",
-      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
     },
     {
       "client": "goose",
@@ -805,79 +770,73 @@
       "client": "kimi",
       "scenario": "multi_turn",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "multi-turn scenario not yet verified for this adapter"
     },
     {
       "client": "kimi",
       "scenario": "large_output",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "large-output scenario not yet verified for this adapter"
     },
     {
       "client": "kimi",
       "scenario": "web_turn2",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "kimi",
       "scenario": "tool_loop",
       "status": "skipped",
-      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+      "note": "tool-call seed/approval not verified for this adapter"
     },
     {
       "client": "kimi",
       "scenario": "thinking",
       "status": "skipped",
-      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
     },
     {
       "client": "kimi",
       "scenario": "fault_429",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "kimi",
       "scenario": "fault_529",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "kimi",
       "scenario": "fault_quota",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "kimi",
       "scenario": "fault_truncated",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "kimi",
       "scenario": "fault_malformed_sse",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "kimi",
       "scenario": "cancel_resume",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
     },
     {
       "client": "kimi",
       "scenario": "previous_response_id",
       "status": "skipped",
-      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
     },
     {
       "client": "kimi",
       "scenario": "vision",
       "status": "skipped",
-      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
     },
     {
       "client": "kimi",
@@ -899,79 +858,73 @@
       "client": "qwen",
       "scenario": "multi_turn",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "multi-turn scenario not yet verified for this adapter"
     },
     {
       "client": "qwen",
       "scenario": "large_output",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "large-output scenario not yet verified for this adapter"
     },
     {
       "client": "qwen",
       "scenario": "web_turn2",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "qwen",
       "scenario": "tool_loop",
       "status": "skipped",
-      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+      "note": "tool-call seed/approval not verified for this adapter"
     },
     {
       "client": "qwen",
       "scenario": "thinking",
       "status": "skipped",
-      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
     },
     {
       "client": "qwen",
       "scenario": "fault_429",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "qwen",
       "scenario": "fault_529",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "qwen",
       "scenario": "fault_quota",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "qwen",
       "scenario": "fault_truncated",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "qwen",
       "scenario": "fault_malformed_sse",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "qwen",
       "scenario": "cancel_resume",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
     },
     {
       "client": "qwen",
       "scenario": "previous_response_id",
       "status": "skipped",
-      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
     },
     {
       "client": "qwen",
       "scenario": "vision",
       "status": "skipped",
-      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
     },
     {
       "client": "qwen",
@@ -993,79 +946,73 @@
       "client": "opencode",
       "scenario": "multi_turn",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "multi-turn scenario not yet verified for this adapter"
     },
     {
       "client": "opencode",
       "scenario": "large_output",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "large-output scenario not yet verified for this adapter"
     },
     {
       "client": "opencode",
       "scenario": "web_turn2",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "opencode",
       "scenario": "tool_loop",
       "status": "skipped",
-      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+      "note": "tool-call seed/approval not verified for this adapter"
     },
     {
       "client": "opencode",
       "scenario": "thinking",
       "status": "skipped",
-      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
     },
     {
       "client": "opencode",
       "scenario": "fault_429",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "opencode",
       "scenario": "fault_529",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "opencode",
       "scenario": "fault_quota",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "opencode",
       "scenario": "fault_truncated",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "opencode",
       "scenario": "fault_malformed_sse",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "opencode",
       "scenario": "cancel_resume",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
     },
     {
       "client": "opencode",
       "scenario": "previous_response_id",
       "status": "skipped",
-      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
     },
     {
       "client": "opencode",
       "scenario": "vision",
       "status": "skipped",
-      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
     },
     {
       "client": "opencode",
@@ -1087,79 +1034,73 @@
       "client": "open-interpreter",
       "scenario": "multi_turn",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "multi-turn scenario not yet verified for this adapter"
     },
     {
       "client": "open-interpreter",
       "scenario": "large_output",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "large-output scenario not yet verified for this adapter"
     },
     {
       "client": "open-interpreter",
       "scenario": "web_turn2",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "open-interpreter",
       "scenario": "tool_loop",
       "status": "skipped",
-      "note": "not implemented yet (CLI tool seed, Phase 4b)"
+      "note": "tool-call seed/approval not verified for this adapter"
     },
     {
       "client": "open-interpreter",
       "scenario": "thinking",
       "status": "skipped",
-      "note": "not implemented yet (CLI reasoning surface, Phase 4b)"
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
     },
     {
       "client": "open-interpreter",
       "scenario": "fault_429",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "open-interpreter",
       "scenario": "fault_529",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "open-interpreter",
       "scenario": "fault_quota",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "open-interpreter",
       "scenario": "fault_truncated",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "open-interpreter",
       "scenario": "fault_malformed_sse",
-      "status": "skipped",
-      "note": "not implemented yet (proxy scenarios, Phase 4a)"
+      "status": "green"
     },
     {
       "client": "open-interpreter",
       "scenario": "cancel_resume",
       "status": "skipped",
-      "note": "not implemented yet (session scenarios, Phase 4c)"
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
     },
     {
       "client": "open-interpreter",
       "scenario": "previous_response_id",
       "status": "skipped",
-      "note": "not implemented yet (Codex wire probe, Phase 4c)"
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
     },
     {
       "client": "open-interpreter",
       "scenario": "vision",
       "status": "skipped",
-      "note": "not implemented yet (plain-start image attach, Phase 4c)"
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
     },
     {
       "client": "open-interpreter",

@@ -87,8 +87,18 @@ jobs:
         include:
           - shard: basic
             port: 18190
+          - shard: faults
+            port: 18191
+          - shard: faults_stream
+            port: 18192
+          - shard: web
+            port: 18193
+          - shard: tools
+            port: 18194
+          - shard: long
+            port: 18195
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     services:
       mockserver:
         image: mockserver/mockserver:9.2.0
