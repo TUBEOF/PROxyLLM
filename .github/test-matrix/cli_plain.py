@@ -847,10 +847,11 @@ def prepare(manifest_path: Path, run_dir: Path, base_url: str, key: str,
         "FILE": str(run_dir / "work" / "notes.txt"),
         "MARKER": "PROXYLLM-LIVE-MARKER-7Q",
     }
-    for k, path in dirs.items():
-        if k in ("FILE", "IMAGE", "PROMPT"):
-            continue
-        Path(path).mkdir(parents=True, exist_ok=True)
+    # Only the *_DIR keys are paths; BASE_URL, CLIENT_KEY, MODEL and MARKER
+    # are render values, and mkdir'ing them dropped stray directories named
+    # after a URL, a key or a model into the CWD.
+    for k in ("RUN_DIR", "HOME", "CONFIG_DIR", "DATA_DIR", "CACHE_DIR", "TMP_DIR", "WORK_DIR"):
+        Path(dirs[k]).mkdir(parents=True, exist_ok=True)
     os.chmod(dirs["HOME"], 0o700)
     Path(dirs["FILE"]).write_text("PROXYLLM-LIVE-MARKER-7Q\nsecond line\n")
 
