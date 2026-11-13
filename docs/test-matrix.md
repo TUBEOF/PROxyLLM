@@ -167,13 +167,13 @@ in-flight retries drain before the next cell resets MockServer. The quota cell
 proves the CLI surfaces the 402 and then probes the same model directly: the
 cooled account answers the probe with the surface's overload status (503 on
 OpenAI, 529 on Anthropic) without reaching the upstream again. `fault_429`
-accepts either recovery through a retry or an honest 429 row; a retry that
+accepts either recovery through a retry or an honest 429: a retry that
 misses the pinned matcher lands on a unique catch-all answer, and rendering
-that answer fails the cell — the CLI must surface the 429 instead. The two
-mid-stream fault cells wait for the CLI's retry loop to drain, then require
-the fault to reach the pane — an error line, a re-sent turn, or a warnings
-counter that grew — because the proxy's error row alone does not prove the
-client saw it.
+that answer fails the cell; without recovery, the pane must show error
+evidence it did not carry before the turn. The two mid-stream fault cells
+wait for the CLI's retry loop to drain, then require the same new pane
+evidence — an error line, or a warnings counter that grew — because the
+proxy's error row alone does not prove the client saw it.
 
 **Shards and evidence.** The workflow runs one job per manifest shard, each
 with its own runner, home, port and `cli-plain-<shard>` artifact, and

@@ -686,6 +686,17 @@ def warning_count(pane: str) -> int:
     return max((int(m.group(1)) for m in WARNING_COUNT.finditer(pane)), default=0)
 
 
+def surfaced_error(before: str, after: str) -> bool:
+    """The fault must reach the user as new pane text: an error line the
+    pre-fault pane did not carry, or a warnings counter that grew. Chrome
+    that already said "error" before the turn must not count."""
+    if warning_count(after) > warning_count(before):
+        return True
+    seen = {line.strip() for line in before.splitlines()}
+    return any(STREAM_ERROR.search(line) and line.strip() not in seen
+               for line in after.splitlines())
+
+
 # Some CLIs flush stdin when they repaint the composer after every turn, so
 # typed-ahead input is discarded: wait until the composer prompt itself is
 # the pane's last line before typing.
@@ -1067,6 +1078,7 @@ def scenario_fault_429(cli: str, manifest: Path, home: Path, base_url: str, key:
     name, run_dir = start_cell(cli, manifest, home, base_url, key, "fault_429",
                                model=scenario_model)
     try:
+        before = tmux_pane(name)
         submit(name, cli, prompt)
         # The turn must reach the proxy before the drain check means
         # anything; then the CLI's own retry loop drains. The old 180 s pane
@@ -1083,13 +1095,17 @@ def scenario_fault_429(cli: str, manifest: Path, home: Path, base_url: str, key:
     if not any(r[1] == 200 for r in rows):
         rows = wait_proxy_rows(home, since, 2, timeout=90)
     has_success = any(r[1] == 200 for r in rows)
-    has_rate_limit = any(r[1] == 429 for r in rows)
+    # A non-streaming client's proxy retries its 429 internally, so the row
+    # carries the last attempt's status (here a 404), never a 429.
+    has_error = any(r[1] not in (200, 499) or r[2] for r in rows)
     if recovered and not has_success:
         raise AssertionError(f"fault_429: the CLI rendered an answer with no successful row: {rows}")
     if not recovered and wrong in pane:
         raise AssertionError("fault_429: the CLI rendered the catch-all answer instead of the 429 error")
-    if not recovered and not has_rate_limit:
-        raise AssertionError(f"fault_429: no recovery and no honest 429 row: {rows}")
+    if not recovered and not surfaced_error(before, pane):
+        raise AssertionError("fault_429: no recovery and no visible error evidence in the pane")
+    if not recovered and not has_error:
+        raise AssertionError(f"fault_429: no recovery and no error row: {rows}")
     if not turn_requests(ms_requests(mockserver), prompt, cli):
         raise AssertionError("fault_429: the upstream saw no turn request")
 
@@ -1202,9 +1218,9 @@ def scenario_fault_truncated(cli: str, manifest: Path, home: Path, base_url: str
     real = turn_requests(ms_requests(mockserver), prompt, cli)
     if not real:
         raise AssertionError("fault_truncated: the upstream saw no turn request")
-    surfaced = STREAM_ERROR.search(pane) or warning_count(pane) > warning_count(before)
-    if not surfaced and len(real) < 2:
-        raise AssertionError("fault_truncated: the CLI neither surfaced the stream error nor retried the turn")
+    surfaced = surfaced_error(before, pane)
+    if not surfaced:
+        raise AssertionError("fault_truncated: the pane shows no new error evidence after the fault")
 
 
 def scenario_fault_malformed_sse(cli: str, manifest: Path, home: Path, base_url: str, key: str,
@@ -1247,9 +1263,9 @@ def scenario_fault_malformed_sse(cli: str, manifest: Path, home: Path, base_url:
     real = turn_requests(ms_requests(mockserver), prompt, cli)
     if not real:
         raise AssertionError("fault_malformed_sse: the upstream saw no turn request")
-    surfaced = STREAM_ERROR.search(pane) or warning_count(pane) > warning_count(before)
-    if not surfaced and len(real) < 2:
-        raise AssertionError("fault_malformed_sse: the CLI neither surfaced the stream error nor retried the turn")
+    surfaced = surfaced_error(before, pane)
+    if not surfaced:
+        raise AssertionError("fault_malformed_sse: the pane shows no new error evidence after the fault")
 
 
 def scenario_web_turn2(cli: str, manifest: Path, home: Path, base_url: str, key: str,
