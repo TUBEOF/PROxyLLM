@@ -49,9 +49,7 @@ go test ./internal/routing/...          # includes emulation + caption tests
 make test-race                          # routing is streaming-adjacent
 ```
 
-Live, against an ephemeral instance: `.github/workflows/live-cli.yml` owns the
-harness; the reusable pieces live under `.github/live-cli/`, and its `db.py`
-inspects `request_logs` / trace rows read-only. The hard assertions are the
-`capability_fallback` + `image_caption` pair for the image phase and
-`emulated_tool`/`emulated_tool_attempt` for the web phases. Procedure and
-invariants: `docs/test-instance.md`.
+End to end, the plain-start CLI matrix (`docs/test-matrix.md`) drives real CLIs
+through the proxy against MockServer; the fault shards cover 429/529/quota and
+mid-stream failures, and `web_turn2` asserts the emulated web-tool round trip
+(`emulated_tool`/`emulated_tool_attempt` in the trace).

@@ -3,8 +3,8 @@
   "label": "Claude Code",
   "tier": "core",
   "command": "claude",
-  "install": "npm install -g @anthropic-ai/claude-code",
-  "tested": "latest",
+  "install": "npm install -g @anthropic-ai/claude-code@2.1.316",
+  "tested": "2.1.316",
   "runnable": true,
   "env_keep": [
     "PATH",

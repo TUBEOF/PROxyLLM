@@ -3,7 +3,7 @@
   "label": "Crush",
   "tier": "core",
   "command": "crush",
-  "install": "npm install -g @charmland/crush",
+  "install": "npm install -g @charmland/crush@0.99.0",
   "tested": "0.99.0",
   "runnable": false,
   "runnable_note": "Plain-start matrix client (cli_plain.py); no verified headless run path yet (docs: github.com/charmbracelet/crush/blob/main/docs/config/README.md)",

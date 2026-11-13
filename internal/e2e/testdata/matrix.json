@@ -1241,6 +1241,48 @@
    "test": "TestMatrix_ChatClient_ResponsesUpstream_ToolCall",
    "status": "green",
    "note": ""
+  },
+  {
+   "id": "fault__overloaded-529",
+   "test": "TestMatrix_ChatClient_UpstreamOverloaded529",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "fault__malformed-stream",
+   "test": "TestMatrix_ChatClient_UpstreamMalformedStream",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "fault__quota-window",
+   "test": "TestMatrix_ChatClient_UpstreamQuotaWindow",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "quota__insufficient-quota-cooldown",
+   "test": "TestMatrix_ChatClient_InsufficientQuotaCooldown",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "meta__pair-cell-teeth",
+   "test": "TestMatrix_Meta_PairCellAssertionsHaveTeeth",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "meta__wire-schema-teeth",
+   "test": "TestMatrix_Meta_WireSchemaHasTeeth",
+   "status": "green",
+   "note": ""
+  },
+  {
+   "id": "meta__manifest-teeth",
+   "test": "TestMatrix_Meta_ManifestValidatorHasTeeth",
+   "status": "green",
+   "note": ""
   }
  ]
 }

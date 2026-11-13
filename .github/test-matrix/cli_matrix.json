@@ -1,0 +1,1097 @@
+{
+  "schema": 1,
+  "clients": [
+    "codex",
+    "claude-code",
+    "crush",
+    "openhands",
+    "gptme",
+    "aider",
+    "cline",
+    "goose",
+    "kimi",
+    "qwen",
+    "opencode",
+    "open-interpreter"
+  ],
+  "scenarios": [
+    "answer",
+    "recall",
+    "multi_turn",
+    "large_output",
+    "web_turn2",
+    "tool_loop",
+    "thinking",
+    "fault_429",
+    "fault_529",
+    "fault_quota",
+    "fault_truncated",
+    "fault_malformed_sse",
+    "cancel_resume",
+    "previous_response_id",
+    "vision",
+    "decisions"
+  ],
+  "shards": {
+    "basic": [
+      "answer",
+      "recall"
+    ],
+    "faults": [
+      "fault_429",
+      "fault_529",
+      "fault_quota"
+    ],
+    "faults_stream": [
+      "fault_truncated",
+      "fault_malformed_sse"
+    ],
+    "web": [
+      "web_turn2"
+    ],
+    "tools": [
+      "tool_loop"
+    ],
+    "long": [
+      "multi_turn",
+      "large_output"
+    ]
+  },
+  "cells": [
+    {
+      "client": "codex",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "codex",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "codex",
+      "scenario": "multi_turn",
+      "status": "green"
+    },
+    {
+      "client": "codex",
+      "scenario": "large_output",
+      "status": "green"
+    },
+    {
+      "client": "codex",
+      "scenario": "web_turn2",
+      "status": "green"
+    },
+    {
+      "client": "codex",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "tool-call seed/approval not verified for this adapter"
+    },
+    {
+      "client": "codex",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
+    },
+    {
+      "client": "codex",
+      "scenario": "fault_429",
+      "status": "green"
+    },
+    {
+      "client": "codex",
+      "scenario": "fault_529",
+      "status": "green"
+    },
+    {
+      "client": "codex",
+      "scenario": "fault_quota",
+      "status": "green"
+    },
+    {
+      "client": "codex",
+      "scenario": "fault_truncated",
+      "status": "skipped",
+      "note": "non-streaming upstream: no SSE fault to inject"
+    },
+    {
+      "client": "codex",
+      "scenario": "fault_malformed_sse",
+      "status": "skipped",
+      "note": "non-streaming upstream: no SSE fault to inject"
+    },
+    {
+      "client": "codex",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
+    },
+    {
+      "client": "codex",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
+    },
+    {
+      "client": "codex",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
+    },
+    {
+      "client": "codex",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "multi_turn",
+      "status": "green"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "large_output",
+      "status": "green"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "web_turn2",
+      "status": "green"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "tool-call seed/approval not verified for this adapter"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "fault_429",
+      "status": "green"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "fault_529",
+      "status": "green"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "fault_quota",
+      "status": "green"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "fault_truncated",
+      "status": "green"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "fault_malformed_sse",
+      "status": "green"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "crush",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "crush",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "crush",
+      "scenario": "multi_turn",
+      "status": "green"
+    },
+    {
+      "client": "crush",
+      "scenario": "large_output",
+      "status": "green"
+    },
+    {
+      "client": "crush",
+      "scenario": "web_turn2",
+      "status": "green"
+    },
+    {
+      "client": "crush",
+      "scenario": "tool_loop",
+      "status": "green"
+    },
+    {
+      "client": "crush",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
+    },
+    {
+      "client": "crush",
+      "scenario": "fault_429",
+      "status": "green"
+    },
+    {
+      "client": "crush",
+      "scenario": "fault_529",
+      "status": "green"
+    },
+    {
+      "client": "crush",
+      "scenario": "fault_quota",
+      "status": "green"
+    },
+    {
+      "client": "crush",
+      "scenario": "fault_truncated",
+      "status": "green"
+    },
+    {
+      "client": "crush",
+      "scenario": "fault_malformed_sse",
+      "status": "green"
+    },
+    {
+      "client": "crush",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
+    },
+    {
+      "client": "crush",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
+    },
+    {
+      "client": "crush",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
+    },
+    {
+      "client": "crush",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "openhands",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "openhands",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "openhands",
+      "scenario": "multi_turn",
+      "status": "green"
+    },
+    {
+      "client": "openhands",
+      "scenario": "large_output",
+      "status": "green"
+    },
+    {
+      "client": "openhands",
+      "scenario": "web_turn2",
+      "status": "green"
+    },
+    {
+      "client": "openhands",
+      "scenario": "tool_loop",
+      "status": "green"
+    },
+    {
+      "client": "openhands",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
+    },
+    {
+      "client": "openhands",
+      "scenario": "fault_429",
+      "status": "green"
+    },
+    {
+      "client": "openhands",
+      "scenario": "fault_529",
+      "status": "green"
+    },
+    {
+      "client": "openhands",
+      "scenario": "fault_quota",
+      "status": "green"
+    },
+    {
+      "client": "openhands",
+      "scenario": "fault_truncated",
+      "status": "skipped",
+      "note": "non-streaming upstream: no SSE fault to inject"
+    },
+    {
+      "client": "openhands",
+      "scenario": "fault_malformed_sse",
+      "status": "skipped",
+      "note": "non-streaming upstream: no SSE fault to inject"
+    },
+    {
+      "client": "openhands",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
+    },
+    {
+      "client": "openhands",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
+    },
+    {
+      "client": "openhands",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
+    },
+    {
+      "client": "openhands",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "gptme",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "gptme",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "gptme",
+      "scenario": "multi_turn",
+      "status": "green"
+    },
+    {
+      "client": "gptme",
+      "scenario": "large_output",
+      "status": "green"
+    },
+    {
+      "client": "gptme",
+      "scenario": "web_turn2",
+      "status": "green"
+    },
+    {
+      "client": "gptme",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "tool-call seed/approval not verified for this adapter"
+    },
+    {
+      "client": "gptme",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
+    },
+    {
+      "client": "gptme",
+      "scenario": "fault_429",
+      "status": "green"
+    },
+    {
+      "client": "gptme",
+      "scenario": "fault_529",
+      "status": "green"
+    },
+    {
+      "client": "gptme",
+      "scenario": "fault_quota",
+      "status": "green"
+    },
+    {
+      "client": "gptme",
+      "scenario": "fault_truncated",
+      "status": "green"
+    },
+    {
+      "client": "gptme",
+      "scenario": "fault_malformed_sse",
+      "status": "green"
+    },
+    {
+      "client": "gptme",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
+    },
+    {
+      "client": "gptme",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
+    },
+    {
+      "client": "gptme",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
+    },
+    {
+      "client": "gptme",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "aider",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "aider",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "aider",
+      "scenario": "multi_turn",
+      "status": "green"
+    },
+    {
+      "client": "aider",
+      "scenario": "large_output",
+      "status": "skipped",
+      "note": "aider's TUI does not render the 20 KB tail in the visible pane; rerun when the pane capture proves it"
+    },
+    {
+      "client": "aider",
+      "scenario": "web_turn2",
+      "status": "green"
+    },
+    {
+      "client": "aider",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "tool-call seed/approval not verified for this adapter"
+    },
+    {
+      "client": "aider",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
+    },
+    {
+      "client": "aider",
+      "scenario": "fault_429",
+      "status": "green"
+    },
+    {
+      "client": "aider",
+      "scenario": "fault_529",
+      "status": "green"
+    },
+    {
+      "client": "aider",
+      "scenario": "fault_quota",
+      "status": "green"
+    },
+    {
+      "client": "aider",
+      "scenario": "fault_truncated",
+      "status": "green"
+    },
+    {
+      "client": "aider",
+      "scenario": "fault_malformed_sse",
+      "status": "green"
+    },
+    {
+      "client": "aider",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
+    },
+    {
+      "client": "aider",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
+    },
+    {
+      "client": "aider",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
+    },
+    {
+      "client": "aider",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "cline",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "cline",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "cline",
+      "scenario": "multi_turn",
+      "status": "green"
+    },
+    {
+      "client": "cline",
+      "scenario": "large_output",
+      "status": "green"
+    },
+    {
+      "client": "cline",
+      "scenario": "web_turn2",
+      "status": "green"
+    },
+    {
+      "client": "cline",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "tool-call seed/approval not verified for this adapter"
+    },
+    {
+      "client": "cline",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
+    },
+    {
+      "client": "cline",
+      "scenario": "fault_429",
+      "status": "green"
+    },
+    {
+      "client": "cline",
+      "scenario": "fault_529",
+      "status": "green"
+    },
+    {
+      "client": "cline",
+      "scenario": "fault_quota",
+      "status": "green"
+    },
+    {
+      "client": "cline",
+      "scenario": "fault_truncated",
+      "status": "green"
+    },
+    {
+      "client": "cline",
+      "scenario": "fault_malformed_sse",
+      "status": "green"
+    },
+    {
+      "client": "cline",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
+    },
+    {
+      "client": "cline",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
+    },
+    {
+      "client": "cline",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
+    },
+    {
+      "client": "cline",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "goose",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "goose",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "goose",
+      "scenario": "multi_turn",
+      "status": "green"
+    },
+    {
+      "client": "goose",
+      "scenario": "large_output",
+      "status": "green"
+    },
+    {
+      "client": "goose",
+      "scenario": "web_turn2",
+      "status": "green"
+    },
+    {
+      "client": "goose",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "tool-call seed/approval not verified for this adapter"
+    },
+    {
+      "client": "goose",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
+    },
+    {
+      "client": "goose",
+      "scenario": "fault_429",
+      "status": "green"
+    },
+    {
+      "client": "goose",
+      "scenario": "fault_529",
+      "status": "green"
+    },
+    {
+      "client": "goose",
+      "scenario": "fault_quota",
+      "status": "green"
+    },
+    {
+      "client": "goose",
+      "scenario": "fault_truncated",
+      "status": "green"
+    },
+    {
+      "client": "goose",
+      "scenario": "fault_malformed_sse",
+      "status": "green"
+    },
+    {
+      "client": "goose",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
+    },
+    {
+      "client": "goose",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
+    },
+    {
+      "client": "goose",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
+    },
+    {
+      "client": "goose",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "kimi",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "kimi",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "kimi",
+      "scenario": "multi_turn",
+      "status": "green"
+    },
+    {
+      "client": "kimi",
+      "scenario": "large_output",
+      "status": "green"
+    },
+    {
+      "client": "kimi",
+      "scenario": "web_turn2",
+      "status": "green"
+    },
+    {
+      "client": "kimi",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "tool-call seed/approval not verified for this adapter"
+    },
+    {
+      "client": "kimi",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
+    },
+    {
+      "client": "kimi",
+      "scenario": "fault_429",
+      "status": "green"
+    },
+    {
+      "client": "kimi",
+      "scenario": "fault_529",
+      "status": "green"
+    },
+    {
+      "client": "kimi",
+      "scenario": "fault_quota",
+      "status": "green"
+    },
+    {
+      "client": "kimi",
+      "scenario": "fault_truncated",
+      "status": "green"
+    },
+    {
+      "client": "kimi",
+      "scenario": "fault_malformed_sse",
+      "status": "green"
+    },
+    {
+      "client": "kimi",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
+    },
+    {
+      "client": "kimi",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
+    },
+    {
+      "client": "kimi",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
+    },
+    {
+      "client": "kimi",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "qwen",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "qwen",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "qwen",
+      "scenario": "multi_turn",
+      "status": "green"
+    },
+    {
+      "client": "qwen",
+      "scenario": "large_output",
+      "status": "green"
+    },
+    {
+      "client": "qwen",
+      "scenario": "web_turn2",
+      "status": "green"
+    },
+    {
+      "client": "qwen",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "tool-call seed/approval not verified for this adapter"
+    },
+    {
+      "client": "qwen",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
+    },
+    {
+      "client": "qwen",
+      "scenario": "fault_429",
+      "status": "green"
+    },
+    {
+      "client": "qwen",
+      "scenario": "fault_529",
+      "status": "green"
+    },
+    {
+      "client": "qwen",
+      "scenario": "fault_quota",
+      "status": "green"
+    },
+    {
+      "client": "qwen",
+      "scenario": "fault_truncated",
+      "status": "green"
+    },
+    {
+      "client": "qwen",
+      "scenario": "fault_malformed_sse",
+      "status": "green"
+    },
+    {
+      "client": "qwen",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
+    },
+    {
+      "client": "qwen",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
+    },
+    {
+      "client": "qwen",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
+    },
+    {
+      "client": "qwen",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "opencode",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "opencode",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "opencode",
+      "scenario": "multi_turn",
+      "status": "green"
+    },
+    {
+      "client": "opencode",
+      "scenario": "large_output",
+      "status": "green"
+    },
+    {
+      "client": "opencode",
+      "scenario": "web_turn2",
+      "status": "green"
+    },
+    {
+      "client": "opencode",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "tool-call seed/approval not verified for this adapter"
+    },
+    {
+      "client": "opencode",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
+    },
+    {
+      "client": "opencode",
+      "scenario": "fault_429",
+      "status": "green"
+    },
+    {
+      "client": "opencode",
+      "scenario": "fault_529",
+      "status": "green"
+    },
+    {
+      "client": "opencode",
+      "scenario": "fault_quota",
+      "status": "green"
+    },
+    {
+      "client": "opencode",
+      "scenario": "fault_truncated",
+      "status": "green"
+    },
+    {
+      "client": "opencode",
+      "scenario": "fault_malformed_sse",
+      "status": "green"
+    },
+    {
+      "client": "opencode",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
+    },
+    {
+      "client": "opencode",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
+    },
+    {
+      "client": "opencode",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
+    },
+    {
+      "client": "opencode",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "answer",
+      "status": "green"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "recall",
+      "status": "green"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "multi_turn",
+      "status": "green"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "large_output",
+      "status": "green"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "web_turn2",
+      "status": "green"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "tool_loop",
+      "status": "skipped",
+      "note": "tool-call seed/approval not verified for this adapter"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "thinking",
+      "status": "skipped",
+      "note": "plain-start TUI does not enable extended thinking (no thinking field on the upstream request); M1 covers the proxy path"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "fault_429",
+      "status": "green"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "fault_529",
+      "status": "green"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "fault_quota",
+      "status": "green"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "fault_truncated",
+      "status": "green"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "fault_malformed_sse",
+      "status": "green"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "cancel_resume",
+      "status": "skipped",
+      "note": "plain-start TUI has no verified cancel/resume affordance; M1 covers client abort"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "previous_response_id",
+      "status": "skipped",
+      "note": "full-history client; recall covers the history contract, M1 covers the Responses chain"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "vision",
+      "status": "skipped",
+      "note": "no verified plain-start image attach; M1 blind-chain cell covers the proxy path"
+    },
+    {
+      "client": "open-interpreter",
+      "scenario": "decisions",
+      "status": "skipped",
+      "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    }
+  ]
+}

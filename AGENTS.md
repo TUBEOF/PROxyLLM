@@ -54,8 +54,8 @@ assertion suite has no baselines and runs anywhere. Rebuild the fixture
       e2e/design-rules.spec.ts e2e/log-childops.spec.ts e2e/provider-type-form.spec.ts
 
 Live smoke tests (`PROXYLLM_SMOKE=1 go test ./internal/smoke/...`) never run in
-default CI. The real-CLI suite runs as `.github/workflows/live-cli.yml`
-against an ephemeral instance; procedure in `docs/test-instance.md`.
+default CI. The real-CLI matrix runs as the `cli-plain` job in
+`.github/workflows/matrix.yml`; procedure in `docs/test-matrix.md`.
 
 ## Layout
 
@@ -95,9 +95,9 @@ Cursor, Antigravity, Copilot, Zed and others read that path directly;
 `.claude/skills/` holds only symlinks to the same directories so Claude Code
 discovers them too. Skills are the map — `docs/` stays the truth.
 
-`.github/live-cli/` holds the live-CLI harness: dependency-free `python3 -I`,
-idempotent, secret-safe and runnable from a fresh checkout. The workflow
-`.github/workflows/live-cli.yml` owns the phases. Keep that contract.
+`.github/test-matrix/` holds the M2 plain-start harness: dependency-free
+`python3 -I`, manifest-gated, secret-safe and runnable from a fresh checkout.
+`matrix.yml` owns the shards. Keep that contract.
 
 ## Conventions that differ from the default
 

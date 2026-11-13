@@ -33,7 +33,6 @@ go.work
 go.work.sum
 
 # Agent tooling — local working files, never part of the project.
-.live-cli/
 .aider.chat.history.md
 .aider.input.history
 # Project skills ship with the repo in .agents/skills/ (the cross-harness
@@ -42,7 +41,7 @@ go.work.sum
 .claude/*
 !.claude/skills/
 
-# Python bytecode from the test-instance harness (scripts run with -I, but
+# Python bytecode from the matrix harness (scripts run with -I, but
 # direct imports can still leave a cache).
 __pycache__/
 CLAUDE.md

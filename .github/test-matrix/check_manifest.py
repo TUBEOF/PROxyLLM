@@ -81,6 +81,8 @@ def check_cell(cell: dict, tests: set[str], claimed: set[str]) -> list[str]:
             problems.append(f"green cell {cid} names test {name} which does not exist")
         elif name in claimed:
             problems.append(f"cell {cid} claims the runner {name} as its own test")
+        else:
+            claimed.add(name)
     elif cell["status"] == "pending":
         if cell.get("test"):
             problems.append(f"pending cell {cid} names a test {cell['test']}; a pending cell cannot have one")

@@ -329,14 +329,42 @@ func validatePairCellResponse(t *testing.T, cell matrixCell, e *matrixEnv) {
 	}
 	sch := compileWireSchema(t, schema.file)
 	for i, frame := range frames {
-		var doc any
-		if err := json.Unmarshal(frame, &doc); err != nil {
-			t.Errorf("%s: %s %d is not JSON: %v (%s)", cell.ID, schema.kind, i, err, clipBytes(frame, 300))
-			continue
+		if v := frameViolationText(sch, frame); v != "" {
+			t.Errorf("%s: %s %d fails %s: %s", cell.ID, schema.kind, i, schema.file, v)
 		}
-		if err := sch.Validate(doc); err != nil {
-			t.Errorf("%s: %s %d fails %s:\n%s", cell.ID, schema.kind, i, schema.file, validationErrorText(err))
-		}
+	}
+}
+
+// frameViolationText validates one client-facing frame: JSON decode first,
+// then the official schema. Pure, so the negative-control test exercises the
+// exact rule the runner uses.
+func frameViolationText(sch *jsonschema.Schema, frame []byte) string {
+	var doc any
+	if err := json.Unmarshal(frame, &doc); err != nil {
+		return "not JSON: " + err.Error()
+	}
+	if err := sch.Validate(doc); err != nil {
+		return validationErrorText(err)
+	}
+	return ""
+}
+
+// TestMatrix_Meta_WireSchemaHasTeeth proves the schema gate rejects malformed
+// bytes and an invalid document, and accepts the official golden response.
+func TestMatrix_Meta_WireSchemaHasTeeth(t *testing.T) {
+	sch := compileWireSchema(t, "openai_chat.json")
+	valid, err := os.ReadFile("../../testdata/golden/openai/chat-response.json")
+	if err != nil {
+		t.Fatalf("read golden chat response: %v", err)
+	}
+	if v := frameViolationText(sch, valid); v != "" {
+		t.Errorf("positive schema control: %s", v)
+	}
+	if v := frameViolationText(sch, []byte("{not json")); v == "" {
+		t.Error("invalid JSON was not rejected")
+	}
+	if v := frameViolationText(sch, []byte("{}")); v == "" {
+		t.Error("schema-invalid document was not rejected")
 	}
 }
 

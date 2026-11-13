@@ -1,10 +1,8 @@
 name: Release
 
 # Tag-triggered release pipeline:
-#   1. real-CLI suite (inline composite action; logs stream in this job)
-#   2. perf-budget gate
-#   3. GoReleaser: archives + multi-arch GHCR images
-#   4. append the per-CLI table to the release notes
+#   1. perf-budget gate
+#   2. GoReleaser: archives + multi-arch GHCR images
 
 on:
   push:
@@ -13,12 +11,6 @@ on:
 permissions:
   contents: write
   packages: write
-
-env:
-  PROXYLLM_TEST_HOME: ${{ github.workspace }}/.live-cli
-  PYTHONUNBUFFERED: "1"
-  CHAT_MODEL: deepseek-v4.1-flash:1017
-  FALLBACK_MODEL: nemotron-3-ultra
 
 jobs:
   # Hard release gate: the perf budgets block release. The CI
@@ -37,18 +29,10 @@ jobs:
   release:
     needs: [perf-budgets]
     runs-on: ubuntu-24.04
-    environment: live-cli
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      # Inline the live suite so its steps appear in this job's log. The
-      # action installs Go/Node and returns the Markdown table as an output.
-      - uses: ./.github/actions/live-cli
-        id: live
-        with:
-          ollama-cloud-api-key: ${{ secrets.OLLAMA_CLOUD_API_KEY }}
 
       # QEMU + buildx for the arm64 image leg; login before GoReleaser
       # because its publish phase pushes during the run.
@@ -68,16 +52,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Verify the report BEFORE GoReleaser: once a release is published,
-      # a missing report can no longer block it.
-      - name: Write live CLI report
-        env:
-          REPORT: ${{ steps.live.outputs.report }}
-        run: |
-          test -n "$REPORT"
-          printf '%s\n' "$REPORT" > /tmp/cli-report.md
-          grep -q '^| CLI ' /tmp/cli-report.md
-
       # go:embed reads webui/dist at compile time; GoReleaser requires a
       # clean git state and has no allowlist for dirty files, so tell git to
       # ignore changes to exactly that placeholder.
@@ -93,21 +67,3 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Append per-CLI results to the release notes
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          if [ ! -s /tmp/cli-report.md ]; then
-            echo "live CLI report missing; refusing to publish a release without CLI results" >&2
-            exit 1
-          fi
-          gh release view "$TAG" --json body -q .body > /tmp/release-body.md
-          {
-            echo
-            echo "## Live CLI test results"
-            echo
-            cat /tmp/cli-report.md
-          } >> /tmp/release-body.md
-          gh release edit "$TAG" --notes-file /tmp/release-body.md

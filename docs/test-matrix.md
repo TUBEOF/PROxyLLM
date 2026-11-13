@@ -74,8 +74,15 @@ runners only execute it.
 **Scenario and fault cells.** Streaming round trips per surface, the
 cross-protocol scenarios, the tool-call round trip, the thinking round trip
 (enabled thinking reaches a thinking-capable upstream; the reasoning trace
-surfaces beside the final answer), upstream 429/Retry-After
-and mid-stream truncation (must surface as errors), the emulated
+surfaces beside the final answer), upstream 429/Retry-After, the 529
+overload status (fail over, never a same-provider retry), mid-stream
+truncation and malformed SSE (both must surface as terminal errors; the
+malformed frame rides a raw Gemini SSE body because MockServer appends its
+broken chunk after the terminal sentinel on sentinel-terminated wires),
+MockServer's stateful quota window (the first request is served, the next one
+over the limit is 429), the proxy's `insufficient_quota` cooldown (the first
+call surfaces 402, the next is refused with 503 + Retry-After and never
+reaches the upstream again), the emulated
 web-tool flows (fully offline — MockServer also plays the Firecrawl v2
 backend): the Anthropic search cell, the chat-surface client-web-tool claim,
 the web_fetch cell (prior-context guard + document result), the plain-CLI
@@ -106,32 +113,91 @@ either strict-validated or documents its gap precisely);
 Go tests agree in both directions, and the workflow runs the whole matrix
 with `-count=2` for determinism.
 
+**Meta-gates.** Three negative controls prove the suite can go red:
+`TestMatrix_Meta_PairCellAssertionsHaveTeeth` (every pair assertion rejects a
+wrong value), `TestMatrix_Meta_WireSchemaHasTeeth` (invalid JSON and an invalid
+document fail the schema gate; the golden response passes), and
+`TestMatrix_Meta_ManifestValidatorHasTeeth` (one broken manifest per rule).
+`.github/test-matrix/test_gates.py` is the gate's own negative self-test,
+including the duplicate-claim rule.
+
 Pending cells (the manifest names the reason for each; the fix loop owns them):
-- M2: the CLIs, plain start, beyond the `answer`/`recall` scenario set.
+- M2: `.github/test-matrix/cli_matrix.json` names only the skipped cells and
+  their reason — thinking, cancel/resume, `previous_response_id`, vision and
+  decisions on all clients, `tool_loop` on ten, `large_output` on aider, and
+  the two mid-stream faults on the non-streaming codex and openhands. Every
+  other cell is green.
 
 ## M2 — the plain-start CLI matrix (cli-plain)
 
 The `cli-plain` job in `.github/workflows/matrix.yml` drives
-`.github/test-matrix/cli_plain.py`: 13 CLIs total, 12 of them in CI, each
-started exactly the way a user starts it — the bare binary in a tmux
-pseudo-terminal, only its own config pointing at the proxy — against
-MockServer. The `--scenarios answer,recall` set runs in CI today (single
-answer, recall-with-history); the wider scenario set is pending. continue is
-excluded from the CI run and runs locally only.
+`.github/test-matrix/cli_plain.py`: 12 CLIs, each started exactly the way a
+user starts it — the bare binary in a tmux pseudo-terminal, only its own
+config pointing at the proxy — against MockServer.
 
-**Why continue is not in the CI run.** cn 1.5.47's plain-start TUI never
+**The manifest is the source of truth.** `.github/test-matrix/cli_matrix.json`
+enumerates every client × scenario pair, status `green` or `skipped`; a skipped
+cell carries its reason. `check_cli_manifest.py` fails on a missing pair, a
+green scenario without a `SCENARIOS` function, a scenario function that is
+green nowhere, a green cell outside a shard, or a shard the workflow does not
+wire. `test_gates.py` is the gate's negative self-test. Today `answer`,
+`recall`, `fault_429`, `fault_529`, `fault_quota` (all clients), the
+`fault_truncated`/`fault_malformed_sse` pair (streaming clients), `web_turn2`
+(all clients), `tool_loop` (crush, openhands), `multi_turn` (all clients) and
+`large_output` (all but aider, whose TUI does not render the 20 KB tail) are
+green across the `basic`, `faults`, `faults_stream`,
+`web`, `tools` and `long` shards; the remaining scenarios are skipped with
+their reason, so the omission is visible on every run instead of silent.
+
+**What is skipped and why.** The manifest carries the exact reason on every
+skipped cell; the recurring ones are: extended thinking (Claude Code's plain
+TUI sends no `thinking` field even with a budget env — M1's Anthropic thinking
+cell covers the proxy path), cancel/resume (no verified plain-start TUI
+affordance — M1's client-abort cell covers the proxy), `previous_response_id`
+(these clients send full history; `recall` plus the M1 Responses chain cover
+the contract), vision (no verified plain-start image attach; the M1 blind-chain
+cell covers the caption fallback), decisions (no CLI surface; M1 drives System
+One and OpenAI Decisions), `tool_loop` on the CLIs whose tool seed or
+approval flow is not verified yet, and `large_output` on aider (its TUI does
+not render the 20 KB tail in the visible pane).
+
+Each fault cell gets its own provider account (the breaker and quota cooldowns
+are keyed by account, so sharing one would poison the next cell), and the CLI's
+in-flight retries drain before the next cell resets MockServer. The quota cell
+proves the CLI surfaces the 402 and then probes the same model directly: the
+cooled account answers the probe with the surface's overload status (503 on
+OpenAI, 529 on Anthropic) without reaching the upstream again. `fault_429`
+accepts either recovery through a retry or an honest 429: a retry that
+misses the pinned matcher lands on a unique catch-all answer, and rendering
+that answer fails the cell; without recovery, the pane must show error
+evidence it did not carry before the turn. The two mid-stream fault cells
+wait for the CLI's retry loop to drain, then require the same new pane
+evidence — an error line, or a warnings counter that grew — because the
+proxy's error row alone does not prove the client saw it.
+
+**Shards and evidence.** The workflow runs one job per manifest shard, each
+with its own runner, home, port and `cli-plain-<shard>` artifact, and
+`fail-fast: false`; a failing cell cannot hide another. Every cell writes
+`result.json` next to its `pane.log` and `client-logs/` — status, duration,
+pane tail, upstream request count, declared tool names, and the request-log
+rows since the cell's baseline. A deliberate fault row from one cell can
+therefore never poison a later cell's clean-row check.
+
+**Why continue is not in the matrix.** cn 1.5.47's plain-start TUI never
 mounts its composer on `ubuntu-24.04` runners: Ink paints exactly two stdout
 frames, then the render loop emits nothing for the whole 45 s window while
 the input effects keep running — no blocked syscall, no network wait — while
 locally it mounts in every variant (node versions, locales, terminal sizes).
 Scope: the plain-start TUI only; the headless M1 conformance cells are green
 in CI throughout. Evidence chain: frame probe #114, strace #113, boot trace
-#112/#111, deep dives #108–#115. Locally verified green: two full 26/26 runs
-(13 clients × answer/recall) on the #114 lineage, including node 26 and 27.
-The driver still accepts `--clients continue` for local runs. Re-entry
-criterion: re-add `continue` when @continuedev/cli (pinned at 1.5.47) mounts
-its composer on the runner image — the pane artifacts under the
-`cli-plain-matrix` artifact prove any fix.
+#112/#111, deep dives #108–#115. The plain-start matrix carries no local-only
+exception. Re-entry needs three changes, not one: an M2 adapter under
+`.github/test-matrix/adapters/` (the manifest gate fails without it), a
+`STREAMING`/`FALLBACK_STREAMING` entry in `cli_plain.py` for its green
+scenarios, and a pinned install step in `matrix.yml` — only then does adding
+`continue` to `cli_matrix.json` mean anything. Trigger: @continuedev/cli
+(pinned at 1.5.47) mounts its composer on the runner image — the pane
+artifacts prove any fix.
 
 Out of scope (no client or product path uses them): embeddings, audio, images,
 moderations, files, batches, Realtime/Live WebSocket, legacy completions,
