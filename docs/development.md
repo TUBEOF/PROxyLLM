@@ -176,7 +176,10 @@ release rather than every pull request.
 A release is a tag. The workflow runs the perf-budget gate on the tagged
 commit, builds the SPA, runs GoReleaser (per-OS archives plus a multi-arch
 container image), and publishes the GitHub release. The real-CLI matrix runs
-on every push and PR through `matrix.yml`, before the tag.
+through `matrix.yml` on every push to `main` and on pull requests that touch
+`internal/**`, `cmd/**`, `go.mod`, `go.sum` or the matrix harness — not on the
+tag, so a tagged commit that touched none of those paths has no matrix run of
+its own.
 
 1. Merge everything that should ship to `main`, with CI green.
 2. Tag `vX.Y.Z` (annotated or not — the workflow triggers on `v*`) and push

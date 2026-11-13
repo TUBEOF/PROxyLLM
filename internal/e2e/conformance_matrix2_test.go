@@ -338,9 +338,10 @@ func TestMatrix_ChatClient_UpstreamMalformedStream(t *testing.T) {
 }
 
 // 13. Fault: MockServer's stateful request-count quota. The first request is
-// served, the next one over the limit gets 429; the proxy retries the same
-// provider inside its budget, so the upstream sees at least two requests and
-// the client ends with a typed error, never a fabricated answer.
+// served; the next one over the limit gets 429 with Retry-After: 60. That
+// reset exceeds the proxy's backoff ceiling, so the same provider is not
+// retried — the upstream sees exactly two requests — and the client ends with
+// a typed 429 error, never a fabricated answer.
 func TestMatrix_ChatClient_UpstreamQuotaWindow(t *testing.T) {
 	ctx := context.Background()
 	up := upstream{ID: "quota-window-up", Type: "ollama-cloud"}
@@ -386,8 +387,8 @@ func TestMatrix_ChatClient_UpstreamQuotaWindow(t *testing.T) {
 	if apiErr.StatusCode != http.StatusTooManyRequests {
 		t.Errorf("status = %d, want 429 from the quota window", apiErr.StatusCode)
 	}
-	if n := countUpstreamRequests(t, e, "/v1/chat/completions"); n < 2 {
-		t.Errorf("upstream requests = %d, want at least 2 (served + quota rejection)", n)
+	if n := countUpstreamRequests(t, e, "/v1/chat/completions"); n != 2 {
+		t.Errorf("upstream requests = %d, want 2 (served + quota rejection, no retry behind the announced 60 s reset)", n)
 	}
 }
 

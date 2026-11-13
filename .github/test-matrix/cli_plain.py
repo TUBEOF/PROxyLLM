@@ -22,6 +22,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import secrets
 import shutil
 import sqlite3
@@ -654,6 +655,37 @@ def tmux_pane_scroll(name: str) -> str:
     return tmux("capture-pane", "-p", "-J", "-S", "-4000", "-t", name, check=False)
 
 
+ANSI_RE = re.compile(
+    r"\x1b\[[0-9;?<=>$]*[ -/]*[@-~]"        # CSI (cursor, colour, modes)
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"   # OSC (titles, links)
+    r"|\x1b[()][A-Za-z0-9]"                 # charset selection
+    r"|\x1b[=>]"                            # keypad modes
+    r"|\r")
+
+
+def pane_stream(run_dir: Path) -> str:
+    """Every byte the TUI painted, escapes stripped. Virtualized renderers
+    (claude-code, codex, opencode) paint only the window they show, so the
+    visible pane proves the tail and this stream proves the unicode line
+    around it — not the full 20 KB prefix."""
+    return ANSI_RE.sub("", (run_dir / "pane.log").read_text(encoding="utf-8", errors="replace"))
+
+
+# A mid-stream error must reach the user: every TUI paints some error text
+# (each in its own words), and a client that silently re-sent the turn has
+# equally seen the failure. Shared by the two mid-stream fault cells.
+STREAM_ERROR = re.compile(r"(?i)(error|fail|exception|issue|not found|exceed|unavailable)")
+
+# Some TUIs report a mid-stream failure behind a counter instead of painting
+# the error (open-interpreter: "⚠ N warnings · f2 to view"); a count that grew
+# after the fault is their terminal-outcome evidence.
+WARNING_COUNT = re.compile(r"(\d+)\s+warnings?")
+
+
+def warning_count(pane: str) -> int:
+    return max((int(m.group(1)) for m in WARNING_COUNT.finditer(pane)), default=0)
+
+
 # Some CLIs flush stdin when they repaint the composer after every turn, so
 # typed-ahead input is discarded: wait until the composer prompt itself is
 # the pane's last line before typing.
@@ -747,8 +779,14 @@ def start_cell(cli: str, manifest: Path, home: Path, base_url: str, key: str,
     env, cwd = prepare(manifest, run_dir, base_url, key, model)
     name = f"plain-{cli}-{label}"
     tmux_spawn(name, cwd, env, [plain_command(manifest)], run_dir)
-    onboard(name, cli)
-    wait_pane(name, READY_MARKERS.get(cli, cli), 45, "startup")
+    try:
+        onboard(name, cli)
+        wait_pane(name, READY_MARKERS.get(cli, cli), 45, "startup")
+    except BaseException:
+        # A failed startup owes the runner the same cleanup as a finished
+        # cell: kill the session, collect its logs, drain in-flight traffic.
+        finish_cell(name, run_dir)
+        raise
     return name, run_dir
 
 
@@ -1023,13 +1061,21 @@ def scenario_fault_429(cli: str, manifest: Path, home: Path, base_url: str, key:
                       200, times=1, matcher=matcher, model=scenario_model,
                       chaos={"errorStatus": 429, "errorProbability": 1.0, "retryAfter": "1"})
     mock_pinned(mockserver, cli, [(prompt, marker)], streaming, model=scenario_model)
-    mock_fallback(mockserver, "ok", FALLBACK_STREAMING[cli], model=scenario_model)
+    wrong = "WRONG-" + secrets.token_hex(4)
+    mock_fallback(mockserver, wrong, FALLBACK_STREAMING[cli], model=scenario_model)
 
     name, run_dir = start_cell(cli, manifest, home, base_url, key, "fault_429",
                                model=scenario_model)
     try:
         submit(name, cli, prompt)
-        recovered = wait_pane_optional(name, marker, 180)
+        # The turn must reach the proxy before the drain check means
+        # anything; then the CLI's own retry loop drains. The old 180 s pane
+        # wait ran in full on every honest-error cell, which alone approaches
+        # the shard budget.
+        wait_proxy_rows(home, since, 1, timeout=90)
+        wait_proxy_quiet(home, timeout=60, quiet=5)
+        recovered = wait_pane_optional(name, marker, 30)
+        pane = tmux_pane(name)
     finally:
         finish_cell(name, run_dir)
 
@@ -1040,6 +1086,8 @@ def scenario_fault_429(cli: str, manifest: Path, home: Path, base_url: str, key:
     has_rate_limit = any(r[1] == 429 for r in rows)
     if recovered and not has_success:
         raise AssertionError(f"fault_429: the CLI rendered an answer with no successful row: {rows}")
+    if not recovered and wrong in pane:
+        raise AssertionError("fault_429: the CLI rendered the catch-all answer instead of the 429 error")
     if not recovered and not has_rate_limit:
         raise AssertionError(f"fault_429: no recovery and no honest 429 row: {rows}")
     if not turn_requests(ms_requests(mockserver), prompt, cli):
@@ -1135,13 +1183,18 @@ def scenario_fault_truncated(cli: str, manifest: Path, home: Path, base_url: str
     name, run_dir = start_cell(cli, manifest, home, base_url, key, "fault_truncated",
                                model=scenario_model)
     try:
+        before = tmux_pane(name)
         submit(name, cli, prompt)
-        rows = wait_proxy_rows(home, since, 1, timeout=90)
+        # The turn must reach the proxy, then the CLI's own retry loop drains:
+        # a still-retrying TUI would be sampled mid-spinner.
+        wait_proxy_rows(home, since, 1, timeout=90)
+        wait_proxy_quiet(home, timeout=60, quiet=5)
         time.sleep(2)
         pane = tmux_pane(name)
     finally:
         finish_cell(name, run_dir)
 
+    rows = proxy_rows(home, since)
     if marker in pane:
         raise AssertionError("fault_truncated: the CLI rendered the truncated tail as a complete answer")
     if not any(r[1] not in (200, 499) or r[2] for r in rows):
@@ -1149,6 +1202,9 @@ def scenario_fault_truncated(cli: str, manifest: Path, home: Path, base_url: str
     real = turn_requests(ms_requests(mockserver), prompt, cli)
     if not real:
         raise AssertionError("fault_truncated: the upstream saw no turn request")
+    surfaced = STREAM_ERROR.search(pane) or warning_count(pane) > warning_count(before)
+    if not surfaced and len(real) < 2:
+        raise AssertionError("fault_truncated: the CLI neither surfaced the stream error nor retried the turn")
 
 
 def scenario_fault_malformed_sse(cli: str, manifest: Path, home: Path, base_url: str, key: str,
@@ -1156,7 +1212,6 @@ def scenario_fault_malformed_sse(cli: str, manifest: Path, home: Path, base_url:
     """A malformed SSE frame mid-stream must terminate the answer with an
     error; the raw body also proves the proxy reads every frame, not only the
     final sentinel."""
-    marker = "MALFORMED-" + secrets.token_hex(4)
     prompt = "Give me a long answer."
     scenario_model = fresh_upstream(mockserver, "fault_malformed_sse", cli)
     body = (
@@ -1166,27 +1221,35 @@ def scenario_fault_malformed_sse(cli: str, manifest: Path, home: Path, base_url:
         "data: {not json\n\n"
     )
     ms_reset(mockserver)
-    matcher = pinned_matcher(cli, prompt, 0, [(prompt, marker)], True)
+    # No answer text is pinned: the body below is the fixture, and the
+    # matcher's second tuple element is unused at rank 0.
+    matcher = pinned_matcher(cli, prompt, 0, [(prompt, "")], True)
     mock_http_response(mockserver, UPSTREAM_PATH, 200, body, 150, times=1, matcher=matcher,
                        headers=[{"name": "Content-Type", "values": ["text/event-stream"]}])
 
     name, run_dir = start_cell(cli, manifest, home, base_url, key, "fault_malformed_sse",
                                model=scenario_model)
     try:
+        before = tmux_pane(name)
         submit(name, cli, prompt)
-        rows = wait_proxy_rows(home, since, 1, timeout=90)
+        # The turn must reach the proxy, then the CLI's own retry loop drains:
+        # a still-retrying TUI would be sampled mid-spinner.
+        wait_proxy_rows(home, since, 1, timeout=90)
+        wait_proxy_quiet(home, timeout=60, quiet=5)
         time.sleep(2)
         pane = tmux_pane(name)
     finally:
         finish_cell(name, run_dir)
 
-    if marker in pane:
-        raise AssertionError("fault_malformed_sse: the CLI rendered a fabricated answer")
+    rows = proxy_rows(home, since)
     if not any(r[1] not in (200, 499) or r[2] for r in rows):
         raise AssertionError(f"fault_malformed_sse: no error request-log row: {rows}")
     real = turn_requests(ms_requests(mockserver), prompt, cli)
     if not real:
         raise AssertionError("fault_malformed_sse: the upstream saw no turn request")
+    surfaced = STREAM_ERROR.search(pane) or warning_count(pane) > warning_count(before)
+    if not surfaced and len(real) < 2:
+        raise AssertionError("fault_malformed_sse: the CLI neither surfaced the stream error nor retried the turn")
 
 
 def scenario_web_turn2(cli: str, manifest: Path, home: Path, base_url: str, key: str,
@@ -1372,7 +1435,10 @@ def scenario_multi_turn(cli: str, manifest: Path, home: Path, base_url: str, key
 def scenario_large_output(cli: str, manifest: Path, home: Path, base_url: str, key: str,
                           mockserver: str, port: int, since: int) -> None:
     """A large, unicode-heavy answer ends with a marker; the CLI must render
-    the tail, not truncate the answer silently."""
+    the tail and the unicode line, not truncate silently. Virtualized
+    renderers paint only the window they show, so the 20 000-char prefix
+    cannot be counted from the pane stream: the tail proves the proxy relayed
+    the end, the unicode line proves nothing in between was mangled."""
     tail = "TAIL-" + secrets.token_hex(4)
     text = ("L" * 20000) + "\nUnicode: 日本語 émoji 🚀 combining é\n" + tail
     prompt = "Give me the large text."
@@ -1386,9 +1452,13 @@ def scenario_large_output(cli: str, manifest: Path, home: Path, base_url: str, k
     try:
         submit(name, cli, prompt)
         wait_pane(name, tail, 180, "large output tail")
+        stream = pane_stream(run_dir)
     finally:
         finish_cell(name, run_dir)
 
+    missing = [s for s in ("日本語", "émoji", "🚀", "é") if s not in stream]
+    if missing:
+        raise AssertionError(f"large_output: the pane stream is missing {missing}")
     if not turn_requests(ms_requests(mockserver), prompt, cli):
         raise AssertionError("large_output: the upstream saw no turn request")
     rows = wait_proxy_rows(home, since, 1)

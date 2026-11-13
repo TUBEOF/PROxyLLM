@@ -122,9 +122,11 @@ document fail the schema gate; the golden response passes), and
 including the duplicate-claim rule.
 
 Pending cells (the manifest names the reason for each; the fix loop owns them):
-- M2: scenarios beyond `answer`/`recall` are named skipped, with a reason, in
-  `.github/test-matrix/cli_matrix.json`; the scenario implementation phases
-  flip them green.
+- M2: `.github/test-matrix/cli_matrix.json` names only the skipped cells and
+  their reason — thinking, cancel/resume, `previous_response_id`, vision and
+  decisions on all clients, `tool_loop` on ten, `large_output` on aider, and
+  the two mid-stream faults on the non-streaming codex and openhands. Every
+  other cell is green.
 
 ## M2 — the plain-start CLI matrix (cli-plain)
 
@@ -165,8 +167,13 @@ in-flight retries drain before the next cell resets MockServer. The quota cell
 proves the CLI surfaces the 402 and then probes the same model directly: the
 cooled account answers the probe with the surface's overload status (503 on
 OpenAI, 529 on Anthropic) without reaching the upstream again. `fault_429`
-accepts either recovery through a retry or an honest 429 row — what it never
-accepts is a fabricated answer.
+accepts either recovery through a retry or an honest 429 row; a retry that
+misses the pinned matcher lands on a unique catch-all answer, and rendering
+that answer fails the cell — the CLI must surface the 429 instead. The two
+mid-stream fault cells wait for the CLI's retry loop to drain, then require
+the fault to reach the pane — an error line, a re-sent turn, or a warnings
+counter that grew — because the proxy's error row alone does not prove the
+client saw it.
 
 **Shards and evidence.** The workflow runs one job per manifest shard, each
 with its own runner, home, port and `cli-plain-<shard>` artifact, and
@@ -184,9 +191,13 @@ locally it mounts in every variant (node versions, locales, terminal sizes).
 Scope: the plain-start TUI only; the headless M1 conformance cells are green
 in CI throughout. Evidence chain: frame probe #114, strace #113, boot trace
 #112/#111, deep dives #108–#115. The plain-start matrix carries no local-only
-exception. Re-entry: add `continue` to `cli_matrix.json` when
-@continuedev/cli (pinned at 1.5.47) mounts its composer on the runner image —
-the pane artifacts prove any fix.
+exception. Re-entry needs three changes, not one: an M2 adapter under
+`.github/test-matrix/adapters/` (the manifest gate fails without it), a
+`STREAMING`/`FALLBACK_STREAMING` entry in `cli_plain.py` for its green
+scenarios, and a pinned install step in `matrix.yml` — only then does adding
+`continue` to `cli_matrix.json` mean anything. Trigger: @continuedev/cli
+(pinned at 1.5.47) mounts its composer on the runner image — the pane
+artifacts prove any fix.
 
 Out of scope (no client or product path uses them): embeddings, audio, images,
 moderations, files, batches, Realtime/Live WebSocket, legacy completions,
