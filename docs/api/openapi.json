@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "PROxyLLM client API",
-    "version": "1.23.0",
+    "version": "1.24.0",
     "summary": "OpenAI-compatible, Anthropic-compatible, native Ollama, native Gemini and decision surfaces of one proxy.",
     "description": "PROxyLLM exposes five client-facing surfaces from one endpoint and translates between them, so any client shape can reach any configured upstream. Every /v1/*, /api/* and /v1beta/* route authenticates with a client key (pk_<prefix>_<secret>). The Responses WebSocket transport (GET /v1/responses upgrade) is not expressible in OpenAPI 3.x; it follows the same request/response shapes as the POST endpoint and is described in docs/api/README.md. The operator-facing admin API (/api/admin/*) is session-authenticated and deliberately not described here; see docs/api/admin.md.",
     "license": { "name": "MIT", "identifier": "MIT" }
