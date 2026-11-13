@@ -8,7 +8,9 @@ an already-claimed test, and an extra claiming a runner.
 
 from __future__ import annotations
 
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -16,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import check_manifest
 import check_cli_manifest
+import cli_plain
 
 
 class CheckCellTests(unittest.TestCase):
@@ -84,6 +87,23 @@ class CheckCLIManifestTests(unittest.TestCase):
 
     def test_shard_missing_from_workflow_is_rejected(self) -> None:
         self.assertTrue(check_cli_manifest.validate(self.manifest(), {"answer"}, ""))
+
+
+class PrepareTests(unittest.TestCase):
+    def test_prepare_mkdirs_only_path_keys(self) -> None:
+        old = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.chdir(tmp)
+            try:
+                Path("manifest.json").write_text("{}")
+                cli_plain.prepare(Path("manifest.json"), Path("run"),
+                                  "http://127.0.0.1:18080", "pk_abc_def", "sim-model")
+                top = set(os.listdir("."))
+            finally:
+                os.chdir(old)
+        # BASE_URL, CLIENT_KEY and MODEL are render values, not paths: they
+        # must not materialise as directories beside the run dir.
+        self.assertEqual(top, {"manifest.json", "run"})
 
 
 if __name__ == "__main__":
