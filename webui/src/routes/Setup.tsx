@@ -537,7 +537,7 @@ export default function Setup() {
                       </button>
                     </div>
                   ) : (
-                    <OAuthSignIn providerId={oauthDraftId} onApproved={() => void onOAuthApproved()} />
+                    <OAuthSignIn providerId={oauthDraftId} flow={selectedLlm?.oauth_flow} onApproved={() => void onOAuthApproved()} />
                   )}
                   {modelTest !== null && (
                     <p role={modelTest.ok ? 'status' : 'alert'} className="form-note">

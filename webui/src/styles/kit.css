@@ -689,3 +689,6 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
 .connect-details{margin-top:8px;border-top:1px solid var(--border);padding-top:12px}
 .connect-details>summary{cursor:pointer;font-weight:var(--fw-medium);color:var(--fg)}
 .connect-details[open]>summary{margin-bottom:12px}
+
+/* Versioned risk notice (ADR-022): the text carries its own line breaks. */
+.risk-notice,.risk-card-note{white-space:pre-line}

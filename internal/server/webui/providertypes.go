@@ -132,8 +132,8 @@ var providerTypes = []providerTypeDesc{
 			"account you are authorized to connect, and do not use this provider for unattended\n" +
 			"high-volume traffic. Use at your own risk.",
 		RiskNoticeVersion:   1,
-		SettingsFields:      nil,
-		AccountFields:       nil,
+		SettingsFields:      []fieldDesc{},
+		AccountFields:       []fieldDesc{},
 		DefaultCapabilities: map[string]bool{"streaming": true, "tools": true, "vision": true, "thinking": true},
 	},
 	{
