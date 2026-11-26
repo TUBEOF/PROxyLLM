@@ -231,9 +231,18 @@ export interface SettingsEntry {
 // the issuer-prescribed poll pace; poll reports pending/approved with the
 // account id from the id_token claim. No token material ever rides these.
 export interface OAuthStartResult {
-  user_code: string;
-  verification_url: string;
-  interval_seconds: number;
+  // "device" (codex) or "paste" (Anthropic, ADR-022).
+  flow?: 'device' | 'paste';
+  status?: 'pending';
+  user_code?: string;
+  verification_url?: string;
+  interval_seconds?: number;
+  // Paste flow: open authorize_url, then POST /oauth/complete with the
+  // pasted callback and this flow_id.
+  flow_id?: string;
+  authorize_url?: string;
+  redirect_uri?: string;
+  expires_at?: number;
 }
 
 export interface OAuthPollResult {

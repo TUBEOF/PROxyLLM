@@ -10,6 +10,7 @@ import type {
 import { EmptyState, ErrorNote, PageHead, useAdminData, useMutation } from '../hooks';
 import { Drawer, ConfirmDialog } from '../components/Overlays';
 import OAuthSignIn from '../components/OAuthSignIn';
+import RiskNoticeModal from '../components/RiskNoticeModal';
 import { IconCheck, IconClose, IconPlus } from '../icons';
 
 // The how-to for an ollama.com session cookie lives in the repository's
@@ -70,6 +71,9 @@ export default function ProviderTypePage() {
   );
 
   const accounts = useMemo(() => detail.data?.accounts ?? [], [detail.data]);
+  useEffect(() => {
+    if (meta?.risk_acknowledged === true) setRiskAcked(true);
+  }, [meta]);
   const savedSettings = useMemo(() => asStringMap(detail.data?.settings), [detail.data]);
 
   // Settings form state, seeded once per loaded type via effect (a
@@ -150,6 +154,11 @@ export default function ProviderTypePage() {
   const [addError, setAddError] = useState<string | null>(null);
   const [oauthDraftId, setOauthDraftId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Account | null>(null);
+  // ADR-022 risk gate: the acknowledgment lives server-side, but the catalog
+  // is fetched once per page load — track the local answer so a continued
+  // flow does not re-open the modal on the same visit.
+  const [riskAcked, setRiskAcked] = useState(false);
+  const [riskOpen, setRiskOpen] = useState(false);
   const addAccount = useMutation();
 
   const closeAdd = useCallback(() => {
@@ -278,10 +287,17 @@ export default function ProviderTypePage() {
   }, [rules.data]);
 
   const head = (
-    <PageHead
-      title={meta?.label ?? type ?? 'Provider'}
-      sub={meta?.description ?? 'Provider type'}
-    />
+    <>
+      <PageHead
+        title={meta?.label ?? type ?? 'Provider'}
+        sub={meta?.description ?? 'Provider type'}
+      />
+      {meta?.risk_notice && (
+        <p className="hint risk-card-note" role="note">
+          {meta.risk_notice}
+        </p>
+      )}
+    </>
   );
   if (catalogError !== null) {
     return (
@@ -416,7 +432,10 @@ export default function ProviderTypePage() {
                 type="button"
                 className="btn btn-primary btn-sm"
                 style={{ marginLeft: 'auto', flexShrink: 0 }}
-                onClick={() => setAdding(true)}
+                onClick={() => {
+                  if (meta?.risk_notice && !riskAcked) setRiskOpen(true);
+                  else setAdding(true);
+                }}
               >
                 <IconPlus width="14" height="14" />
                 Add account
@@ -646,6 +665,20 @@ export default function ProviderTypePage() {
         </Drawer>
       )}
 
+      {riskOpen && meta?.risk_notice && (
+        <RiskNoticeModal
+          type={meta.type}
+          notice={meta.risk_notice}
+          version={meta.risk_notice_version ?? 1}
+          onCancel={() => setRiskOpen(false)}
+          onContinue={() => {
+            setRiskAcked(true);
+            setRiskOpen(false);
+            setAdding(true);
+          }}
+        />
+      )}
+
       {adding && (
         <Drawer
           title={`Add ${meta.label} account`}
@@ -740,7 +773,7 @@ export default function ProviderTypePage() {
               <p className="hint">Step 2: complete the sign-in for the new account.</p>
               <fieldset className="fieldset">
                 <legend>Sign in</legend>
-                <OAuthSignIn providerId={oauthDraftId} onApproved={() => detail.reload()} />
+                <OAuthSignIn providerId={oauthDraftId} flow={meta.oauth_flow} onApproved={() => detail.reload()} />
               </fieldset>
             </div>
           )}
