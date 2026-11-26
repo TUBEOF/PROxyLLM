@@ -1,0 +1,6 @@
+{
+  "fixture": "authorize-url.txt",
+  "source": "https://akashmohan.com/writings/claude-code-oauth",
+  "accessed": "2026-11-26",
+  "notes": "Shape fixture: the example challenge/state values are from the source. The proxy generates fresh PKCE/state values; tests assert the parameter set and endpoint, never these bytes."
+}

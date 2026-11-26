@@ -1,0 +1,6 @@
+{
+  "fixture": "token-response.json",
+  "source": "https://akashmohan.com/writings/claude-code-oauth",
+  "accessed": "2026-11-26",
+  "notes": "Dummy values; no real credential. The access prefix sk-ant-oat01 and refresh prefix sk-ant-ort01 are the documented forms."
+}

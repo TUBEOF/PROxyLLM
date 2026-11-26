@@ -44,6 +44,7 @@ Four ways in, depending on what you are doing.
 | What does a per-model compatibility setting do? | [Model compatibility](reference/model-compat.md) |
 | What is in a `route_trace`, and which versions exist? | [Route trace](reference/route-trace.md) |
 | How are wire facts captured and tested? | [Golden fixtures](../testdata/golden/README.md) |
+| Where are the vendor wire facts and their sources? | [Research notes](research/) |
 
 ## How these docs are organised
 
