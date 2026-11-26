@@ -227,6 +227,7 @@ batch/status, Anthropic admin/usage APIs, Ollama usage/balance endpoints.
 | G5 | `TestMatrix_FirstFrameLatency`, `TestMatrix_DisconnectNoGoroutineLeak` | The first streamed frame arrives within 250 ms (upstream first token 100 ms), so the proxy relays rather than buffers; a client disconnect returns the goroutine count to its baseline within 5 s. |
 | G2 | `internal/server/httpapi/specsync_test.go`, `TestMatrix_SpecSync_*` | Chat completions, Responses and native Ollama responses are validated against mechanical extracts of the pinned official documents (`openai/openai-openapi@abe304d`, `ollama@b207a5a`; commits in each `.meta.json`). The Responses cell records one documented contradiction: the prose allows `access_programs: null`, the machine schema types it as an object. |
 | G6 | `docker/dev-compose.yaml` | Proxy from source + MockServer, with an opt-in Claude Code container; no Go toolchain needed, ephemeral data by design. |
+| G3 | `internal/testutil/mockserver/container.go`, `make test-e2e-container` | A contributor with Docker runs the matrix against a testcontainers MockServer (`MOCKSERVER_CONTAINER=1`), with no JRE and no `MOCKSERVER_URL`; without Docker the existing documented skip is unchanged. |
 | G7 | `internal/testutil/fakeidp` | An in-process issuer: authorize redirect → code, PKCE-verified exchange, single-use refresh rotation, revoked-token re-login. The M1 `upstream__anthropic-oauth` cell still uses MockServer as the issuer for the full provider path. |
 
 These extras carry the same manifest rule as every other cell: a green cell
