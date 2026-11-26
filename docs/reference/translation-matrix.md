@@ -29,48 +29,40 @@ cannot carry all four is not added.
 
 Status of each operation class on the wires the shipped provider types
 speak — every client surface funnels through the IR, so the target wire is
-the axis. The shipped upstreams now cover all seven wires: **`custom-openai`
-and `ollama-cloud` talk OpenAI Chat Completions**, **`openai-responses` and
-`codex-oauth` talk the Responses wire**, **`anthropic` talks the Messages
-wire**, **`ollama-native` talks `/api/chat`**, **`gemini` talks the Gemini
-v1beta `generateContent` REST wire**, **`ollama-cloud` also serves
-System One**, and **`openai-decisions` serves `/v1/decisions`**. Client
-surfaces are Anthropic Messages, OpenAI Chat, OpenAI Responses (HTTP and
-WebSocket), Ollama native, Gemini native, System One and OpenAI Decisions.
+the axis. The shipped upstreams cover four wires: **`custom-openai` and
+`ollama-cloud` talk OpenAI Chat Completions**, **`codex-oauth` talks the
+Responses wire**, **`anthropic` talks the Messages wire**, and
+**`ollama-native` talks `/api/chat`**. Client surfaces are Anthropic
+Messages, OpenAI Chat, OpenAI Responses (HTTP and WebSocket) and Ollama
+native.
 
 Protocol directions:
 
-| Client \ Provider | Chat | Responses | Anthropic | Ollama native | Gemini | System One | Decisions |
-|---|---|---|---|---|---|---|---|
-| Anthropic Messages | translated | translated | native | translated | translated | N/A | N/A |
-| OpenAI Chat | native | translated | translated | translated | translated | N/A | N/A |
-| OpenAI Responses | translated | native | translated | translated | translated | N/A | N/A |
-| Ollama native | translated | translated | translated | native | translated | N/A | N/A |
-| Gemini native | translated | translated | translated | translated | native | N/A | N/A |
-| System One | N/A | N/A | N/A | N/A | N/A | native | translated |
-| OpenAI Decisions | N/A | N/A | N/A | N/A | N/A | translated | native |
-
-| OpenAI Decisions | N/A | N/A | N/A | N/A | translated | native |
+| Client \ Provider | Chat | Responses | Anthropic | Ollama native |
+|---|---|---|---|---|
+| Anthropic Messages | translated | translated | native | translated |
+| OpenAI Chat | native | translated | translated | translated |
+| OpenAI Responses | translated | native | translated | translated |
+| Ollama native | translated | translated | translated | native |
 
 Statuses: **native** (same-protocol, carried as-is), **translated** (codec
 pair + IR), **degraded** (translated with a recorded loss), **emulated**
 (routing supplies it against a target that lacks it), **not supported**
 (refused or absent, documented here).
 
-| Operation | → OpenAI Chat (custom-openai, ollama-cloud) | → Responses (codex) | → Gemini (`gemini`) |
+| Operation | → OpenAI Chat (custom-openai, ollama-cloud) | → Responses (codex) | → Anthropic (`anthropic`) |
 |---|---|---|---|
 | Text content | translated | translated | translated |
 | Client tools: definitions, calls, results | translated | translated | translated |
-| Streaming | translated | translated (`stream: true` forced) | translated (`alt=sse` path; the body has no stream field) |
-| Extended thinking | translated — no wire field out; `reasoning` / `reasoning_content` decoded in | translated (`reasoning`, `encrypted_content`) | translated (`thinkingConfig`, `includeThoughts`; `thought` parts replay `thoughtSignature` verbatim) |
-| Images in user content | translated (`image_url` ↔ `images[]`) | translated (`input_image`) | translated (`inlineData` base64 ↔ `fileData` URI) |
-| Images in tool results | translated for OpenAI/Anthropic clients; **degraded when the target is the Ollama-native wire** (catalog №1) | translated | degraded — function responses ride a JSON object, no media channel (below) |
+| Streaming | translated | translated (`stream: true` forced) | translated |
+| Extended thinking | translated — no wire field out; `reasoning` / `reasoning_content` decoded in | translated (`reasoning`, `encrypted_content`) | translated (`thinking` blocks with signatures) |
+| Images in user content | translated (`image_url` ↔ `images[]`) | translated (`input_image`) | translated (`image` block) |
+| Images in tool results | translated for OpenAI/Anthropic clients; **degraded when the target is the Ollama-native wire** (catalog №1) | translated | translated |
 | Images with an Anthropic file source | degraded — the `file_id` decodes away (catalog №2) | degraded (catalog №2) | degraded (catalog №2) |
-| Server tools (`web_search` / `web_fetch`) | emulated (web-tool accounts, ADR-015) | emulated | emulated — the wire's server-side `toolCall`/`toolResponse` parts are out of scope |
-| Stop reasons | translated | translated (`incomplete` reads as max-tokens) | translated (finishReason mapping; tool-failure reasons read as refusal) |
-| Usage | translated (per-flavour counters, catalog №11) | translated | translated (`usageMetadata` incl. `thoughtsTokenCount` → reasoning tokens) |
-| Cache markers | not supported (catalog №9) | not supported | not supported (`cachedContentTokenCount` reads into the cache-read counter; requests carry no marker) |
-| Decisions (systemone / OpenAI Decisions client) | translated (ADR-017 pair, losses documented under Decision operations) | translated | not supported — no decision surface |
+| Server tools (`web_search` / `web_fetch`) | emulated (web-tool accounts, ADR-015) | emulated | translated (`server_tool_use` blocks) |
+| Stop reasons | translated | translated (`incomplete` reads as max-tokens) | translated |
+| Usage | translated (per-flavour counters, catalog №11) | translated | translated (cache counters, `server_tool_use` counters) |
+| Cache markers | not supported (catalog №9) | not supported | forwarded verbatim |
 
 ## Edge-case catalog
 
@@ -125,16 +117,14 @@ fix lands with its fixture, matrix row, test and this entry's update.
     Responses usage detail objects (`cached_tokens` / `cache_write_tokens` /
     `reasoning_tokens`) ride explicit zeros the same way. Upstream-reported
     values are mapped through the IR and echoed verbatim.
-12. **Decision-image without a sniffable media type** — fails the encode with
-    a clear error instead of a guessed data URL (see Decision operations).
-13. **Text citations on a replayed assistant block** — the `citations` key
+12. **Text citations on a replayed assistant block** — the `citations` key
     carries two shapes: an array on a text block (a client replaying an
     earlier answer) and the config object `{"enabled":true}` on a document or
     server-tool definition. Both decode; the array is accepted and the text
     forwards without it (the IR has no citation field), while the config
     object still sets `ServerTool.CitationsEnabled`. Pinning the object shape
     used to fail the whole request with a 500.
-14. **Tool calls without an id** — native Ollama's `tool_calls` carry no id.
+13. **Tool calls without an id** — native Ollama's `tool_calls` carry no id.
     The official client-facing objects all require one, so the emission mints
     `call_<n>` (OpenAI chat document, Responses `call_id`) or `toolu_<n>`
     (Anthropic `tool_use`) per response, deterministically; the client replays
@@ -144,11 +134,11 @@ fix lands with its fixture, matrix row, test and this entry's update.
 
 ## Request-side mapping
 
-| Concept | OpenAI Chat Completions | OpenAI Responses | Anthropic Messages | Ollama native | Gemini (`gemini`) |
-|---|---|---|---|---|---|
-| System prompt | `system` / `developer` role | `instructions`, or a system-role input item | `system`; block form is preserved verbatim, a string re-encodes as one text block, non-text blocks are dropped | system-role message | `systemInstruction` (text only — non-text parts drop) |
-| Text content | `content` parts (a lone text part re-encodes as a plain string) | `input`, a string or typed items | `content` blocks (a string re-encodes as one block) | `content` string | `contents[].parts` text parts (roles user / model / function) |
-| Image | `image_url` part, URL or `data:` URI | `input_image` item | `image` block, URL or base64 source | `images[]`, bare base64 | `inlineData{mimeType,data}` for base64, `fileData{fileUri,mimeType}` for a URL |
+| Concept | OpenAI Chat Completions | OpenAI Responses | Anthropic Messages |
+|---|---|---|---|
+| System prompt | `system` / `developer` role | `instructions`, or a system-role input item | `system`; block form is preserved verbatim, a string re-encodes as one text block, non-text blocks are dropped |
+| Text content | `content` parts (a lone text part re-encodes as a plain string) | `input`, a string or typed items | `content` blocks (a string re-encodes as one block) |
+| Image | `image_url` part, URL or `data:` URI | `input_image` item | `image` block, URL or base64 source |
 
 A `file` source on an Anthropic image block (a Files-API `file_id`) rides the
 IR as an identity: an Anthropic→Anthropic round trip hands the id back, and a
@@ -158,30 +148,30 @@ account can fetch, so no other wire can carry it (fixture
 image like a guarded URL: no fetchable bytes means no description — the
 unavailability placeholder stands in and the refusal is traced, never a
 fabricated caption shared by every file id.
-| Tool definitions | `tools[].function` | function item, flat — no nested `function` wrapper | `tools[]` | `tools[]`, function-shaped | `tools[].functionDeclarations` |
-| Vision substitution (ADR-018) | On a chain whose every entry is known-blind, the executor replaces every image with placeholder TEXT (a `[Bild N (ref …)]` note) in the request and appends an `analyze_image` function definition to `tools`. The codec layers never see the tool: injection and answer interception happen against the canonical IR, so all four columns behave identically. The final response carries no `analyze_image` block on any surface |  |  |  | — (decided against the IR, identically on every column) |
-| Tool call | `tool_calls[]`, deltas assembled by index | function-call item | `tool_use` block | `tool_calls[]`, object arguments | `functionCall{id,name,args}`, complete per part |
-| Tool call, one-shot arguments | The anchoring `tool_calls` delta may carry the complete `function.arguments` string — a spec-legal single-delta shape, emitted by `ollama.com/v1` (fixture `chat-stream-tool-oneshot.sse`). The decoder queues it for the newly opened block, and an encode toward an OpenAI client re-emits it in the anchor chunk instead of dropping it. | arguments are complete per entry | arguments are complete per entry | arguments are complete per entry | arguments are complete per part |
-| Tool definition without a schema | `parameters: {}` is always encoded: an absent schema, omitted by `omitempty`, can be rejected by a strict provider | `parameters` omitted | `input_schema` omitted | `parameters` omitted | `parameters: {}` is always encoded (a declaration needs a schema object) |
-| Empty content (tool-call-only assistant turn) | `content: ""`, never `null` — Ollama's OpenAI-compatibility endpoint rejects null content with `400 invalid message content type: <nil>`, and an empty string decodes to zero parts | the message item is omitted | `content: []`, never null | `content: ""`, never null | `parts: []`, never omitted |
-| `system` message inside `messages` | carried as a system-role message holding its text, never left as `content: null` (the same 400; agents append hook output and injected reminders mid-conversation) | system-role input item | kept verbatim | system-role message | rides a user turn with its text (contents has no system role) |
-| Context-window marker `[1m]` / `[1M]` | stripped at routing, case-insensitively: the marker is never part of the model identity, so the base model routes, dispatches and matches — the strip is recorded as a `context_override` event ([route trace](route-trace.md)) | base model | base model | base model | base model (the strip is shared routing behavior) |
-| Tool result | role `tool` message | `function_call_output` item | `tool_result` block | role `tool` message, its text content and its images (`images[]` rides the Ollama Message schema's role-agnostic field) | `functionResponse{id,name,response}` on a user/function turn — the name resolves from the matching earlier tool call by id |
-| Extended thinking | `reasoning_effort` is read from the raw body into the request's thinking intent, which the compatibility policy then governs; the codec itself has no wire field for it and never forwards an effort hint | `reasoning` (effort) and `encrypted_content` | `thinking` parameter — enabled with a budget, or adaptive — plus thinking blocks carrying an opaque signature | `think`: an effort level (`high` / `medium` / `low` / `max`), or `true` for adaptive; a budget maps to the nearest level | `thinkingConfig{includeThoughts,thinkingBudget}` + `thinkingLevel` (from the effort mapping — effort wins over the budget heuristic) |
-| Cache markers | — | — | `cache_control`, forwarded verbatim | — | — |
-| Server tools | — | web search: the Responses `web_search_call` item (`id`, `status`, `action{type:"search",query}`; stream: added→done→completed snapshot; results ride annotations, never the item) | `server_tool_use` blocks, and dated `web_search_*` / `web_fetch_*` definitions whose stable identity is the family name | — | — (emulated like any target without native server tools) |
-| Request retention | — | `store: false` is always encoded: the proxy never asks an upstream to retain a request, and the ChatGPT/Codex backend rejects a body that leaves the field unset (codex-rs `ResponsesApiRequest.store`, fixture `openai-codex/responses-request.json`) | — | — | — |
-| Request streaming | — | `stream: true` is required by the ChatGPT/Codex backend: a body that omits it is answered `400 {"detail":"Stream must be set to true"}` (observed live 2026-10-17; codex-rs always sets it, fixture `openai-codex/responses-request.json`). The codex provider encodes it unconditionally, and its non-streaming callers — routing's non-stream dispatch, image captioning, the Models-page test — are served by an internally streamed round trip assembled into one response | — | — | — streaming is the `?alt=sse` path; the body has no stream field |
+| Tool definitions | `tools[].function` | function item, flat — no nested `function` wrapper | `tools[]` |
+| Vision substitution (ADR-018) | On a chain whose every entry is known-blind, the executor replaces every image with placeholder TEXT (a `[Bild N (ref …)]` note) in the request and appends an `analyze_image` function definition to `tools`. The codec layers never see the tool: injection and answer interception happen against the canonical IR, so all three target columns behave identically. The final response carries no `analyze_image` block on any surface |  |  |
+| Tool call | `tool_calls[]`, deltas assembled by index | function-call item | `tool_use` block |
+| Tool call, one-shot arguments | The anchoring `tool_calls` delta may carry the complete `function.arguments` string — a spec-legal single-delta shape, emitted by `ollama.com/v1` (fixture `chat-stream-tool-oneshot.sse`). The decoder queues it for the newly opened block, and an encode toward an OpenAI client re-emits it in the anchor chunk instead of dropping it. | arguments are complete per entry | arguments are complete per entry |
+| Tool definition without a schema | `parameters: {}` is always encoded: an absent schema, omitted by `omitempty`, can be rejected by a strict provider | `parameters` omitted | `input_schema` omitted |
+| Empty content (tool-call-only assistant turn) | `content: ""`, never `null` — Ollama's OpenAI-compatibility endpoint rejects null content with `400 invalid message content type: <nil>`, and an empty string decodes to zero parts | the message item is omitted | `content: []`, never null |
+| `system` message inside `messages` | carried as a system-role message holding its text, never left as `content: null` (the same 400; agents append hook output and injected reminders mid-conversation) | system-role input item | kept verbatim |
+| Context-window marker `[1m]` / `[1M]` | stripped at routing, case-insensitively: the marker is never part of the model identity, so the base model routes, dispatches and matches — the strip is recorded as a `context_override` event ([route trace](route-trace.md)) | base model | base model |
+| Tool result | role `tool` message | `function_call_output` item | `tool_result` block |
+| Extended thinking | `reasoning_effort` is read from the raw body into the request's thinking intent, which the compatibility policy then governs; the codec itself has no wire field for it and never forwards an effort hint | `reasoning` (effort) and `encrypted_content` | `thinking` parameter — enabled with a budget, or adaptive — plus thinking blocks carrying an opaque signature |
+| Cache markers | — | — | `cache_control`, forwarded verbatim |
+| Server tools | — | web search: the Responses `web_search_call` item (`id`, `status`, `action{type:"search",query}`; stream: added→done→completed snapshot; results ride annotations, never the item) | `server_tool_use` blocks, and dated `web_search_*` / `web_fetch_*` definitions whose stable identity is the family name |
+| Request retention | — | `store: false` is always encoded: the proxy never asks an upstream to retain a request, and the ChatGPT/Codex backend rejects a body that leaves the field unset (codex-rs `ResponsesApiRequest.store`, fixture `openai-codex/responses-request.json`) | — |
+| Request streaming | — | `stream: true` is required by the ChatGPT/Codex backend: a body that omits it is answered `400 {"detail":"Stream must be set to true"}` (observed live 2026-10-17; codex-rs always sets it, fixture `openai-codex/responses-request.json`). The codex provider encodes it unconditionally, and its non-streaming callers — routing's non-stream dispatch, image captioning, the Models-page test — are served by an internally streamed round trip assembled into one response | — |
 
 ## Response-side mapping
 
-| Concept | OpenAI Chat | OpenAI Responses | Anthropic | Ollama native | Gemini (`gemini`) |
-|---|---|---|---|---|---|
-| Text | `choices[0].message.content` | `output_text` parts of a message item | `text` block | `content` | `candidates[0].content.parts` text parts |
-| Tool call | `tool_calls[]`, with `finish_reason: tool_calls` | function-call item | `tool_use` block, with `stop_reason: tool_use` | `tool_calls[]` with object arguments | `functionCall` part — a STOP finish on a call turn reads `tool_use` (the wire has no tool-calls finish reason) |
-| Thinking | `reasoning` / `reasoning_content` on the message, decoded into a thinking part; the chat encoder has no thinking channel | reasoning item | thinking block with its opaque signature | `message.thinking` | `thought:true` parts carrying `thoughtSignature`, replayed verbatim |
-| Stop reason | `finish_reason` | `status` (`incomplete` reads as a max-tokens stop) | `stop_reason` | `done_reason` | `finishReason` enum: STOP→end_turn, MAX_TOKENS→max_tokens, the safety family→content_filter, tool failures + MISSING_THOUGHT_SIGNATURE→refusal, CONTINUATION→pause_turn |
-| Usage | `prompt_tokens` / `completion_tokens` / `total_tokens` — always emitted (zeros explicit, like the streaming usage chunk; catalog №11) | usage on the terminal `response.completed` event, detail objects always present (`cached_tokens`+`cache_write_tokens`, `reasoning_tokens`) | `input_tokens` / `output_tokens`, plus the cache counters and the `server_tool_use` web-request counters, the `cache_creation` TTL breakdown, `output_tokens_details` and the serving metadata strings (catalog №11) | `prompt_eval_count` / `eval_count`, plus `prompt_eval_cached_count` | `usageMetadata`: promptTokenCount, candidatesTokenCount, thoughtsTokenCount (→ reasoning), cachedContentTokenCount (→ cache read) |
+| Concept | OpenAI Chat | OpenAI Responses | Anthropic |
+|---|---|---|---|
+| Text | `choices[0].message.content` | `output_text` parts of a message item | `text` block |
+| Tool call | `tool_calls[]`, with `finish_reason: tool_calls` | function-call item | `tool_use` block, with `stop_reason: tool_use` |
+| Thinking | `reasoning` / `reasoning_content` on the message, decoded into a thinking part; the chat encoder has no thinking channel | reasoning item | thinking block with its opaque signature |
+| Stop reason | `finish_reason` | `status` (`incomplete` reads as a max-tokens stop) | `stop_reason` |
+| Usage | `prompt_tokens` / `completion_tokens` / `total_tokens` — always emitted (zeros explicit, like the streaming usage chunk; catalog №11) | usage on the terminal `response.completed` event, detail objects always present (`cached_tokens`+`cache_write_tokens`, `reasoning_tokens`) | `input_tokens` / `output_tokens`, plus the cache counters and the `server_tool_use` web-request counters, the `cache_creation` TTL breakdown, `output_tokens_details` and the serving metadata strings (catalog №11) |
 
 Thinking an upstream volunteers for a request that never enabled it is dropped
 from the answer on every wire, streamed blocks included and renumbered so the
@@ -202,38 +192,6 @@ IR does not track, rendered with the references' own neutral values:
 | OpenAI Responses `response` (document and stream snapshots) | `access_programs`, `created_at`, `error`, `incomplete_details`, `instructions`, `tools`, `parallel_tool_calls`, `metadata`, `tool_choice`, `temperature`, `top_p`; item ids; output_text `annotations`/`logprobs`; usage detail objects | null / minted at encode / `[]` / `"auto"` / `1.0` / `true` / `{}` / `[]` — exactly the streaming snapshots' values |
 | Anthropic Message (document and `message_start`) | `container`, `stop_details`, `diagnostics`, `stop_sequence`, the usage sub-objects and serving strings | explicit nulls; `stop_sequence` rides the IR; serving `standard`/`standard`/`global` (reference defaults) with upstream-reported values echoed through the IR |
 
-## Decision operations
-
-Decision models are a second IR operation pair beside chat
-([ADR-017](../adr/ADR-017-decision-models.md)):
-typed questions scored against shared evidence in one non-streaming pass. Both
-surfaces translate through `ir.DecisionRequest` / `ir.DecisionResponse`, so either
-client shape reaches either upstream. Endpoint detail is on the
-[decision API page](../api/decisions.md).
-
-| IR (hub) | systemone (`POST /v1/systemone`) | OpenAI Decisions (`POST /v1/decisions`) |
-|---|---|---|
-| `Model` | `model` | `model` |
-| `State` | `state` — a string; an object or array is carried as its serialized JSON text and re-emitted raw | `input` — a string; with images, one user message of `input_text` + `input_image` parts |
-| `Images[]` | `images[]`, bare base64, request order | data URLs in `input_image.image_url` (`data:<media>;base64,…`); the media type is sniffed from the signature bytes when the source surface carried none |
-| `Questions[].Name` / `.Type` / `.Instructions` | the key of the `questions` object; `choice` / `noul` / `score`; `instructions` | `questions[]` entries with `name` / `type`; `predicate` / `choice` / `score`; `instructions` |
-| choice options, ordered | `criteria` object, key → description (`null` = bare label) | `choices[]` `{value, description}` |
-| score levels, ordered (lowest first) | `criteria` string array | `levels[]` `{label, description}` |
-| `KeepAlive` | `keep_alive`, raw passthrough | — dropped |
-| `Answers[].Choice` + `Probabilities` + `Confidence` | `answers[name]` `{type, choice, probabilities{key: 0–1}, confidence}` | `answers[]` `{type, name, choice, probabilities[{value, probability}], confidence}` |
-| `Answers[].Score` | `score` — the probability-weighted mean of the level indices; `legend` maps an index to its level text, `probabilities` is keyed by the same index | `score`; per-level `{value: <number>, label, probability}` entries |
-| `Answers[].Probability` | `noul` — a number, not a Boolean | `predicate.probability` |
-| `Usage` | `usage{input_tokens, output_tokens}`, declared required by the reference | none documented — parsed leniently when present, otherwise absent |
-| refusal | — not representable | `answers[].type: "refusal"` |
-
-**Documented losses** ([ADR-017](../adr/ADR-017-decision-models.md)):
-a Decisions `level.description` has no systemone slot, which holds one string per
-level — the label wins; a refusal answered by a Decisions upstream fails the
-systemone surface with 502 instead of an invented answer; `keep_alive` is
-systemone-only; a response whose upstream reports no usage omits the systemone
-`usage` object rather than emitting zeros; an image without a recognizable
-signature cannot become a data URL and fails the encode with a clear error.
-
 ## Known degradations
 
 - **Ollama Cloud** rides the OpenAI-compatible `/v1/chat/completions` surface
@@ -252,24 +210,6 @@ signature cannot become a data URL and fails the encode with a clear error.
   and a client surface (`POST /api/chat`, `GET /api/tags`). Its limitation
   stands: interleaved thinking and content fragments decode as separate
   content blocks at each kind change.
-- **Gemini v1beta wire** (`gemini`) is a shipped upstream and a client
-  surface (`POST /v1beta/models/{model}:generateContent` (JSON) and
-  `:streamGenerateContent?alt=sse`, data:-framed Complete
-  GenerateContentResponse chunks), `:countTokens` (the provider sends the
-  full `generateContentRequest` — the reference makes `contents[]` and
-  `generateContentRequest` mutually exclusive) and the paginated
-  `GET /v1beta/models`. Degradations of the crossings: only
-  `candidates[0]` is served (`candidateCount > 1` drops the rest); the tool
-  choice's `allowedFunctionNames` has no IR channel and drops on any
-  crossing; a tool result carries text only (the functionResponse object has
-  no media channel here); a STOP finish on a function-call turn reads as
-  `tool_use`; the tool-failure finish reasons and MISSING_THOUGHT_SIGNATURE
-  read as `refusal`, the safety family as `content_filter`, CONTINUATION as
-  `pause_turn` (its `continuationToken` has no IR channel); unknown
-  generationConfig members ride a same-protocol nested passthrough and drop
-  on crossings; the request body never carries the model (the path names
-  it). Auth is `x-goog-api-key` (never Bearer); the legacy `?key=` query
-  form stays documented but unused.
 - **Cache markers** (`cache_control`) survive an Anthropic→Anthropic route only.
   No other wire shape has the field, so the marker is dropped by construction;
   an explicit `drop` policy also removes it and records the loss in the trace.

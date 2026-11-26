@@ -11,7 +11,7 @@ HTTP surfaces against a real wire simulator.
 assembled proxy whose providers point at
 [MockServer](https://www.mock-server.com), an established open-source server
 that encodes each provider's own wire format (OpenAI Chat and Responses,
-Anthropic Messages, Gemini, Ollama NDJSON), including streaming framing, tool
+Anthropic Messages, Ollama NDJSON), including streaming framing, tool
 calls, multi-turn sessions, and fault injection (429/529 with `Retry-After`,
 mid-stream truncation, malformed SSE, quota).
 
@@ -34,7 +34,7 @@ they are not part of this matrix.
 On top of the per-cell expectations, every pair cell schema-validates the exact
 client-facing response bytes the proxy emitted — non-streaming documents against
 the surface's document schema, streaming against the official per-frame schema
-(chunks, Responses events, Gemini frames, Ollama NDJSON lines). The schemas live
+(chunks, Responses events, Ollama NDJSON lines). The schemas live
 in `internal/e2e/testdata/schemas/`, each with a `.meta.json` carrying the
 official source URL, version/commit and access date — the same provenance rule
 as the golden fixtures. Validation runs through
@@ -76,10 +76,7 @@ cross-protocol scenarios, the tool-call round trip, the thinking round trip
 (enabled thinking reaches a thinking-capable upstream; the reasoning trace
 surfaces beside the final answer), upstream 429/Retry-After, the 529
 overload status (fail over, never a same-provider retry), mid-stream
-truncation and malformed SSE (both must surface as terminal errors; the
-malformed frame rides a raw Gemini SSE body because MockServer appends its
-broken chunk after the terminal sentinel on sentinel-terminated wires),
-MockServer's stateful quota window (the first request is served, the next one
+truncation (must surface as a terminal error), MockServer's stateful quota window (the first request is served, the next one
 over the limit is 429), the proxy's `insufficient_quota` cooldown (the first
 call surfaces 402, the next is refused with 503 + Retry-After and never
 reaches the upstream again), the emulated
@@ -97,10 +94,7 @@ the next request normally — the MockServer simulation paces the stream with
 blind-chain vision fallback (a vision request rides a blind chain: the 400
 modality rejection surfaces, the caption bootstrap describes the image, the
 description replaces it and the same chain re-dispatches; the learned
-`vision:false` lands in the blind model row), and the two decision surfaces
-driven with the golden decision fixtures through their upstream providers
-(`ollama-cloud` on the System One wire, `openai-decisions` on the Decisions
-API), and the codex OAuth upstream (the account's seeded access token is
+`vision:false` lands in the blind model row), and the codex OAuth upstream (the account's seeded access token is
 expired, so the first request forces the issuer rotation — MockServer also
 plays the issuer's `/oauth/token` — and the freshly minted bearer plus the
 id_token's account claim ride the ChatGPT backend request; the second request
@@ -123,8 +117,8 @@ including the duplicate-claim rule.
 
 Pending cells (the manifest names the reason for each; the fix loop owns them):
 - M2: `.github/test-matrix/cli_matrix.json` names only the skipped cells and
-  their reason — thinking, cancel/resume, `previous_response_id`, vision and
-  decisions on all clients, `tool_loop` on ten, `large_output` on aider, and
+  their reason — thinking, cancel/resume, `previous_response_id`, vision on
+  all clients, `tool_loop` on ten, `large_output` on aider, and
   the two mid-stream faults on the non-streaming codex and openhands. Every
   other cell is green.
 
@@ -156,8 +150,7 @@ cell covers the proxy path), cancel/resume (no verified plain-start TUI
 affordance — M1's client-abort cell covers the proxy), `previous_response_id`
 (these clients send full history; `recall` plus the M1 Responses chain cover
 the contract), vision (no verified plain-start image attach; the M1 blind-chain
-cell covers the caption fallback), decisions (no CLI surface; M1 drives System
-One and OpenAI Decisions), `tool_loop` on the CLIs whose tool seed or
+cell covers the caption fallback), `tool_loop` on the CLIs whose tool seed or
 approval flow is not verified yet, and `large_output` on aider (its TUI does
 not render the 20 KB tail in the visible pane).
 

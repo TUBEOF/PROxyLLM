@@ -47,7 +47,6 @@ func capsMap(c provider.Capabilities) map[string]bool {
 		"web_fetch":      c.WebFetch,
 		"code_execution": c.CodeExecution,
 		"thinking":       c.Thinking,
-		"decision":       c.Decision,
 	} {
 		if on {
 			out[name] = true

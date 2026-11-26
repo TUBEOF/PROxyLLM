@@ -10,3 +10,11 @@ internal/e2e/conformance_matrix2_test.go | cases for the removed openai-response
 internal/e2e/conformance_matrix_test.go | case for the removed openai-responses provider type deleted by ADR-021
 internal/e2e/matrix_decision_test.go | openai-decisions provider cell deleted by ADR-021
 internal/server/webui/adminapi_providertypes_test.go | catalog shrinks from 10 to 7 types by ADR-021
+internal/server/decision_route_test.go | decision surfaces removed by ADR-021
+internal/server/httpapi/gemini_test.go | Gemini client surface removed by ADR-021
+internal/translate/gemini/contract_test.go | Gemini codec removed by ADR-021
+internal/translate/openai/decisions_test.go | OpenAI Decisions codec removed by ADR-021
+internal/translate/systemone/systemone_test.go | System One codec removed by ADR-021
+internal/e2e/matrix_pairs_test.go | Gemini client driver removed by ADR-021
+internal/modelsync/modelsync_test.go | decision-capability detection tests removed by ADR-021
+internal/provider/ollamacloud/models_test.go | per-model decision flag removed by ADR-021

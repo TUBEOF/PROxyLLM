@@ -106,11 +106,10 @@ type anthropicErrorEnvelope struct {
 	} `json:"error"`
 }
 
-// writeSystemOneError emits the systemone error shape: {"error":".."} with
-// the documented status codes (400 invalid request, 401 auth, 402 cloud
-// plan/credits, 404 model, 413 limits, 500 scoring failure). The type field
-// has no counterpart on this wire.
-func writeSystemOneError(w http.ResponseWriter, status int, _ string, message string) {
+// writeSimpleError emits the {"error":"..."} shape the Ollama surface uses:
+// the documented status codes carry the meaning, the type field has no
+// counterpart on this wire.
+func writeSimpleError(w http.ResponseWriter, status int, _ string, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	raw, err := json.Marshal(struct {
@@ -154,17 +153,6 @@ func anthropicErrorWriter() errorWriter {
 	}
 }
 
-// systemOneErrorWriter answers systemone-shaped error bodies. The
-// reference's retryable state is 500 ("model loading, rendering, or
-// scoring failed"), so an all-providers-in-cooldown chain maps there.
-func systemOneErrorWriter() errorWriter {
-	return errorWriter{
-		write:          writeSystemOneError,
-		overloadStatus: http.StatusInternalServerError,
-		overloadType:   "",
-	}
-}
-
 // writeRouteError maps a pipeline error to the wire:
 //
 //   - routing.ErrThinkingBlocked → 400, protocol-conform rejection
@@ -196,7 +184,7 @@ func (a *api) writeRouteError(w http.ResponseWriter, ew errorWriter, err error) 
 // or an upstream quota/rate-limit window — and, when a deadline is known, the
 // seconds until the earliest provider recovers (returned for Retry-After).
 // The sentinel-only fallback keeps the historical wording for callers that
-// did not carry the typed facts (decision surfaces).
+// did not carry the typed facts.
 func overloadMessage(err error) (string, int) {
 	const breaker = "All providers for this model are in health cooldown (circuit breaker open)."
 	var oe *routing.ChainOverloadedError

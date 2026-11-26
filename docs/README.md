@@ -26,7 +26,6 @@ Four ways in, depending on what you are doing.
 | Which endpoints exist, how do I authenticate, what are the shared conventions? | [API reference](api/README.md) |
 | What does the OpenAI-compatible surface accept? | [OpenAI-compatible](api/openai.md) |
 | What does the Anthropic-compatible surface accept? | [Anthropic-compatible](api/anthropic.md) |
-| How do decision models work? | [Decision API](api/decisions.md) |
 | What does an error look like on each surface? | [Errors](api/errors.md) |
 | How do I drive the operator API? | [Admin API](api/admin.md) |
 | How do I run Claude Code against a non-Claude model? | [Claude Code](claude-code.md) |
