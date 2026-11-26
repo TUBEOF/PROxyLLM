@@ -54,9 +54,13 @@ func (a *api) writeOpenAIModels(w http.ResponseWriter, models []storage.Model) {
 // id/type/display_name plus the first_id/has_more/last_id envelope.
 func (a *api) writeAnthropicModels(w http.ResponseWriter, models []storage.Model) {
 	type modelEntry struct {
-		ID          string `json:"id"`
-		Type        string `json:"type"`
+		ID   string `json:"id"`
+		Type string `json:"type"`
+		// DisplayName/Description are the Claude Code gateway discovery
+		// fields (ADR-023). The model row has no description column; the
+		// provider id is the honest, stable descriptor.
 		DisplayName string `json:"display_name"`
+		Description string `json:"description"`
 	}
 	entries := make([]modelEntry, 0, len(models))
 	firstID, lastID := "", ""
@@ -65,7 +69,10 @@ func (a *api) writeAnthropicModels(w http.ResponseWriter, models []storage.Model
 		if display == "" {
 			display = m.ID
 		}
-		entries = append(entries, modelEntry{ID: m.ID, Type: "model", DisplayName: display})
+		entries = append(entries, modelEntry{
+			ID: m.ID, Type: "model", DisplayName: display,
+			Description: "Model " + m.ID + " on provider " + m.ProviderID,
+		})
 		if firstID == "" {
 			firstID = m.ID
 		}

@@ -96,13 +96,16 @@ With an `anthropic-version` header this path answers the Anthropic
 discovery shape:
 
 ```json
-{"data":[{"id":"claudecode/sonnet","type":"model","display_name":"sonnet"}],
+{"data":[{"id":"claudecode/sonnet","type":"model","display_name":"sonnet",
+          "description":"Model claudecode/sonnet on provider ollama-cloud"}],
  "first_id":"claudecode/sonnet","last_id":"claudecode/sonnet","has_more":false}
 ```
 
-Entries are ordered by model ID ascending, which is what fixes
-`first_id` / `last_id`. Without the header, the same path answers the
-[OpenAI list shape](openai.md#get-v1models).
+`display_name` is the model row's name (the id when empty) and
+`description` names the serving provider; both are additive fields of the
+Claude Code gateway discovery shape (ADR-023). Entries are ordered by model
+ID ascending, which is what fixes `first_id` / `last_id`. Without the header,
+the same path answers the [OpenAI list shape](openai.md#get-v1models).
 
 ## Claude Code configuration
 

@@ -4,28 +4,10 @@
       "id": "claude-sonnet-5",
       "type": "model",
       "display_name": "Claude Sonnet 5",
-      "created_at": "2026-05-21T00:00:00Z",
-      "max_tokens": 64000,
-      "max_input_tokens": 190000,
-      "capabilities": {
-        "supports_tools": true,
-        "supports_vision": true
-      }
-    },
-    {
-      "id": "claude-haiku-4-5",
-      "type": "model",
-      "display_name": "Claude Haiku 4.5",
-      "created_at": "2025-10-01T00:00:00Z",
-      "max_tokens": 64000,
-      "max_input_tokens": 190000,
-      "capabilities": {
-        "supports_tools": true,
-        "supports_vision": false
-      }
+      "description": "Claude Sonnet 5 via the gateway"
     }
   ],
   "first_id": "claude-sonnet-5",
   "has_more": false,
-  "last_id": "claude-haiku-4-5"
+  "last_id": "claude-sonnet-5"
 }
