@@ -1472,8 +1472,12 @@ def scenario_answer_headless(cli: str, manifest: Path, home: Path, base_url: str
     marker = "HEADLESS-" + secrets.token_hex(4)
     prompt = f"Reply with exactly: {marker}."
     ms_reset(mockserver)
-    # Headless invocations may choose either wire mode; install both.
+    # Headless invocations may choose either wire mode; install both, plus a
+    # catch-all for utility calls (OpenCode's title generation), the same
+    # fallback the plain scenarios install.
     mock_pinned_dual(mockserver, cli, [(prompt, marker)], MODEL)
+    mock_fallback(mockserver, "ok", True)
+    mock_fallback(mockserver, "ok", False)
     run_dir = home / "clients" / cli / "answer_headless"
     if run_dir.exists():
         shutil.rmtree(run_dir)
@@ -1502,6 +1506,8 @@ def scenario_recall_headless(cli: str, manifest: Path, home: Path, base_url: str
     t2 = "Which number did I ask you to remember?"
     ms_reset(mockserver)
     mock_pinned_dual(mockserver, cli, [(t1, "Noted."), (t2, "The number is 4711")], MODEL)
+    mock_fallback(mockserver, "ok", True)
+    mock_fallback(mockserver, "ok", False)
     run_dir = home / "clients" / cli / "recall_headless"
     if run_dir.exists():
         shutil.rmtree(run_dir)
