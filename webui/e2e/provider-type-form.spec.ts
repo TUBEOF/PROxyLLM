@@ -99,7 +99,11 @@ test('the quota card carries the same pool switch', async ({ page }) => {
   const sw = card.getByLabel('Ollama key 1 in the pool');
   await expect(sw).toBeChecked();
 
-  await card.locator('label.toggle').click();
+  // WebKit never reports the label "stable": the quota page's clock re-renders
+  // the card while Playwright samples its box. Force the click on the visible
+  // switch span — the same activation an operator performs — and assert the
+  // state change below.
+  await card.locator('label.toggle .tswitch').click({ force: true });
   await expect(sw).not.toBeChecked();
   // A switched-off account serves nothing, so the card says so rather than
   // showing a health state it cannot be in.
