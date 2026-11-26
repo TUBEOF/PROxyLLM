@@ -1299,8 +1299,9 @@ def scenario_web_turn2(cli: str, manifest: Path, home: Path, base_url: str, key:
                        '"url":"https://example.test/cologne","description":"12C sunny tomorrow"}]}}',
                        100)
     # The re-dispatch is the request whose history carries the tool result.
-    # The proxy's OpenAI-chat rewrite uses a user message (Anthropic tool
-    # results) or a tool message (OpenAI tool results), so pin both roles.
+    # The proxy's OpenAI-chat rewrite emits a role:"tool" message with the
+    # original call id; the user-role pin stays for routes that fold the
+    # result into user content instead (see the translation matrix).
     tool_result = json.dumps({
         "tool_use_id": "call_web_1",
         "content": [{
@@ -1350,14 +1351,21 @@ def scenario_web_turn2(cli: str, manifest: Path, home: Path, base_url: str, key:
 
 
 # The CLI's own tool that reads the seeded work/notes.txt. The file's marker
-# must ride the tool result back into the re-dispatched conversation.
+# must ride the tool result back into the re-dispatched conversation. Names and
+# argument shapes verified against the pinned builds (codex 0.166.0 declares
+# exec_command with a `cmd` string; claude-code 2.1.316 declares Bash with
+# `command`; opencode 1.19.5 declares bash with `command`).
 TOOL_LOOP_SEEDS = {
-    "crush": {
-        "name": "view",
-        "arguments": json.dumps({"file_path": "notes.txt"}),
+    "claude-code": {
+        "name": "Bash",
+        "arguments": json.dumps({"command": "cat notes.txt"}),
     },
-    "openhands": {
-        "name": "execute_bash",
+    "codex": {
+        "name": "exec_command",
+        "arguments": json.dumps({"cmd": "cat notes.txt"}),
+    },
+    "opencode": {
+        "name": "bash",
         "arguments": json.dumps({"command": "cat notes.txt"}),
     },
 }
@@ -1531,6 +1539,100 @@ def scenario_recall_headless(cli: str, manifest: Path, home: Path, base_url: str
         raise AssertionError("recall_headless: MockServer saw fewer than two requests")
 
 
+def scenario_tool_loop_headless(cli: str, manifest: Path, home: Path, base_url: str,
+                                key: str, mockserver: str, port: int, since: int) -> None:
+    """An upstream tool call the CLI executes itself: turn 1 is a mocked
+    function call whose arguments read the seeded notes.txt; the CLI runs its
+    own tool, the result rides back into the next upstream request (asserted
+    from MockServer's request log), and turn 2 answers from it."""
+    seed = TOOL_LOOP_SEEDS[cli]
+    marker = "TOOL-" + secrets.token_hex(4)
+    prompt = "Read notes.txt and reply with the marker line."
+    ms_reset(mockserver)
+    tool_turn = {
+        "stopReason": "tool_calls",
+        "toolCalls": [{
+            "id": "call_tool_1",
+            "name": seed["name"],
+            "arguments": seed["arguments"],
+        }],
+    }
+    # Turn 1 is structurally pinned: a real model turn carries tool
+    # definitions (opencode's title call does not), and the headless clients
+    # wrap the prompt differently enough that content pinning does not hold.
+    # The tool-result matchers below outrank these: a request carrying a
+    # `tool` message can never be turn 1, so the ordering removes the race
+    # where a follow-up that still carries tools + a user message matched the
+    # turn-1 expectation again.
+    for stream, priority in ((True, 230), (False, 229)):
+        matcher: dict = {"tools": [{"type": "function"}], "messages": [{"role": "user"}]}
+        if stream:
+            matcher["stream"] = True
+        _mock_expectation(mockserver, dict(tool_turn, streaming=stream), priority,
+                          times=1, matcher=matcher, model=MODEL)
+    # The re-dispatch is the request that carries the tool result. The proxy's
+    # chat rewrite emits a role:"tool" message with the original call id for
+    # every client protocol, so one matcher covers all three CLIs.
+    for stream, priority in ((True, 240), (False, 239)):
+        matcher = {"messages": [{"role": "tool"}]}
+        if stream:
+            matcher["stream"] = True
+        _mock_expectation(mockserver, {"text": marker, "streaming": stream}, priority,
+                          matcher=matcher, model=MODEL)
+    mock_fallback(mockserver, "ok", True)
+    mock_fallback(mockserver, "ok", False)
+
+    run_dir = home / "clients" / cli / "tool_loop_headless"
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    env, cwd = prepare(manifest, run_dir, base_url, key, MODEL)
+    spec = _headless_manifest(manifest)
+    args = (spec.get("features", {}).get("tool_loop") or {}).get("args") or spec["args"]
+    out = _headless_run(manifest, run_dir, env, cwd, args, prompt,
+                        run_dir / "headless.log")
+    if marker not in out:
+        raise AssertionError("tool_loop_headless: the final answer is missing from the CLI output")
+
+    reqs = ms_requests(mockserver)
+    declared = [r for r in reqs
+                if seed["name"] in _declared_tool_names(r)]
+    if not declared:
+        raise AssertionError(
+            f"tool_loop_headless: no upstream request declares the tool {seed['name']!r}")
+    first = reqs.index(declared[0])
+    results = []
+    for r in reqs[first + 1:]:
+        payload = (r.get("body") or {}).get("json") or {}
+        for m in payload.get("messages") or []:
+            if not isinstance(m, dict) or m.get("role") != "tool":
+                continue
+            if (m.get("tool_call_id") == "call_tool_1"
+                    and "PROXYLLM-LIVE-MARKER-7Q" in str(m.get("content"))):
+                results.append(r)
+                break
+    if not results:
+        raise AssertionError(
+            "tool_loop_headless: no re-dispatched request carries the tool result "
+            "under the original call id (the CLI did not run the tool, or the id "
+            "did not survive the translation)")
+    rows = wait_proxy_rows(home, since, 2)
+    if len(rows) < 2:
+        raise AssertionError("tool_loop_headless: the proxy logged fewer than two request rows")
+    bad = [r for r in rows if r[1] not in (200, 499)]
+    if bad:
+        raise AssertionError(f"tool_loop_headless: proxy rows not clean: {bad}")
+
+
+def _declared_tool_names(request: dict) -> list[str]:
+    payload = (request.get("body") or {}).get("json") or {}
+    names = []
+    for tool in payload.get("tools") or []:
+        if not isinstance(tool, dict):
+            continue
+        names.append((tool.get("function") or {}).get("name") or tool.get("name"))
+    return names
+
+
 SCENARIOS.update({
     "fault_429": scenario_fault_429,
     "fault_529": scenario_fault_529,
@@ -1542,6 +1644,7 @@ SCENARIOS.update({
     "large_output": scenario_large_output,
     "answer_headless": scenario_answer_headless,
     "recall_headless": scenario_recall_headless,
+    "tool_loop_headless": scenario_tool_loop_headless,
 })
 
 

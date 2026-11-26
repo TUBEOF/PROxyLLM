@@ -163,8 +163,16 @@ fabricated caption shared by every file id.
 | Request retention | — | `store: false` is always encoded: the proxy never asks an upstream to retain a request, and the ChatGPT/Codex backend rejects a body that leaves the field unset (codex-rs `ResponsesApiRequest.store`, fixture `openai-codex/responses-request.json`) | — |
 | Request streaming | — | `stream: true` is required by the ChatGPT/Codex backend: a body that omits it is answered `400 {"detail":"Stream must be set to true"}` (observed live 2026-10-17; codex-rs always sets it, fixture `openai-codex/responses-request.json`). The codex provider encodes it unconditionally, and its non-streaming callers — routing's non-stream dispatch, image captioning, the Models-page test — are served by an internally streamed round trip assembled into one response | — |
 
-## Response-side mapping
+An Anthropic user message may carry `tool_result` blocks beside text (Claude
+Code appends reminder text in the same turn). A crossing encode splits it: one
+role-`tool` message per result carrying its `tool_call_id` (the chat wire
+requires each `tool_calls` entry to be answered by a `tool` message), then the
+remaining user content as its own message. The split is implemented in the
+OpenAI chat encoder; the Responses and native Ollama encoders do not yet split
+a result that rides in a user-role message, so that crossing still loses it
+(the planned fix is to normalize the split in the shared IR).
 
+## Response-side mapping
 | Concept | OpenAI Chat | OpenAI Responses | Anthropic |
 |---|---|---|---|
 | Text | `choices[0].message.content` | `output_text` parts of a message item | `text` block |

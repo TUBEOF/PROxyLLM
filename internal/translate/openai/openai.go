@@ -150,7 +150,35 @@ func (Codec) EncodeRequest(req ir.Request) ([]byte, error) {
 			text := sb.String()
 			wm.Content = wireContent{Str: &text}
 		case ir.RoleUser:
-			wm.Content = contentFromParts(m.Parts)
+			// Anthropic carries tool results inside a user message, sometimes
+			// beside reminder text (Claude Code appends one per turn). The
+			// chat wire requires role:"tool" with the matching tool_call_id
+			// for each result, so emit those first and keep the remaining
+			// user content as its own message. A user message without tool
+			// results keeps the plain path (including the empty-content
+			// shape).
+			rest := make([]ir.Part, 0, len(m.Parts))
+			hasResult := false
+			for _, p := range m.Parts {
+				tr, ok := p.(ir.ToolResultPart)
+				if !ok {
+					rest = append(rest, p)
+					continue
+				}
+				hasResult = true
+				w.Messages = append(w.Messages, wireMessage{
+					Role:       "tool",
+					ToolCallID: tr.ToolUseID,
+					Content:    contentFromParts(tr.Content),
+				})
+			}
+			if !hasResult {
+				wm.Content = contentFromParts(m.Parts)
+			} else if len(rest) > 0 {
+				wm.Content = contentFromParts(rest)
+			} else {
+				continue
+			}
 		case ir.RoleAssistant:
 			wm.Content = contentFromParts(m.Parts)
 			histCalls := 0

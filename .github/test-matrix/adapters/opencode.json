@@ -3,8 +3,8 @@
   "label": "OpenCode",
   "tier": "core",
   "command": "opencode",
-  "install": "npm install -g opencode-ai",
-  "tested": "latest",
+  "install": "npm install -g opencode-ai@1.19.5",
+  "tested": "1.19.5",
   "runnable": true,
   "env_keep": [
     "PATH",
