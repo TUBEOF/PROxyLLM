@@ -60,6 +60,11 @@ make check-tests              # guards the suite against erosion
 go test ./internal/routing -run TestResolveChain -v   # one package, one test
 ```
 
+The `installer` CI job runs `scripts/test-install.sh` against a freshly built
+proxy and a temporary `HOME` (ADR-024); the lint job runs ShellCheck over
+`scripts/*.sh` with a pinned release. Run the same test locally with
+`bash scripts/test-install.sh`.
+
 `make check-tests` compares against the base branch (`-base origin/main` by
 default) and fails on a deleted test, a weakened one, a new skip or a
 tautology. It reports — without failing — assertions that merely re-encode
