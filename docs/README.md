@@ -49,6 +49,8 @@ Four ways in, depending on what you are doing.
 | What does a per-model compatibility setting do? | [Model compatibility](reference/model-compat.md) |
 | What is in a `route_trace`, and which versions exist? | [Route trace](reference/route-trace.md) |
 | How are wire facts captured and tested? | [Golden fixtures](../testdata/golden/README.md) |
+| What ships in v2.0.0, and what must the maintainer do? | [v2.0.0 release notes and checklist](release-notes-v2.0.0-draft.md) |
+| What is the manual smoke checklist after the merge? | [Release checklist](release-checklist.md) |
 | Where are the vendor wire facts and their sources? | [Research notes](research/README.md) |
 
 ## How these docs are organised

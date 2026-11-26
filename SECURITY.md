@@ -4,7 +4,8 @@
 
 | Version | Supported |
 |---|---|
-| 1.24.x | ✅ |
+| 2.0.x | ✅ (prepared; becomes the supported line when v2.0.0 is published) |
+| 1.24.x | ✅ until v2.0.0 is published |
 | older | ❌ |
 
 Security fixes land on the current release line. Upgrading is a tag change —
