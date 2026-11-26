@@ -124,7 +124,7 @@ def configure(home: Path, port: int, mockserver: str) -> str:
     # row maps the same way), so it rides the same row.
     admin.put(client, "/api/admin/settings", {
         "key": "model_aliases",
-        "value": json.dumps({"claude-*": MODEL, "proxy-chat": MODEL, MODEL: MODEL}, separators=(",", ":"), sort_keys=True),
+        "value": json.dumps({"claude-*": MODEL, "proxy-chat": MODEL, "proxyllm/proxy-chat": MODEL, MODEL: MODEL}, separators=(",", ":"), sort_keys=True),
     })
     payload = admin.post(client, "/api/admin/keys", {"name": "cli-plain"})
     key = payload.get("key", "")
@@ -162,7 +162,7 @@ def set_aliases(model: str) -> None:
     if ADMIN_CLIENT is None:
         raise SystemExit("admin client not configured")
     admin.get_json(ADMIN_CLIENT, "/api/admin/settings")
-    aliases = {"claude-*": model, "proxy-chat": model, MODEL: model, WEB_MODEL: WEB_MODEL}
+    aliases = {"claude-*": model, "proxy-chat": model, "proxyllm/proxy-chat": model, MODEL: model, WEB_MODEL: WEB_MODEL}
     admin.put(ADMIN_CLIENT, "/api/admin/settings", {
         "key": "model_aliases",
         "value": json.dumps(aliases, separators=(",", ":"), sort_keys=True),

@@ -30,7 +30,7 @@
   "args": [
     "run",
     "-m",
-    "proxy-chat",
+    "proxyllm/proxy-chat",
     "--format",
     "json",
     "--auto",
@@ -48,7 +48,7 @@
         [
           "run",
           "-m",
-          "proxy-chat",
+          "proxyllm/proxy-chat",
           "--format",
           "json",
           "--auto",
@@ -58,7 +58,7 @@
           "run",
           "-c",
           "-m",
-          "proxy-chat",
+          "proxyllm/proxy-chat",
           "--format",
           "json",
           "--auto",
