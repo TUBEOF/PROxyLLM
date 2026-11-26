@@ -41,6 +41,10 @@ test('connect page renders per-client configuration from the console origin', as
 
 test('the sidebar links to the connect page from the access section', async ({ page }) => {
   await login(page);
-  await page.getByRole('link', { name: 'Connect a CLI' }).click();
+  const link = page.getByRole('link', { name: 'Connect a CLI' });
+  await expect(link).toBeVisible();
+  // The mobile sidebar is an overlay; force the activation so the overlay's
+  // settle animation cannot swallow the click.
+  await link.click({ force: true });
   await expect(page.getByRole('heading', { name: 'Connect a CLI', exact: true })).toBeVisible();
 });
