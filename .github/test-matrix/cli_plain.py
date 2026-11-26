@@ -1363,53 +1363,6 @@ TOOL_LOOP_SEEDS = {
 }
 
 
-def scenario_tool_loop(cli: str, manifest: Path, home: Path, base_url: str, key: str,
-                       mockserver: str, port: int, since: int) -> None:
-    """The CLI executes its own tool (read notes.txt), the tool result rides
-    back into the conversation, and the model answers from it."""
-    seed = TOOL_LOOP_SEEDS[cli]
-    marker = "TOOL-" + secrets.token_hex(4)
-    prompt = "Read notes.txt and tell me the marker."
-    streaming = STREAMING[cli]
-    ms_reset(mockserver)
-    matcher = pinned_matcher(cli, prompt, 0, [(prompt, marker)], streaming)
-    _mock_expectation(mockserver, {
-        "stopReason": "tool_calls",
-        "toolCalls": [{
-            "id": "call_tool_1",
-            "name": seed["name"],
-            "arguments": seed["arguments"],
-        }],
-        "streaming": streaming,
-    }, 150, times=1, matcher=matcher, model=MODEL)
-    _mock_expectation(mockserver, {"text": marker, "streaming": streaming}, 130, model=MODEL)
-    mock_fallback(mockserver, "ok", FALLBACK_STREAMING[cli], model=MODEL)
-
-    name, run_dir = start_cell(cli, manifest, home, base_url, key, "tool_loop", model=MODEL)
-    try:
-        submit(name, cli, prompt)
-        wait_pane(name, marker, 180, "tool loop answer")
-    finally:
-        finish_cell(name, run_dir)
-
-    reqs = ms_requests(mockserver)
-    with_result = turn_requests(reqs, prompt, cli, tool_result=True)
-    if not with_result:
-        raise AssertionError("tool_loop: no re-dispatched request carries a tool result")
-    if not any("PROXYLLM-LIVE-MARKER-7Q" in json.dumps(r.get("body")) for r in with_result):
-        raise AssertionError("tool_loop: the tool result carries no file marker (the CLI did not run the tool)")
-    rows = wait_proxy_rows(home, since, 1)
-    if not rows:
-        raise AssertionError("tool_loop: the proxy logged no request row")
-    bad = [r for r in rows if r[1] not in (200, 499) or (r[1] != 499 and r[2])]
-    if bad:
-        raise AssertionError(f"tool_loop: proxy rows not clean: {bad}")
-
-
-TURN_WORDS = ["ALPHA", "BRAVO", "CHARLIE", "DELTA", "ECHO",
-              "FOXTROT", "GOLF", "HOTEL", "INDIA"]
-
-
 def scenario_multi_turn(cli: str, manifest: Path, home: Path, base_url: str, key: str,
                         mockserver: str, port: int, since: int) -> None:
     """Nine remembered words plus a final recall: the last upstream request
@@ -1493,7 +1446,6 @@ SCENARIOS.update({
     "fault_truncated": scenario_fault_truncated,
     "fault_malformed_sse": scenario_fault_malformed_sse,
     "web_turn2": scenario_web_turn2,
-    "tool_loop": scenario_tool_loop,
     "multi_turn": scenario_multi_turn,
     "large_output": scenario_large_output,
 })

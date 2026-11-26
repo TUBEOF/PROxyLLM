@@ -117,16 +117,14 @@ including the duplicate-claim rule.
 
 Pending cells (the manifest names the reason for each; the fix loop owns them):
 - M2: `.github/test-matrix/cli_matrix.json` names only the skipped cells and
-  their reason — thinking, cancel/resume, `previous_response_id`, vision on
-  all clients, `tool_loop` on ten, `large_output` on aider, and
-  the two mid-stream faults on the non-streaming codex and openhands. Every
-  other cell is green.
+  their reason — thinking, cancel/resume, `previous_response_id`, vision and
+  `tool_loop` on all three clients. Every other cell is green.
 
 ## M2 — the plain-start CLI matrix (cli-plain)
 
 The `cli-plain` job in `.github/workflows/matrix.yml` drives
-`.github/test-matrix/cli_plain.py`: 12 CLIs, each started exactly the way a
-user starts it — the bare binary in a tmux pseudo-terminal, only its own
+`.github/test-matrix/cli_plain.py`: the three supported CLIs (Claude Code,
+Codex, OpenCode), each started exactly the way a user starts it — the bare binary in a tmux pseudo-terminal, only its own
 config pointing at the proxy — against MockServer.
 
 **The manifest is the source of truth.** `.github/test-matrix/cli_matrix.json`
@@ -134,14 +132,19 @@ enumerates every client × scenario pair, status `green` or `skipped`; a skipped
 cell carries its reason. `check_cli_manifest.py` fails on a missing pair, a
 green scenario without a `SCENARIOS` function, a scenario function that is
 green nowhere, a green cell outside a shard, or a shard the workflow does not
-wire. `test_gates.py` is the gate's negative self-test. Today `answer`,
-`recall`, `fault_429`, `fault_529`, `fault_quota` (all clients), the
-`fault_truncated`/`fault_malformed_sse` pair (streaming clients), `web_turn2`
-(all clients), `tool_loop` (crush, openhands), `multi_turn` (all clients) and
-`large_output` (all but aider, whose TUI does not render the 20 KB tail) are
-green across the `basic`, `faults`, `faults_stream`,
-`web`, `tools` and `long` shards; the remaining scenarios are skipped with
-their reason, so the omission is visible on every run instead of silent.
+wire. `test_gates.py` is the gate's negative self-test. Today `answer`, `recall`,
+`fault_429`, `fault_529`, `fault_quota`, the
+`fault_truncated`/`fault_malformed_sse` pair, `web_turn2`, `multi_turn` and
+`large_output` are green across the `basic`, `faults`, `faults_stream`, `web`
+and `long` shards; the remaining scenarios are skipped with their reason, so
+the omission is visible on every run instead of silent.
+
+The nine extra adapters (aider, cline, crush, goose, gptme,
+open-interpreter, kimi, openhands, qwen) were removed in v2.0.0: they were
+the main source of CI flakes, and those tools remain usable through the
+OpenAI-compatible surface without an adapter of their own. The `tools` shard
+went with them — `tool_loop` is skipped on all three clients until the
+headless tool-seeding layer lands.
 
 **What is skipped and why.** The manifest carries the exact reason on every
 skipped cell; the recurring ones are: extended thinking (Claude Code's plain
@@ -150,9 +153,9 @@ cell covers the proxy path), cancel/resume (no verified plain-start TUI
 affordance — M1's client-abort cell covers the proxy), `previous_response_id`
 (these clients send full history; `recall` plus the M1 Responses chain cover
 the contract), vision (no verified plain-start image attach; the M1 blind-chain
-cell covers the caption fallback), `tool_loop` on the CLIs whose tool seed or
-approval flow is not verified yet, and `large_output` on aider (its TUI does
-not render the 20 KB tail in the visible pane).
+cell covers the caption fallback), and `tool_loop` (the plain-start tool seed
+is not verified for these three clients; the headless layer is still to
+come).
 
 Each fault cell gets its own provider account (the breaker and quota cooldowns
 are keyed by account, so sharing one would poison the next cell), and the CLI's
