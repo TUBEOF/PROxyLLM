@@ -1,7 +1,7 @@
 # Getting started
 
 PROxyLLM is one binary serving three client surfaces — OpenAI-compatible,
-Anthropic-compatible and decision — with translation and routing in
+Anthropic-compatible and native Ollama — with translation and routing in
 between, plus the operator console on the same port. All state lives in one
 data directory.
 
