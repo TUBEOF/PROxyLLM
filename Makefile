@@ -23,6 +23,11 @@ test:
 test-race:
 	go test -race $(GO_PKGS)
 
+# Conformance matrix against a MockServer started by testcontainers (needs
+# Docker; MOCKSERVER_URL/JAR are not consulted). ADR-027d.
+test-e2e-container:
+	MOCKSERVER_CONTAINER=1 go test -race ./internal/e2e -run 'TestMatrix' -count=1
+
 # Installs the pinned linter into $(go env GOPATH)/bin. Needed once per machine
 # (and after every GOLANGCI_VERSION bump); `make lint` then works.
 lint-tool:

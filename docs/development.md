@@ -60,6 +60,10 @@ make check-tests              # guards the suite against erosion
 go test ./internal/routing -run TestResolveChain -v   # one package, one test
 ```
 
+Without a local JRE, `make test-e2e-container` starts MockServer through
+testcontainers (`MOCKSERVER_CONTAINER=1`, needs Docker) and runs the matrix;
+without Docker the suite keeps its documented skip (ADR-027d).
+
 A contributor stack with no Go toolchain:
 `PROXYLLM_DEV_KEY=pk_... docker compose -f docker/dev-compose.yaml up --build`
 starts the proxy from source plus a MockServer; `--profile cli` adds a Claude
