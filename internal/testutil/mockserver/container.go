@@ -15,7 +15,7 @@ import (
 )
 
 // ContainerImage is the MockServer image the testcontainers path starts.
-const ContainerImage = "mockserver/mockserver:5.15.0"
+const ContainerImage = "mockserver/mockserver:9.2.0"
 
 // StartContainer starts one MockServer container and returns its base URL plus
 // a terminate function. The caller owns the lifetime (the e2e TestMain keeps
