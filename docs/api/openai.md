@@ -74,3 +74,24 @@ header by habit (some SDK configurations do) gets the other shape.
 A model that is not in this list can still route: a model row is what makes
 a name known, and rows are created by the model sync or by hand in the
 console.
+
+## `GET /v1/model_catalog`
+
+The **Codex-native catalog** (ADR-023), not the OpenAI list shape: a
+top-level `models` array, each entry carrying `slug`, `display_name`,
+`description`, `supported_in_api`, `visibility`, `priority`,
+`context_window` / `max_context_window` (when the row declares one),
+`supported_reasoning_levels` (always an array — Codex 0.153 rejects a
+document whose entries omit it), `input_modalities` and `use_responses_lite`.
+
+```json
+{"models":[{"slug":"ollamacloud/glm-5.3","display_name":"glm-5.3",
+            "supported_in_api":true,"visibility":"list","priority":0,
+            "supported_reasoning_levels":[],"input_modalities":["text"]}]}
+```
+
+Point Codex at it with `model_catalog_url` in the provider block **and**
+`[features] api_key_model_discovery = true`; Codex appends its
+`client_version` query parameter. The installer writes both. The field set is
+recorded with its codex-rs source in
+[the research note](../research/codex-model-catalog.md).

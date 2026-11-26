@@ -1,0 +1,6 @@
+{
+  "fixture": "codex_model_catalog.json",
+  "source": "https://github.com/openai/codex/blob/main/codex-rs/protocol/src/openai_models.rs",
+  "accessed": "2026-11-26",
+  "notes": "Shape contract for GET /v1/model_catalog. supported_reasoning_levels is required per entry (codex 0.153 rejects its omission)."
+}

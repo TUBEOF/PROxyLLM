@@ -1,0 +1,20 @@
+{
+  "models": [
+    {
+      "slug": "gpt-5.5",
+      "display_name": "GPT-5.5",
+      "description": "Frontier model",
+      "supported_in_api": true,
+      "visibility": "list",
+      "priority": 0,
+      "context_window": 272000,
+      "max_context_window": 272000,
+      "supported_reasoning_levels": [
+        {"effort": "low", "description": "Low"},
+        {"effort": "medium", "description": "Medium"},
+        {"effort": "high", "description": "High"}
+      ],
+      "input_modalities": ["text", "image"]
+    }
+  ]
+}

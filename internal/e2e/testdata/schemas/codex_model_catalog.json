@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Codex model catalog",
+  "type": "object",
+  "required": ["models"],
+  "properties": {
+    "models": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["slug", "display_name", "supported_in_api", "visibility", "priority", "supported_reasoning_levels", "input_modalities"],
+        "properties": {
+          "slug": {"type": "string", "minLength": 1},
+          "display_name": {"type": "string", "minLength": 1},
+          "description": {"type": "string"},
+          "supported_in_api": {"type": "boolean"},
+          "visibility": {"type": "string"},
+          "priority": {"type": "integer"},
+          "context_window": {"type": "integer", "minimum": 1},
+          "max_context_window": {"type": "integer", "minimum": 1},
+          "supported_reasoning_levels": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["effort"],
+              "properties": {
+                "effort": {"type": "string"},
+                "description": {"type": "string"}
+              }
+            }
+          },
+          "input_modalities": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "use_responses_lite": {"type": "boolean"}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

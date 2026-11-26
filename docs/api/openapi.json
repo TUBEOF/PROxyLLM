@@ -210,6 +210,20 @@
           }
         }
       }
+    },
+    "/v1/model_catalog": {
+      "get": {
+        "tags": ["OpenAI-compatible"],
+        "summary": "Codex-native model catalog",
+        "description": "The top-level models array Codex reads through model_providers.<id>.model_catalog_url with [features] api_key_model_discovery. Not the OpenAI list shape.",
+        "operationId": "modelCatalog",
+        "responses": {
+          "200": {
+            "description": "Codex catalog.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CodexModelCatalog" } } }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -247,6 +261,32 @@
       }
     },
     "schemas": {
+      "CodexModelCatalog": {
+        "type": "object",
+        "required": ["models"],
+        "properties": {
+          "models": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["slug", "display_name", "supported_in_api", "visibility", "priority", "supported_reasoning_levels", "input_modalities"],
+              "properties": {
+                "slug": { "type": "string" },
+                "display_name": { "type": "string" },
+                "description": { "type": "string" },
+                "supported_in_api": { "type": "boolean" },
+                "visibility": { "type": "string" },
+                "priority": { "type": "integer" },
+                "context_window": { "type": "integer" },
+                "max_context_window": { "type": "integer" },
+                "supported_reasoning_levels": { "type": "array", "items": { "type": "object" } },
+                "input_modalities": { "type": "array", "items": { "type": "string" } },
+                "use_responses_lite": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      },
       "OpenAIMessage": {
         "type": "object",
         "required": ["role"],

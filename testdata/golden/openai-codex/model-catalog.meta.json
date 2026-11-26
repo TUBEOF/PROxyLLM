@@ -1,0 +1,6 @@
+{
+  "fixture": "model-catalog.json",
+  "source": "https://github.com/openai/codex/blob/main/codex-rs/protocol/src/openai_models.rs (openai_models::Model) and https://docs.litellm.ai/docs/proxy/client_setup/codex_cli (top-level models key)",
+  "accessed": "2026-11-26",
+  "notes": "Codex-native catalog shape. supported_reasoning_levels must be present on every entry: codex 0.153 rejects a document whose entries omit it (openai/codex issue context, 2026). Values are illustrative."
+}
