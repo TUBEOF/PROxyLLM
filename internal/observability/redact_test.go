@@ -275,3 +275,16 @@ func TestRedact_OllamaSessionCookie(t *testing.T) {
 		t.Fatalf("usage_cookie value leaked: %q", got)
 	}
 }
+
+// Anthropic OAuth tokens (ADR-022) are sk-ant-oat01-… access and
+// sk-ant-ort01-… refresh values; the sk- prefix must cover both.
+func TestRedact_AnthropicOAuthTokens(t *testing.T) {
+	r := NewRedactor()
+	in := `refresh failed: access sk-ant-oat01-SECRETACCESSVALUE refresh sk-ant-ort01-SECRETREFRESHVALUE`
+	got := r.Redact(in)
+	for _, secret := range []string{"sk-ant-oat01-SECRETACCESSVALUE", "sk-ant-ort01-SECRETREFRESHVALUE"} {
+		if strings.Contains(got, secret) {
+			t.Errorf("%s survived redaction: %q", secret, got)
+		}
+	}
+}

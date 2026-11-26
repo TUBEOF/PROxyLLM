@@ -1,0 +1,15 @@
+{
+  "token_type": "Bearer",
+  "access_token": "sk-ant-oat01-DUMMY-ACCESS-TOKEN",
+  "expires_in": 28800,
+  "refresh_token": "sk-ant-ort01-DUMMY-REFRESH-TOKEN",
+  "scope": "user:inference user:profile",
+  "organization": {
+    "uuid": "00000000-0000-0000-0000-000000000001",
+    "name": "Example Organization"
+  },
+  "account": {
+    "uuid": "00000000-0000-0000-0000-000000000002",
+    "email_address": "operator@example.com"
+  }
+}
