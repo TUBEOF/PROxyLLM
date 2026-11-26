@@ -41,6 +41,13 @@ test('connect page renders per-client configuration from the console origin', as
 
 test('the sidebar links to the connect page from the access section', async ({ page }) => {
   await login(page);
-  await page.getByRole('link', { name: 'Connect a CLI' }).click();
+  // The mobile sidebar is off-canvas; open it first, exactly as an operator
+  // would. Desktop shows it expanded.
+  if ((page.viewportSize()?.width ?? 1000) < 720) {
+    await page.getByRole('button', { name: 'Expand sidebar' }).click();
+  }
+  const link = page.getByRole('link', { name: 'Connect a CLI' });
+  await expect(link).toBeVisible();
+  await link.click();
   await expect(page.getByRole('heading', { name: 'Connect a CLI', exact: true })).toBeVisible();
 });

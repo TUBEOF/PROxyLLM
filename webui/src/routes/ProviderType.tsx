@@ -72,7 +72,9 @@ export default function ProviderTypePage() {
 
   const accounts = useMemo(() => detail.data?.accounts ?? [], [detail.data]);
   useEffect(() => {
-    if (meta?.risk_acknowledged === true) setRiskAcked(true);
+    // Follow the catalog for THIS type: switching types must not inherit the
+    // previous type's acknowledgement.
+    setRiskAcked(meta?.risk_acknowledged === true);
   }, [meta]);
   const savedSettings = useMemo(() => asStringMap(detail.data?.settings), [detail.data]);
 

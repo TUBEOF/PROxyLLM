@@ -1,0 +1,7 @@
+{
+  "fixture": "openai_response.official.json",
+  "source": "https://github.com/openai/openai-openapi/blob/abe304d1e5f1264fd3a11499ab57c0d17f5c1df3/openapi.yaml",
+  "commit": "abe304d1e5f1264fd3a11499ab57c0d17f5c1df3",
+  "accessed": "2026-11-26",
+  "notes": "components.schemas.CreateResponse plus the 222 schemas it references, refs rewritten to #/$defs. Extracted mechanically from the pinned document."
+}

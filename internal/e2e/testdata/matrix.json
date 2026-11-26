@@ -770,6 +770,24 @@
       "test": "TestMatrix_HeaderPreservation",
       "status": "green",
       "note": ""
+    },
+    {
+      "id": "gap__spec-sync-openai-chat",
+      "test": "TestMatrix_SpecSync_OpenAIChat",
+      "status": "green",
+      "note": ""
+    },
+    {
+      "id": "gap__spec-sync-openai-response",
+      "test": "TestMatrix_SpecSync_OpenAIResponse",
+      "status": "green",
+      "note": ""
+    },
+    {
+      "id": "gap__spec-sync-ollama",
+      "test": "TestMatrix_SpecSync_OllamaChat",
+      "status": "green",
+      "note": ""
     }
   ]
 }

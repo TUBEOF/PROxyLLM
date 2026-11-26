@@ -250,9 +250,9 @@ trailing data, requires `base_url` for `custom-openai` and `issuer` for
 `model_prefix` (lowercase letters, digits and hyphens, at most 64
 characters) and the alias map (both sides non-empty).
 
-Capability pins are limited to the eight known names — `streaming`,
-`tools`, `vision`, `web_search`, `web_fetch`, `code_execution`, `thinking`,
-`decision` — and unknown names are refused rather than stored.
+Capability pins are limited to the seven known names — `streaming`, `tools`,
+`vision`, `web_search`, `web_fetch`, `code_execution`, `thinking` — and
+unknown names are refused rather than stored.
 
 URL fields are checked for shape (absolute `http`/`https` with a host) and
 then resolved: a provider endpoint that resolves to a private address is
