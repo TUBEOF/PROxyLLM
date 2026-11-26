@@ -165,6 +165,16 @@ func seed(ctx context.Context, store *storage.Store, seedData bool) error {
 	if err := store.SetRoutingStrategy(ctx, "round_robin"); err != nil {
 		return fmt.Errorf("seed routing strategy: %w", err)
 	}
+	// The fixture's log/usage timestamps are anchored to the suite's frozen
+	// clock (FROZEN_DATE), which drifts behind wall-clock time. The retention
+	// sweep prunes relative to time.Now(), so without this override the
+	// seeded rows disappear once the frozen date is older than the default
+	// window. Retention is not what this fixture tests.
+	for _, key := range []string{"request_log_retention_days", "request_payload_retention_days"} {
+		if err := store.SetConfigValue(ctx, key, "36500"); err != nil {
+			return fmt.Errorf("seed retention %s: %w", key, err)
+		}
+	}
 
 	// Models with capability flags and per-model compat policies (§6.4).
 	models := []storage.Model{
