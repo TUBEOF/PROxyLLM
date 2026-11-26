@@ -29,6 +29,7 @@ Four ways in, depending on what you are doing.
 | What does an error look like on each surface? | [Errors](api/errors.md) |
 | How do I drive the operator API? | [Admin API](api/admin.md) |
 | How do I run Claude Code against a non-Claude model? | [Claude Code](claude-code.md) |
+| How do I configure Claude Code, Codex or OpenCode automatically? | [CLI setup and installer](cli-setup.md) |
 | How do I connect an Anthropic Teams account via OAuth? | [Anthropic OAuth](providers/anthropic-oauth.md) |
 
 `docs/api/openapi.json` is an OpenAPI 3.1 description of the client surfaces.

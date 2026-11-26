@@ -46,6 +46,15 @@ jobs:
           cache-dependency-path: go.sum
       - name: gofmt check
         run: test -z "$(gofmt -l cmd internal webui/embed.go)"
+      - name: shellcheck
+        run: |
+          # Pinned release + checksum; the scripts are the installer and its
+          # end-to-end test (ADR-024/027).
+          curl -fsSL -o /tmp/shellcheck.tar.xz \
+            https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  /tmp/shellcheck.tar.xz" | sha256sum -c -
+          tar -xJf /tmp/shellcheck.tar.xz -C /tmp
+          /tmp/shellcheck-v0.11.0/shellcheck scripts/*.sh
       - name: go vet
         run: |
           # $GO_PKGS is a deliberate word-split: it expands to three package
@@ -64,6 +73,19 @@ jobs:
         run: |
           git fetch --no-tags --depth=1 origin main
           go run ./cmd/checktests -base origin/main
+
+  # Installer: the script against a real proxy process and a temporary HOME
+  # (ADR-024). No Docker, no CLI installs.
+  installer:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: installer end-to-end
+        run: bash scripts/test-install.sh
 
   # Gate 2+3: unit + contract tests with race detector — blocking
   test:

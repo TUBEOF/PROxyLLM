@@ -78,6 +78,18 @@ export ANTHROPIC_MODEL="claude-sonnet-5"
 # api_key  = pk_...
 ```
 
+Or let the installer write the client configuration for you — it detects
+Claude Code, Codex and OpenCode, writes their config files, and can undo it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TUBEOF/PROxyLLM/main/scripts/install.sh | bash
+# review it first: curl -fsSL -o install.sh \
+#   https://raw.githubusercontent.com/TUBEOF/PROxyLLM/main/scripts/install.sh
+```
+
+`--dry-run` shows the diff, `--uninstall` removes only the blocks it wrote.
+See [CLI setup](docs/cli-setup.md).
+
 From a checkout, `make docker` builds the image locally and runs the same
 compose file against it, and `make build` produces the binary. The multi-arch
 image also runs through plain `docker run` (see
