@@ -1,0 +1,15 @@
+# Declared API removals. One `path or schema | reason` per line; the contract
+# gate fails on any removal that is not listed here.
+POST /v1/systemone | decision surfaces removed by ADR-021 (v2.0.0)
+POST /v1/decisions | decision surfaces removed by ADR-021 (v2.0.0)
+POST /v1beta/models/{model}:generateContent | Gemini surface removed by ADR-021 (v2.0.0)
+POST /v1beta/models/{model}:streamGenerateContent | Gemini surface removed by ADR-021 (v2.0.0)
+GeminiGenerateContentRequest | Gemini codec removed by ADR-021
+GeminiGenerateContentResponse | Gemini codec removed by ADR-021
+GeminiErrorBody | Gemini codec removed by ADR-021
+SystemOneRequest | decision model removed by ADR-021
+SystemOneResponse | decision model removed by ADR-021
+SystemOneErrorBody | decision model removed by ADR-021
+DecisionsRequest | decision model removed by ADR-021
+DecisionsResponse | decision model removed by ADR-021
+DecisionUsage | decision model removed by ADR-021

@@ -66,6 +66,12 @@ starts the proxy from source plus a MockServer; `--profile cli` adds a Claude
 Code container (it installs the CLI at start). The data directory is ephemeral
 by design, so re-bootstrap after a recreate (ADR-025 G6).
 
+Two more gates run in the lint job: `scripts/check-docs.sh` (every relative
+Markdown link resolves; unreachable docs pages warn) and
+`scripts/check-openapi-contract.sh origin/main` (a removed path, operation or
+schema fails unless listed with a reason in `docs/api/openapi-removals.txt`;
+schema changes are reported). Both run locally with the same commands.
+
 The `installer` CI job runs `scripts/test-install.sh` against a freshly built
 proxy and a temporary `HOME` (ADR-024); the lint job runs ShellCheck over
 `scripts/*.sh` with a pinned release. Run the same test locally with
