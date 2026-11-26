@@ -59,8 +59,8 @@ client ──▶ surface handler ──▶ router ──▶ executor ──▶ c
 
 | Package | Responsibility |
 |---|---|
-| `internal/translate/ir` | The canonical request/response/event types every protocol translates through; the chat and decision operation pairs |
-| `internal/translate/{anthropic,openai,ollama,systemone}` | One codec pair per protocol plus one streaming state machine per direction; `sse` is the shared event-stream reader and writer |
+| `internal/translate/ir` | The canonical request/response/event types every protocol translates through (one chat operation pair, ADR-021) |
+| `internal/translate/{anthropic,openai,ollama}` | One codec pair per protocol plus one streaming state machine per direction; `sse` is the shared event-stream reader and writer |
 | `internal/routing` | Chain resolution, strategies, health/cooldown, failure classification, the emulation loop, the trace |
 | `internal/storage` | SQLite schema, migrations, typed accessors, the settings KV |
 | `internal/provider`, `internal/tools` | The provider contract and registry, its implementations, and the web-tool backends |

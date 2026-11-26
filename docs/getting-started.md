@@ -93,7 +93,7 @@ export ANTHROPIC_MODEL="claude-sonnet-5"   # any model row, or an alias
 Model names it sends are rewritten by the alias map before routing, which
 is what lets a non-Claude target answer the ID Claude Code asks for — the
 mapping and its failure modes are in
-[Claude Code](claude-code.md).
+[Claude Code](cli-claude-code.md).
 
 **An OpenAI SDK client** needs the base URL and the same key:
 
@@ -171,7 +171,7 @@ editing and testing accounts is covered in
 - [Configuration](configuration.md) — layers, environment variables, database overrides
 - [Operating PROxyLLM](operating.md) — the console, page by page
 - [API reference](api/README.md) — endpoints, authentication, errors, OpenAPI description
-- [Claude Code](claude-code.md) — non-Claude models behind an Anthropic client
+- [Claude Code](cli-claude-code.md) — non-Claude models behind an Anthropic client
 - [Routing and fallbacks](routing-and-fallbacks.md) — rules, chains, failover
 - [Deployment](deployment.md) — images, TLS, sizing, upgrades
 - [Security](security.md) — threat model and controls

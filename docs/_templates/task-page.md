@@ -3,7 +3,7 @@
 A task page answers **what to do, in order** — it is written for someone
 following it top to bottom, not for someone looking a fact up. Existing
 examples: `docs/getting-started.md`, `docs/deployment.md`,
-`docs/operating.md`, `docs/claude-code.md`.
+`docs/operating.md`, `docs/cli-claude-code.md`.
 
 Delete this header and the section skeletons you do not fill.
 

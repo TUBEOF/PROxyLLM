@@ -190,3 +190,21 @@ with the [translation matrix](reference/translation-matrix.md).
 | A run stops when the session grows | The target's context window versus the conversation; check the row's window and the trace's failure class |
 | WebFetch returns nothing in the console's log | The claim is off — an empty `client_web_tools` mapping in the settings KV leaves the CLI's own tool to the CLI, see [above](#web-tools-webfetch-and-websearch) |
 | Everything for one account fails at once | A cooldown: the Quota page names it, the trace's `skipped` events carry the reason |
+
+## Gateway model discovery
+
+With `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1`, Claude Code calls
+`GET /v1/models?limit=1000` at start (three-second timeout; sends both
+`Authorization` and `x-api-key`). The proxy answers the Anthropic shape with
+`id`, `display_name` and `description`.
+
+Claude Code then keeps only ids containing `claude` or `anthropic`
+(case-insensitive). That filter is the client's, so a model that must appear
+in `/model` needs a routing alias whose id carries one of those substrings —
+for example `anthropic/glm-5.3`. The proxy never renames or disguises a model
+id.
+
+`ANTHROPIC_DEFAULT_HAIKU_MODEL` answers background requests; point it at a
+small, fast model. The installer writes this environment block, the alias
+convention is explained in the console's **Connect a CLI** page, and the
+installer itself is documented in [CLI setup](cli-setup.md).

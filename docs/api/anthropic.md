@@ -6,7 +6,7 @@ when it carries a well-formed key). Paths: `POST /v1/messages`,
 
 The Messages shape is what Claude Code speaks, so this surface is the one
 that makes a non-Claude model usable from the CLI. The
-[Claude Code guide](../claude-code.md) covers the client side of that.
+[Claude Code guide](../cli-claude-code.md) covers the client side of that.
 
 ## `POST /v1/messages`
 
@@ -118,4 +118,4 @@ export ANTHROPIC_MODEL="claudecode/sonnet"   # any model row or alias
 Claude Code's auxiliary requests (the WebFetch summarizer, the auto-mode
 classifier) use pinned model IDs that change with every Claude Code
 release, which is why the alias map supports wildcards — see
-[Claude Code with non-Claude models](../claude-code.md).
+[Claude Code with non-Claude models](../cli-claude-code.md).
