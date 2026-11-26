@@ -124,7 +124,7 @@ def configure(home: Path, port: int, mockserver: str) -> str:
     # row maps the same way), so it rides the same row.
     admin.put(client, "/api/admin/settings", {
         "key": "model_aliases",
-        "value": json.dumps({"claude-*": MODEL, "proxy-chat": MODEL, MODEL: MODEL}, separators=(",", ":"), sort_keys=True),
+        "value": json.dumps({"claude-*": MODEL, "proxy-chat": MODEL, "proxyllm/proxy-chat": MODEL, MODEL: MODEL}, separators=(",", ":"), sort_keys=True),
     })
     payload = admin.post(client, "/api/admin/keys", {"name": "cli-plain"})
     key = payload.get("key", "")
@@ -162,7 +162,7 @@ def set_aliases(model: str) -> None:
     if ADMIN_CLIENT is None:
         raise SystemExit("admin client not configured")
     admin.get_json(ADMIN_CLIENT, "/api/admin/settings")
-    aliases = {"claude-*": model, "proxy-chat": model, MODEL: model, WEB_MODEL: WEB_MODEL}
+    aliases = {"claude-*": model, "proxy-chat": model, "proxyllm/proxy-chat": model, MODEL: model, WEB_MODEL: WEB_MODEL}
     admin.put(ADMIN_CLIENT, "/api/admin/settings", {
         "key": "model_aliases",
         "value": json.dumps(aliases, separators=(",", ":"), sort_keys=True),
@@ -1443,6 +1443,94 @@ def scenario_large_output(cli: str, manifest: Path, home: Path, base_url: str, k
         raise AssertionError(f"large_output: proxy rows not clean: {bad}")
 
 
+def _headless_manifest(manifest: Path) -> dict:
+    return json.loads(manifest.read_text(encoding="utf-8"))
+
+
+def _headless_run(manifest: Path, run_dir: Path, env: dict, cwd: Path,
+                  args: list[str], prompt: str, log: Path) -> str:
+    """One non-interactive CLI invocation; the prompt is substituted into the
+    adapter's documented headless arguments."""
+    spec = _headless_manifest(manifest)
+    cmd = [spec["command"]] + [a.replace("{{PROMPT}}", prompt) for a in args]
+    try:
+        proc = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True,
+                              text=True, timeout=180)
+    except subprocess.TimeoutExpired:
+        raise AssertionError(f"headless: {spec['name']} timed out")
+    with log.open("a", encoding="utf-8") as fh:
+        fh.write("$ " + " ".join(cmd) + "\n" + proc.stdout + proc.stderr + "\n")
+    if proc.returncode != 0:
+        raise AssertionError(
+            f"headless: {spec['name']} exited {proc.returncode}: "
+            f"{proc.stderr.strip()[:300]}")
+    return proc.stdout + proc.stderr
+
+
+def scenario_answer_headless(cli: str, manifest: Path, home: Path, base_url: str,
+                             key: str, mockserver: str, port: int, since: int) -> None:
+    marker = "HEADLESS-" + secrets.token_hex(4)
+    prompt = f"Reply with exactly: {marker}."
+    ms_reset(mockserver)
+    # Headless invocations may choose either wire mode; install both, plus a
+    # catch-all for utility calls (OpenCode's title generation), the same
+    # fallback the plain scenarios install.
+    mock_pinned_dual(mockserver, cli, [(prompt, marker)], MODEL)
+    mock_fallback(mockserver, "ok", True)
+    mock_fallback(mockserver, "ok", False)
+    run_dir = home / "clients" / cli / "answer_headless"
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    env, cwd = prepare(manifest, run_dir, base_url, key, MODEL)
+    spec = _headless_manifest(manifest)
+    out = _headless_run(manifest, run_dir, env, cwd, spec["args"], prompt,
+                        run_dir / "headless.log")
+    if marker not in out:
+        raise AssertionError("answer_headless: the answer marker is missing from the CLI output")
+    rows = wait_proxy_rows(home, since, 1)
+    if not rows:
+        raise AssertionError("answer_headless: the proxy logged no request row")
+    bad = [r for r in rows if r[1] not in (200, 499)]
+    if bad:
+        raise AssertionError(f"answer_headless: proxy rows not clean: {bad}")
+    # The marker in the CLI output already proves the answer came from the
+    # simulated upstream. Headless clients may wrap the prompt (content
+    # parts, extra context), so the plain-path exact matcher does not apply;
+    # the request count is the loop evidence.
+    reqs = ms_requests(mockserver)
+    if len(reqs) < 1:
+        raise AssertionError("answer_headless: MockServer saw no request")
+
+
+def scenario_recall_headless(cli: str, manifest: Path, home: Path, base_url: str,
+                             key: str, mockserver: str, port: int, since: int) -> None:
+    spec = _headless_manifest(manifest)
+    turns = spec["features"]["multi_turn"]["turns"]
+    t1 = "Please remember the number 4711."
+    t2 = "Which number did I ask you to remember?"
+    ms_reset(mockserver)
+    mock_pinned_dual(mockserver, cli, [(t1, "Noted."), (t2, "The number is 4711")], MODEL)
+    mock_fallback(mockserver, "ok", True)
+    mock_fallback(mockserver, "ok", False)
+    run_dir = home / "clients" / cli / "recall_headless"
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    env, cwd = prepare(manifest, run_dir, base_url, key, MODEL)
+    log = run_dir / "headless.log"
+    _headless_run(manifest, run_dir, env, cwd, turns[0], t1, log)
+    out = _headless_run(manifest, run_dir, env, cwd, turns[1], t2, log)
+    if "4711" not in out:
+        raise AssertionError("recall_headless: the second turn did not recall the number")
+    rows = wait_proxy_rows(home, since, 2)
+    if len(rows) < 2:
+        raise AssertionError("recall_headless: the proxy logged fewer than two request rows")
+    bad = [r for r in rows if r[1] not in (200, 499)]
+    if bad:
+        raise AssertionError(f"recall_headless: proxy rows not clean: {bad}")
+    if len(ms_requests(mockserver)) < 2:
+        raise AssertionError("recall_headless: MockServer saw fewer than two requests")
+
+
 SCENARIOS.update({
     "fault_429": scenario_fault_429,
     "fault_529": scenario_fault_529,
@@ -1452,6 +1540,8 @@ SCENARIOS.update({
     "web_turn2": scenario_web_turn2,
     "multi_turn": scenario_multi_turn,
     "large_output": scenario_large_output,
+    "answer_headless": scenario_answer_headless,
+    "recall_headless": scenario_recall_headless,
 })
 
 

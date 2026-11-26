@@ -20,12 +20,18 @@
     "cancel_resume",
     "previous_response_id",
     "vision",
-    "decisions"
+    "decisions",
+    "answer_headless",
+    "recall_headless",
+    "thinking_headless",
+    "cancel_headless"
   ],
   "shards": {
     "basic": [
       "answer",
-      "recall"
+      "recall",
+      "answer_headless",
+      "recall_headless"
     ],
     "faults": [
       "fault_429",
@@ -286,6 +292,78 @@
       "scenario": "decisions",
       "status": "skipped",
       "note": "no CLI surface; M1 covers System One and OpenAI Decisions"
+    },
+    {
+      "client": "codex",
+      "scenario": "answer_headless",
+      "status": "green",
+      "note": ""
+    },
+    {
+      "client": "codex",
+      "scenario": "recall_headless",
+      "status": "green",
+      "note": ""
+    },
+    {
+      "client": "codex",
+      "scenario": "thinking_headless",
+      "status": "skipped",
+      "note": "no verified headless thinking toggle for the pinned CLI; the plain-start thinking cell and M1 cover the proxy path"
+    },
+    {
+      "client": "codex",
+      "scenario": "cancel_headless",
+      "status": "skipped",
+      "note": "cancellation in headless mode needs a paced upstream and a verified interrupt signal per CLI; the plain-start cancel cell and M1 cover it"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "answer_headless",
+      "status": "green",
+      "note": ""
+    },
+    {
+      "client": "claude-code",
+      "scenario": "recall_headless",
+      "status": "green",
+      "note": ""
+    },
+    {
+      "client": "claude-code",
+      "scenario": "thinking_headless",
+      "status": "skipped",
+      "note": "no verified headless thinking toggle for the pinned CLI; the plain-start thinking cell and M1 cover the proxy path"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "cancel_headless",
+      "status": "skipped",
+      "note": "cancellation in headless mode needs a paced upstream and a verified interrupt signal per CLI; the plain-start cancel cell and M1 cover it"
+    },
+    {
+      "client": "opencode",
+      "scenario": "answer_headless",
+      "status": "green",
+      "note": ""
+    },
+    {
+      "client": "opencode",
+      "scenario": "recall_headless",
+      "status": "green",
+      "note": ""
+    },
+    {
+      "client": "opencode",
+      "scenario": "thinking_headless",
+      "status": "skipped",
+      "note": "no verified headless thinking toggle for the pinned CLI; the plain-start thinking cell and M1 cover the proxy path"
+    },
+    {
+      "client": "opencode",
+      "scenario": "cancel_headless",
+      "status": "skipped",
+      "note": "cancellation in headless mode needs a paced upstream and a verified interrupt signal per CLI; the plain-start cancel cell and M1 cover it"
     }
   ]
 }
