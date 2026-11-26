@@ -1299,8 +1299,9 @@ def scenario_web_turn2(cli: str, manifest: Path, home: Path, base_url: str, key:
                        '"url":"https://example.test/cologne","description":"12C sunny tomorrow"}]}}',
                        100)
     # The re-dispatch is the request whose history carries the tool result.
-    # The proxy's OpenAI-chat rewrite uses a user message (Anthropic tool
-    # results) or a tool message (OpenAI tool results), so pin both roles.
+    # The proxy's OpenAI-chat rewrite emits a role:"tool" message with the
+    # original call id; the user-role pin stays for routes that fold the
+    # result into user content instead (see the translation matrix).
     tool_result = json.dumps({
         "tool_use_id": "call_web_1",
         "content": [{
@@ -1353,7 +1354,7 @@ def scenario_web_turn2(cli: str, manifest: Path, home: Path, base_url: str, key:
 # must ride the tool result back into the re-dispatched conversation. Names and
 # argument shapes verified against the pinned builds (codex 0.166.0 declares
 # exec_command with a `cmd` string; claude-code 2.1.316 declares Bash with
-# `command`; opencode 1.19.6 declares bash with `command`).
+# `command`; opencode 1.19.5 declares bash with `command`).
 TOOL_LOOP_SEEDS = {
     "claude-code": {
         "name": "Bash",
@@ -1559,11 +1560,11 @@ def scenario_tool_loop_headless(cli: str, manifest: Path, home: Path, base_url: 
     # Turn 1 is structurally pinned: a real model turn carries tool
     # definitions (opencode's title call does not), and the headless clients
     # wrap the prompt differently enough that content pinning does not hold.
-    # The streaming variant outranks the tool-result matchers; the
-    # non-streaming one is ranked BELOW them, because its matcher (tools +
-    # any user message) also matches the follow-up request that carries the
-    # tool result in its history.
-    for stream, priority in ((True, 230), (False, 200)):
+    # The tool-result matchers below outrank these: a request carrying a
+    # `tool` message can never be turn 1, so the ordering removes the race
+    # where a follow-up that still carries tools + a user message matched the
+    # turn-1 expectation again.
+    for stream, priority in ((True, 230), (False, 229)):
         matcher: dict = {"tools": [{"type": "function"}], "messages": [{"role": "user"}]}
         if stream:
             matcher["stream"] = True
@@ -1572,7 +1573,7 @@ def scenario_tool_loop_headless(cli: str, manifest: Path, home: Path, base_url: 
     # The re-dispatch is the request that carries the tool result. The proxy's
     # chat rewrite emits a role:"tool" message with the original call id for
     # every client protocol, so one matcher covers all three CLIs.
-    for stream, priority in ((True, 220), (False, 219)):
+    for stream, priority in ((True, 240), (False, 239)):
         matcher = {"messages": [{"role": "tool"}]}
         if stream:
             matcher["stream"] = True
@@ -1599,16 +1600,21 @@ def scenario_tool_loop_headless(cli: str, manifest: Path, home: Path, base_url: 
         raise AssertionError(
             f"tool_loop_headless: no upstream request declares the tool {seed['name']!r}")
     first = reqs.index(declared[0])
-    follow = [r for r in reqs[first + 1:]
-              if "PROXYLLM-LIVE-MARKER-7Q" in json.dumps(r.get("body"))
-              and "call_tool_1" in json.dumps(r.get("body"))]
-    if not follow:
+    results = []
+    for r in reqs[first + 1:]:
+        payload = (r.get("body") or {}).get("json") or {}
+        for m in payload.get("messages") or []:
+            if not isinstance(m, dict) or m.get("role") != "tool":
+                continue
+            if (m.get("tool_call_id") == "call_tool_1"
+                    and "PROXYLLM-LIVE-MARKER-7Q" in str(m.get("content"))):
+                results.append(r)
+                break
+    if not results:
         raise AssertionError(
             "tool_loop_headless: no re-dispatched request carries the tool result "
-            "(the CLI did not run the tool, or the call id did not survive the translation)")
-    if not any("tool_call_id" in json.dumps(r) or "tool_use_id" in json.dumps(r)
-               for r in follow):
-        raise AssertionError("tool_loop_headless: the tool result carries no call-id field")
+            "under the original call id (the CLI did not run the tool, or the id "
+            "did not survive the translation)")
     rows = wait_proxy_rows(home, since, 2)
     if len(rows) < 2:
         raise AssertionError("tool_loop_headless: the proxy logged fewer than two request rows")
@@ -1628,7 +1634,8 @@ def _declared_tool_names(request: dict) -> list[str]:
 
 
 SCENARIOS.update({
-    "fault_429": scenario_fault_429,    "fault_529": scenario_fault_529,
+    "fault_429": scenario_fault_429,
+    "fault_529": scenario_fault_529,
     "fault_quota": scenario_fault_quota,
     "fault_truncated": scenario_fault_truncated,
     "fault_malformed_sse": scenario_fault_malformed_sse,
