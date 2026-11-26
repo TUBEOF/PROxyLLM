@@ -8,6 +8,7 @@ Four ways in, depending on what you are doing.
 |---|---|
 | How do I get it running and send a first request? | [Getting started](getting-started.md) |
 | How do I deploy this properly — container, TLS, sizing, backups? | [Deployment](deployment.md) |
+| What changed in v2.0.0 and how do I migrate? | [Upgrading from v1](release-migration.md) |
 
 ## Run it
 
@@ -28,7 +29,9 @@ Four ways in, depending on what you are doing.
 | What does the Anthropic-compatible surface accept? | [Anthropic-compatible](api/anthropic.md) |
 | What does an error look like on each surface? | [Errors](api/errors.md) |
 | How do I drive the operator API? | [Admin API](api/admin.md) |
-| How do I run Claude Code against a non-Claude model? | [Claude Code](claude-code.md) |
+| How do I run Claude Code against a non-Claude model? | [Claude Code](cli-claude-code.md) |
+| How do I configure Codex? | [Codex](cli-codex.md) |
+| How do I configure OpenCode? | [OpenCode](cli-opencode.md) |
 | How do I configure Claude Code, Codex or OpenCode automatically? | [CLI setup and installer](cli-setup.md) |
 | How do I connect an Anthropic Teams account via OAuth? | [Anthropic OAuth](providers/anthropic-oauth.md) |
 
@@ -46,7 +49,7 @@ Four ways in, depending on what you are doing.
 | What does a per-model compatibility setting do? | [Model compatibility](reference/model-compat.md) |
 | What is in a `route_trace`, and which versions exist? | [Route trace](reference/route-trace.md) |
 | How are wire facts captured and tested? | [Golden fixtures](../testdata/golden/README.md) |
-| Where are the vendor wire facts and their sources? | [Research notes](research/) |
+| Where are the vendor wire facts and their sources? | [Research notes](research/README.md) |
 
 ## How these docs are organised
 

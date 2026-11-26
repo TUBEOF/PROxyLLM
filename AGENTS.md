@@ -164,6 +164,6 @@ discovers them too. Skills are the map — `docs/` stays the truth.
 | The console's pages | `docs/operating.md` |
 | Routing, fallbacks, health | `docs/routing-and-fallbacks.md` |
 | Building, testing, releasing | `docs/development.md` |
-| Running Claude Code (one supported client) | `docs/claude-code.md` |
+| Running Claude Code (one supported client) | `docs/cli-claude-code.md` |
 | Security posture and threat model | `docs/security.md`, `SECURITY.md` |
 | Deployment, container, sizing | `docs/deployment.md` |

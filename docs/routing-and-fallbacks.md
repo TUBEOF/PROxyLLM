@@ -36,7 +36,7 @@ resolution is traced like any other transition, and an alias target is never
 resolved again. Wildcard keys exist for clients that fire auxiliary requests
 under versioned model IDs pinned by their own releases; the alias setup for
 Claude Code is in [Claude Code with non-Claude
-models](claude-code.md#model-names-aliases-and-wildcards).
+models](cli-claude-code.md#model-names-aliases-and-wildcards).
 
 A request that matches nothing answers the reference's model-not-found 404,
 whose message names the model ([errors](api/errors.md#model-not-found-404)).
@@ -346,7 +346,7 @@ passed untouched under `allow` — the default, also for a missing or invalid
 value. How a request that routes is then adapted — thinking handling, server
 tool emulation, clamps, context window, cache markers — is
 [model compatibility](reference/model-compat.md). The client-side setup is
-[Claude Code with non-Claude models](claude-code.md).
+[Claude Code with non-Claude models](cli-claude-code.md).
 
 ## Tool emulation
 
