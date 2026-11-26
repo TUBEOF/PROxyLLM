@@ -190,7 +190,7 @@ media type and decoded size, never by their bytes.
   this control, not a tuning knob. See
   [configuration](configuration.md#environment-variables).
 
-## OAuth (Codex provider)
+## OAuth (Codex and Anthropic providers)
 
 - The console drives the **device flow**: the operator enters a `user_code`
   on the issuer's verification page. It needs no inbound endpoint at all,
@@ -203,6 +203,16 @@ media type and decoded size, never by their bytes.
 - Tokens live only in the encrypted store. Refresh runs server-side only:
   single-flight, with single-use rotation of the refresh token and a lazy
   refresh before access-token expiry.
+- **Anthropic OAuth (ADR-022)** has no device flow. The console starts a
+  server-side PKCE flow; the operator signs in and either reaches the
+  loopback callback (same machine, `127.0.0.1` only, default port 53692) or
+  pastes the callback URL / `code#state` from the browser. The `state` is
+  validated against the pending flow on both paths — a pasted callback
+  without a matching state is rejected, which is the login-CSRF guard. The
+  verifier never leaves the server. Only Teams/Enterprise accounts are
+  supported; consumer (Free/Pro/Max) OAuth tokens are refused by Anthropic
+  for third-party use since January 2026, and this proxy implements no
+  client-identity cloaking.
 
 ## Container hardening
 

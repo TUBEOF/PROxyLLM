@@ -24,10 +24,13 @@ import (
 const (
 	ProviderTypeCustomOpenAI = "custom-openai"
 	ProviderTypeAnthropic    = "anthropic"
-	ProviderTypeOllamaCloud  = "ollama-cloud"
-	ProviderTypeOllamaNative = "ollama-native"
-	ProviderTypeCodexOAuth   = "codex-oauth"
-	ProviderTypeFirecrawl    = "firecrawl"
+	// ProviderTypeAnthropicOAuth is the OAuth account type (ADR-022): fixed
+	// Anthropic endpoints, a server-side token store, no config URLs.
+	ProviderTypeAnthropicOAuth = "anthropic-oauth"
+	ProviderTypeOllamaCloud    = "ollama-cloud"
+	ProviderTypeOllamaNative   = "ollama-native"
+	ProviderTypeCodexOAuth     = "codex-oauth"
+	ProviderTypeFirecrawl      = "firecrawl"
 	// ProviderTypeOllamaCloudWeb is Ollama's hosted web-tool API as a
 	// web-tool backend (web_search/web_fetch), NOT a chat provider. It is a
 	// separate account type from ollama-cloud on purpose: a provider row is
@@ -174,6 +177,12 @@ func parseProviderConfig(typ string, raw []byte, guardURLs bool) (ProviderConfig
 		if cfg.Issuer != "" {
 			return cfg, fmt.Errorf("base_url is the only URL field for anthropic (issuer belongs to codex-oauth)")
 		}
+	case ProviderTypeAnthropicOAuth:
+		// The Anthropic endpoints are fixed; the account's credential is an
+		// OAuth token from the sign-in flow, never config.
+		if cfg.BaseURL != "" || cfg.Issuer != "" {
+			return cfg, fmt.Errorf("anthropic-oauth uses the fixed Anthropic endpoints; no base_url or issuer is configurable")
+		}
 	case ProviderTypeOllamaCloud:
 		if cfg.BaseURL != "" {
 			if err := checkURL(cfg.BaseURL, "base_url", guardURLs); err != nil {
@@ -218,9 +227,9 @@ func parseProviderConfig(typ string, raw []byte, guardURLs bool) (ProviderConfig
 			return cfg, fmt.Errorf("base_url is the only URL field for web-tool providers (issuer belongs to codex-oauth)")
 		}
 	case "":
-		return cfg, fmt.Errorf("type is required (custom-openai, anthropic, ollama-cloud, ollama-native, codex-oauth, firecrawl, ollama-cloud-web)")
+		return cfg, fmt.Errorf("type is required (custom-openai, anthropic, anthropic-oauth, ollama-cloud, ollama-native, codex-oauth, firecrawl, ollama-cloud-web)")
 	default:
-		return cfg, fmt.Errorf("unknown provider type %q (custom-openai, anthropic, ollama-cloud, ollama-native, codex-oauth, firecrawl, ollama-cloud-web)", typ)
+		return cfg, fmt.Errorf("unknown provider type %q (custom-openai, anthropic, anthropic-oauth, ollama-cloud, ollama-native, codex-oauth, firecrawl, ollama-cloud-web)", typ)
 	}
 
 	for name := range cfg.Capabilities {

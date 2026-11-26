@@ -34,6 +34,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/httpguard"
 	"github.com/tubeof/proxyllm/internal/provider"
 	"github.com/tubeof/proxyllm/internal/provider/anthropic"
+	"github.com/tubeof/proxyllm/internal/provider/anthropicoauth"
 	"github.com/tubeof/proxyllm/internal/provider/codex"
 	"github.com/tubeof/proxyllm/internal/provider/custom"
 	"github.com/tubeof/proxyllm/internal/provider/ollamacloud"
@@ -189,6 +190,16 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 	case webui.ProviderTypeOllamaNative:
 		// Empty base_url defaults to the local server.
 		return ollamanative.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type), headerOpts...), nil, nil
+
+	case webui.ProviderTypeAnthropicOAuth:
+		// The OAuth client is keyed to THIS provider's ID so the token rows
+		// and the console's flow align. Endpoints are fixed (ADR-022).
+		authc := anthropicoauth.NewAuthClient(anthropicoauth.AuthConfig{
+			Store:      store,
+			ProviderID: row.ID,
+			HTTP:       httpguard.NewClient(0),
+		})
+		return anthropicoauth.New(row.ID, cfg.BaseURL, authc, capsFromConfig(cfg, row.Type), headerOpts...), nil, nil
 
 	case webui.ProviderTypeCodexOAuth:
 		// The codex provider speaks the ChatGPT backend; the
@@ -439,9 +450,10 @@ func defaultCaps(typ string) provider.Capabilities {
 		// streaming and tools; thinking is Claude-only
 		// semantics, so it stays off here.
 		return provider.Capabilities{Streaming: true, Tools: true}
-	case webui.ProviderTypeAnthropic:
+	case webui.ProviderTypeAnthropic, webui.ProviderTypeAnthropicOAuth:
 		// The native Messages API supports tools, images and extended
-		// thinking with signatures.
+		// thinking with signatures. The OAuth account type speaks the same
+		// wire (ADR-022).
 		return provider.Capabilities{Streaming: true, Tools: true, Vision: true, Thinking: true}
 	case webui.ProviderTypeOllamaNative:
 		// Native Ollama supports tools; vision/thinking are per-model and

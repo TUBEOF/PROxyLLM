@@ -51,7 +51,8 @@ session of that admin.
 
 ## Providers and accounts
 
-Providers are grouped by **type** — Custom OpenAI-compatible, Ollama Cloud,
+Providers are grouped by **type** — Custom OpenAI-compatible, Anthropic (API
+key), Anthropic OAuth (Teams/Enterprise; ADR-022), Ollama Cloud,
 ChatGPT/Codex (OAuth), and the web-tool backends Firecrawl and Ollama Cloud
 Web Tools. An **account** is one credential of a type: several API keys or
 several Codex sign-ins are several accounts, and routing rules can name
