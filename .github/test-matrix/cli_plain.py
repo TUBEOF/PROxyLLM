@@ -1363,6 +1363,10 @@ TOOL_LOOP_SEEDS = {
 }
 
 
+TURN_WORDS = ["ALPHA", "BRAVO", "CHARLIE", "DELTA", "ECHO",
+              "FOXTROT", "GOLF", "HOTEL", "INDIA"]
+
+
 def scenario_multi_turn(cli: str, manifest: Path, home: Path, base_url: str, key: str,
                         mockserver: str, port: int, since: int) -> None:
     """Nine remembered words plus a final recall: the last upstream request
