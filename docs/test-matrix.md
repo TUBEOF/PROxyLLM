@@ -146,6 +146,13 @@ OpenAI-compatible surface without an adapter of their own. The `tools` shard
 went with them — `tool_loop` is skipped on all three clients until the
 headless tool-seeding layer lands.
 
+A **headless layer** runs the same three CLIs non-interactively with their
+documented flags (`claude -p --output-format stream-json`,
+`codex exec --json`, `opencode run --format json`). `answer_headless` and
+`recall_headless` are green on all three; `thinking_headless` and
+`cancel_headless` are skipped with their reason (no verified headless toggle
+or interrupt signal for the pinned builds), never silently.
+
 **What is skipped and why.** The manifest carries the exact reason on every
 skipped cell; the recurring ones are: extended thinking (Claude Code's plain
 TUI sends no `thinking` field even with a budget env — M1's Anthropic thinking
