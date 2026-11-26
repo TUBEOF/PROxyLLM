@@ -25,6 +25,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/tubeof/proxyllm/internal/auth"
+	"github.com/tubeof/proxyllm/internal/provider/anthropicoauth"
 	"github.com/tubeof/proxyllm/internal/provider/codex"
 	"github.com/tubeof/proxyllm/internal/reqlog"
 	"github.com/tubeof/proxyllm/internal/storage"
@@ -121,7 +122,10 @@ type AdminAPI struct {
 	now            func() int64
 
 	oauthMu    sync.Mutex
-	oauthFlows map[string]*codex.DeviceSession // providerID → active flow
+	oauthFlows map[string]*codex.DeviceSession // providerID → active device flow
+	// pasteFlows holds the Anthropic OAuth client of each provider with a
+	// pending paste flow: the flow's verifier lives inside that client.
+	pasteFlows map[string]anthropicoauth.Auth
 }
 
 // NewAdminAPI builds the admin API and its session manager (shared master
@@ -147,6 +151,7 @@ func NewAdminAPI(p AdminParams) *AdminAPI {
 		streamHeartbeat: logStreamHeartbeatDefault,
 		now:             now,
 		oauthFlows:      map[string]*codex.DeviceSession{},
+		pasteFlows:      map[string]anthropicoauth.Auth{},
 	}
 }
 
@@ -182,6 +187,12 @@ func (a *AdminAPI) Handler() http.Handler {
 	mux.Handle("PUT /api/admin/providers/{id}/enabled", a.sessions.RequireAdmin(http.HandlerFunc(a.setProviderEnabled)))
 	mux.Handle("POST /api/admin/providers/{id}/oauth/start", a.sessions.RequireAdmin(http.HandlerFunc(a.oauthStart)))
 	mux.Handle("POST /api/admin/providers/{id}/oauth/poll", a.sessions.RequireAdmin(http.HandlerFunc(a.oauthPoll)))
+	// Anthropic OAuth (ADR-022): the browser flow completes through a pasted
+	// callback, so the flow is started, completed from pasted input, and
+	// acknowledged separately from the device flow.
+	mux.Handle("POST /api/admin/providers/{id}/oauth/complete", a.sessions.RequireAdmin(http.HandlerFunc(a.oauthComplete)))
+	mux.Handle("POST /api/admin/provider-types/{type}/risk-ack", a.sessions.RequireAdmin(http.HandlerFunc(a.riskAck)))
+	mux.Handle("DELETE /api/admin/provider-types/{type}/risk-ack", a.sessions.RequireAdmin(http.HandlerFunc(a.riskAck)))
 
 	// Model IDs are prefixed routing identities (model
 	// identity, "ollamacloud/glm-5.3") — the {id...} wildcard captures the
@@ -586,6 +597,7 @@ func (a *AdminAPI) deleteProvider(w http.ResponseWriter, r *http.Request) {
 	// ghost.
 	a.oauthMu.Lock()
 	delete(a.oauthFlows, r.PathValue("id"))
+	delete(a.pasteFlows, r.PathValue("id"))
 	a.oauthMu.Unlock()
 	// DeleteProvider cascades models + tokens, so the live registry must
 	// drop the provider too (deletes take effect without
@@ -621,10 +633,14 @@ func (a *AdminAPI) oauthStart(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err) // missing row → 404, like every other resource
 		return
 	}
+	if provider.Type == ProviderTypeAnthropicOAuth {
+		a.startPasteFlow(w, r, provider.ID)
+		return
+	}
 	if provider.Type != "codex-oauth" {
-		// Only the codex OAuth provider has a flow; anything else is a client
-		// error, never a generic 500.
-		writeError(w, http.StatusBadRequest, "oauth flow requires a codex-oauth provider")
+		// Only the OAuth provider types have a flow; anything else is a
+		// client error, never a generic 500.
+		writeError(w, http.StatusBadRequest, "oauth flow requires an oauth provider")
 		return
 	}
 	var cfg struct {
@@ -679,10 +695,77 @@ func (a *AdminAPI) oauthStart(w http.ResponseWriter, r *http.Request) {
 	a.oauthFlows[id] = sess
 	a.oauthMu.Unlock()
 	writeJSON(w, http.StatusOK, oauthStartDTO{
+		Flow:            "device",
+		Status:          "pending",
 		UserCode:        sess.UserCode,
 		VerificationURL: sess.VerificationURL,
 		IntervalSeconds: int(sess.Interval / time.Second),
 	})
+}
+
+// startPasteFlow begins the Anthropic browser+pasted-callback sign-in
+// (ADR-022). The verifier stays inside the auth client kept in pasteFlows;
+// the response carries no token material.
+func (a *AdminAPI) startPasteFlow(w http.ResponseWriter, r *http.Request, providerID string) {
+	client := anthropicoauth.NewAuthClient(anthropicoauth.AuthConfig{
+		Store:      a.store,
+		ProviderID: providerID,
+	})
+	flow, err := client.StartPasteLogin(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "could not start the Anthropic sign-in")
+		return
+	}
+	a.oauthMu.Lock()
+	a.pasteFlows[providerID] = client
+	a.oauthMu.Unlock()
+	writeJSON(w, http.StatusOK, oauthStartDTO{
+		Flow:         "paste",
+		Status:       "pending",
+		FlowID:       flow.ID,
+		AuthorizeURL: flow.AuthorizeURL,
+		RedirectURI:  flow.RedirectURI,
+		ExpiresAt:    flow.ExpiresAt.Unix(),
+	})
+}
+
+// oauthComplete finishes the paste flow from the operator's pasted callback.
+// State validation and the code exchange happen server-side; the response
+// carries the account id only.
+func (a *AdminAPI) oauthComplete(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var req struct {
+		FlowID string `json:"flow_id"`
+		Input  string `json:"input"`
+	}
+	if err := decodeBody(w, r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	a.oauthMu.Lock()
+	client := a.pasteFlows[id]
+	a.oauthMu.Unlock()
+	if client == nil {
+		writeError(w, http.StatusBadRequest, "no pending Anthropic sign-in for this provider")
+		return
+	}
+	res, err := client.CompletePasteLogin(r.Context(), req.FlowID, req.Input)
+	if err != nil {
+		switch {
+		case errors.Is(err, anthropicoauth.ErrFlowNotFound),
+			errors.Is(err, anthropicoauth.ErrFlowExpired),
+			errors.Is(err, anthropicoauth.ErrStateMismatch),
+			errors.Is(err, anthropicoauth.ErrCodeMissing):
+			writeError(w, http.StatusBadRequest, err.Error())
+		default:
+			writeError(w, http.StatusBadGateway, "Anthropic rejected the sign-in")
+		}
+		return
+	}
+	a.oauthMu.Lock()
+	delete(a.pasteFlows, id)
+	a.oauthMu.Unlock()
+	writeJSON(w, http.StatusOK, oauthPollDTO{Status: "approved", AccountID: res.AccountID})
 }
 
 // oauthPoll drives one issuer round trip of the active flow (the codex
@@ -697,6 +780,10 @@ func (a *AdminAPI) oauthStart(w http.ResponseWriter, r *http.Request) {
 // code), or failed — is uniformly 400: the SPA starts a flow first.
 func (a *AdminAPI) oauthPoll(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if p, err := a.store.GetProvider(r.Context(), id); err == nil && p.Type == ProviderTypeAnthropicOAuth {
+		writeError(w, http.StatusBadRequest, "the Anthropic flow completes via /oauth/complete, not polling")
+		return
+	}
 
 	a.oauthMu.Lock()
 	sess := a.oauthFlows[id]
@@ -742,7 +829,61 @@ func (a *AdminAPI) oauthPoll(w http.ResponseWriter, r *http.Request) {
 // is a catalog entry + a parseProviderConfig case — this endpoint needs no
 // change.
 func (a *AdminAPI) listProviderTypes(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"types": providerTypes})
+	acks := a.riskAcks(r.Context())
+	types := make([]providerTypeDesc, len(providerTypes))
+	copy(types, providerTypes)
+	for i := range types {
+		types[i].RiskAcknowledged = acks[types[i].Type]
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"types": types})
+}
+
+// riskAcks reads the acknowledged risk-notice versions from the config KV.
+func (a *AdminAPI) riskAcks(ctx context.Context) map[string]bool {
+	out := map[string]bool{}
+	entries, err := a.store.ListConfigValues(ctx)
+	if err != nil {
+		return out
+	}
+	for _, e := range entries {
+		if typ, ok := strings.CutPrefix(e.Key, "risk_ack:"); ok {
+			if desc, ok := providerTypeByID(typ); ok && desc.RiskNoticeVersion > 0 &&
+				e.Value == strconv.Itoa(desc.RiskNoticeVersion) {
+				out[typ] = true
+			}
+		}
+	}
+	return out
+}
+
+// riskAck acknowledges (POST) or clears (DELETE) the risk notice of a type.
+// The value is the CURRENT version: bumping RiskNoticeVersion re-opens the
+// warning without touching the acknowledgement rows.
+func (a *AdminAPI) riskAck(w http.ResponseWriter, r *http.Request) {
+	typ := r.PathValue("type")
+	desc, ok := providerTypeByID(typ)
+	if !ok {
+		writeError(w, http.StatusNotFound, "unknown provider type")
+		return
+	}
+	key := "risk_ack:" + typ
+	if r.Method == http.MethodDelete {
+		if err := a.store.DeleteConfigValue(r.Context(), key); err != nil {
+			writeStoreError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"risk_acknowledged": false})
+		return
+	}
+	if desc.RiskNotice == "" || desc.RiskNoticeVersion == 0 {
+		writeError(w, http.StatusBadRequest, "this provider type has no risk notice")
+		return
+	}
+	if err := a.store.SetConfigValue(r.Context(), key, strconv.Itoa(desc.RiskNoticeVersion)); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"risk_acknowledged": true, "risk_notice_version": desc.RiskNoticeVersion})
 }
 
 // getProviderType serves one type's settings (provider_type_settings KV)
@@ -1804,9 +1945,16 @@ type providerDTO struct {
 // the code to enter on the verification page, that page's URL, and the poll
 // pace the issuer prescribed. It carries no token material.
 type oauthStartDTO struct {
-	UserCode        string `json:"user_code"`
-	VerificationURL string `json:"verification_url"`
-	IntervalSeconds int    `json:"interval_seconds"`
+	// Flow names the sign-in shape: "device" (codex) or "paste" (Anthropic).
+	Flow            string `json:"flow"`
+	Status          string `json:"status"`
+	UserCode        string `json:"user_code,omitempty"`
+	VerificationURL string `json:"verification_url,omitempty"`
+	IntervalSeconds int    `json:"interval_seconds,omitempty"`
+	FlowID          string `json:"flow_id,omitempty"`
+	AuthorizeURL    string `json:"authorize_url,omitempty"`
+	RedirectURI     string `json:"redirect_uri,omitempty"`
+	ExpiresAt       int64  `json:"expires_at,omitempty"`
 }
 
 // oauthPollDTO is one poll outcome: pending (keep polling at the issuer

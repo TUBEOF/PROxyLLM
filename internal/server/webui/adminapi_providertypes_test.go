@@ -21,6 +21,7 @@ package webui
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -33,10 +34,14 @@ func TestProviderTypes_Catalog(t *testing.T) {
 	assertStatus(t, w, http.StatusOK, "catalog")
 	var resp struct {
 		Types []struct {
-			Type        string `json:"type"`
-			Label       string `json:"label"`
-			Description string `json:"description"`
-			Auth        string `json:"auth"`
+			Type              string `json:"type"`
+			Label             string `json:"label"`
+			Description       string `json:"description"`
+			Auth              string `json:"auth"`
+			OAuthFlow         string `json:"oauth_flow"`
+			RiskNotice        string `json:"risk_notice"`
+			RiskNoticeVersion int    `json:"risk_notice_version"`
+			RiskAcknowledged  bool   `json:"risk_acknowledged"`
 		} `json:"types"`
 	}
 	decodeJSON(t, w, &resp)
@@ -44,9 +49,10 @@ func TestProviderTypes_Catalog(t *testing.T) {
 	// ollama-cloud-web is the second (ADR-015 — the same vendor's hosted
 	// web-tool API, a distinct account type from its chat endpoint).
 	// anthropic and ollama-native are native upstream protocols.
-	// ADR-021 removed gemini, openai-responses and openai-decisions.
-	if len(resp.Types) != 7 {
-		t.Fatalf("catalog has %d types, want 7 (custom-openai, anthropic, ollama-cloud, ollama-native, codex-oauth, firecrawl, ollama-cloud-web)", len(resp.Types))
+	// ADR-021 removed gemini, openai-responses and openai-decisions;
+	// ADR-022 added anthropic-oauth.
+	if len(resp.Types) != 8 {
+		t.Fatalf("catalog has %d types, want 8 (custom-openai, anthropic, anthropic-oauth, ollama-cloud, ollama-native, codex-oauth, firecrawl, ollama-cloud-web)", len(resp.Types))
 	}
 	kinds := map[string]string{}
 	for _, pt := range resp.Types {
@@ -57,6 +63,29 @@ func TestProviderTypes_Catalog(t *testing.T) {
 	}
 	if kinds["ollama-cloud-web"] != "api_key" {
 		t.Errorf("ollama-cloud-web auth = %q, want api_key", kinds["ollama-cloud-web"])
+	}
+	if kinds["anthropic-oauth"] != "oauth" {
+		t.Errorf("anthropic-oauth auth = %q, want oauth", kinds["anthropic-oauth"])
+	}
+	var anthFlow, anthNotice string
+	var anthVersion int
+	var anthAck, anthFound bool
+	for _, pt := range resp.Types {
+		if pt.Type == "anthropic-oauth" {
+			anthFound, anthFlow, anthNotice, anthVersion, anthAck = true, pt.OAuthFlow, pt.RiskNotice, pt.RiskNoticeVersion, pt.RiskAcknowledged
+		}
+	}
+	if !anthFound {
+		t.Fatal("anthropic-oauth missing from the catalog")
+	}
+	if anthFlow != "paste" {
+		t.Errorf("anthropic-oauth flow = %q, want paste", anthFlow)
+	}
+	if anthNotice == "" || anthVersion != 1 {
+		t.Errorf("anthropic-oauth risk notice = %q/%d, want text/1", anthNotice, anthVersion)
+	}
+	if anthAck {
+		t.Error("a fresh install must not report the risk notice acknowledged")
 	}
 }
 
@@ -309,4 +338,93 @@ func TestProviderTypeSettings_ReloadFires(t *testing.T) {
 	if e.keys.calls == before {
 		t.Error("settings put must fire the provider reload (live construction)")
 	}
+}
+
+// The risk notice is versioned and acknowledged server-side (ADR-022): the
+// console must see the version it acknowledged, and DELETE must re-open the
+// gate.
+func TestProviderTypes_RiskAckRoundTrip(t *testing.T) {
+	e := newAdminEnv(t)
+	s := e.bootstrap(t, "admin")
+
+	acknowledged := func() bool {
+		w := e.authedCall(t, http.MethodGet, "/api/admin/provider-types", "", s)
+		assertStatus(t, w, http.StatusOK, "catalog")
+		var resp struct {
+			Types []struct {
+				Type             string `json:"type"`
+				RiskAcknowledged bool   `json:"risk_acknowledged"`
+			} `json:"types"`
+		}
+		decodeJSON(t, w, &resp)
+		for _, pt := range resp.Types {
+			if pt.Type == "anthropic-oauth" {
+				return pt.RiskAcknowledged
+			}
+		}
+		t.Fatal("anthropic-oauth missing")
+		return false
+	}
+	if acknowledged() {
+		t.Fatal("fresh install reports the notice acknowledged")
+	}
+
+	w := e.authedCall(t, http.MethodPost, "/api/admin/provider-types/anthropic-oauth/risk-ack", "", s)
+	assertStatus(t, w, http.StatusOK, "acknowledge")
+	if !acknowledged() {
+		t.Error("acknowledgement did not persist")
+	}
+
+	w = e.authedCall(t, http.MethodDelete, "/api/admin/provider-types/anthropic-oauth/risk-ack", "", s)
+	assertStatus(t, w, http.StatusOK, "reset acknowledgement")
+	if acknowledged() {
+		t.Error("DELETE did not re-open the gate")
+	}
+
+	// A type without a notice has nothing to acknowledge; an unknown type is
+	// a 404.
+	w = e.authedCall(t, http.MethodPost, "/api/admin/provider-types/custom-openai/risk-ack", "", s)
+	assertStatus(t, w, http.StatusBadRequest, "type without notice")
+	w = e.authedCall(t, http.MethodPost, "/api/admin/provider-types/no-such/risk-ack", "", s)
+	assertStatus(t, w, http.StatusNotFound, "unknown type")
+}
+
+// The Anthropic flow starts server-side without an issuer round trip: the
+// response carries the authorize URL, the flow id and the redirect URI; the
+// completion path rejects an unknown flow before any exchange.
+func TestOAuth_AnthropicPasteStartAndComplete(t *testing.T) {
+	e := newAdminEnv(t)
+	s := e.bootstrap(t, "admin")
+	w := e.authedCall(t, http.MethodPut, "/api/admin/providers/anth-1",
+		`{"type":"anthropic-oauth","name":"Work","config":{}}`, s)
+	assertStatus(t, w, http.StatusOK, "seed anthropic-oauth provider")
+
+	w = e.authedCall(t, http.MethodPost, "/api/admin/providers/anth-1/oauth/start", "", s)
+	assertStatus(t, w, http.StatusOK, "start paste flow")
+	var start struct {
+		Flow         string `json:"flow"`
+		FlowID       string `json:"flow_id"`
+		AuthorizeURL string `json:"authorize_url"`
+		RedirectURI  string `json:"redirect_uri"`
+	}
+	decodeJSON(t, w, &start)
+	if start.Flow != "paste" || start.FlowID == "" {
+		t.Fatalf("start = %+v, want a paste flow with an id", start)
+	}
+	if !strings.HasPrefix(start.AuthorizeURL, "https://claude.ai/oauth/authorize?") {
+		t.Errorf("authorize_url = %q", start.AuthorizeURL)
+	}
+	if !strings.Contains(start.AuthorizeURL, "client_id="+url.QueryEscape("9d1c250a-e61b-44d9-88ed-5944d1962f5e")) {
+		t.Errorf("authorize_url missing the client id: %q", start.AuthorizeURL)
+	}
+	if start.RedirectURI != "http://localhost:53692/callback" {
+		t.Errorf("redirect_uri = %q", start.RedirectURI)
+	}
+
+	w = e.authedCall(t, http.MethodPost, "/api/admin/providers/anth-1/oauth/complete",
+		`{"flow_id":"bogus","input":"code"}`, s)
+	assertStatus(t, w, http.StatusBadRequest, "unknown flow")
+
+	w = e.authedCall(t, http.MethodPost, "/api/admin/providers/anth-1/oauth/poll", "", s)
+	assertStatus(t, w, http.StatusBadRequest, "poll is not the paste completion path")
 }

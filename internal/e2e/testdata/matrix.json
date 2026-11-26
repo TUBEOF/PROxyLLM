@@ -746,6 +746,12 @@
       "test": "TestMatrix_Meta_ManifestValidatorHasTeeth",
       "status": "green",
       "note": ""
+    },
+    {
+      "id": "upstream__anthropic-oauth",
+      "test": "TestMatrix_Upstream_AnthropicOAuth",
+      "status": "green",
+      "note": ""
     }
   ]
 }

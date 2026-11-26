@@ -44,8 +44,20 @@ type providerTypeDesc struct {
 	// LLM-chain-routable and vice versa.
 	Kind string `json:"kind"`
 	// Auth is how accounts authenticate: "api_key" (form input) or "oauth"
-	// (device-flow sign-in button).
+	// (sign-in button).
 	Auth string `json:"auth"`
+	// OAuthFlow names the sign-in flow for Auth == "oauth": "device" (codex)
+	// or "paste" (Anthropic browser + pasted callback, ADR-022). Empty for
+	// api_key types.
+	OAuthFlow string `json:"oauth_flow,omitempty"`
+	// RiskNotice is a warning the console shows before the first sign-in;
+	// RiskNoticeVersion changes when the text changes, so an acknowledgement
+	// of an older text no longer suppresses the warning.
+	RiskNotice        string `json:"risk_notice,omitempty"`
+	RiskNoticeVersion int    `json:"risk_notice_version,omitempty"`
+	// RiskAcknowledged is computed per request from the config KV; it is
+	// never part of the static catalog.
+	RiskAcknowledged bool `json:"risk_acknowledged,omitempty"`
 	// SettingsFields are the per-type shared settings inputs (rendered from
 	// provider_type_settings).
 	SettingsFields []fieldDesc `json:"settings_fields"`
@@ -107,6 +119,24 @@ var providerTypes = []providerTypeDesc{
 		DefaultCapabilities: map[string]bool{"streaming": true, "tools": true, "vision": true, "thinking": true},
 	},
 	{
+		Type:        ProviderTypeAnthropicOAuth,
+		Label:       "Anthropic OAuth (Teams/Enterprise)",
+		Description: "An Anthropic Messages account signed in with an OAuth browser flow. Teams or Enterprise account required — consumer (Pro/Max) OAuth tokens are blocked by Anthropic for third-party use since January 2026.",
+		Kind:        KindLLM,
+		Auth:        "oauth",
+		OAuthFlow:   "paste",
+		RiskNotice: "This provider signs in with an Anthropic account. Only Claude Teams or Enterprise\n" +
+			"workspaces are supported. Consumer subscriptions (Free/Pro/Max) are blocked by\n" +
+			"Anthropic for third-party gateways since January 2026 and using them here violates\n" +
+			"Anthropic's terms — the account can be restricted or banned. Use a Teams/Enterprise\n" +
+			"account you are authorized to connect, and do not use this provider for unattended\n" +
+			"high-volume traffic. Use at your own risk.",
+		RiskNoticeVersion:   1,
+		SettingsFields:      nil,
+		AccountFields:       nil,
+		DefaultCapabilities: map[string]bool{"streaming": true, "tools": true, "vision": true, "thinking": true},
+	},
+	{
 		Type:        ProviderTypeOllamaCloud,
 		Label:       "Ollama Cloud",
 		Description: "The hosted Ollama API at ollama.com via its OpenAI-compatible /v1 endpoint. Multiple API keys = multiple accounts.",
@@ -143,6 +173,7 @@ var providerTypes = []providerTypeDesc{
 		Description: "ChatGPT backend via device-flow sign-in (RFC 8628). Multiple sign-ins = multiple accounts.",
 		Kind:        KindLLM,
 		Auth:        "oauth",
+		OAuthFlow:   "device",
 		SettingsFields: []fieldDesc{
 			{Key: "issuer", Label: "OAuth issuer", Kind: fieldKindURL, Required: true,
 				Hint: "e.g. https://auth.openai.com — the issuer all accounts of this type sign in against"},

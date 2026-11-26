@@ -26,6 +26,7 @@ import (
 	"github.com/tubeof/proxyllm/internal/config"
 	"github.com/tubeof/proxyllm/internal/provider"
 	anthropicprovider "github.com/tubeof/proxyllm/internal/provider/anthropic"
+	"github.com/tubeof/proxyllm/internal/provider/anthropicoauth"
 	"github.com/tubeof/proxyllm/internal/provider/codex"
 	"github.com/tubeof/proxyllm/internal/provider/custom"
 	"github.com/tubeof/proxyllm/internal/provider/ollamacloud"
@@ -41,7 +42,7 @@ import (
 // proxy speaks to it, and BaseURL points at the simulator.
 type upstream struct {
 	ID      string
-	Type    string // custom-openai | anthropic | ollama-native | ollama-cloud | codex-oauth
+	Type    string // custom-openai | anthropic | anthropic-oauth | ollama-native | ollama-cloud | codex-oauth
 	BaseURL string
 	Caps    provider.Capabilities
 }
@@ -198,6 +199,9 @@ func buildMatrixEnv(t *testing.T, emuFactory func(base string) routing.Emulator,
 const (
 	codexOAuthSeedAccess  = "codex-seeded-expired-access"
 	codexOAuthSeedRefresh = "codex-seeded-refresh"
+
+	anthropicOAuthSeedAccess  = "anthropic-seeded-expired-access"
+	anthropicOAuthSeedRefresh = "anthropic-seeded-refresh"
 )
 
 // buildUpstream maps an upstream spec onto the production provider type.
@@ -214,6 +218,25 @@ func buildUpstream(ctx context.Context, u upstream, st *storage.Store) provider.
 		return ollamanative.New(u.ID, u.BaseURL, "", u.Caps)
 	case "ollama-cloud":
 		return ollamacloud.New(u.ID, u.BaseURL, apiKey, u.Caps)
+	case "anthropic-oauth":
+		// Same pre-provisioned-operator shape as codex-oauth: an expired
+		// access token forces one rotation against MockServer (which also
+		// plays the token endpoint) before the Messages request rides.
+		expired := time.Now().Add(-time.Minute).Unix()
+		if err := st.PutProviderTokens(ctx,
+			storage.ProviderToken{ProviderID: u.ID, Kind: anthropicoauth.KindAccessToken, Secret: []byte(anthropicOAuthSeedAccess), ExpiresAt: &expired},
+			storage.ProviderToken{ProviderID: u.ID, Kind: anthropicoauth.KindRefreshToken, Secret: []byte(anthropicOAuthSeedRefresh)},
+		); err != nil {
+			panic("matrix: seed anthropic-oauth tokens: " + err.Error())
+		}
+		authc := anthropicoauth.NewAuthClient(anthropicoauth.AuthConfig{
+			AuthorizeURL: "https://claude.ai/oauth/authorize",
+			TokenURL:     u.BaseURL + "/oauth/token",
+			Store:        st,
+			ProviderID:   u.ID,
+		})
+		return anthropicoauth.New(u.ID, u.BaseURL, authc, u.Caps)
+
 	case "codex-oauth":
 		// The account is pre-provisioned as a previous operator login: an
 		// EXPIRED access token plus its refresh token, seeded before the
