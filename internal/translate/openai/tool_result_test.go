@@ -63,3 +63,36 @@ func TestChatRequest_AnthropicToolResultBecomesToolMessage(t *testing.T) {
 		t.Errorf("remaining user content = %s %s, want the reminder text", rest.Role, rest.Content)
 	}
 }
+
+func TestChatRequest_MultipleToolResultsOnly(t *testing.T) {
+	req := ir.Request{
+		Model: "m",
+		Messages: []ir.Message{
+			{Role: ir.RoleUser, Parts: []ir.Part{
+				ir.ToolResultPart{ToolUseID: "call_a", Content: []ir.Part{ir.TextPart{Text: "A"}}},
+				ir.ToolResultPart{ToolUseID: "call_b", Content: []ir.Part{ir.TextPart{Text: "B"}}},
+			}},
+		},
+	}
+	out, err := Codec{}.EncodeRequest(req)
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	var wire struct {
+		Messages []struct {
+			Role       string `json:"role"`
+			ToolCallID string `json:"tool_call_id"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(out, &wire); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(wire.Messages) != 2 {
+		t.Fatalf("messages = %d, want 2 tool messages only: %s", len(wire.Messages), out)
+	}
+	for i, want := range []string{"call_a", "call_b"} {
+		if wire.Messages[i].Role != "tool" || wire.Messages[i].ToolCallID != want {
+			t.Errorf("message %d = %+v, want role tool with id %s", i, wire.Messages[i], want)
+		}
+	}
+}

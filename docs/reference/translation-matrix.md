@@ -167,7 +167,10 @@ An Anthropic user message may carry `tool_result` blocks beside text (Claude
 Code appends reminder text in the same turn). A crossing encode splits it: one
 role-`tool` message per result carrying its `tool_call_id` (the chat wire
 requires each `tool_calls` entry to be answered by a `tool` message), then the
-remaining user content as its own message.
+remaining user content as its own message. The split is implemented in the
+OpenAI chat encoder; the Responses and native Ollama encoders do not yet split
+a result that rides in a user-role message, so that crossing still loses it
+(the planned fix is to normalize the split in the shared IR).
 
 ## Response-side mapping
 | Concept | OpenAI Chat | OpenAI Responses | Anthropic |
