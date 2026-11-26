@@ -287,16 +287,6 @@ func pairSurface(cell matrixCell) (path string, schema cellSchema) {
 			return "/api/chat", cellSchema{"ollama_chat_stream.json", jsonLines, "line"}
 		}
 		return "/api/chat", cellSchema{"ollama_chat.json", singleFrame, "document"}
-	case "gemini-native":
-		action := "generateContent"
-		if stream {
-			action = "streamGenerateContent"
-		}
-		// Streaming frames are GenerateContentResponse like the document.
-		if stream {
-			return "/v1beta/models/" + cell.Upstream + ":" + action, cellSchema{"gemini_generate_content.json", sseDataFrames, "frame"}
-		}
-		return "/v1beta/models/" + cell.Upstream + ":" + action, cellSchema{"gemini_generate_content.json", singleFrame, "document"}
 	default:
 		return "", cellSchema{}
 	}

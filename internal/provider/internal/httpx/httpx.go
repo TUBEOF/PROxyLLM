@@ -90,11 +90,6 @@ const (
 
 	// ErrorOllama is `{"error":"message"}` — plain string, no typed codes.
 	ErrorOllama ErrorShape = "ollama"
-
-	// ErrorGemini is the Google API error body
-	// `{"error":{"code":…,"message":…,"status":"PERMISSION_DENIED"}}`; the
-	// status string is the vendor error code.
-	ErrorGemini ErrorShape = "gemini"
 )
 
 // EncodeRequest is the codec-side request encoder every provider uses.
@@ -386,32 +381,6 @@ func (c *Client) Get(ctx context.Context, path string) ([]byte, error) {
 	return body, nil
 }
 
-// PostJSON performs one authenticated POST round trip against a path
-// relative to BaseURL with the given JSON body: Bearer auth + the
-// provider's error shape for non-2xx, the 2xx body as raw bytes — the
-// non-chat surfaces (decision operations such as /v1/systemone) reuse the
-// provider's transport and credential handling. Transport failures return
-// as-is.
-func (c *Client) PostJSON(ctx context.Context, path string, body []byte) ([]byte, error) {
-	httpReq, err := c.newRequestTo(ctx, path, false, body)
-	if err != nil {
-		return nil, err
-	}
-	resp, err := c.HTTP.Do(httpReq)
-	if err != nil {
-		return nil, err // transport failure: no UpstreamError (tier 1)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, c.mapError(resp)
-	}
-	raw, err := readAllLimited(resp.Body, maxResponseBodyBytes)
-	if err != nil {
-		return nil, fmt.Errorf("httpx: read response body: %w", err)
-	}
-	return raw, nil
-}
-
 // newRequest builds the POST request with Bearer auth. The
 // HeaderHook, when present, overlays per-request headers — used by
 // providers whose credentials rotate between dispatches (codex OAuth) and
@@ -482,17 +451,6 @@ func (c *Client) mapError(resp *http.Response) *provider.UpstreamError {
 		}
 		if json.Unmarshal(raw, &w) == nil && w.Error != "" {
 			up.Message = w.Error
-		}
-	case ErrorGemini:
-		var w struct {
-			Error struct {
-				Message string `json:"message"`
-				Status  string `json:"status"`
-			} `json:"error"`
-		}
-		if json.Unmarshal(raw, &w) == nil {
-			up.Message = w.Error.Message
-			up.Type = w.Error.Status
 		}
 	default: // ErrorOpenAI
 		var w struct {

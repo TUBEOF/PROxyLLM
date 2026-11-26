@@ -14,18 +14,13 @@ import (
 
 // detectedCaps blobs for a model with the detected capabilities. The
 // server-tool families stream through provider capability fallbacks, not
-// per-model rows, and default to false for a detected row. Decision is a
-// per-model registry fact (Ollama's /api/show lists "decision" for the
-// System One / Jev class, e.g. clef:cloud) and is recorded as such;
-// routing still gates decision requests on the ACCOUNT's capability
-// (ADR-017), so the flag documents the model rather than opening a route.
+// per-model rows, and default to false for a detected row.
 func detectedCaps(info provider.ModelInfo) json.RawMessage {
 	blob, err := json.Marshal(map[string]any{
 		"streaming":      true,
 		"tools":          info.Tools,
 		"vision":         info.Vision,
 		"thinking":       info.Thinking,
-		"decision":       info.Decision,
 		"web_search":     false,
 		"web_fetch":      false,
 		"code_execution": false,
@@ -93,20 +88,12 @@ func backfillDetected(raw json.RawMessage, info provider.ModelInfo) (json.RawMes
 		return ok
 	}
 	changed := false
-	// Decision predates the eight-key vocabulary: an absent key is filled
-	// once (the historical backfill), because routing does not gate on the
-	// model flag (ADR-017).
-	if _, stated := blob["decision"]; !stated && !isPinned("decision") {
-		blob["decision"] = info.Decision
-		changed = true
-	}
 	// Capabilities the row already classifies: upgrade a stale false to a
 	// detected true. Missing keys stay unknown; true stays true.
 	for key, detected := range map[string]bool{
 		"tools":    info.Tools,
 		"vision":   info.Vision,
 		"thinking": info.Thinking,
-		"decision": info.Decision,
 	} {
 		if !detected || isPinned(key) {
 			continue

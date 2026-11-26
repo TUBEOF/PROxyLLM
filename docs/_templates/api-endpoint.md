@@ -1,8 +1,7 @@
 # API endpoint template
 
 A section for `docs/api/<surface>.md` — one block per endpoint. Existing
-examples: `docs/api/openai.md`, `docs/api/anthropic.md`, `docs/api/admin.md`,
-`docs/api/decisions.md`. Endpoint shapes follow `docs/api/README.md`'s shared
+examples: `docs/api/openai.md`, `docs/api/anthropic.md`, `docs/api/admin.md`. Endpoint shapes follow `docs/api/README.md`'s shared
 conventions (auth, errors, streaming); link to them instead of restating.
 
 Delete this header and the skeleton you do not fill.

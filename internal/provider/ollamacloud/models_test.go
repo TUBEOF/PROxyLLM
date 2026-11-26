@@ -119,18 +119,10 @@ func TestListModels_EnrichesContextAndCapabilities(t *testing.T) {
 	if !got[0].Thinking || !got[0].Tools || !got[0].Vision {
 		t.Errorf("model 1 capabilities = thinking:%v tools:%v vision:%v, want all true", got[0].Thinking, got[0].Tools, got[0].Vision)
 	}
-	// The chat model's registry list carries no "decision": the flag stays
-	// false — never inferred from the account's capability set.
-	if got[0].Decision {
-		t.Errorf("model 1 Decision = true; the registry does not list it")
-	}
-	// clef:cloud declares "decision" (and only decision+vision): the
-	// per-model fact the sync persists into the row's capabilities.
+	// clef:cloud declares "decision" and "vision"; the decision surface is
+	// removed (ADR-021), so only vision maps to a detected fact.
 	if got[1].Name != "clef:cloud" {
 		t.Fatalf("model 2 name = %q", got[1].Name)
-	}
-	if !got[1].Decision {
-		t.Errorf("model 2 Decision = false, want true (registry capabilities include \"decision\")")
 	}
 	if got[1].ContextLength != 65536 {
 		t.Errorf("model 2 ContextLength = %d, want 65536", got[1].ContextLength)
@@ -143,7 +135,7 @@ func TestListModels_EnrichesContextAndCapabilities(t *testing.T) {
 		t.Fatalf("model 3 name = %q", got[2].Name)
 	}
 	// Review Focus 1: a failed /api/show probe imports with zero facts.
-	if got[2].ContextLength != 0 || got[2].Thinking || got[2].Tools || got[2].Vision || got[2].Decision {
+	if got[2].ContextLength != 0 || got[2].Thinking || got[2].Tools || got[2].Vision {
 		t.Errorf("model 3 must carry zero facts after a failed probe: %+v", got[2])
 	}
 }

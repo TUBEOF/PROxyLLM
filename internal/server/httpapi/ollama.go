@@ -19,7 +19,7 @@ import (
 // ollamaErrorWriter answers Ollama's {"error":"..."} shape.
 func ollamaErrorWriter() errorWriter {
 	return errorWriter{
-		write:          writeSystemOneError,
+		write:          writeSimpleError,
 		overloadStatus: http.StatusServiceUnavailable,
 	}
 }
@@ -149,7 +149,7 @@ func (a *api) streamOllama(w http.ResponseWriter, r *http.Request, keyID string,
 func (a *api) handleOllamaTags(w http.ResponseWriter, r *http.Request) {
 	models, err := a.store.ListModels(r.Context())
 	if err != nil {
-		writeSystemOneError(w, http.StatusInternalServerError, "", "model list unavailable")
+		writeSimpleError(w, http.StatusInternalServerError, "", "model list unavailable")
 		return
 	}
 	type tag struct {

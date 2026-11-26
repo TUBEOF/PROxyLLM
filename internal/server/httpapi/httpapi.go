@@ -119,18 +119,10 @@ func New(p Params) *API {
 	mux.HandleFunc("GET /v1/responses", a.handleResponsesWS)
 	mux.HandleFunc("POST /v1/messages", a.handleMessages)
 	mux.HandleFunc("POST /v1/messages/count_tokens", a.handleCountTokens)
-	// Decision surfaces (decision models): the systemone (Jev) and the
-	// OpenAI Decisions shapes, both translated through the IR.
-	mux.HandleFunc("POST /v1/systemone", a.handleSystemOne)
-	mux.HandleFunc("POST /v1/decisions", a.handleDecisions)
 	mux.HandleFunc("GET /v1/models", a.handleModels)
 	// Native Ollama client surface (mounted outside /v1 by the server).
 	mux.HandleFunc("POST /api/chat", a.handleOllamaChat)
 	mux.HandleFunc("GET /api/tags", a.handleOllamaTags)
-	// The Gemini path convention carries the action inside a path segment
-	// ("{model}:generateContent"), which a ServeMux wildcard cannot match —
-	// the subtree pattern dispatches, the handler parses the segment.
-	mux.HandleFunc("POST /v1beta/", a.handleGemini)
 	return &API{Handler: mux, a: a}
 }
 

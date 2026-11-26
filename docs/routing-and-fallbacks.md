@@ -113,7 +113,7 @@ missing one?**
 
 | Capability | Unknown means | Why |
 |---|---|---|
-| `streaming`, `tools`, `thinking`, `web_search`, `web_fetch`, `code_execution`, `decision` | not a case — a provider type's defaults, overlaid by the operator's pins, declare the set | these are properties of the account's type and its configuration, decidable before anything is dispatched; a missing flag is a fact, and the entry is skipped with a traced reason |
+| `streaming`, `tools`, `thinking`, `web_search`, `web_fetch`, `code_execution` | not a case — a provider type's defaults, overlaid by the operator's pins, declare the set | these are properties of the account's type and its configuration, decidable before anything is dispatched; a missing flag is a fact, and the entry is skipped with a traced reason |
 | `vision` (the model row's learned fact) | **permitted** — only a learned `false` excludes an entry | a row that never formed an opinion is not evidence that the model is blind, and treating it as one would route around every model the sync has not classified |
 
 A candidate is dropped on a declared or learned fact, never on a guess. The
@@ -557,12 +557,10 @@ Policy:
   keeping every operator-set field — so `manual` is a statement about who
   last shaped the row, not a permanent exemption from the sync.
 
-The sync also records what the upstream said about each model — capabilities,
-context window, and whether the model declares the decision surface — into
-the row's blobs, filling only what the operator left empty and never
-overwriting a pin. The row's capability blob — detected, pinned or learned —
-is what the vision gate reads; the decision flag documents the model and does
-not gate decision routing, which is an account capability
+The sync also records what the upstream said about each model — capabilities
+and context window — into the row's blobs, filling only what the operator
+left empty and never overwriting a pin. The row's capability blob — detected,
+pinned or learned — is what the vision gate reads
 ([model compatibility](reference/model-compat.md#capabilities-and-pins)).
 
 Per-run outcomes (added, updated, removed and skipped per account, with the

@@ -62,7 +62,9 @@ test('a model card lists the capabilities it has, and nothing else', async ({ pa
   // A capability the model does NOT have is absent, not struck through: the
   // card is a statement of what the model can do.
   await expect(card).not.toContainText('code_execution');
-  await expect(card).not.toContainText('decision');
+  // The removed decision capability is not rendered even if a row still
+  // carries the legacy flag (ADR-021).
+  await expect(card.locator('.badge').filter({ hasText: 'decision' })).toHaveCount(0);
   // Models are a property of the provider type — the account serving them is
   // routing's business and no longer rides the card.
   await expect(card).not.toContainText('account:');

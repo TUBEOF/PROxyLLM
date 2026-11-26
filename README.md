@@ -1,8 +1,8 @@
 # PROxyLLM
 
-A single-binary LLM proxy in Go. It serves the OpenAI, Anthropic and decision
-protocol families from one endpoint, translates between them, and routes every
-request through operator-defined chains with an observable trail.
+A single-binary LLM proxy in Go. It serves the OpenAI, Anthropic and native
+Ollama protocol families from one endpoint, translates between them, and routes
+every request through operator-defined chains with an observable trail.
 
 [![CI](https://github.com/TUBEOF/PROxyLLM/actions/workflows/ci.yml/badge.svg)](https://github.com/TUBEOF/PROxyLLM/actions/workflows/ci.yml)
 [![Release](https://github.com/TUBEOF/PROxyLLM/actions/workflows/release.yml/badge.svg)](https://github.com/TUBEOF/PROxyLLM/actions/workflows/release.yml)
@@ -17,8 +17,7 @@ request through operator-defined chains with an observable trail.
   `GET /v1/models`
 - **Anthropic-compatible** — `POST /v1/messages`,
   `POST /v1/messages/count_tokens`, `GET /v1/models`
-- **Decision models** — `POST /v1/systemone`, `POST /v1/decisions`: typed
-  questions scored against shared evidence in one non-streaming pass
+- **Ollama native** — `POST /api/chat`, `GET /api/tags`
 
 A canonical intermediate representation sits at the hub, so any client shape
 can reach any upstream: Claude Code works through `ANTHROPIC_BASE_URL` against

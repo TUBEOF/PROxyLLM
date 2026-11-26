@@ -3,8 +3,8 @@
   "info": {
     "title": "PROxyLLM client API",
     "version": "1.24.0",
-    "summary": "OpenAI-compatible, Anthropic-compatible, native Ollama, native Gemini and decision surfaces of one proxy.",
-    "description": "PROxyLLM exposes five client-facing surfaces from one endpoint and translates between them, so any client shape can reach any configured upstream. Every /v1/*, /api/* and /v1beta/* route authenticates with a client key (pk_<prefix>_<secret>). The Responses WebSocket transport (GET /v1/responses upgrade) is not expressible in OpenAPI 3.x; it follows the same request/response shapes as the POST endpoint and is described in docs/api/README.md. The operator-facing admin API (/api/admin/*) is session-authenticated and deliberately not described here; see docs/api/admin.md.",
+    "summary": "OpenAI-compatible, Anthropic-compatible and native Ollama surfaces of one proxy.",
+    "description": "PROxyLLM exposes three client-facing surfaces from one endpoint and translates between them, so any client shape can reach any configured upstream. Every /v1/* and /api/* route authenticates with a client key (pk_<prefix>_<secret>). The Responses WebSocket transport (GET /v1/responses upgrade) is not expressible in OpenAPI 3.x; it follows the same request/response shapes as the POST endpoint and is described in docs/api/README.md. The operator-facing admin API (/api/admin/*) is session-authenticated and deliberately not described here; see docs/api/admin.md.",
     "license": { "name": "MIT", "identifier": "MIT" }
   },
   "servers": [
@@ -14,9 +14,7 @@
   "tags": [
     { "name": "OpenAI-compatible", "description": "Chat Completions and Responses shapes." },
     { "name": "Anthropic-compatible", "description": "Messages shape, what Claude Code speaks." },
-    { "name": "Ollama native", "description": "The native Ollama /api/chat and /api/tags shapes (NDJSON streaming)." },
-    { "name": "Gemini native", "description": "The native Gemini generateContent shapes (SSE streaming)." },
-    { "name": "Decision", "description": "Typed questions scored against shared evidence; non-streaming by contract." }
+    { "name": "Ollama native", "description": "The native Ollama /api/chat and /api/tags shapes (NDJSON streaming)." }
   ],
   "paths": {
     "/v1/chat/completions": {
@@ -210,113 +208,6 @@
             "description": "Model rows.",
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OllamaTags" } } }
           }
-        }
-      }
-    },
-    "/v1beta/models/{model}:generateContent": {
-      "post": {
-        "tags": ["Gemini native"],
-        "summary": "Gemini generateContent (JSON)",
-        "operationId": "geminiGenerateContent",
-        "parameters": [
-          { "name": "model", "in": "path", "required": true, "schema": { "type": "string" }, "description": "The model segment of the URL; a model row ID or an alias." }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": { "$ref": "#/components/schemas/GeminiGenerateContentRequest" }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "A GenerateContentResponse.",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GeminiGenerateContentResponse" } } }
-          },
-          "default": {
-            "description": "Error in the Gemini envelope.",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GeminiErrorBody" } } }
-          }
-        }
-      }
-    },
-    "/v1beta/models/{model}:streamGenerateContent": {
-      "post": {
-        "tags": ["Gemini native"],
-        "summary": "Gemini generateContent (SSE, alt=sse)",
-        "operationId": "geminiStreamGenerateContent",
-        "parameters": [
-          { "name": "model", "in": "path", "required": true, "schema": { "type": "string" } },
-          { "name": "alt", "in": "query", "required": true, "schema": { "type": "string", "const": "sse" }, "description": "Selects the SSE transport; without it the request is not the streaming surface." }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": { "$ref": "#/components/schemas/GeminiGenerateContentRequest" }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "One GenerateContentResponse per `data:` frame.",
-            "content": { "text/event-stream": { "schema": { "$ref": "#/components/schemas/GeminiGenerateContentResponse" } } }
-          },
-          "default": {
-            "description": "Error in the Gemini envelope.",
-            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GeminiErrorBody" } } }
-          }
-        }
-      }
-    },
-    "/v1/systemone": {
-      "post": {
-        "tags": ["Decision"],
-        "summary": "System One / Jev decision call",
-        "description": "Non-streaming by contract. The chain entry must declare the `decision` capability.",
-        "operationId": "createSystemOneDecision",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": { "$ref": "#/components/schemas/SystemOneRequest" }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Answers keyed by question name.",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/SystemOneResponse" } }
-            }
-          },
-          "default": { "$ref": "#/components/responses/SystemOneError" }
-        }
-      }
-    },
-    "/v1/decisions": {
-      "post": {
-        "tags": ["Decision"],
-        "summary": "OpenAI Decisions call",
-        "description": "Non-streaming by contract. The chain entry must declare the `decision` capability.",
-        "operationId": "createDecision",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": { "$ref": "#/components/schemas/DecisionsRequest" }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "An answer per question.",
-            "content": {
-              "application/json": { "schema": { "$ref": "#/components/schemas/DecisionsResponse" } }
-            }
-          },
-          "default": { "$ref": "#/components/responses/OpenAIError" }
         }
       }
     }
@@ -638,213 +529,7 @@
           }
         }
       },
-      "GeminiGenerateContentRequest": {
-        "type": "object",
-        "required": ["contents"],
-        "properties": {
-          "contents": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": ["parts"],
-              "properties": {
-                "role": { "type": "string", "enum": ["user", "model"] },
-                "parts": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "text": { "type": "string" },
-                      "inlineData": { "type": "object" },
-                      "functionCall": { "type": "object" },
-                      "functionResponse": { "type": "object" }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "systemInstruction": { "type": "object", "description": "A role/parts content object." },
-          "tools": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "functionDeclarations": { "type": "array", "items": { "type": "object" } },
-                "googleSearch": { "type": "object", "description": "Server-side web search; may be emulated through a web-tool account." },
-                "urlContext": { "type": "object" }
-              }
-            }
-          },
-          "generationConfig": { "type": "object", "properties": { "temperature": { "type": "number" }, "topP": { "type": "number" }, "maxOutputTokens": { "type": "integer" } }, "additionalProperties": true }
-        },
-        "additionalProperties": true
-      },
-      "GeminiGenerateContentResponse": {
-        "type": "object",
-        "properties": {
-          "candidates": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "content": {
-                  "type": "object",
-                  "properties": {
-                    "role": { "type": "string" },
-                    "parts": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "text": { "type": "string" },
-                          "thought": { "type": "boolean", "description": "true marks a thinking fragment." },
-                          "functionCall": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "args": { "type": "object" } } },
-                          "functionResponse": { "type": "object" }
-                        }
-                      }
-                    }
-                  }
-                },
-                "finishReason": { "type": "string", "description": "STOP|MAX_TOKENS|SAFETY|... per the Gemini wire." },
-                "index": { "type": "integer" }
-              }
-            }
-          },
-          "usageMetadata": {
-            "type": "object",
-            "properties": {
-              "promptTokenCount": { "type": "integer" },
-              "candidatesTokenCount": { "type": "integer" },
-              "thoughtsTokenCount": { "type": "integer" },
-              "totalTokenCount": { "type": "integer" }
-            }
-          },
-          "modelVersion": { "type": "string", "description": "Echoes the model the client asked for." },
-          "responseId": { "type": "string" }
-        }
-      },
-      "GeminiErrorBody": {
-        "type": "object",
-        "required": ["error"],
-        "properties": {
-          "error": {
-            "type": "object",
-            "required": ["code", "message", "status"],
-            "properties": {
-              "code": { "type": "integer", "description": "The HTTP status." },
-              "message": { "type": "string" },
-              "status": { "type": "string", "description": "The Google status enum, e.g. INVALID_ARGUMENT, UNAVAILABLE." }
-            }
-          }
-        }
-      },
-      "SystemOneRequest": {
-        "type": "object",
-        "required": ["model", "state", "questions"],
-        "properties": {
-          "model": { "type": "string" },
-          "state": { "description": "The shared evidence: a nonempty string, or an object/array serialized as JSON text." },
-          "images": { "type": "array", "items": { "type": "string" }, "description": "Bare base64, no data-URL prefix; attaches to every question." },
-          "questions": {
-            "type": "object",
-            "description": "Keyed by question name; the key is the answer's name.",
-            "additionalProperties": {
-              "type": "object",
-              "required": ["type", "instructions"],
-              "properties": {
-                "type": { "type": "string", "enum": ["choice", "noul", "score"] },
-                "instructions": { "type": "string" },
-                "criteria": { "description": "choice: an object of option → description; score: an ascending array of level labels." }
-              }
-            }
-          },
-          "keep_alive": { "description": "Duration string or seconds; systemone only." }
-        }
-      },
-      "SystemOneResponse": {
-        "type": "object",
-        "properties": {
-          "model": { "type": "string" },
-          "answers": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "object",
-              "properties": {
-                "type": { "type": "string" },
-                "choice": { "type": "string" },
-                "noul": { "type": "number" },
-                "score": { "type": "number" },
-                "legend": { "type": "object" },
-                "probabilities": { "type": "object" },
-                "confidence": { "type": "number" }
-              }
-            }
-          },
-          "usage": { "$ref": "#/components/schemas/DecisionUsage" }
-        }
-      },
-      "DecisionsRequest": {
-        "type": "object",
-        "required": ["model", "input", "questions"],
-        "properties": {
-          "model": { "type": "string" },
-          "input": { "description": "The shared evidence." },
-          "images": { "type": "array", "items": { "type": "string" }, "description": "Data URLs." },
-          "questions": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": ["type", "name", "instructions"],
-              "properties": {
-                "type": { "type": "string", "enum": ["predicate", "choice", "score"] },
-                "name": { "type": "string" },
-                "instructions": { "type": "string" },
-                "choices": {
-                  "type": "array",
-                  "items": { "type": "object", "required": ["value"], "properties": { "value": { "type": "string" }, "description": { "type": "string" } } }
-                },
-                "levels": {
-                  "type": "array",
-                  "items": { "type": "object", "required": ["label"], "properties": { "label": { "type": "string" }, "description": { "type": "string" } } }
-                }
-              }
-            }
-          }
-        }
-      },
-      "DecisionsResponse": {
-        "type": "object",
-        "properties": {
-          "model": { "type": "string" },
-          "answers": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "type": { "type": "string" },
-                "name": { "type": "string" },
-                "choice": { "type": "string" },
-                "score": { "type": "number" },
-                "probabilities": {
-                  "type": "array",
-                  "items": { "type": "object", "properties": { "value": { "type": "string" }, "probability": { "type": "number" } } }
-                },
-                "confidence": { "type": "number" }
-              }
-            }
-          },
-          "usage": { "$ref": "#/components/schemas/DecisionUsage" }
-        }
-      },
-      "DecisionUsage": {
-        "type": "object",
-        "description": "Omitted when the upstream reports none — never fabricated zeros.",
-        "properties": {
-          "input_tokens": { "type": "integer" },
-          "output_tokens": { "type": "integer" }
-        }
-      },
+
       "OpenAIErrorBody": {
         "type": "object",
         "required": ["error"],
@@ -874,11 +559,6 @@
             }
           }
         }
-      },
-      "SystemOneErrorBody": {
-        "type": "object",
-        "required": ["error"],
-        "properties": { "error": { "type": "string" } }
       }
     }
   }

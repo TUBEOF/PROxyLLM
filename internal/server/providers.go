@@ -422,8 +422,6 @@ func capsFromConfig(cfg webui.ProviderConfig, typ string) provider.Capabilities 
 			caps.CodeExecution = on
 		case "thinking":
 			caps.Thinking = on
-		case "decision":
-			caps.Decision = on
 		}
 	}
 	return caps
@@ -453,10 +451,7 @@ func defaultCaps(typ string) provider.Capabilities {
 		// web_tool accounts are emulator backends, not chat providers.
 		return provider.Capabilities{}
 	case webui.ProviderTypeOllamaCloud:
-		// The hosted API serves the decision surface (System One / Jev at
-		// /v1/systemone — clef:cloud) with the same account credential the
-		// chat path uses, so the flag is on by default.
-		return provider.Capabilities{Streaming: true, Tools: true, Decision: true}
+		return provider.Capabilities{Streaming: true, Tools: true}
 	default:
 		// custom-openai: a conservative, honest default — streaming and
 		// tools are the OpenAI-compat baseline; the operator pins

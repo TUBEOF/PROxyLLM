@@ -223,12 +223,6 @@ func TestMatrix_ChatClient_UpstreamOverloaded529(t *testing.T) {
 	}
 }
 
-// 12. Fault: the upstream stream carries a malformed SSE frame. MockServer
-// appends its malformed chunk after the terminal sentinel for sentinel-
-// terminated wires, which those decoders never read — so the fault rides a
-// GEMINI upstream (no sentinel) served as a raw SSE body with the broken frame
-// before the terminal. The client must see the partial answer and a terminal
-// error, never a clean success.
 // 13. Fault: MockServer's stateful request-count quota. The first request is
 // served; the next one over the limit gets 429 with Retry-After: 60. That
 // reset exceeds the proxy's backoff ceiling, so the same provider is not

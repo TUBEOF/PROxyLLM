@@ -32,7 +32,7 @@ import { IconCheck, IconClock, IconClose, IconDelta, IconPlus, IconRefresh } fro
 // nothing about the model. Block layout throughout — no variable-length
 // text in a wrapping line above other content (the v1.0.1/v1.0.2 lesson).
 
-const CAPABILITY_FLAGS = ['streaming', 'tools', 'vision', 'thinking', 'web_search', 'web_fetch', 'code_execution', 'decision'] as const;
+const CAPABILITY_FLAGS = ['streaming', 'tools', 'vision', 'thinking', 'web_search', 'web_fetch', 'code_execution'] as const;
 
 function capsFromRaw(raw: unknown): Record<string, boolean> {
   const out: Record<string, boolean> = {};

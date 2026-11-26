@@ -112,13 +112,6 @@ type Capabilities struct {
 
 	// Thinking indicates extended-thinking support with signatures.
 	Thinking bool
-
-	// Decision indicates the decision surface (System One / Jev and the
-	// OpenAI Decisions API): typed questions scored against shared
-	// evidence in one non-streaming pass. Routing filters decision
-	// requests on this flag; the provider must also implement Decider
-	// for it to mean anything.
-	Decision bool
 }
 
 // Registry resolves provider IDs to implementations. Register is part of
@@ -174,17 +167,11 @@ type ModelInfo struct {
 	// /api/show model_info context_length is the source consulted).
 	ContextLength int
 
-	// Thinking / Tools / Vision / Decision are the model's detected
-	// capabilities; false = undetected or absent.
+	// Thinking / Tools / Vision are the model's detected capabilities;
+	// false = undetected or absent.
 	Thinking bool
 	Tools    bool
 	Vision   bool
-
-	// Decision is the model's decision-surface capability (System One /
-	// Jev, the OpenAI Decisions API): the registry declares it per model,
-	// so a model row can carry the fact even though routing gates decision
-	// requests on the ACCOUNT's capability (ADR-017).
-	Decision bool
 }
 
 // ModelLister is the optional model-discovery surface a provider exposes
@@ -208,19 +195,6 @@ type ModelLister interface {
 // fall back to the model-level summary the caller renders.
 type RequestPreviewer interface {
 	PreviewRequest(req ir.Request) ([]byte, error)
-}
-
-// Decider is the optional decision surface (decision models — System One /
-// Jev, the OpenAI Decisions API): a provider implementing it can answer IR
-// decision requests. Providers without it never serve a decision route —
-// the router's capability filter gates on Capabilities.Decision and the
-// executor's decision walk skips implementations that do not satisfy this
-// interface.
-type Decider interface {
-	// Decide performs one non-streaming decision round trip. Errors are
-	// classified like any upstream failure (UpstreamError status/body
-	// tiers); there is no streaming variant.
-	Decide(ctx context.Context, req ir.DecisionRequest) (ir.DecisionResponse, error)
 }
 
 // NewRegistry returns the default registry with no providers registered.

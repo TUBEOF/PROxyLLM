@@ -89,8 +89,7 @@ model. Two provenances exist, shown as a badge:
 
 - **synced** — imported and maintained by the model sync. Upstream
   additions appear, upstream removals disappear, and detected facts
-  (capabilities, context window, and whether the model declares the
-  decision surface) are filled in.
+  (capabilities and context window) are filled in.
 - **manual** — written by hand. The sync never touches or deletes it.
 
 Saving a row in the console makes it manual. The sync then leaves it alone

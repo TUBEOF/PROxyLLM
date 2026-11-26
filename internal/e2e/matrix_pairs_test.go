@@ -11,7 +11,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
 	"testing"
 
@@ -35,10 +34,7 @@ func pairUpstream(cell matrixCell) upstream {
 	return upstream{ID: cell.Upstream, Type: typ}
 }
 
-// pairWire names the MockServer provider and path for one upstream. The
-// Gemini path convention carries the model in the segment and the mode in
-// the action; MockServer matches the path without the query string, so the
-// streaming expectation names it bare.
+// pairWire names the MockServer provider and path for one upstream.
 func pairWire(upstreamID string, stream bool) (provider, path string) {
 	switch upstreamID {
 	case "openai-chat", "ollama-cloud":
@@ -81,7 +77,6 @@ func TestMatrix_ToolPairs(t *testing.T) {
 				"OPENAI_RESPONSES": "tool_calls",
 				"ANTHROPIC":        "tool_use",
 				"OLLAMA":           "",
-				"GEMINI":           "tool_calls", // the wire stops a call with STOP; MockServer maps it
 			}[provider]
 			completion := map[string]any{
 				"streaming": cell.Mode == "stream",
@@ -251,8 +246,6 @@ func drivePairClient(t *testing.T, e *matrixEnv, cell matrixCell) pairResult {
 		return driveAnthropicClient(t, e, cell.Upstream, streaming, withTools)
 	case "ollama-native":
 		return driveOllamaClient(t, e, cell.Upstream, streaming, withTools)
-	case "gemini-native":
-		return driveGeminiClient(t, e, cell.Upstream, streaming, withTools)
 	default:
 		t.Fatalf("no driver for client %q", cell.Client)
 		return pairResult{}
@@ -591,110 +584,6 @@ func driveOllamaClient(t *testing.T, e *matrixEnv, model string, streaming, with
 	}
 	if err := sc.Err(); err != nil {
 		t.Fatalf("read ollama stream: %v", err)
-	}
-	return pairResult{text: text.String(), toolName: name, toolArgs: args}
-}
-
-// --- gemini-native (raw HTTP) ---
-
-// geminiPost sends one raw Gemini-native generateContent request to the proxy
-// (the client surface), authenticated with the test key, and returns the
-// response.
-func (e *matrixEnv) geminiPost(t *testing.T, path, body string) *http.Response {
-	t.Helper()
-	req, err := http.NewRequest(http.MethodPost, e.srv.URL+path, strings.NewReader(body))
-	if err != nil {
-		t.Fatalf("build gemini request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+e.key)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("gemini request: %v", err)
-	}
-	t.Cleanup(func() { _ = resp.Body.Close() })
-	return resp
-}
-
-// driveGeminiClient performs the cell's request on the native Gemini client
-// surface (/v1beta/models/{model}:generateContent, :streamGenerateContent?alt=sse)
-// and reports the text or the functionCall part, as the official wire carries.
-func driveGeminiClient(t *testing.T, e *matrixEnv, model string, streaming, withTools bool) pairResult {
-	t.Helper()
-	action := "generateContent"
-	if streaming {
-		action = "streamGenerateContent?alt=sse"
-	}
-	body := map[string]any{
-		"contents": []map[string]any{{
-			"role": "user", "parts": []map[string]any{{"text": "hi"}},
-		}},
-	}
-	if withTools {
-		body["tools"] = []map[string]any{{
-			"functionDeclarations": []map[string]any{{
-				"name":       toolName,
-				"parameters": map[string]any{"type": "object", "properties": map[string]any{"city": map[string]any{"type": "string"}}},
-			}},
-		}}
-	}
-	raw, err := json.Marshal(body)
-	if err != nil {
-		t.Fatalf("marshal gemini request: %v", err)
-	}
-	resp := e.geminiPost(t, "/v1beta/models/"+model+":"+action, string(raw))
-	if resp.StatusCode != 200 {
-		t.Fatalf("gemini request status = %d, want 200", resp.StatusCode)
-	}
-
-	var text strings.Builder
-	var name, args string
-	parseGeminiFrame := func(frame []byte) {
-		var chunk struct {
-			Candidates []struct {
-				Content struct {
-					Parts []struct {
-						Text         string `json:"text"`
-						FunctionCall *struct {
-							Name string          `json:"name"`
-							Args json.RawMessage `json:"args"`
-						} `json:"functionCall"`
-					} `json:"parts"`
-				} `json:"content"`
-			} `json:"candidates"`
-		}
-		if json.Unmarshal(frame, &chunk) != nil {
-			return
-		}
-		for _, cand := range chunk.Candidates {
-			for _, p := range cand.Content.Parts {
-				text.WriteString(p.Text)
-				if p.FunctionCall != nil {
-					name = p.FunctionCall.Name
-					args = string(p.FunctionCall.Args)
-				}
-			}
-		}
-	}
-
-	if streaming {
-		sc := bufio.NewScanner(resp.Body)
-		for sc.Scan() {
-			line := sc.Text()
-			if !strings.HasPrefix(line, "data: ") {
-				continue
-			}
-			parseGeminiFrame([]byte(strings.TrimPrefix(line, "data: ")))
-		}
-		if err := sc.Err(); err != nil {
-			t.Fatalf("read gemini stream: %v", err)
-		}
-	} else {
-		var frame json.RawMessage
-		if err := json.NewDecoder(resp.Body).Decode(&frame); err != nil {
-			t.Fatalf("decode gemini response: %v", err)
-		}
-		parseGeminiFrame(frame)
 	}
 	return pairResult{text: text.String(), toolName: name, toolArgs: args}
 }

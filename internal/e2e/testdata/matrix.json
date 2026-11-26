@@ -4,8 +4,7 @@
     "openai-chat",
     "openai-responses",
     "anthropic-messages",
-    "ollama-native",
-    "gemini-native"
+    "ollama-native"
   ],
   "upstreams": [
     "openai-chat",
@@ -597,150 +596,6 @@
       "mode": "stream",
       "status": "green",
       "note": ""
-    },
-    {
-      "id": "gemini-native__openai-chat__text__nonstream",
-      "client": "gemini-native",
-      "upstream": "openai-chat",
-      "feature": "text",
-      "mode": "nonstream",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "gemini-native__openai-chat__text__stream",
-      "client": "gemini-native",
-      "upstream": "openai-chat",
-      "feature": "text",
-      "mode": "stream",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "gemini-native__openai-chat__tools__nonstream",
-      "client": "gemini-native",
-      "upstream": "openai-chat",
-      "feature": "tools",
-      "mode": "nonstream",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "gemini-native__openai-chat__tools__stream",
-      "client": "gemini-native",
-      "upstream": "openai-chat",
-      "feature": "tools",
-      "mode": "stream",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "gemini-native__anthropic-messages__text__nonstream",
-      "client": "gemini-native",
-      "upstream": "anthropic-messages",
-      "feature": "text",
-      "mode": "nonstream",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "gemini-native__anthropic-messages__text__stream",
-      "client": "gemini-native",
-      "upstream": "anthropic-messages",
-      "feature": "text",
-      "mode": "stream",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "gemini-native__anthropic-messages__tools__nonstream",
-      "client": "gemini-native",
-      "upstream": "anthropic-messages",
-      "feature": "tools",
-      "mode": "nonstream",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "gemini-native__anthropic-messages__tools__stream",
-      "client": "gemini-native",
-      "upstream": "anthropic-messages",
-      "feature": "tools",
-      "mode": "stream",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "gemini-native__ollama-native__text__nonstream",
-      "client": "gemini-native",
-      "upstream": "ollama-native",
-      "feature": "text",
-      "mode": "nonstream",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "gemini-native__ollama-native__text__stream",
-      "client": "gemini-native",
-      "upstream": "ollama-native",
-      "feature": "text",
-      "mode": "stream",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "gemini-native__ollama-native__tools__nonstream",
-      "client": "gemini-native",
-      "upstream": "ollama-native",
-      "feature": "tools",
-      "mode": "nonstream",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "gemini-native__ollama-native__tools__stream",
-      "client": "gemini-native",
-      "upstream": "ollama-native",
-      "feature": "tools",
-      "mode": "stream",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "gemini-native__ollama-cloud__text__nonstream",
-      "client": "gemini-native",
-      "upstream": "ollama-cloud",
-      "feature": "text",
-      "mode": "nonstream",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "gemini-native__ollama-cloud__text__stream",
-      "client": "gemini-native",
-      "upstream": "ollama-cloud",
-      "feature": "text",
-      "mode": "stream",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "gemini-native__ollama-cloud__tools__nonstream",
-      "client": "gemini-native",
-      "upstream": "ollama-cloud",
-      "feature": "tools",
-      "mode": "nonstream",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "gemini-native__ollama-cloud__tools__stream",
-      "client": "gemini-native",
-      "upstream": "ollama-cloud",
-      "feature": "tools",
-      "mode": "stream",
-      "status": "green",
-      "note": ""
     }
   ],
   "extras": [
@@ -817,12 +672,6 @@
     {
       "id": "upstream__codex-oauth",
       "test": "TestMatrix_Upstream_CodexOauth",
-      "status": "green",
-      "note": ""
-    },
-    {
-      "id": "decision__systemone",
-      "test": "TestMatrix_Decision_SystemOne",
       "status": "green",
       "note": ""
     },
