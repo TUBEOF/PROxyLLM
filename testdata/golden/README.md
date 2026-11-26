@@ -40,3 +40,18 @@ read. (`_templates/` is not a surface: it holds the empty
 The fixtures are the specification, not a record of what the code does. When a
 reference changes, the fixture and its `.meta.json` change first — a fixture that
 encodes a shape the reference no longer describes is a defect.
+## Regenerating derived expectations (GOLDEN_UPDATE, ADR-028)
+
+Only **derived** files end in `.expected.json`; their sources are the
+transcribed request/response fixtures. To regenerate a derived expectation
+after re-reading the vendor documentation:
+
+```bash
+GOLDEN_UPDATE=1 go test ./internal/translate/openai -run TestStream
+git diff testdata/golden/     # this diff is the review artifact
+```
+
+The helper refuses to run with `GOLDEN_UPDATE=1` when `CI` is set, and it
+refuses any path that is not a `.expected.json` file. Without
+`GOLDEN_UPDATE=1` a mismatch fails with a diff — CI never regenerates what it
+checks.
