@@ -1,0 +1,52 @@
+# Contributor stack (ADR-025 G6): the proxy from source, a MockServer, and a
+# Claude Code container with a prepared settings file. The client service is
+# opt-in (`--profile cli`) because it installs the CLI at start.
+#
+#   PROXYLLM_DEV_KEY=pk_... docker compose -f docker/dev-compose.yaml up --build
+#
+# Create the key in the console (http://localhost:8080) after bootstrap, then
+# export it. The proxy's data directory is a named volume.
+name: proxyllm-dev
+
+services:
+  proxy:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      PROXYLLM_SERVER_ADDR: ":8080"
+      PROXYLLM_STORAGE_PATH: /data/proxyllm.db
+      # Development-only master key. NEVER use this value outside this stack.
+      PROXYLLM_MASTER_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+      PROXYLLM_LOG_LEVEL: debug
+    # Ephemeral on purpose: the image runs as a non-root user and a named
+    # volume would start root-owned. Re-bootstrap the admin after a recreate.
+    healthcheck:
+      test: ["CMD", "/proxyllm", "-healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mockserver:
+    image: mockserver/mockserver:5.15.0
+    ports:
+      - "1080:1080"
+    environment:
+      MOCKSERVER_LOG_LEVEL: WARN
+
+  claude-code:
+    profiles: ["cli"]
+    image: node:26-bookworm
+    depends_on:
+      proxy:
+        condition: service_healthy
+    environment:
+      ANTHROPIC_BASE_URL: "http://proxy:8080"
+      ANTHROPIC_AUTH_TOKEN: "${PROXYLLM_DEV_KEY:?set PROXYLLM_DEV_KEY to a pk_ key from the console}"
+      ANTHROPIC_MODEL: "${PROXYLLM_DEV_MODEL:-}"
+      CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: "1"
+    volumes:
+      - ./dev-claude-settings.json:/root/.claude/settings.json:ro
+    command: ["sh", "-lc", "npm install -g @anthropic-ai/claude-code >/dev/null 2>&1 && exec claude"]
