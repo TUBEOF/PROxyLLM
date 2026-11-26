@@ -1,0 +1,7 @@
+{
+  "fixture": "openai_chat_completion.official.json",
+  "source": "https://github.com/openai/openai-openapi/blob/abe304d1e5f1264fd3a11499ab57c0d17f5c1df3/openapi.yaml",
+  "commit": "abe304d1e5f1264fd3a11499ab57c0d17f5c1df3",
+  "accessed": "2026-11-26",
+  "notes": "components.schemas.CreateChatCompletionResponse plus the 14 schemas it references, with #/components/schemas refs rewritten to #/$defs. Extracted mechanically from the pinned document; no field was added by hand."
+}
