@@ -60,6 +60,12 @@ make check-tests              # guards the suite against erosion
 go test ./internal/routing -run TestResolveChain -v   # one package, one test
 ```
 
+A contributor stack with no Go toolchain:
+`PROXYLLM_DEV_KEY=pk_... docker compose -f docker/dev-compose.yaml up --build`
+starts the proxy from source plus a MockServer; `--profile cli` adds a Claude
+Code container (it installs the CLI at start). The data directory is ephemeral
+by design, so re-bootstrap after a recreate (ADR-025 G6).
+
 The `installer` CI job runs `scripts/test-install.sh` against a freshly built
 proxy and a temporary `HOME` (ADR-024); the lint job runs ShellCheck over
 `scripts/*.sh` with a pinned release. Run the same test locally with
