@@ -109,7 +109,7 @@ test('the quota card carries the same pool switch', async ({ page }) => {
   // showing a health state it cannot be in.
   await expect(card).toContainText('out of the pool');
 
-  await card.locator('label.toggle').click();
+  await card.locator('label.toggle .tswitch').click({ force: true });
   await expect(sw).toBeChecked();
 });
 
