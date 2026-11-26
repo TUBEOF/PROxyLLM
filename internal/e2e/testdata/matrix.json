@@ -752,6 +752,24 @@
       "test": "TestMatrix_Upstream_AnthropicOAuth",
       "status": "green",
       "note": ""
+    },
+    {
+      "id": "gap__first-frame-latency",
+      "test": "TestMatrix_FirstFrameLatency",
+      "status": "green",
+      "note": ""
+    },
+    {
+      "id": "gap__disconnect-no-leak",
+      "test": "TestMatrix_DisconnectNoGoroutineLeak",
+      "status": "green",
+      "note": ""
+    },
+    {
+      "id": "gap__header-preservation",
+      "test": "TestMatrix_HeaderPreservation",
+      "status": "green",
+      "note": ""
     }
   ]
 }

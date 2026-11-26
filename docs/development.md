@@ -65,6 +65,11 @@ proxy and a temporary `HOME` (ADR-024); the lint job runs ShellCheck over
 `scripts/*.sh` with a pinned release. Run the same test locally with
 `bash scripts/test-install.sh`.
 
+Golden expectations: `GOLDEN_UPDATE=1 go test ./internal/translate/...`
+rewrites **derived** `.expected.json` files locally only; with `CI` set the
+helper refuses, and a source fixture (anything that is not `.expected.json`)
+is never written (ADR-028). The resulting diff is the review artifact.
+
 `make check-tests` compares against the base branch (`-base origin/main` by
 default) and fails on a deleted test, a weakened one, a new skip or a
 tautology. It reports — without failing — assertions that merely re-encode

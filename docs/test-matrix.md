@@ -207,3 +207,14 @@ batch/status, Anthropic admin/usage APIs, Ollama usage/balance endpoints.
   same.
 - `TestPerfBudgets` is a pre-existing local failure on some machines and is
   unrelated to the matrix.
+
+## Test-hardening cells (G1–G7)
+
+| Gap | Where | What it pins |
+|---|---|---|
+| G1 | `internal/translate/testutil` + `testdata/golden/README.md` | `GOLDEN_UPDATE=1` regenerates only derived `.expected.json` files locally; with `CI` set the helper refuses, and a source fixture is never written. |
+| G4 | `TestMatrix_HeaderPreservation` | The client's `Authorization`/`x-api-key` never reach the upstream; allow-listed `x-stainless-*` does; hop-by-hop `Connection`/`TE`/`Upgrade` and the headers named by `Connection` do not. |
+| G5 | `TestMatrix_FirstFrameLatency`, `TestMatrix_DisconnectNoGoroutineLeak` | The first streamed frame arrives within 250 ms (upstream first token 100 ms), so the proxy relays rather than buffers; a client disconnect returns the goroutine count to its baseline within 5 s. |
+
+These extras carry the same manifest rule as every other cell: a green cell
+names a test that exists, and a skip carries a reason.

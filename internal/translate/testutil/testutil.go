@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -374,4 +375,58 @@ func assertUsageEqual(t *testing.T, rel string, i int, want, got ir.Usage) {
 	if !reflect.DeepEqual(want, got) {
 		t.Errorf("%s: event %d: usage = %+v, want %+v", rel, i, got, want)
 	}
+}
+
+// UpdateMode reports whether derived expectations may be rewritten. It is
+// opt-in (GOLDEN_UPDATE=1) and refuses under CI (ADR-028): CI must fail with
+// a diff, never regenerate the thing it is checking.
+func UpdateMode(t *testing.T) bool {
+	t.Helper()
+	if !updateRequested() {
+		return false
+	}
+	if err := updateGuard(); err != nil {
+		t.Fatal(err)
+	}
+	return true
+}
+
+func updateRequested() bool { return os.Getenv("GOLDEN_UPDATE") == "1" }
+
+func updateGuard() error {
+	if v := os.Getenv("CI"); v != "" && v != "0" && v != "false" {
+		return fmt.Errorf("GOLDEN_UPDATE=1 is refused when CI=%s — regenerate locally and review the diff", v)
+	}
+	return nil
+}
+
+// expectedPathGuard keeps regeneration to derived files.
+func expectedPathGuard(rel string) error {
+	if !strings.HasSuffix(rel, ".expected.json") {
+		return fmt.Errorf("only derived *.expected.json files may be regenerated, not %s", rel)
+	}
+	return nil
+}
+
+// WriteExpected writes a DERIVED expectation (a *.expected.json file) when
+// update mode is on. Source fixtures are never written: transcribing them
+// from the vendor documentation is a human act (ADR-006/028).
+func WriteExpected(t *testing.T, rel string, v any) {
+	t.Helper()
+	if !UpdateMode(t) {
+		t.Fatalf("WriteExpected(%s) called outside GOLDEN_UPDATE=1", rel)
+	}
+	if err := expectedPathGuard(rel); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		t.Fatalf("encode expected %s: %v", rel, err)
+	}
+	raw = append(raw, '\n')
+	path := filepath.Join(goldenRoot(), filepath.FromSlash(rel))
+	if err := os.WriteFile(path, raw, 0o644); err != nil { //nolint:gosec // a repository fixture path supplied by a test
+		t.Fatalf("write expected %s: %v", rel, err)
+	}
+	t.Logf("updated %s (review the diff; CI never regenerates)", rel)
 }
