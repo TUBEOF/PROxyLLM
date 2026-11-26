@@ -13,6 +13,7 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -58,6 +59,10 @@ type matrixEnv struct {
 	health  *routing.HealthTracker
 	openai  openaiclient.Client
 	anthrop anthropic.Client
+	// handler is the fully assembled proxy (auth + wire capture + API), so a
+	// cell can stand up a second transport (the h2 cell does) over the same
+	// stack.
+	handler http.Handler
 	// wire tees the client-facing response bytes at the proxy boundary (the
 	// schema validation reads them; see matrix_schema_test.go).
 	wire *wireCapture
@@ -173,12 +178,14 @@ func buildMatrixEnv(t *testing.T, emuFactory func(base string) routing.Emulator,
 	t.Setenv("ANTHROPIC_BASE_URL", "")
 
 	wire := &wireCapture{}
-	srv := httptest.NewServer(auth.NewMiddleware(st).Wrap(wire.Wrap(h)))
+	handler := auth.NewMiddleware(st).Wrap(wire.Wrap(h))
+	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	t.Cleanup(func() { httpapi.WaitForPendingCaptures(5 * time.Second) })
 
 	return &matrixEnv{
-		ms: ms, store: st, srv: srv, key: key, exec: exec, health: health, wire: wire,
+		ms: ms, store: st, srv: srv, key: key, exec: exec, health: health,
+		handler: handler, wire: wire,
 		openai: openaiclient.NewClient(
 			openaioption.WithBaseURL(srv.URL+"/v1"),
 			openaioption.WithAPIKey(key),
