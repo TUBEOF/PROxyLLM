@@ -71,30 +71,6 @@ func TestMatrix_ChatClient_OllamaCloudUpstream_Streaming(t *testing.T) {
 }
 
 // 2. OpenAI Responses client → OpenAI Responses upstream, non-streaming.
-func TestMatrix_ResponsesClient_ResponsesUpstream(t *testing.T) {
-	ctx := context.Background()
-	up := upstream{ID: "oa-responses-up", Type: "openai-responses"}
-	e := newMatrixEnv(t, up)
-	e.ms.Upsert(t, expectation("OPENAI_RESPONSES", up.ID, "/v1/responses",
-		chatCompletion("Responses upstream ok", false)))
-
-	resp, err := e.openai.Responses.New(ctx, responses.ResponseNewParams{
-		Model: up.ID,
-		Input: responses.ResponseNewParamsInputUnion{OfString: openaiclient.String("hi")},
-	})
-	if err != nil {
-		t.Fatalf("responses create: %v", err)
-	}
-	if !strings.Contains(resp.OutputText(), "Responses upstream ok") {
-		t.Fatalf("output_text = %q, want the simulated upstream answer", resp.OutputText())
-	}
-
-	body := e.upstreamBody(t, "/v1/responses")
-	if body["model"] != up.ID {
-		t.Errorf("upstream model = %v, want %s", body["model"], up.ID)
-	}
-}
-
 // 3. Anthropic Messages client → Anthropic upstream, streaming.
 func TestMatrix_AnthropicClient_AnthropicUpstream_Streaming(t *testing.T) {
 	ctx := context.Background()

@@ -36,11 +36,8 @@ import (
 	"github.com/tubeof/proxyllm/internal/provider/anthropic"
 	"github.com/tubeof/proxyllm/internal/provider/codex"
 	"github.com/tubeof/proxyllm/internal/provider/custom"
-	"github.com/tubeof/proxyllm/internal/provider/gemini"
 	"github.com/tubeof/proxyllm/internal/provider/ollamacloud"
 	"github.com/tubeof/proxyllm/internal/provider/ollamanative"
-	"github.com/tubeof/proxyllm/internal/provider/openaidecisions"
-	"github.com/tubeof/proxyllm/internal/provider/openairesponses"
 	"github.com/tubeof/proxyllm/internal/routing"
 	"github.com/tubeof/proxyllm/internal/server/webui"
 	"github.com/tubeof/proxyllm/internal/storage"
@@ -184,9 +181,6 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 	case webui.ProviderTypeAnthropic:
 		return anthropic.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type), headerOpts...), nil, nil
 
-	case webui.ProviderTypeOpenAIResponses:
-		return openairesponses.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type), headerOpts...), nil, nil
-
 	case webui.ProviderTypeOllamaCloud:
 		// Empty base_url is a legal save: the provider defaults to the
 		// hosted endpoint.
@@ -195,13 +189,6 @@ func buildProvider(ctx context.Context, store *storage.Store, row storage.Provid
 	case webui.ProviderTypeOllamaNative:
 		// Empty base_url defaults to the local server.
 		return ollamanative.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type), headerOpts...), nil, nil
-
-	case webui.ProviderTypeGemini:
-		// Empty base_url defaults to the hosted endpoint.
-		return gemini.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type), headerOpts...), nil, nil
-
-	case webui.ProviderTypeOpenAIDecisions:
-		return openaidecisions.New(row.ID, cfg.BaseURL, providerAPIKey(ctx, logger, store, row.ID), capsFromConfig(cfg, row.Type), headerOpts...), nil, nil
 
 	case webui.ProviderTypeCodexOAuth:
 		// The codex provider speaks the ChatGPT backend; the
@@ -458,21 +445,10 @@ func defaultCaps(typ string) provider.Capabilities {
 		// The native Messages API supports tools, images and extended
 		// thinking with signatures.
 		return provider.Capabilities{Streaming: true, Tools: true, Vision: true, Thinking: true}
-	case webui.ProviderTypeGemini:
-		// The native Gemini API supports tools and images; thinking is a
-		// per-model fact the models catalog reports (Model.thinking) and
-		// model rows learn.
-		return provider.Capabilities{Streaming: true, Tools: true, Vision: true}
-	case webui.ProviderTypeOpenAIResponses:
-		// The Responses API supports tools and images; reasoning is a
-		// per-model fact the operator pins.
-		return provider.Capabilities{Streaming: true, Tools: true, Vision: true}
 	case webui.ProviderTypeOllamaNative:
 		// Native Ollama supports tools; vision/thinking are per-model and
 		// the tag list does not report them.
 		return provider.Capabilities{Streaming: true, Tools: true}
-	case webui.ProviderTypeOpenAIDecisions:
-		return provider.Capabilities{Decision: true}
 	case webui.ProviderTypeFirecrawl, webui.ProviderTypeOllamaCloudWeb:
 		// web_tool accounts are emulator backends, not chat providers.
 		return provider.Capabilities{}

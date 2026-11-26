@@ -28,11 +28,8 @@ import (
 	anthropicprovider "github.com/tubeof/proxyllm/internal/provider/anthropic"
 	"github.com/tubeof/proxyllm/internal/provider/codex"
 	"github.com/tubeof/proxyllm/internal/provider/custom"
-	geminiprovider "github.com/tubeof/proxyllm/internal/provider/gemini"
 	"github.com/tubeof/proxyllm/internal/provider/ollamacloud"
 	"github.com/tubeof/proxyllm/internal/provider/ollamanative"
-	"github.com/tubeof/proxyllm/internal/provider/openaidecisions"
-	"github.com/tubeof/proxyllm/internal/provider/openairesponses"
 	"github.com/tubeof/proxyllm/internal/routing"
 	"github.com/tubeof/proxyllm/internal/server/httpapi"
 	"github.com/tubeof/proxyllm/internal/storage"
@@ -44,7 +41,7 @@ import (
 // proxy speaks to it, and BaseURL points at the simulator.
 type upstream struct {
 	ID      string
-	Type    string // custom-openai | openai-responses | anthropic | ollama-native | ollama-cloud | gemini | openai-decisions | codex-oauth
+	Type    string // custom-openai | anthropic | ollama-native | ollama-cloud | codex-oauth
 	BaseURL string
 	Caps    provider.Capabilities
 }
@@ -211,18 +208,12 @@ func buildUpstream(ctx context.Context, u upstream, st *storage.Store) provider.
 		// custom-openai's client carries "/chat/completions", so its base URL
 		// is the API root (…/v1).
 		return custom.New(u.ID, u.BaseURL+"/v1", apiKey, u.Caps)
-	case "openai-responses":
-		return openairesponses.New(u.ID, u.BaseURL, apiKey, u.Caps)
 	case "anthropic":
 		return anthropicprovider.New(u.ID, u.BaseURL, apiKey, u.Caps)
 	case "ollama-native":
 		return ollamanative.New(u.ID, u.BaseURL, "", u.Caps)
-	case "openai-decisions":
-		return openaidecisions.New(u.ID, u.BaseURL, apiKey, u.Caps)
 	case "ollama-cloud":
 		return ollamacloud.New(u.ID, u.BaseURL, apiKey, u.Caps)
-	case "gemini":
-		return geminiprovider.New(u.ID, u.BaseURL, apiKey, u.Caps)
 	case "codex-oauth":
 		// The account is pre-provisioned as a previous operator login: an
 		// EXPIRED access token plus its refresh token, seeded before the

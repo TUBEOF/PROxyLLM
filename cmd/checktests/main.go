@@ -18,6 +18,11 @@
 //	go run ./cmd/checktests            # against origin/main, or main
 //	go run ./cmd/checktests -base HEAD~1
 //
+// A deliberate removal (a provider type deleted by an ADR, with its tests)
+// is declared in allow.txt next to this file, one `path | reason` per line.
+// A declared path is printed as an allowed removal, never silently skipped;
+// new skips and tautologies still fail.
+//
 // Exit status: 0 clean (warnings may be printed), 1 findings, 2 the check could
 // not run — a missing base revision is not a pass.
 package main
@@ -52,16 +57,21 @@ type finding struct {
 
 func main() {
 	base := flag.String("base", "", "revision to compare against (default: origin/main, else main)")
+	allowPath := flag.String("allow", "cmd/checktests/allow.txt", "declared intentional removals (path | reason)")
 	flag.Parse()
 
-	if err := run(*base); err != nil {
+	if err := run(*base, *allowPath); err != nil {
 		fmt.Fprintln(os.Stderr, "checktests:", err)
 		os.Exit(2)
 	}
 }
 
-func run(baseFlag string) error {
+func run(baseFlag, allowPath string) error {
 	base, err := resolveBase(baseFlag)
+	if err != nil {
+		return err
+	}
+	allow, err := loadAllow(allowPath)
 	if err != nil {
 		return err
 	}
@@ -78,11 +88,7 @@ func run(baseFlag string) error {
 	var findings []finding
 	var warnings []finding
 
-	for _, f := range deleted {
-		if isTestFile.MatchString(f) {
-			findings = append(findings, finding{f, "test file deleted"})
-		}
-	}
+	allowed := filterDeletions(deleted, allow, &findings)
 
 	for _, f := range modified {
 		if !isTestFile.MatchString(f) {
@@ -97,6 +103,12 @@ func run(baseFlag string) error {
 			return err
 		}
 		found, warn := compareFile(f, string(before), string(after))
+		if reason, ok := allow[f]; ok {
+			if len(found) > 0 {
+				allowed = append(allowed, finding{f, reason})
+			}
+			found = nil
+		}
 		findings = append(findings, found...)
 		warnings = append(warnings, warn...)
 	}
@@ -107,6 +119,9 @@ func run(baseFlag string) error {
 	}
 	findings = append(findings, newSkips(added)...)
 
+	for _, a := range allowed {
+		fmt.Printf("allowed removal: %s: %s\n", a.file, a.detail)
+	}
 	for _, w := range warnings {
 		fmt.Printf("warning: %s: %s\n", w.file, w.detail)
 	}
@@ -118,6 +133,53 @@ func run(baseFlag string) error {
 		fmt.Printf("erosion: %s: %s\n", f.file, f.detail)
 	}
 	return fmt.Errorf("%d finding(s) against %s", len(findings), base)
+}
+
+// loadAllow reads the declared intentional removals: one repo-relative path
+// and a non-empty reason, separated by "|". A path without a reason is an
+// error — an unexplained removal is exactly what this tool exists to stop.
+func loadAllow(path string) (map[string]string, error) {
+	out := map[string]string{}
+	data, err := os.ReadFile(path) //nolint:gosec // a path the operator passes on the command line
+	if err != nil {
+		if os.IsNotExist(err) {
+			return out, nil
+		}
+		return nil, err
+	}
+	for n, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		file, reason, ok := strings.Cut(line, "|")
+		file, reason = strings.TrimSpace(file), strings.TrimSpace(reason)
+		if !ok || file == "" || reason == "" {
+			return nil, fmt.Errorf("%s:%d: want \"path | reason\"", path, n+1)
+		}
+		if out[file] != "" {
+			return nil, fmt.Errorf("%s:%d: %s is declared twice", path, n+1, file)
+		}
+		out[file] = reason
+	}
+	return out, nil
+}
+
+// filterDeletions separates declared removals from erosion. Deleted non-test
+// files are not this tool's business.
+func filterDeletions(deleted []string, allow map[string]string, findings *[]finding) []finding {
+	var allowed []finding
+	for _, f := range deleted {
+		if !isTestFile.MatchString(f) {
+			continue
+		}
+		if reason, ok := allow[f]; ok {
+			allowed = append(allowed, finding{f, reason})
+			continue
+		}
+		*findings = append(*findings, finding{f, "test file deleted"})
+	}
+	return allowed
 }
 
 // compareFile counts what a test file asserts before and after the change.

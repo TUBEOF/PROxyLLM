@@ -24,11 +24,9 @@ import (
 func pairUpstream(cell matrixCell) upstream {
 	types := map[string]string{
 		"openai-chat":        "custom-openai",
-		"openai-responses":   "openai-responses",
 		"anthropic-messages": "anthropic",
 		"ollama-native":      "ollama-native",
 		"ollama-cloud":       "ollama-cloud",
-		"gemini-native":      "gemini",
 	}
 	typ, ok := types[cell.Upstream]
 	if !ok {
@@ -45,18 +43,10 @@ func pairWire(upstreamID string, stream bool) (provider, path string) {
 	switch upstreamID {
 	case "openai-chat", "ollama-cloud":
 		return "OPENAI", "/v1/chat/completions"
-	case "openai-responses":
-		return "OPENAI_RESPONSES", "/v1/responses"
 	case "anthropic-messages":
 		return "ANTHROPIC", "/v1/messages"
 	case "ollama-native":
 		return "OLLAMA", "/api/chat"
-	case "gemini-native":
-		action := "generateContent"
-		if stream {
-			action = "streamGenerateContent"
-		}
-		return "GEMINI", "/v1beta/models/" + upstreamID + ":" + action
 	}
 	return "UNKNOWN", "/unknown"
 }
@@ -169,13 +159,8 @@ func pairToolViolation(cell matrixCell, res pairResult) string {
 	return ""
 }
 
-// pairModelViolation is the upstream-model assertion as a pure predicate. The
-// Gemini wire carries the model in the URL path, so its cells have no body
-// model to assert.
+// pairModelViolation is the upstream-model assertion as a pure predicate.
 func pairModelViolation(cell matrixCell, body map[string]any) string {
-	if cell.Upstream == "gemini-native" {
-		return ""
-	}
 	if body["model"] != cell.Upstream {
 		return fmt.Sprintf("%s: upstream model = %v, want %s", cell.ID, body["model"], cell.Upstream)
 	}
