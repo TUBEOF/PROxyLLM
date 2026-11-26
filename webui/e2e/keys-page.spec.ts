@@ -88,7 +88,9 @@ test('the display-once dialog connects a CLI with the new key', async ({ page })
   await page.getByRole('button', { name: /^create key$/i }).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('Name').fill(`e2e-connect-${Date.now()}`);
-  await dialog.getByRole('button', { name: /^create$/i }).click();
+  // Submit from the field: on the mobile viewport the footer button's click
+  // target can be swallowed while the modal settles.
+  await dialog.getByLabel('Name').press('Enter');
   await expect(dialog).toContainText('Key created');
   const secret = await dialog.locator('input.mono').inputValue();
 
