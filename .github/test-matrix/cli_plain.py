@@ -1472,7 +1472,8 @@ def scenario_answer_headless(cli: str, manifest: Path, home: Path, base_url: str
     marker = "HEADLESS-" + secrets.token_hex(4)
     prompt = f"Reply with exactly: {marker}."
     ms_reset(mockserver)
-    mock_pinned(mockserver, cli, [(prompt, marker)], STREAMING.get(cli, True))
+    # Headless invocations may choose either wire mode; install both.
+    mock_pinned_dual(mockserver, cli, [(prompt, marker)], MODEL)
     run_dir = home / "clients" / cli / "answer_headless"
     if run_dir.exists():
         shutil.rmtree(run_dir)
@@ -1500,8 +1501,7 @@ def scenario_recall_headless(cli: str, manifest: Path, home: Path, base_url: str
     t1 = "Please remember the number 4711."
     t2 = "Which number did I ask you to remember?"
     ms_reset(mockserver)
-    mock_pinned(mockserver, cli, [(t1, "Noted."), (t2, "The number is 4711")],
-                STREAMING.get(cli, True))
+    mock_pinned_dual(mockserver, cli, [(t1, "Noted."), (t2, "The number is 4711")], MODEL)
     run_dir = home / "clients" / cli / "recall_headless"
     if run_dir.exists():
         shutil.rmtree(run_dir)
