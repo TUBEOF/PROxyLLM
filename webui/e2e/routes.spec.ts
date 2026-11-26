@@ -119,4 +119,10 @@ test.describe('signed in', () => {
     });
   });
 
+  test('connect', async ({ page }) => {
+    await page.goto('/connect');
+    await readyForCapture(page);
+    await expect(page).toHaveScreenshot('connect.png');
+  });
+
 });

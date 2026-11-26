@@ -681,3 +681,11 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--font-body);
   cursor:pointer;transition:background var(--transition-base),color var(--transition-base)}
 .user-menu-item:hover{background:var(--accent-dim);color:var(--fg)}
 .user-menu-signout{color:var(--status-warn)}
+
+/* Connect surfaces (ADR-026): snippets and the key dialog's disclosure. */
+.connect-block{display:grid;gap:16px}
+.connect-snippet{display:grid;gap:8px;justify-items:start}
+.connect-snippet pre{margin:0;width:100%;overflow:auto;padding:12px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);font-family:var(--font-mono);font-size:12px;line-height:1.55;color:var(--fg)}
+.connect-details{margin-top:8px;border-top:1px solid var(--border);padding-top:12px}
+.connect-details>summary{cursor:pointer;font-weight:var(--fw-medium);color:var(--fg)}
+.connect-details[open]>summary{margin-bottom:12px}

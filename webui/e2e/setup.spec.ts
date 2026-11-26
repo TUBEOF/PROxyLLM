@@ -175,7 +175,12 @@ test('the wizard walks a fresh instance through provider, web tools, fallbacks, 
   // Key, shown once.
   await page.getByRole('button', { name: 'Create key' }).click();
   await expect(page.locator('.setup-key input')).toHaveValue('pk_setup_test_secret');
-  await page.getByRole('button', { name: /Continue to done/i }).click();
+  await page.getByRole('button', { name: /Continue to connect a cli/i }).click();
+
+  // Connect a CLI: the snippet uses the key just created.
+  await expect(page.getByRole('heading', { name: 'Connect a CLI' })).toBeVisible();
+  await expect(page.locator('.connect-snippet pre').first()).toContainText('pk_setup_test_secret');
+  await page.getByRole('button', { name: 'Continue', exact: true }).click();
   await page.getByRole('button', { name: 'Finish setup' }).click();
   await expect(page).toHaveURL('/');
   await expect(page.getByRole('heading', { name: 'Finish setup' })).toHaveCount(0);
@@ -208,4 +213,14 @@ test('the OAuth provider path creates a draft and offers device sign-in', async 
   await page.getByLabel('Account name').fill('Codex');
   await page.getByRole('button', { name: 'Connect and test' }).click();
   await expect(page.getByRole('button', { name: 'Start device sign-in' })).toBeVisible();
+});
+
+test('the connect step is reachable from the step rail without a key', async ({ page }) => {
+  await login(page);
+  await stubWizard(page);
+  await page.goto('/setup');
+  const rail = page.getByRole('navigation', { name: 'Setup steps' });
+  await rail.getByRole('button', { name: 'Connect a CLI' }).click();
+  await expect(page.getByRole('heading', { name: 'Connect a CLI' })).toBeVisible();
+  await expect(page.locator('.connect-snippet pre').first()).toContainText('pk_...');
 });

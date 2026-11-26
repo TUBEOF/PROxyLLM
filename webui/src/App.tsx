@@ -15,6 +15,7 @@ const Routing = lazy(() => import('./routes/Routing'));
 const Logs = lazy(() => import('./routes/Logs'));
 const Quota = lazy(() => import('./routes/Quota'));
 const Keys = lazy(() => import('./routes/Keys'));
+const Connect = lazy(() => import('./routes/Connect'));
 const Setup = lazy(() => import('./routes/Setup'));
 
 export default function App() {
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="routing" element={<Routing />} />
           <Route path="logs" element={<Logs />} />
           <Route path="keys" element={<Keys />} />
+          <Route path="connect" element={<Connect />} />
           <Route path="setup" element={<Setup />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
