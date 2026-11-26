@@ -1350,14 +1350,21 @@ def scenario_web_turn2(cli: str, manifest: Path, home: Path, base_url: str, key:
 
 
 # The CLI's own tool that reads the seeded work/notes.txt. The file's marker
-# must ride the tool result back into the re-dispatched conversation.
+# must ride the tool result back into the re-dispatched conversation. Names and
+# argument shapes verified against the pinned builds (codex 0.166.0 declares
+# exec_command with a `cmd` string; claude-code 2.1.316 declares Bash with
+# `command`; opencode 1.19.6 declares bash with `command`).
 TOOL_LOOP_SEEDS = {
-    "crush": {
-        "name": "view",
-        "arguments": json.dumps({"file_path": "notes.txt"}),
+    "claude-code": {
+        "name": "Bash",
+        "arguments": json.dumps({"command": "cat notes.txt"}),
     },
-    "openhands": {
-        "name": "execute_bash",
+    "codex": {
+        "name": "exec_command",
+        "arguments": json.dumps({"cmd": "cat notes.txt"}),
+    },
+    "opencode": {
+        "name": "bash",
         "arguments": json.dumps({"command": "cat notes.txt"}),
     },
 }
@@ -1531,9 +1538,97 @@ def scenario_recall_headless(cli: str, manifest: Path, home: Path, base_url: str
         raise AssertionError("recall_headless: MockServer saw fewer than two requests")
 
 
+def scenario_tool_loop_headless(cli: str, manifest: Path, home: Path, base_url: str,
+                                key: str, mockserver: str, port: int, since: int) -> None:
+    """An upstream tool call the CLI executes itself: turn 1 is a mocked
+    function call whose arguments read the seeded notes.txt; the CLI runs its
+    own tool, the result rides back into the next upstream request (asserted
+    from MockServer's request log), and turn 2 answers from it."""
+    seed = TOOL_LOOP_SEEDS[cli]
+    marker = "TOOL-" + secrets.token_hex(4)
+    prompt = "Read notes.txt and reply with the marker line."
+    ms_reset(mockserver)
+    tool_turn = {
+        "stopReason": "tool_calls",
+        "toolCalls": [{
+            "id": "call_tool_1",
+            "name": seed["name"],
+            "arguments": seed["arguments"],
+        }],
+    }
+    # Turn 1 is structurally pinned: a real model turn carries tool
+    # definitions (opencode's title call does not), and the headless clients
+    # wrap the prompt differently enough that content pinning does not hold.
+    # The streaming variant outranks the tool-result matchers; the
+    # non-streaming one is ranked BELOW them, because its matcher (tools +
+    # any user message) also matches the follow-up request that carries the
+    # tool result in its history.
+    for stream, priority in ((True, 230), (False, 200)):
+        matcher: dict = {"tools": [{"type": "function"}], "messages": [{"role": "user"}]}
+        if stream:
+            matcher["stream"] = True
+        _mock_expectation(mockserver, dict(tool_turn, streaming=stream), priority,
+                          times=1, matcher=matcher, model=MODEL)
+    # The re-dispatch is the request that carries the tool result. The proxy's
+    # chat rewrite emits a role:"tool" message with the original call id for
+    # every client protocol, so one matcher covers all three CLIs.
+    for stream, priority in ((True, 220), (False, 219)):
+        matcher = {"messages": [{"role": "tool"}]}
+        if stream:
+            matcher["stream"] = True
+        _mock_expectation(mockserver, {"text": marker, "streaming": stream}, priority,
+                          matcher=matcher, model=MODEL)
+    mock_fallback(mockserver, "ok", True)
+    mock_fallback(mockserver, "ok", False)
+
+    run_dir = home / "clients" / cli / "tool_loop_headless"
+    if run_dir.exists():
+        shutil.rmtree(run_dir)
+    env, cwd = prepare(manifest, run_dir, base_url, key, MODEL)
+    spec = _headless_manifest(manifest)
+    args = (spec.get("features", {}).get("tool_loop") or {}).get("args") or spec["args"]
+    out = _headless_run(manifest, run_dir, env, cwd, args, prompt,
+                        run_dir / "headless.log")
+    if marker not in out:
+        raise AssertionError("tool_loop_headless: the final answer is missing from the CLI output")
+
+    reqs = ms_requests(mockserver)
+    declared = [r for r in reqs
+                if seed["name"] in _declared_tool_names(r)]
+    if not declared:
+        raise AssertionError(
+            f"tool_loop_headless: no upstream request declares the tool {seed['name']!r}")
+    first = reqs.index(declared[0])
+    follow = [r for r in reqs[first + 1:]
+              if "PROXYLLM-LIVE-MARKER-7Q" in json.dumps(r.get("body"))
+              and "call_tool_1" in json.dumps(r.get("body"))]
+    if not follow:
+        raise AssertionError(
+            "tool_loop_headless: no re-dispatched request carries the tool result "
+            "(the CLI did not run the tool, or the call id did not survive the translation)")
+    if not any("tool_call_id" in json.dumps(r) or "tool_use_id" in json.dumps(r)
+               for r in follow):
+        raise AssertionError("tool_loop_headless: the tool result carries no call-id field")
+    rows = wait_proxy_rows(home, since, 2)
+    if len(rows) < 2:
+        raise AssertionError("tool_loop_headless: the proxy logged fewer than two request rows")
+    bad = [r for r in rows if r[1] not in (200, 499)]
+    if bad:
+        raise AssertionError(f"tool_loop_headless: proxy rows not clean: {bad}")
+
+
+def _declared_tool_names(request: dict) -> list[str]:
+    payload = (request.get("body") or {}).get("json") or {}
+    names = []
+    for tool in payload.get("tools") or []:
+        if not isinstance(tool, dict):
+            continue
+        names.append((tool.get("function") or {}).get("name") or tool.get("name"))
+    return names
+
+
 SCENARIOS.update({
-    "fault_429": scenario_fault_429,
-    "fault_529": scenario_fault_529,
+    "fault_429": scenario_fault_429,    "fault_529": scenario_fault_529,
     "fault_quota": scenario_fault_quota,
     "fault_truncated": scenario_fault_truncated,
     "fault_malformed_sse": scenario_fault_malformed_sse,
@@ -1542,6 +1637,7 @@ SCENARIOS.update({
     "large_output": scenario_large_output,
     "answer_headless": scenario_answer_headless,
     "recall_headless": scenario_recall_headless,
+    "tool_loop_headless": scenario_tool_loop_headless,
 })
 
 

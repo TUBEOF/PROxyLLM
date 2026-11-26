@@ -64,6 +64,17 @@
         "Read"
       ]
     },
+    "tool_loop": {
+      "args": [
+        "-p",
+        "{{PROMPT}}",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--allowedTools",
+        "Bash"
+      ]
+    },
     "web_search": {
       "args": [
         "-p",

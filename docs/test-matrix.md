@@ -116,9 +116,10 @@ document fail the schema gate; the golden response passes), and
 including the duplicate-claim rule.
 
 Pending cells (the manifest names the reason for each; the fix loop owns them):
-- M2: `.github/test-matrix/cli_matrix.json` names only the skipped cells and
-  their reason — thinking, cancel/resume, `previous_response_id`, vision and
-  `tool_loop` on all three clients. Every other cell is green.
+- M2: `.github/test-matrix/cli_matrix.json` names every skipped cell and its
+  reason — thinking, cancel/resume, `previous_response_id`, vision and
+  `decisions` on the clients that lack that surface. Every other cell is
+  green, including `tool_loop_headless` on all three clients (see below).
 
 ## M2 — the plain-start CLI matrix (cli-plain)
 
@@ -143,15 +144,27 @@ The nine extra adapters (aider, cline, crush, goose, gptme,
 open-interpreter, kimi, openhands, qwen) were removed in v2.0.0: they were
 the main source of CI flakes, and those tools remain usable through the
 OpenAI-compatible surface without an adapter of their own. The `tools` shard
-went with them — `tool_loop` is skipped on all three clients until the
-headless tool-seeding layer lands.
+went with them; the headless tool loop below carries that coverage for the
+three supported CLIs.
 
 A **headless layer** runs the same three CLIs non-interactively with their
 documented flags (`claude -p --output-format stream-json`,
-`codex exec --json`, `opencode run --format json`). `answer_headless` and
-`recall_headless` are green on all three; `thinking_headless` and
-`cancel_headless` are skipped with their reason (no verified headless toggle
-or interrupt signal for the pinned builds), never silently.
+`codex exec --json`, `opencode run --format json`). `answer_headless`,
+`recall_headless` and `tool_loop_headless` are green on all three;
+`thinking_headless` and `cancel_headless` are skipped with their reason (no
+verified headless toggle or interrupt signal for the pinned builds), never
+silently.
+
+`tool_loop_headless` (M2-Rework point 3): turn 1 is a mocked upstream
+`tool_calls` response whose arguments run `cat notes.txt` in the cell's work
+directory — `Bash` for Claude Code (headless `--allowedTools Bash`),
+`exec_command` for Codex (its base `--sandbox danger-full-access` already
+permits it), `bash` for OpenCode (`run --auto`). The CLI executes its own
+tool, and the assertion is the **upstream request log**: a later request must
+carry the seeded file marker and the original `call_tool_1` id in a
+`role:"tool"` message with its `tool_call_id`, plus a clean proxy request row
+and the final marker in the CLI's own output. Exit code alone is never the
+proof.
 
 **What is skipped and why.** The manifest carries the exact reason on every
 skipped cell; the recurring ones are: extended thinking (Claude Code's plain
@@ -159,10 +172,9 @@ TUI sends no `thinking` field even with a budget env — M1's Anthropic thinking
 cell covers the proxy path), cancel/resume (no verified plain-start TUI
 affordance — M1's client-abort cell covers the proxy), `previous_response_id`
 (these clients send full history; `recall` plus the M1 Responses chain cover
-the contract), vision (no verified plain-start image attach; the M1 blind-chain
-cell covers the caption fallback), and `tool_loop` (the plain-start tool seed
-is not verified for these three clients; the headless layer is still to
-come).
+the contract), and vision (no verified plain-start image attach; the M1
+blind-chain cell covers the caption fallback). The plain-start TUI tool loop
+has no cell of its own — `tool_loop_headless` is the verified realization.
 
 Each fault cell gets its own provider account (the breaker and quota cooldowns
 are keyed by account, so sharing one would poison the next cell), and the CLI's

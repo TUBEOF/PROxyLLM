@@ -24,14 +24,16 @@
     "answer_headless",
     "recall_headless",
     "thinking_headless",
-    "cancel_headless"
+    "cancel_headless",
+    "tool_loop_headless"
   ],
   "shards": {
     "basic": [
       "answer",
       "recall",
       "answer_headless",
-      "recall_headless"
+      "recall_headless",
+      "tool_loop_headless"
     ],
     "faults": [
       "fault_429",
@@ -364,6 +366,21 @@
       "scenario": "cancel_headless",
       "status": "skipped",
       "note": "cancellation in headless mode needs a paced upstream and a verified interrupt signal per CLI; the plain-start cancel cell and M1 cover it"
+    },
+    {
+      "client": "codex",
+      "scenario": "tool_loop_headless",
+      "status": "green"
+    },
+    {
+      "client": "claude-code",
+      "scenario": "tool_loop_headless",
+      "status": "green"
+    },
+    {
+      "client": "opencode",
+      "scenario": "tool_loop_headless",
+      "status": "green"
     }
   ]
 }
