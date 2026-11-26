@@ -8,3 +8,6 @@ the verified subset and leaves the rest as a documented open question.
 - [Anthropic OAuth](anthropic-oauth.md) — endpoints, client id, scopes,
   token/refresh shapes, the consumer-plan restriction, and the open
   questions to verify against a Teams account (ADR-022).
+- [Codex model catalog](codex-model-catalog.md) — the top-level `models`
+  shape, its fields, and why `supported_reasoning_levels` is always present
+  (ADR-023).

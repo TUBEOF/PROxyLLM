@@ -80,6 +80,7 @@ that does not know a newer event can ignore it.
 | `POST` | `/v1/responses` | [OpenAI](openai.md#post-v1responses) |
 | `GET` | `/v1/responses` | WebSocket upgrade for the Responses transport |
 | `GET` | `/v1/models` | [OpenAI](openai.md#get-v1models) / [Anthropic](anthropic.md#get-v1models) |
+| `GET` | `/v1/model_catalog` | [OpenAI](openai.md#get-v1model_catalog) (Codex-native catalog) |
 | `POST` | `/v1/messages` | [Anthropic](anthropic.md#post-v1messages) |
 | `POST` | `/v1/messages/count_tokens` | [Anthropic](anthropic.md#post-v1messagescount_tokens) |
 | `POST` | `/api/chat` | Native Ollama chat (JSON or NDJSON) |

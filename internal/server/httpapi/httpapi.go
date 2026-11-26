@@ -120,6 +120,9 @@ func New(p Params) *API {
 	mux.HandleFunc("POST /v1/messages", a.handleMessages)
 	mux.HandleFunc("POST /v1/messages/count_tokens", a.handleCountTokens)
 	mux.HandleFunc("GET /v1/models", a.handleModels)
+	// Codex-native model catalog (ADR-023): top-level "models", read through
+	// model_catalog_url.
+	mux.HandleFunc("GET /v1/model_catalog", a.handleModelCatalog)
 	// Native Ollama client surface (mounted outside /v1 by the server).
 	mux.HandleFunc("POST /api/chat", a.handleOllamaChat)
 	mux.HandleFunc("GET /api/tags", a.handleOllamaTags)
