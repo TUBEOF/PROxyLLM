@@ -65,6 +65,12 @@ default) and fails on a deleted test, a weakened one, a new skip or a
 tautology. It reports — without failing — assertions that merely re-encode
 a production condition.
 
+A deliberate removal — a provider type deleted by an ADR, together with its
+tests — is declared in `cmd/checktests/allow.txt`, one `path | reason` per
+line. A declared path is printed on every run as `allowed removal`, never
+silently skipped; an entry without a reason is rejected, and new skips and
+tautologies are still findings. The file is the audit trail for ADR-021.
+
 ### The doctrine behind them
 
 Tests derive from **specifications**, never from this implementation's

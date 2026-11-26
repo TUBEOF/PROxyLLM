@@ -1,14 +1,13 @@
 package e2e
 
-// Decision-surface matrix cells (decision__systemone, decision__openai-decisions):
-// POST /v1/systemone and POST /v1/decisions drive the fully assembled proxy end
-// to end, driven with the golden decision fixtures the way a client drives them.
-// The upstream providers are the product's own decision accounts — ollama-cloud
-// speaks the System One wire, openai-decisions the OpenAI Decisions API — and
-// MockServer answers their POSTs with the golden decision response fixtures
-// verbatim, so a green cell proves surface → IR → upstream wire and back.
-// No LLM provider type exists for decision surfaces; the plain httpResponse
-// expectations are the simulator's documented way to replay a fixed wire body.
+// Decision-surface matrix cell (decision__systemone): POST /v1/systemone
+// drives the fully assembled proxy end to end, driven with the golden decision
+// fixture the way a client drives it. The upstream account is ollama-cloud,
+// which speaks the System One wire, and MockServer answers its POST with the
+// golden decision response fixture verbatim, so a green cell proves surface →
+// IR → upstream wire and back. No LLM provider type exists for decision
+// surfaces; the plain httpResponse expectation is the simulator's documented
+// way to replay a fixed wire body.
 
 import (
 	"context"
@@ -19,7 +18,6 @@ import (
 
 	"github.com/tubeof/proxyllm/internal/provider"
 	"github.com/tubeof/proxyllm/internal/storage"
-	"github.com/tubeof/proxyllm/internal/translate/openai"
 	"github.com/tubeof/proxyllm/internal/translate/systemone"
 )
 
@@ -113,55 +111,3 @@ func TestMatrix_Decision_SystemOne(t *testing.T) {
 // openai-decisions account dispatches to its /v1/decisions endpoint (the
 // same wire, answered by the golden response), and the answers array rides
 // back with the numeric score values intact.
-func TestMatrix_Decision_OpenAIDecisions(t *testing.T) {
-	ctx := context.Background()
-	up := upstream{ID: "decision-sim2", Type: "openai-decisions", Caps: provider.Capabilities{Decision: true}}
-	e := newMatrixEnv(t, up)
-	if err := e.store.PutModel(ctx, storage.Model{ID: up.ID, ProviderID: up.ID, Name: "gpt-6-luna"}); err != nil {
-		t.Fatalf("seed model row: %v", err)
-	}
-	e.ms.Upsert(t, map[string]any{
-		"httpRequest":  map[string]any{"method": "POST", "path": "/v1/decisions"},
-		"httpResponse": map[string]any{"statusCode": 200, "body": string(golden(t, "openai/decisions-response.json"))},
-	})
-
-	req, err := openai.DecisionsCodec{}.DecodeRequest(golden(t, "openai/decisions-request.json"))
-	if err != nil {
-		t.Fatalf("decode golden request: %v", err)
-	}
-	req.Model = up.ID
-	body, err := openai.DecisionsCodec{}.EncodeRequest(req)
-	if err != nil {
-		t.Fatalf("encode golden request: %v", err)
-	}
-
-	status, answer := postDecision(t, e, "/v1/decisions", body)
-	if status != http.StatusOK {
-		t.Fatalf("decisions: status %d, body %s", status, answer)
-	}
-	// The answers array in the Decisions API's own shape.
-	for _, want := range []string{`"answers"`, `"type":"choice"`, `"value":"bug"`, `"type":"score"`} {
-		if !strings.Contains(answer, want) {
-			t.Errorf("decisions answer missing %s: %s", want, answer)
-		}
-	}
-
-	var seen map[string]any
-	for _, r := range e.ms.Requests(t) {
-		if r.Path == "/v1/decisions" {
-			seen = upstreamJSON(t, r)
-		}
-	}
-	if seen == nil {
-		t.Fatal("MockServer received no POST /v1/decisions")
-	}
-	if seen["model"] != "gpt-6-luna" {
-		t.Errorf("upstream model = %v, want the row's wire name gpt-6-luna", seen["model"])
-	}
-	if seen["input"] != "Our checkout has returned 500 errors since 9am." {
-		t.Errorf("upstream input = %v, want the fixture's evidence text", seen["input"])
-	}
-	if qs, _ := seen["questions"].([]any); len(qs) != 3 {
-		t.Errorf("upstream questions = %v, want the fixture's 3 typed questions", seen["questions"])
-	}
-}

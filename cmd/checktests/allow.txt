@@ -1,0 +1,12 @@
+# Declared intentional test removals. One `path | reason` per line.
+#
+# A path here suppresses the deleted-file/assertion-decrease finding for that
+# file and is printed on every run as "allowed removal" — never silent. New
+# skips and tautologies are not covered by this list.
+internal/provider/gemini/gemini_test.go | provider type gemini removed by ADR-021
+internal/provider/openaidecisions/openaidecisions_test.go | provider type openai-decisions removed by ADR-021
+internal/provider/openairesponses/openairesponses_test.go | provider type openai-responses removed by ADR-021
+internal/e2e/conformance_matrix2_test.go | cases for the removed openai-responses and gemini provider types deleted by ADR-021
+internal/e2e/conformance_matrix_test.go | case for the removed openai-responses provider type deleted by ADR-021
+internal/e2e/matrix_decision_test.go | openai-decisions provider cell deleted by ADR-021
+internal/server/webui/adminapi_providertypes_test.go | catalog shrinks from 10 to 7 types by ADR-021

@@ -106,55 +106,6 @@ func TestMatrix_ChatClient_OllamaNativeUpstream(t *testing.T) {
 // 8. Tool call: OpenAI Chat client → OpenAI Responses upstream. The client
 // must see a function tool call with the arguments, and the upstream request
 // must carry the declared tool.
-func TestMatrix_ChatClient_ResponsesUpstream_ToolCall(t *testing.T) {
-	ctx := context.Background()
-	up := upstream{ID: "oa-responses-tools", Type: "openai-responses"}
-	e := newMatrixEnv(t, up)
-	e.ms.Upsert(t, map[string]any{
-		"httpRequest": map[string]any{"method": "POST", "path": "/v1/responses"},
-		"httpLlmResponse": map[string]any{
-			"provider": "OPENAI_RESPONSES",
-			"model":    up.ID,
-			"completion": map[string]any{
-				"stopReason": "tool_calls",
-				"toolCalls": []map[string]any{{
-					"id":        "call_weather_1",
-					"name":      "get_weather",
-					"arguments": `{"city":"Paris"}`,
-				}},
-			},
-		},
-	})
-
-	cc, err := e.openai.Chat.Completions.New(ctx, openaiclient.ChatCompletionNewParams{
-		Model:    up.ID,
-		Messages: []openaiclient.ChatCompletionMessageParamUnion{openaiclient.UserMessage("weather in Paris?")},
-		Tools: []openaiclient.ChatCompletionToolUnionParam{{
-			OfFunction: &openaiclient.ChatCompletionFunctionToolParam{
-				Function: openaiclient.FunctionDefinitionParam{
-					Name:       "get_weather",
-					Parameters: map[string]any{"type": "object", "properties": map[string]any{"city": map[string]any{"type": "string"}}},
-				},
-			},
-		}},
-	})
-	if err != nil {
-		t.Fatalf("chat completion: %v", err)
-	}
-	if len(cc.Choices) == 0 || len(cc.Choices[0].Message.ToolCalls) != 1 {
-		t.Fatalf("client tool calls = %+v, want one function call", cc.Choices)
-	}
-	call := cc.Choices[0].Message.ToolCalls[0]
-	if call.Function.Name != "get_weather" || !strings.Contains(call.Function.Arguments, "Paris") {
-		t.Errorf("tool call = %+v, want get_weather with the Paris arguments", call)
-	}
-
-	body := e.upstreamBody(t, "/v1/responses")
-	if tools, _ := body["tools"].([]any); len(tools) == 0 {
-		t.Errorf("upstream request carries no tools: %v", body)
-	}
-}
-
 // 9. Fault: the upstream rate-limits (429 with Retry-After). The client must
 // receive a typed upstream error, never a fabricated answer.
 func TestMatrix_ChatClient_UpstreamRateLimited(t *testing.T) {
@@ -278,65 +229,6 @@ func TestMatrix_ChatClient_UpstreamOverloaded529(t *testing.T) {
 // GEMINI upstream (no sentinel) served as a raw SSE body with the broken frame
 // before the terminal. The client must see the partial answer and a terminal
 // error, never a clean success.
-func TestMatrix_ChatClient_UpstreamMalformedStream(t *testing.T) {
-	ctx := context.Background()
-	up := upstream{ID: "gemini-malformed-up", Type: "gemini"}
-	// pairWire keys off the manifest id "gemini-native"; this upstream has its
-	// own id, so build the same path convention directly.
-	path := "/v1beta/models/" + up.ID + ":streamGenerateContent"
-
-	run := func(t *testing.T, body string) (string, error) {
-		t.Helper()
-		e := newMatrixEnv(t, up)
-		e.ms.Upsert(t, map[string]any{
-			"httpRequest": map[string]any{"method": "POST", "path": path},
-			"httpResponse": map[string]any{
-				"statusCode": 200,
-				"headers": []map[string]any{{
-					"name": "Content-Type", "values": []string{"text/event-stream"},
-				}},
-				"body": body,
-			},
-		})
-		stream := e.openai.Chat.Completions.NewStreaming(ctx, openaiclient.ChatCompletionNewParams{
-			Model:    up.ID,
-			Messages: []openaiclient.ChatCompletionMessageParamUnion{openaiclient.UserMessage("hi")},
-		})
-		defer func() { _ = stream.Close() }()
-		var text strings.Builder
-		for stream.Next() {
-			if choices := stream.Current().Choices; len(choices) > 0 {
-				text.WriteString(choices[0].Delta.Content)
-			}
-		}
-		if n := countUpstreamRequests(t, e, path); n != 1 {
-			t.Errorf("upstream requests = %d, want exactly 1", n)
-		}
-		return text.String(), stream.Err()
-	}
-
-	t.Run("fault", func(t *testing.T) {
-		text, err := run(t, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"partial-\"}]}}]}\n\n"+
-			"data: {not json\n\n")
-		if !strings.Contains(text, "partial-") {
-			t.Fatalf("client text = %q, want the partial delta before the malformed frame", text)
-		}
-		if err == nil {
-			t.Fatal("a malformed upstream SSE stream completed without an error")
-		}
-	})
-
-	t.Run("control", func(t *testing.T) {
-		text, err := run(t, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"complete\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":1,\"candidatesTokenCount\":1,\"totalTokenCount\":2}}\n\n")
-		if err != nil {
-			t.Fatalf("clean Gemini stream errored: %v", err)
-		}
-		if !strings.Contains(text, "complete") {
-			t.Fatalf("client text = %q, want the clean answer", text)
-		}
-	})
-}
-
 // 13. Fault: MockServer's stateful request-count quota. The first request is
 // served; the next one over the limit gets 429 with Retry-After: 60. That
 // reset exceeds the proxy's backoff ceiling, so the same provider is not

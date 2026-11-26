@@ -16,12 +16,9 @@ func TestDefaultCaps_MatchProviderTypeCatalog(t *testing.T) {
 	types := []string{
 		webui.ProviderTypeCustomOpenAI,
 		webui.ProviderTypeAnthropic,
-		webui.ProviderTypeOpenAIResponses,
 		webui.ProviderTypeOllamaCloud,
 		webui.ProviderTypeOllamaNative,
-		webui.ProviderTypeOpenAIDecisions,
 		webui.ProviderTypeCodexOAuth,
-		webui.ProviderTypeGemini,
 		webui.ProviderTypeFirecrawl,
 		webui.ProviderTypeOllamaCloudWeb,
 	}
