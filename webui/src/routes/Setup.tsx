@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { apiCall } from '../api';
 import { copyText } from '../clipboard';
 import OAuthSignIn from '../components/OAuthSignIn';
+import ConnectSnippets from '../components/ConnectSnippets';
 import { EmptyState, ErrorNote, PageHead } from '../hooks';
 import { IconCheck, IconCopy } from '../icons';
 import type {
@@ -37,6 +38,7 @@ const STEPS = [
   { id: 'fallbacks', label: 'Fallbacks' },
   { id: 'routing', label: 'Aliases' },
   { id: 'key', label: 'API key' },
+  { id: 'connect', label: 'Connect a CLI' },
   { id: 'done', label: 'Done' },
 ] as const;
 
@@ -399,6 +401,10 @@ export default function Setup() {
       return;
     }
     if (id === 'key') {
+      setStep('connect');
+      return;
+    }
+    if (id === 'connect') {
       setStep('done');
       return;
     }
@@ -472,8 +478,9 @@ export default function Setup() {
                 <div className="form">
                   <h2 className="title">Welcome</h2>
                   <p className="sub">
-                    Four short steps: connect a provider, add web search/fetch, choose fallbacks, and
-                    create a client key. The wizard records progress, so you can leave and come back.
+                    Five short steps: connect a provider, add web search/fetch, choose fallbacks,
+                    create a client key and point a CLI at it. The wizard records progress, so you
+                    can leave and come back.
                   </p>
                   <div className="form-actions">
                     <button type="button" className="btn btn-primary" onClick={() => setStep('provider')}>
@@ -675,7 +682,7 @@ export default function Setup() {
                     <button type="button" className="btn btn-primary" onClick={() => void createKey()} disabled={busy || createdKey !== null}>
                       {busy ? 'Creating…' : 'Create key'}
                     </button>
-                    <button type="button" className="btn btn-ghost" onClick={() => setStep('done')} disabled={busy}>
+                    <button type="button" className="btn btn-ghost" onClick={() => setStep('connect')} disabled={busy}>
                       Skip
                     </button>
                   </div>
@@ -692,6 +699,32 @@ export default function Setup() {
                       <span className="hint">Use it as ANTHROPIC_AUTH_TOKEN or Authorization: Bearer.</span>
                     </div>
                   )}
+                </div>
+              )}
+
+              {step === 'connect' && (
+                <div className="form">
+                  <h2 className="title">Connect a CLI</h2>
+                  <p className="sub">
+                    Copy the configuration for Claude Code, Codex, OpenCode or any OpenAI-compatible client.
+                    {createdKey !== null
+                      ? ' The key in this snippet is the one you just created.'
+                      : ' Create a key on the previous step to replace the placeholder.'}
+                  </p>
+                  <ConnectSnippets
+                    baseUrl={window.location.origin}
+                    apiKey={createdKey?.key ?? 'pk_...'}
+                    models={models.map((m) => m.id)}
+                    defaultModel={models[0]?.id}
+                  />
+                  <div className="form-actions">
+                    <button type="button" className="btn btn-primary" onClick={() => void completeStep('connect')} disabled={busy}>
+                      Continue
+                    </button>
+                    <button type="button" className="btn btn-ghost" onClick={() => setStep('done')} disabled={busy}>
+                      Skip this step
+                    </button>
+                  </div>
                 </div>
               )}
 

@@ -36,6 +36,7 @@ var onboardingSteps = map[string]bool{
 	"fallbacks": true,
 	"routing":   true,
 	"key":       true,
+	"connect":   true,
 	"done":      true,
 }
 

@@ -1,12 +1,13 @@
 import { FormEvent, useCallback, useMemo, useState } from 'react';
 import { apiCall } from '../api';
 import { copyText } from '../clipboard';
-import type { ClientKey, CreatedKey, KeysResponse } from '../types';
+import type { ClientKey, CreatedKey, KeysResponse, ModelsResponse } from '../types';
 import { CONFIG_LIVE_MS, EmptyState, ErrorNote, PageHead, useLiveData, useMutation } from '../hooks';
 import { LiveBadge } from '../components/LiveBadge';
 import { Modal } from '../components/Overlays';
 import { formatDateTime } from '../time';
 import { IconCheck, IconCopy, IconPlus } from '../icons';
+import ConnectSnippets from '../components/ConnectSnippets';
 
 // API keys (the auth credential clients present to the proxy): create,
 // regenerate, delete. The server returns the full key exactly once — it is
@@ -31,6 +32,8 @@ export default function Keys() {
   const [created, setCreated] = useState<CreatedKey | null>(null);
   const [copied, setCopied] = useState(false);
   const [copyBlocked, setCopyBlocked] = useState(false);
+  // Model ids for the "Connect your CLI" block in the display-once dialog.
+  const [modelIds, setModelIds] = useState<string[]>([]);
 
   // Confirmation targets: a destructive action never fires on one click.
   const [confirmDelete, setConfirmDelete] = useState<ClientKey | null>(null);
@@ -48,6 +51,9 @@ export default function Keys() {
     setCreated(null);
     setCreatedMode('create');
     setCreating(true);
+    apiCall<ModelsResponse>('GET', '/api/admin/models')
+      .then((r) => setModelIds(r.models.map((m) => m.id)))
+      .catch(() => setModelIds([]));
   }, []);
 
   const closeCreate = useCallback(() => {
@@ -298,6 +304,15 @@ export default function Keys() {
                 Use it as the client credential: <code>Authorization: Bearer …</code> on the OpenAI surface,{' '}
                 <code>x-api-key</code> on the Anthropic surface.
               </p>
+              <details className="connect-details">
+                <summary>Connect your CLI</summary>
+                <ConnectSnippets
+                  baseUrl={window.location.origin}
+                  apiKey={created.key}
+                  models={modelIds}
+                  showModelPicker={false}
+                />
+              </details>
             </div>
           )}
         </Modal>

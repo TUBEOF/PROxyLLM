@@ -45,6 +45,12 @@ export interface ProviderType {
   // for web_search/web_fetch fallback lists).
   kind: 'llm' | 'web_tool';
   auth: 'api_key' | 'oauth';
+  // ADR-022/026: the sign-in shape for OAuth types ("device" or "paste").
+  oauth_flow?: 'device' | 'paste';
+  // Versioned warning the console shows before the first sign-in.
+  risk_notice?: string;
+  risk_notice_version?: number;
+  risk_acknowledged?: boolean;
   settings_fields: ProviderTypeField[];
   account_fields: ProviderTypeField[];
   // The type's accounts can hold an ollama.com session cookie (ADR-012).

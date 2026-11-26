@@ -82,3 +82,19 @@ test('delete removes the row and the secret stops working', async ({ page }) => 
   const status = await page.request.get('/v1/models', { headers: { 'x-api-key': secret } });
   expect(status.status()).toBe(401);
 });
+
+test('the display-once dialog connects a CLI with the new key', async ({ page }) => {
+  await login(page);
+  await page.getByRole('button', { name: /^create key$/i }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel('Name').fill(`e2e-connect-${Date.now()}`);
+  await dialog.getByRole('button', { name: /^create$/i }).click();
+  await expect(dialog).toContainText('Key created');
+  const secret = await dialog.locator('input.mono').inputValue();
+
+  await dialog.getByText('Connect your CLI').click();
+  const snippet = dialog.locator('.connect-snippet pre').first();
+  await expect(snippet).toContainText('ANTHROPIC_AUTH_TOKEN');
+  await expect(snippet).toContainText(secret);
+  await expect(dialog.getByRole('tab', { name: 'Codex' })).toBeVisible();
+});

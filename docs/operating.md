@@ -13,6 +13,7 @@ same binary as the API, on the same port, at `/`.
 | **Models** | The model inventory: identity, provider, capabilities, priority — plus the model sync |
 | **Routing** | Routing rules, the global strategy, and the alias map |
 | **API keys** | Create (shown once), regenerate, delete |
+| **Connect a CLI** | Generated configuration for Claude Code, Codex, OpenCode and any OpenAI-compatible client (ADR-026) |
 | **Logs** | The request log: rows, the trace timeline, sub-operations, captured bodies, live tail |
 | **Quota** | Per-account usage and limits, with the account's cooldown state |
 

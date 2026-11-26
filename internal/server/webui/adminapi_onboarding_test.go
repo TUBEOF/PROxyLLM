@@ -57,11 +57,11 @@ func TestOnboarding_StatusAndProgress(t *testing.T) {
 	}
 
 	w := e.authedCall(t, http.MethodPut, "/api/admin/onboarding",
-		`{"completed":["provider","model","web_tools","fallbacks","key"],"dismissed":false}`, s)
+		`{"completed":["provider","model","web_tools","fallbacks","key","connect"],"dismissed":false}`, s)
 	assertStatus(t, w, http.StatusOK, "onboarding put")
 	progress := get()
-	if len(progress.State.Completed) != 5 || progress.State.Version != storage.OnboardingStateVersion {
-		t.Fatalf("state = %+v, want the five completed steps", progress.State)
+	if len(progress.State.Completed) != 6 || progress.State.Version != storage.OnboardingStateVersion {
+		t.Fatalf("state = %+v, want the six completed steps", progress.State)
 	}
 
 	w = e.authedCall(t, http.MethodPut, "/api/admin/onboarding",
