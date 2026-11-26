@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$ref": "#/$defs/ChatResponse",
+  "$defs": {
+    "ChatResponse": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "Model name used to generate this message"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of response creation (ISO 8601)"
+        },
+        "message": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "type": "string",
+              "enum": [
+                "assistant"
+              ],
+              "description": "Always `assistant` for model responses"
+            },
+            "content": {
+              "type": "string",
+              "description": "Assistant message text"
+            },
+            "thinking": {
+              "type": "string",
+              "description": "Optional deliberate thinking trace when `think` is enabled"
+            },
+            "tool_calls": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ToolCall"
+              },
+              "description": "Tool calls requested by the assistant"
+            },
+            "images": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Optional base64-encoded images in the response"
+            }
+          }
+        },
+        "done": {
+          "type": "boolean",
+          "description": "Indicates whether the chat response has finished"
+        },
+        "done_reason": {
+          "type": "string",
+          "description": "Reason the response finished"
+        },
+        "total_duration": {
+          "type": "integer",
+          "description": "Total time spent generating in nanoseconds"
+        },
+        "load_duration": {
+          "type": "integer",
+          "description": "Time spent loading the model in nanoseconds"
+        },
+        "prompt_eval_count": {
+          "type": "integer",
+          "description": "Number of tokens in the prompt"
+        },
+        "prompt_eval_cached_count": {
+          "type": "integer",
+          "description": "Number of prompt tokens read from the cache"
+        },
+        "prompt_eval_duration": {
+          "type": "integer",
+          "description": "Time spent evaluating uncached prompt tokens in nanoseconds"
+        },
+        "eval_count": {
+          "type": "integer",
+          "description": "Number of tokens generated in the response"
+        },
+        "eval_duration": {
+          "type": "integer",
+          "description": "Time spent generating tokens in nanoseconds"
+        },
+        "logprobs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Logprob"
+          },
+          "description": "Log probability information for the generated tokens when logprobs are enabled"
+        }
+      }
+    },
+    "Logprob": {
+      "type": "object",
+      "description": "Log probability information for a generated token",
+      "properties": {
+        "token": {
+          "type": "string",
+          "description": "The text representation of the token"
+        },
+        "logprob": {
+          "type": "number",
+          "description": "The log probability of this token"
+        },
+        "bytes": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "The raw byte representation of the token"
+        },
+        "top_logprobs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TokenLogprob"
+          },
+          "description": "Most likely tokens and their log probabilities at this position"
+        }
+      }
+    },
+    "TokenLogprob": {
+      "type": "object",
+      "description": "Log probability information for a single token alternative",
+      "properties": {
+        "token": {
+          "type": "string",
+          "description": "The text representation of the token"
+        },
+        "logprob": {
+          "type": "number",
+          "description": "The log probability of this token"
+        },
+        "bytes": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "The raw byte representation of the token"
+        }
+      }
+    },
+    "ToolCall": {
+      "type": "object",
+      "properties": {
+        "function": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Name of the function to call"
+            },
+            "description": {
+              "type": "string",
+              "description": "What the function does"
+            },
+            "arguments": {
+              "type": "object",
+              "description": "JSON object of arguments to pass to the function"
+            }
+          }
+        }
+      }
+    }
+  }
+}

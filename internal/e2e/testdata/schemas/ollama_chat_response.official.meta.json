@@ -1,0 +1,7 @@
+{
+  "fixture": "ollama_chat_response.official.json",
+  "source": "https://github.com/ollama/ollama/blob/b207a5a319ba8bd21d5ca607cfb460b46ad6f946/docs/openapi.yaml",
+  "commit": "b207a5a319ba8bd21d5ca607cfb460b46ad6f946",
+  "accessed": "2026-11-26",
+  "notes": "components.schemas.ChatResponse plus its references, rewritten to #/$defs. Extracted mechanically from the pinned document."
+}
