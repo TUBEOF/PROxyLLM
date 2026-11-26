@@ -94,7 +94,8 @@ test('the quota card carries the same pool switch', async ({ page }) => {
   await login(page);
   await page.goto('/quota');
 
-  const card = page.locator('.widget').filter({ hasText: 'Ollama key 1' }).first();
+  const card = page.locator('.usage-card').filter({ hasText: 'Ollama key 1' }).first();
+  await card.scrollIntoViewIfNeeded();
   const sw = card.getByLabel('Ollama key 1 in the pool');
   await expect(sw).toBeChecked();
 
