@@ -382,6 +382,7 @@ func TestMessages_ModelsDiscoveryBothShapes(t *testing.T) {
 			ID          string `json:"id"`
 			Type        string `json:"type"`
 			DisplayName string `json:"display_name"`
+			Description string `json:"description"`
 		} `json:"data"`
 		FirstID string `json:"first_id"`
 		HasMore bool   `json:"has_more"`
@@ -398,6 +399,9 @@ func TestMessages_ModelsDiscoveryBothShapes(t *testing.T) {
 		}
 		if m.DisplayName == "" {
 			t.Errorf("model %s missing display_name", m.ID)
+		}
+		if m.Description == "" {
+			t.Errorf("model %s missing description", m.ID)
 		}
 	}
 	if !ids["gpt-5"] || !ids["gpt-5-mini"] {
