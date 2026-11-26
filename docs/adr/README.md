@@ -25,9 +25,19 @@ its identifier and its history stay.
 | [ADR-014](ADR-014-image-to-text-vision-fallback.md) | Image-to-text vision fallback: vision models describe the image, the routed model answers | Accepted |
 | [ADR-015](ADR-015-web-tool-emulation-resilience.md) | Web-tool emulation resilience: ordered account walk, bounded time, honest empty answers, per-account tracing | Accepted |
 | [ADR-016](ADR-016-scalability-and-concurrency.md) | Scalability and concurrency: SQLite pool, key-hash caching, lock splitting, emulation budgets | Accepted |
-| [ADR-017](ADR-017-decision-models.md) | Decision models: a second IR operation class (System One / Jev, the OpenAI Decisions API) | Accepted |
+| [ADR-017](ADR-017-decision-models.md) | Decision models: a second IR operation class (System One / Jev, the OpenAI Decisions API) | Accepted (superseded by ADR-021) |
 | [ADR-018](ADR-018-vision-passthrough-and-analyze-image.md) | Vision pass-through + the `analyze_image` tool: blind-chain images substitute pre-dispatch; the model sends the image with its own prompt to a vision model | Accepted |
 | [ADR-019](ADR-019-trusted-proxy-forwarded-headers.md) | Trusted-proxy forwarded headers: the console's origin check honors `X-Forwarded-*` only from configured proxy CIDRs (`server.trusted_proxies`) | Accepted |
+| [ADR-020](ADR-020-first-run-onboarding.md) | First-run onboarding wizard: a dedicated `/setup` page, progress in the config KV, counts as the truth | Accepted |
+| [ADR-021](ADR-021-provider-focus.md) | Provider and surface focus for v2.0.0: eight provider types, chat-only IR, Gemini/decisions removed | Accepted |
+| [ADR-022](ADR-022-anthropic-oauth.md) | Anthropic OAuth provider (Teams/Enterprise): browser PKCE with loopback and paste completion, versioned risk notice | Accepted |
+| [ADR-023](ADR-023-dynamic-model-discovery.md) | Dynamic model discovery: additive `/v1/models` fields, Codex-shaped `/v1/model_catalog`, installer-generated OpenCode blocks | Accepted |
+| [ADR-024](ADR-024-auto-installer.md) | Auto-installer `scripts/install.sh`: detect, merge with backups, `--dry-run`, `--uninstall` | Accepted |
+| [ADR-025](ADR-025-m2-matrix-reduction.md) | M2 matrix reduction to three CLIs plus a headless scenario layer | Accepted |
+| [ADR-026](ADR-026-webui-connect.md) | Console "Connect a CLI": key dialog, wizard step and a lazy `/connect` page | Accepted |
+| [ADR-027](ADR-027-ci-extensions.md) | CI extensions: ShellCheck, OpenAPI contract gate, spec-sync cells, testcontainers MockServer | Accepted |
+| [ADR-028](ADR-028-golden-update.md) | Golden fixture update workflow: `GOLDEN_UPDATE=1` locally, CI always fails with a diff | Accepted |
+| [ADR-029](ADR-029-versioning-v2.md) | Versioning and the v2.0.0 release: SemVer-major, migration page, maintainer-owned publish | Accepted |
 
 ADR template: [TEMPLATE.md](TEMPLATE.md)
 
