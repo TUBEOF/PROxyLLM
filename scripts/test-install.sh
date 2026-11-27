@@ -63,6 +63,20 @@ run_installer() {
     PROXYLLM_CLIS=claude,codex,opencode bash "$ROOT/scripts/install.sh" "$@"
 }
 
+# A real Codex config: a user top-level key, a [features] table that is not
+# the last table, and a profile that owns its own `model` key. The merge must
+# keep all three intact.
+mkdir -p "$HOME_DIR/.codex"
+cat >"$HOME_DIR/.codex/config.toml" <<'EOF'
+approval_policy = "never"
+
+[features]
+web_search = true
+
+[profiles.p]
+model = "gpt-5"
+EOF
+
 # --- install ---
 run_installer --yes >"$WORK/install.log" 2>&1 || { cat "$WORK/install.log"; fail "installer failed"; }
 
@@ -83,6 +97,13 @@ grep -q "model_catalog_url = \"$BASE/v1/model_catalog\"" "$CODEX" || fail "Codex
 grep -q '^api_key_model_discovery = true' "$CODEX" || fail "Codex discovery switch missing"
 grep -q 'env_key = "PROXYLLM_API_KEY"' "$CODEX" || fail "Codex env_key missing"
 if grep -q "$KEY" "$CODEX"; then fail "Codex config contains the client key"; fi
+[ "$(grep -c '^\[features\]' "$CODEX")" = 1 ] || fail "Codex [features] table duplicated"
+awk '/^approval_policy = "never"/{a=NR} /^\[model_providers\.proxyllm\]/{p=NR} END{exit !(a && p && a<p)}' "$CODEX" \
+  || fail "Codex: a user top-level key ended up inside the provider table"
+awk '/^\[features\]/{f=1;next} /^\[/{f=0} f && /^web_search = true/{found=1} END{exit !found}' "$CODEX" \
+  || fail "Codex: an unrelated [features] key was lost"
+awk '/^\[profiles\.p\]/{f=1;next} /^\[/{f=0} f && /^model = "gpt-5"/{found=1} END{exit !found}' "$CODEX" \
+  || fail "Codex: a profile's own model key was removed"
 
 grep -q '"proxyllm"' "$OPENCODE" || fail "OpenCode provider block missing"
 grep -q '"model": "proxyllm/anthropic/glm-5.3"' "$OPENCODE" || fail "OpenCode default model missing"
@@ -104,11 +125,32 @@ after=$(sha256sum "$CLAUDE" "$CODEX" "$OPENCODE")
 grep -q '^--- ' "$WORK/dry.log" || fail "--dry-run printed no diff"
 pass "--dry-run writes nothing"
 
+# --- the documented `curl … | bash` shape ---
+# The script arrives on stdin, so the prompts must read the terminal instead
+# of consuming it; before this was fixed the first prompt exited silently.
+HOME2="$WORK/home-pipe"
+mkdir -p "$HOME2" "$WORK/bin"
+printf '#!/bin/sh\nexit 0\n' >"$WORK/bin/claude"
+chmod +x "$WORK/bin/claude"
+if command -v script >/dev/null 2>&1; then
+  printf '1\ny\n\n' | PATH="$WORK/bin:$PATH" HOME="$HOME2" \
+    PROXYLLM_URL="$BASE" PROXYLLM_API_KEY="$KEY" \
+    script -qec "cat '$ROOT/scripts/install.sh' | bash" /dev/null \
+    >"$WORK/pipe.log" 2>&1 || { cat "$WORK/pipe.log"; fail "piped interactive run failed"; }
+  grep -q "$BASE" "$HOME2/.claude/settings.json" 2>/dev/null \
+    || { cat "$WORK/pipe.log"; fail "piped interactive run wrote no Claude settings"; }
+  pass "the piped form prompts on the terminal"
+else
+  printf 'skip: piped-form check (no script(1))\n'
+fi
+
 # --- uninstall ---
 run_installer --uninstall >"$WORK/uninstall.log" 2>&1 || { cat "$WORK/uninstall.log"; fail "uninstall failed"; }
 if grep -q 'ANTHROPIC_BASE_URL' "$CLAUDE"; then fail "uninstall left the Claude env keys"; fi
 if grep -q 'model_providers.proxyllm' "$CODEX"; then fail "uninstall left the Codex provider"; fi
 if grep -q '"proxyllm"' "$OPENCODE"; then fail "uninstall left the OpenCode provider"; fi
+grep -q '^approval_policy = "never"' "$CODEX" || fail "uninstall removed a user top-level key"
+grep -q '^model = "gpt-5"' "$CODEX" || fail "uninstall removed a profile's model key"
 pass "uninstall removed the managed blocks"
 
 printf 'installer test: OK\n'

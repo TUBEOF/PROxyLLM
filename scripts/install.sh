@@ -33,6 +33,26 @@ log() { printf '%s\n' "$*"; }
 warn() { printf 'warning: %s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
+# `curl … | bash` makes the script itself stdin, so prompts must come from the
+# terminal; a failed read is a loud error, not a silent `set -e` exit.
+TTY_FD=""
+if [ -t 0 ]; then
+  TTY_FD=0
+elif ( exec </dev/tty ) 2>/dev/null; then
+  TTY_FD=9
+  exec 9</dev/tty
+fi
+ask() {
+  [ -n "$TTY_FD" ] ||
+    die "no terminal for the prompts; set PROXYLLM_URL, PROXYLLM_API_KEY and PROXYLLM_CLIS and pass --yes"
+  read -r "$1" <&"$TTY_FD" || die "could not read an answer"
+}
+ask_secret() {
+  [ -n "$TTY_FD" ] ||
+    die "no terminal for the prompts; set PROXYLLM_URL, PROXYLLM_API_KEY and PROXYLLM_CLIS and pass --yes"
+  read -rs "$1" <&"$TTY_FD" || die "could not read an answer"
+}
+
 usage() {
   cat <<'EOF'
 Usage: install.sh [--dry-run] [--uninstall] [--yes]
@@ -84,7 +104,7 @@ ask_url() {
   if [ -n "$PROXY_URL" ]; then return; fi
   if [ "$ASSUME_YES" = 1 ]; then PROXY_URL="$PROXY_URL_DEFAULT"; return; fi
   printf 'Proxy URL [%s]: ' "$PROXY_URL_DEFAULT"
-  read -r PROXY_URL
+  ask PROXY_URL
   PROXY_URL="${PROXY_URL:-$PROXY_URL_DEFAULT}"
 }
 
@@ -92,7 +112,7 @@ ask_key() {
   if [ -n "$PROXY_KEY" ]; then return; fi
   [ "$ASSUME_YES" = 1 ] && die "PROXYLLM_API_KEY is required with --yes"
   printf 'Client API key (pk_...): '
-  read -rs PROXY_KEY
+  ask_secret PROXY_KEY
   printf '\n'
   [ -n "$PROXY_KEY" ] || die "an API key is required"
 }
@@ -115,6 +135,7 @@ done
 
 SELECTED=()
 select_clis() {
+  local choice
   if [ -n "$CLIS_ENV" ]; then
     IFS=',' read -r -a wanted <<<"$CLIS_ENV"
     for w in "${wanted[@]}"; do
@@ -142,7 +163,7 @@ select_clis() {
   i=1
   for c in "${DETECTED[@]}"; do log "  $i) $c"; i=$((i + 1)); done
   log 'Select one or more (e.g. "1 3", "all", "none"):'
-  read -r choice
+  ask choice
   case "$choice" in
     all) SELECTED=("${DETECTED[@]}") ;;
     none|"") return ;;
@@ -189,7 +210,7 @@ choose_model() {
   i=1
   while IFS= read -r m; do log "  $i) $m" >&2; i=$((i + 1)); done <<<"$MODELS"
   printf 'Default model [%s]: ' "$default" >&2
-  read -r m
+  ask m
   [ -n "$m" ] || { printf '%s\n' "$default"; return; }
   case "$m" in
     *[!0-9]*) printf '%s\n' "$m" ;;
@@ -319,32 +340,33 @@ uninstall_claude() {
 
 codex_config() { printf '%s/.codex/config.toml' "$HOME"; }
 
-# codex_merge rewrites the file: managed keys first (TOML requires top-level
-# keys before tables), then the provider table, then the feature switch.
+# codex_merge rewrites the file: the managed top-level keys first (TOML
+# requires top-level keys before tables), the user's own content next, and the
+# provider table last so no user top-level key lands inside it.
 codex_merge() {
   local file="$1" model="$CODEX_MODEL" effort="$CODEX_EFFORT" base="$PROXY_URL"
   local stripped="$file.stripped"
-  awk -v model="$model" -v effort="$effort" -v base="$base" '
-    BEGIN { managed = 0; provider = 0; features = 0 }
+  awk '
+    BEGIN { managed = 0; provider = 0; seen_table = 0; in_features = 0; have_features = 0; started = 0; pending = 0 }
     /^# managed by PROxyLLM: begin$/ { managed = 1; next }
     /^# managed by PROxyLLM: end$/ { managed = 0; next }
     managed { next }
     /^\[model_providers\.proxyllm\]/ { provider = 1; next }
     provider && /^\[/ { provider = 0 }
     provider { next }
-    /^api_key_model_discovery[[:space:]]*=/ { next }
-    /^model[[:space:]]*=/ { next }
-    /^model_provider[[:space:]]*=/ { next }
-    /^model_reasoning_effort[[:space:]]*=/ { next }
+    /^[[:space:]]*$/ { if (started) pending++; next }
+    { started = 1; while (pending > 0) { print ""; pending-- } }
     /^\[features\]/ {
-      features = 1
+      seen_table = 1; in_features = 1; have_features = 1
       print
       print "api_key_model_discovery = true  # managed by PROxyLLM"
       next
     }
-    /^\[/ { features = 0 }
+    /^\[/ { seen_table = 1; in_features = 0 }
+    in_features && /^api_key_model_discovery[[:space:]]*=/ { next }
+    !seen_table && /^(model|model_provider|model_reasoning_effort)[[:space:]]*=/ { next }
     { print }
-    END { if (!features) { print ""; print "[features]"; print "api_key_model_discovery = true  # managed by PROxyLLM" } }
+    END { if (!have_features) { if (started) print ""; print "[features]"; print "api_key_model_discovery = true  # managed by PROxyLLM" } }
   ' "$file" >"$stripped"
 
   {
@@ -353,14 +375,13 @@ codex_merge() {
     printf 'model_provider = "proxyllm"\n'
     printf 'model_reasoning_effort = "%s"\n' "$effort"
     printf '%s\n\n' "$MARK_END"
-    printf '[model_providers.proxyllm]\n'
+    cat "$stripped"
+    printf '\n[model_providers.proxyllm]\n'
     printf 'name = "PROxyLLM"\n'
     printf 'base_url = "%s/v1"\n' "$base"
     printf 'wire_api = "responses"\n'
     printf 'env_key = "PROXYLLM_API_KEY"\n'
     printf 'model_catalog_url = "%s/v1/model_catalog"\n' "$base"
-    printf '\n'
-    cat "$stripped"
   } >"$file.new"
   mv "$file.new" "$file"
   rm -f "$stripped"
@@ -381,11 +402,12 @@ codex_unmerge() {
 }
 
 install_codex() {
+  local answer
   CODEX_MODEL=$(choose_model "$(printf '%s\n' "$MODELS" | head -n 1)")
   CODEX_EFFORT="medium"
   if [ "$ASSUME_YES" != 1 ] && [ -z "$CLIS_ENV" ]; then
     printf 'Codex reasoning effort [low/medium/high/xhigh] (medium): ' >&2
-    read -r answer
+    ask answer
     case "$answer" in low|medium|high|xhigh) CODEX_EFFORT="$answer" ;; esac
   fi
   propose "$(codex_config)" codex_merge
@@ -479,6 +501,7 @@ uninstall_opencode() {
 # --- main ---------------------------------------------------------------
 
 main() {
+  local ok
   if [ "$UNINSTALL" = 1 ]; then
     uninstall_claude
     if [ -f "$(codex_config)" ]; then
@@ -504,7 +527,7 @@ main() {
   if [ "$DRY_RUN" != 1 ] && [ "$ASSUME_YES" != 1 ] && [ -z "$CLIS_ENV" ]; then
     log "About to configure: ${SELECTED[*]}"
     printf 'Continue? [Y/n] '
-    read -r ok
+    ask ok
     case "$ok" in n|N|no|NO) log "aborted"; exit 0 ;; esac
   fi
 
